@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744899070897,
+  "lastUpdate": 1744899072504,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -5566,6 +5566,90 @@ window.BENCHMARK_DATA = {
             "value": 115853.48992047991,
             "unit": "ns",
             "range": "± 526.1898986930147"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kmontrose@microsoft.com",
+            "name": "kevin-montrose",
+            "username": "kevin-montrose"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c30f10c87c5331fbbb16596a3061c37904cbcc6d",
+          "message": "Add a fuzzing host (#1166)\n\n* sketch out a OneFuzz target, with some local testing niceities\n\n* implement the command parser fuzz target\n\n* parsing exceptions are fine\n\n* derp, messed up this filter\n\n* implement lua compilation fuzzing\n\n* sketch out GarnetEndToEnd fuzz target\n\n* sketch out GarnetEndToEnd fuzz target\n\n* fix bugs; add --input-directory\n\n* bunch of false crashes creating files, rework to be less race-y\n\n* small amount of cleanup and DRY'ing\n\n* formatting\n\n* fix merge\n\n* correctly cleanup LogDir and CheckpointDir in EndToEnd fuzz",
+          "timestamp": "2025-04-17T10:02:05-04:00",
+          "tree_id": "d5da23e2696ac93e84674aee665baa4413e1f111",
+          "url": "https://github.com/microsoft/garnet/commit/c30f10c87c5331fbbb16596a3061c37904cbcc6d"
+        },
+        "date": 1744898878267,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16638.449935913086,
+            "unit": "ns",
+            "range": "± 71.4180979042516"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 15222.796097975512,
+            "unit": "ns",
+            "range": "± 18.92283013421302"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 14628.879807608468,
+            "unit": "ns",
+            "range": "± 20.43613465370193"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13532.564628092448,
+            "unit": "ns",
+            "range": "± 83.1873938230058"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+            "value": 113128.43997896634,
+            "unit": "ns",
+            "range": "± 144.44857725158136"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+            "value": 19556.20578511556,
+            "unit": "ns",
+            "range": "± 254.16336882608402"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+            "value": 19237.964639516977,
+            "unit": "ns",
+            "range": "± 41.87665263134305"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+            "value": 15474.532061258951,
+            "unit": "ns",
+            "range": "± 17.18459547153336"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+            "value": 14167.75220336914,
+            "unit": "ns",
+            "range": "± 84.81607760842816"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+            "value": 117604.71324869791,
+            "unit": "ns",
+            "range": "± 571.6821842777119"
           }
         ]
       }
