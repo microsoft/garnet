@@ -73,6 +73,19 @@ public static class Program
     }
 
     /// <summary>
+    /// Log, if options allow it, a character to standard out.
+    /// </summary>
+    private static void Write(FuzzOptions opts, char c)
+    {
+        if (opts.Quiet)
+        {
+            return;
+        }
+
+        Console.Write(c);
+    }
+
+    /// <summary>
     /// Log a message to standard error and exit the process.
     /// </summary>
     [DoesNotReturn]
@@ -95,15 +108,25 @@ public static class Program
 
         foreach (var input in inputs)
         {
-            var inputCopy = input;
             for (var i = 0; i < repeatCount; i++)
             {
-                target(inputCopy);
+                target(input);
                 if (i != repeatCount - 1)
                 {
-                    // Force a new copy to wiggle things around in memory a bit
-                    inputCopy = [.. input];
+                    // Do some random allocations to shift things around for the next invocation
+                    GC.KeepAlive(GC.AllocateUninitializedArray<byte>(Random.Shared.Next(512), pinned: false));
+                    GC.KeepAlive(GC.AllocateUninitializedArray<byte>(Random.Shared.Next(512), pinned: true));
                 }
+
+                if (repeatCount != 1)
+                {
+                    Write(opts, '#');
+                }
+            }
+
+            if (repeatCount != 1)
+            {
+                WriteLine(opts, "");
             }
         }
 

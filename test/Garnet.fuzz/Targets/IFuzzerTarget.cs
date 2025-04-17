@@ -20,6 +20,18 @@ namespace Garnet.fuzz.Targets
         static abstract void Fuzz(ReadOnlySpan<byte> input);
 
         /// <summary>
+        /// Move input onto the POH, and do any other work necessary for
+        /// consistent fuzzing in Garnet.
+        /// </summary>
+        static void PrepareInput(ref ReadOnlySpan<byte> input)
+        {
+            var ret = GC.AllocateUninitializedArray<byte>(input.Length, pinned: true);
+            input.CopyTo(ret.AsSpan());
+
+            input = ret;
+        }
+
+        /// <summary>
         /// Helper for throwing an exception when some post-run validation failed.
         /// </summary>
         [DoesNotReturn]

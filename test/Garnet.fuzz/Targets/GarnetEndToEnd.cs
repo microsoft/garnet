@@ -10,7 +10,6 @@ using System.Text;
 using Embedded.server;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
-
 using Tsavorite.core;
 
 namespace Garnet.fuzz.Targets
@@ -26,6 +25,8 @@ namespace Garnet.fuzz.Targets
         /// <inheritdoc/>
         public static void Fuzz(ReadOnlySpan<byte> input)
         {
+            IFuzzerTarget.PrepareInput(ref input);
+
             try
             {
                 using var server = CreateServer();

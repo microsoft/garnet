@@ -16,6 +16,8 @@ namespace Garnet.fuzz.Targets
         /// <inheritdoc/>
         public static void Fuzz(ReadOnlySpan<byte> input)
         {
+            IFuzzerTarget.PrepareInput(ref input);
+
             var session = new RespServerSession();
 
             try
