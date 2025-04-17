@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744899278169,
+  "lastUpdate": 1744899282391,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -9062,6 +9062,150 @@ window.BENCHMARK_DATA = {
             "value": 859.400402768453,
             "unit": "ns",
             "range": "± 2.3554086254144893"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kmontrose@microsoft.com",
+            "name": "kevin-montrose",
+            "username": "kevin-montrose"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c30f10c87c5331fbbb16596a3061c37904cbcc6d",
+          "message": "Add a fuzzing host (#1166)\n\n* sketch out a OneFuzz target, with some local testing niceities\n\n* implement the command parser fuzz target\n\n* parsing exceptions are fine\n\n* derp, messed up this filter\n\n* implement lua compilation fuzzing\n\n* sketch out GarnetEndToEnd fuzz target\n\n* sketch out GarnetEndToEnd fuzz target\n\n* fix bugs; add --input-directory\n\n* bunch of false crashes creating files, rework to be less race-y\n\n* small amount of cleanup and DRY'ing\n\n* formatting\n\n* fix merge\n\n* correctly cleanup LogDir and CheckpointDir in EndToEnd fuzz",
+          "timestamp": "2025-04-17T10:02:05-04:00",
+          "tree_id": "d5da23e2696ac93e84674aee665baa4413e1f111",
+          "url": "https://github.com/microsoft/garnet/commit/c30f10c87c5331fbbb16596a3061c37904cbcc6d"
+        },
+        "date": 1744899081705,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Managed,Limit)",
+            "value": 277.46635088553796,
+            "unit": "ns",
+            "range": "± 0.5553185199207826"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Managed,Limit)",
+            "value": 370.9277855873108,
+            "unit": "ns",
+            "range": "± 1.6828799512164612"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Managed,Limit)",
+            "value": 636.4017888477871,
+            "unit": "ns",
+            "range": "± 2.464360487268823"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Managed,Limit)",
+            "value": 942.4838967641194,
+            "unit": "ns",
+            "range": "± 3.8231832637456393"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Managed,None)",
+            "value": 280.06392134152924,
+            "unit": "ns",
+            "range": "± 0.4240361747483056"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Managed,None)",
+            "value": 354.82941211064656,
+            "unit": "ns",
+            "range": "± 1.5960103100572265"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Managed,None)",
+            "value": 628.0728872162955,
+            "unit": "ns",
+            "range": "± 2.0275642997335384"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Managed,None)",
+            "value": 855.2353053774152,
+            "unit": "ns",
+            "range": "± 2.9086860995425683"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Native,None)",
+            "value": 287.91988988717395,
+            "unit": "ns",
+            "range": "± 0.522771544721444"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Native,None)",
+            "value": 371.07435175577797,
+            "unit": "ns",
+            "range": "± 2.0369844566931623"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Native,None)",
+            "value": 614.3451863606771,
+            "unit": "ns",
+            "range": "± 3.0921325373951447"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Native,None)",
+            "value": 861.4873591150556,
+            "unit": "ns",
+            "range": "± 2.136258516356653"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Tracked,Limit)",
+            "value": 281.9750233968099,
+            "unit": "ns",
+            "range": "± 1.8059509286908717"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Tracked,Limit)",
+            "value": 356.45540749231975,
+            "unit": "ns",
+            "range": "± 1.2319492868537412"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Tracked,Limit)",
+            "value": 623.965526512691,
+            "unit": "ns",
+            "range": "± 3.0671044716193077"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Tracked,Limit)",
+            "value": 861.1088773863656,
+            "unit": "ns",
+            "range": "± 2.187109858771468"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Tracked,None)",
+            "value": 279.1078436215719,
+            "unit": "ns",
+            "range": "± 1.4628808965522988"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script2(Params: Tracked,None)",
+            "value": 342.28922033309937,
+            "unit": "ns",
+            "range": "± 1.2144658451243817"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script3(Params: Tracked,None)",
+            "value": 632.6711034138997,
+            "unit": "ns",
+            "range": "± 2.740421951481645"
+          },
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script4(Params: Tracked,None)",
+            "value": 859.5983130137125,
+            "unit": "ns",
+            "range": "± 3.029689491213295"
           }
         ]
       }
