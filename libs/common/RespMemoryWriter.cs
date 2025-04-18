@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Tsavorite.core;
 
 namespace Garnet.common
@@ -301,8 +302,8 @@ namespace Garnet.common
 
             if (oldArrayLen != newTotalArrayHeaderLen)
             {
-                var remainingLength = curr - startOutputStartptr - oldArrayLen;
-                Buffer.MemoryCopy(startOutputStartptr + oldArrayLen, startOutputStartptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
+                var remainingLength = curr - ptr - oldArrayLen;
+                Buffer.MemoryCopy(ptr + oldArrayLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
                 curr += newTotalArrayHeaderLen - oldArrayLen;
             }
         }
