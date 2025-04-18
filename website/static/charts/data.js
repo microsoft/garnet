@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744935422712,
+  "lastUpdate": 1744935426416,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -3698,6 +3698,48 @@ window.BENCHMARK_DATA = {
             "value": 102645.32159423828,
             "unit": "ns",
             "range": "± 559.5920608548096"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6bc94a2625bdcdf9647a2d32e770c81bfd59c866",
+          "message": "Bump http-proxy-middleware from 2.0.7 to 2.0.9 in /website (#1173)\n\nBumps [http-proxy-middleware](https://github.com/chimurai/http-proxy-middleware) from 2.0.7 to 2.0.9.\n- [Release notes](https://github.com/chimurai/http-proxy-middleware/releases)\n- [Changelog](https://github.com/chimurai/http-proxy-middleware/blob/v2.0.9/CHANGELOG.md)\n- [Commits](https://github.com/chimurai/http-proxy-middleware/compare/v2.0.7...v2.0.9)\n\n---\nupdated-dependencies:\n- dependency-name: http-proxy-middleware\n  dependency-version: 2.0.9\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-04-17T17:10:15-07:00",
+          "tree_id": "40dbb06a1004557d4c0c15d1969534c297e9a176",
+          "url": "https://github.com/microsoft/garnet/commit/6bc94a2625bdcdf9647a2d32e770c81bfd59c866"
+        },
+        "date": 1744935238560,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 105943.11715901693,
+            "unit": "ns",
+            "range": "± 838.996490928566"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 116522.19635881696,
+            "unit": "ns",
+            "range": "± 974.6758062978284"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 100193.36442871093,
+            "unit": "ns",
+            "range": "± 691.716780668433"
           }
         ]
       }
