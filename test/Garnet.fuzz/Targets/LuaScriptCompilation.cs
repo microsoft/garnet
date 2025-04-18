@@ -31,6 +31,8 @@ namespace Garnet.fuzz.Targets
         /// <inheritdoc/>
         public static void Fuzz(ReadOnlySpan<byte> input)
         {
+            IFuzzerTarget.PrepareInput(ref input);
+
             foreach (var op in Options)
             {
                 try
