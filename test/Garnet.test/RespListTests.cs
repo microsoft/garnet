@@ -1475,9 +1475,21 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var key = "KeyA";
 
-            var result = (int?)db.Execute("LPOS", key, "e");
+            var result = db.Execute("LPOS", key, "nx");
+            ClassicAssert.IsTrue(result.IsNull);
 
-            ClassicAssert.IsNull(result);
+            result = db.Execute("LPOS", key, "nx", "COUNT", "3");
+            ClassicAssert.IsFalse(result.IsNull);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            _ = db.ListLeftPush(key, "e");
+
+            result = db.Execute("LPOS", key, "nx");
+            ClassicAssert.IsTrue(result.IsNull);
+
+            result = db.Execute("LPOS", key, "nx", "COUNT", "3");
+            ClassicAssert.IsFalse(result.IsNull);
+            ClassicAssert.AreEqual(0, result.Length);
         }
 
         [Test]

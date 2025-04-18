@@ -119,8 +119,7 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -148,7 +147,6 @@ namespace Garnet.server
 
             // Get the key for List
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var element = parseState.GetArgSliceByRef(1).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
@@ -166,8 +164,25 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    bool count = false;
+                    for (var i = 2; i < parseState.Count; ++i)
+                    {
+                        if (parseState.GetArgSliceByRef(i).Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                        {
+                            count = true;
+                            break;
+                        }
+                    }
+
+                    if (count)
+                    {
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteNull();
+                    }
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -604,29 +619,21 @@ namespace Garnet.server
 
             var statusOp = storageApi.ListIndex(keyBytes, ref input, ref outputFooter);
 
-            ReadOnlySpan<byte> error = default;
-
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     if (objOutputHeader.result1 == -1)
-                        error = CmdStrings.RESP_ERRNOTFOUND;
+                        WriteNull();
                     break;
                 case GarnetStatus.NOTFOUND:
-                    error = CmdStrings.RESP_ERRNOTFOUND;
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
-            }
-
-            if (!error.IsEmpty)
-            {
-                while (!RespWriteUtils.TryWriteDirect(error, ref dcurr, dend))
-                    SendAndReset();
             }
 
             return true;

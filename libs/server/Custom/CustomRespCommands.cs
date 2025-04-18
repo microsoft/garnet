@@ -121,8 +121,7 @@ namespace Garnet.server
                 else
                 {
                     Debug.Assert(output.Memory == null);
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                 }
             }
 
@@ -182,8 +181,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(output.SpanByteAndMemory.Memory == null);
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                         break;
                     case GarnetStatus.WRONGTYPE:
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -265,7 +263,10 @@ namespace Garnet.server
                 else
                 {
                     Debug.Assert(_output.Memory == null);
-                    output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
+                    if (respProtocolVersion >= 3)
+                        output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
+                    else
+                        output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
                 }
             }
 
@@ -330,7 +331,10 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(_output.SpanByteAndMemory.Memory == null);
-                        output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
+                        if (respProtocolVersion >= 3)
+                            output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP3_NULL_REPLY);
+                        else
+                            output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERRNOTFOUND);
                         break;
                     case GarnetStatus.WRONGTYPE:
                         output = scratchBufferManager.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE);

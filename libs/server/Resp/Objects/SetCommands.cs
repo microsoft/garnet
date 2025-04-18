@@ -86,9 +86,7 @@ namespace Garnet.server
                     var resultCount = 0;
                     if (result != null)
                     {
-                        resultCount = result.Count;
-                        while (!RespWriteUtils.TryWriteArrayLength(resultCount, ref dcurr, dend))
-                            SendAndReset();
+                        WriteSetLength(result.Count);
 
                         foreach (var item in result)
                         {
@@ -246,9 +244,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     // write the size of result
-                    var resultCount = result.Count;
-                    while (!RespWriteUtils.TryWriteArrayLength(resultCount, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSetLength(result.Count);
 
                     foreach (var item in result)
                     {
@@ -534,10 +530,7 @@ namespace Garnet.server
                 // Prepare response
                 if (!parseState.TryGetInt(1, out countParameter) || countParameter < 0)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 if (countParameter == 0)
@@ -565,8 +558,7 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -650,10 +642,7 @@ namespace Garnet.server
                 // Prepare response
                 if (!parseState.TryGetInt(1, out countParameter))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 if (countParameter == 0)
@@ -691,9 +680,7 @@ namespace Garnet.server
                         break;
                     }
 
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -730,29 +717,11 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (output == null || output.Count == 0)
                     {
-                        if (respProtocolVersion == 3)
-                        {
-                            while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        WriteEmptySet();
                     }
                     else
                     {
-                        if (respProtocolVersion == 3)
-                        {
-                            while (!RespWriteUtils.TryWriteSetLength(output.Count, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteArrayLength(output.Count, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        WriteSetLength(output.Count);
 
                         foreach (var item in output)
                         {

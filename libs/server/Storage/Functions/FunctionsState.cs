@@ -19,10 +19,14 @@ namespace Garnet.server
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public EtagState etagState;
+        public byte respProtocolVersion;
         public bool StoredProcMode;
 
+        public bool IsResp3 => respProtocolVersion >= 3;
+
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
-            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer)
+            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer,
+            byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
@@ -31,6 +35,7 @@ namespace Garnet.server
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = garnetObjectSerializer;
             this.etagState = new EtagState();
+            this.respProtocolVersion = respProtocolVersion;
         }
 
         public CustomRawStringFunctions GetCustomCommandFunctions(int id)

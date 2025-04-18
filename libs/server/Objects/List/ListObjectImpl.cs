@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -16,7 +14,6 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class ListObject : IGarnetObject
     {
-
         private void ListRemove(ref ObjectInput input, byte* output)
         {
             var count = input.arg1;
@@ -116,104 +113,65 @@ namespace Garnet.server
             }
         }
 
-        private void ListIndex(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void ListIndex(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             var index = input.arg1;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            output.SetResult1(-1);
 
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            _output.result1 = -1;
-
-            try
+            index = index < 0 ? list.Count + index : index;
+            var item = list.ElementAtOrDefault(index);
+            if (item != default)
             {
-                index = index < 0 ? list.Count + index : index;
-                var item = list.ElementAtOrDefault(index);
-                if (item != default)
-                {
-                    while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _output.result1 = 1;
-                }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+                output.WriteBulkString(item);
+                output.SetResult1(1);
             }
         }
 
-        private void ListRange(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void ListRange(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             var start = input.arg1;
             var stop = input.arg2;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
+            if (0 == list.Count)
             {
-                if (0 == list.Count)
+                // write empty list
+                output.WriteEmptyArray();
+            }
+            else
+            {
+                start = start < 0 ? list.Count + start : start;
+                if (start < 0) start = 0;
+
+                stop = stop < 0 ? list.Count + stop : stop;
+                if (stop < 0) stop = 0;
+                if (stop >= list.Count) stop = list.Count - 1;
+
+                if (start > stop || 0 == list.Count)
                 {
-                    // write empty list
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    output.WriteEmptyArray();
                 }
                 else
                 {
-                    start = start < 0 ? list.Count + start : start;
-                    if (start < 0) start = 0;
+                    var count = stop - start + 1;
+                    output.WriteArrayLength(count);
 
-                    stop = stop < 0 ? list.Count + stop : stop;
-                    if (stop < 0) stop = 0;
-                    if (stop >= list.Count) stop = list.Count - 1;
-
-                    if (start > stop || 0 == list.Count)
+                    var i = -1;
+                    foreach (var bytes in list)
                     {
-                        while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        i++;
+                        if (i < start)
+                            continue;
+                        if (i > stop)
+                            break;
+                        output.WriteBulkString(bytes);
                     }
-                    else
-                    {
-                        var count = stop - start + 1;
-                        while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        var i = -1;
-                        foreach (var bytes in list)
-                        {
-                            i++;
-                            if (i < start)
-                                continue;
-                            if (i > stop)
-                                break;
-                            while (!RespWriteUtils.TryWriteBulkString(bytes, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        _output.result1 = count;
-                    }
+                    output.SetResult1(count);
                 }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
             }
         }
 
@@ -290,290 +248,214 @@ namespace Garnet.server
                 else
                     list.AddLast(value);
 
-                this.UpdateSize(value);
+                UpdateSize(value);
             }
             _output->result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref SpanByteAndMemory output, bool fDelAtHead)
+        private void ListPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion, bool fDelAtHead)
         {
             var count = input.arg1;
 
             if (list.Count < count)
                 count = list.Count;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
+            if (list.Count == 0)
             {
-                if (list.Count == 0)
-                {
-                    while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    count = 0;
-                }
-                else if (count > 1)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-
-                while (count > 0 && list.Any())
-                {
-                    LinkedListNode<byte[]> node = null;
-                    if (fDelAtHead)
-                    {
-                        node = list.First;
-                        list.RemoveFirst();
-                    }
-                    else
-                    {
-                        node = list.Last;
-                        list.RemoveLast();
-                    }
-
-                    UpdateSize(node.Value, false);
-                    while (!RespWriteUtils.TryWriteBulkString(node.Value, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    count--;
-                    _output.result1++;
-                }
+                output.WriteNull();
+                count = 0;
             }
-            finally
+            else if (count > 1)
             {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                output.WriteArrayLength(count);
+            }
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+            while (count > 0 && list.Any())
+            {
+                LinkedListNode<byte[]> node = null;
+                if (fDelAtHead)
+                {
+                    node = list.First;
+                    list.RemoveFirst();
+                }
+                else
+                {
+                    node = list.Last;
+                    list.RemoveLast();
+                }
+
+                UpdateSize(node.Value, false);
+                output.WriteBulkString(node.Value);
+
+                count--;
+                output.IncResult1();
             }
         }
 
-        private void ListSet(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void ListSet(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var output_startptr = output.SpanByte.ToPointer();
-            var output_currptr = output_startptr;
-            var output_end = output_currptr + output.Length;
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
 
-            ObjectOutputHeader _output = default;
-            try
+            if (list.Count == 0)
             {
-                if (list.Count == 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
-
-                // index
-                if (!input.parseState.TryGetInt(0, out var index))
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
-
-                index = index < 0 ? list.Count + index : index;
-
-                if (index > list.Count - 1 || index < 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
-
-                // element
-                var element = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
-
-                var targetNode = index == 0 ? list.First
-                    : (index == list.Count - 1 ? list.Last
-                        : list.Nodes().ElementAtOrDefault(index));
-
-                UpdateSize(targetNode.Value, false);
-                targetNode.Value = element;
-                UpdateSize(targetNode.Value);
-
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref output_currptr, output_end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-
-                _output.result1 = 1;
+                output.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY);
+                return;
             }
-            finally
+
+            // index
+            if (!input.parseState.TryGetInt(0, out var index))
             {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref output_currptr, output_end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(output_currptr - output_startptr);
+                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
             }
+
+            index = index < 0 ? list.Count + index : index;
+
+            if (index > list.Count - 1 || index < 0)
+            {
+                output.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE);
+                return;
+            }
+
+            // element
+            var element = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+
+            var targetNode = index == 0 ? list.First
+                : (index == list.Count - 1 ? list.Last
+                    : list.Nodes().ElementAtOrDefault(index));
+
+            UpdateSize(targetNode.Value, false);
+            targetNode.Value = element;
+            UpdateSize(targetNode.Value);
+
+            output.WriteDirect(CmdStrings.RESP_OK);
+            output.SetResult1(1);
         }
 
-        private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
         {
             var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var output_startptr = output.SpanByte.ToPointer();
-            var output_currptr = output_startptr;
-            var output_end = output_currptr + output.Length;
             var count = 0;
             var isDefaultCount = true;
-            ObjectOutputHeader outputHeader = default;
 
-            try
+            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+
+            if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
             {
-                if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
-                {
-                    while (!RespWriteUtils.TryWriteError(error, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
+                output.WriteError(error);
+                return;
+            }
 
-                if (count < 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
+            if (count < 0)
+            {
+                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
+            }
 
-                if (maxlen < 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
+            if (maxlen < 0)
+            {
+                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
+            }
 
-                if (rank == 0)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                    return;
-                }
+            if (rank == 0)
+            {
+                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
+            }
 
-                count = count == 0 ? list.Count : count;
-                var totalArrayHeaderLen = 0;
-                var lastFoundItemIndex = -1;
+            count = count == 0 ? list.Count : count;
+            var totalArrayHeaderLen = 0;
+            var lastFoundItemIndex = -1;
 
-                if (!isDefaultCount)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(count, ref output_currptr, output_end, out var _, out totalArrayHeaderLen))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                }
+            if (!isDefaultCount)
+            {
+                output.WriteArrayLength(count, out _, out totalArrayHeaderLen);
+            }
 
-                var noOfFoundItem = 0;
-                if (rank > 0)
+            var noOfFoundItem = 0;
+            if (rank > 0)
+            {
+                var currentNode = list.First;
+                var currentIndex = 0;
+                var maxlenIndex = maxlen == 0 ? list.Count : maxlen;
+                do
                 {
-                    var currentNode = list.First;
-                    var currentIndex = 0;
-                    var maxlenIndex = maxlen == 0 ? list.Count : maxlen;
-                    do
+                    var nextNode = currentNode.Next;
+                    if (currentNode.Value.AsSpan().SequenceEqual(element))
                     {
-                        var nextNode = currentNode.Next;
-                        if (currentNode.Value.AsSpan().SequenceEqual(element))
+                        if (rank == 1)
                         {
-                            if (rank == 1)
-                            {
-                                lastFoundItemIndex = currentIndex;
-                                while (!RespWriteUtils.TryWriteInt32(currentIndex, ref output_currptr, output_end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                            lastFoundItemIndex = currentIndex;
+                            output.WriteInt32(currentIndex);
 
-                                noOfFoundItem++;
-                                if (noOfFoundItem == count)
-                                {
-                                    break;
-                                }
-                            }
-                            else
+                            noOfFoundItem++;
+                            if (noOfFoundItem == count)
                             {
-                                rank--;
+                                break;
                             }
                         }
-                        currentNode = nextNode;
-                        currentIndex++;
-                    }
-                    while (currentNode != null && currentIndex < maxlenIndex);
-                }
-                else // (rank < 0)
-                {
-                    var currentNode = list.Last;
-                    var currentIndex = list.Count - 1;
-                    var maxlenIndex = maxlen == 0 ? 0 : list.Count - maxlen;
-                    do
-                    {
-                        var nextNode = currentNode.Previous;
-                        if (currentNode.Value.AsSpan().SequenceEqual(element))
+                        else
                         {
-                            if (rank == -1)
-                            {
-                                lastFoundItemIndex = currentIndex;
-                                while (!RespWriteUtils.TryWriteInt32(currentIndex, ref output_currptr, output_end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                            rank--;
+                        }
+                    }
+                    currentNode = nextNode;
+                    currentIndex++;
+                }
+                while (currentNode != null && currentIndex < maxlenIndex);
+            }
+            else // (rank < 0)
+            {
+                var currentNode = list.Last;
+                var currentIndex = list.Count - 1;
+                var maxlenIndex = maxlen == 0 ? 0 : list.Count - maxlen;
+                do
+                {
+                    var nextNode = currentNode.Previous;
+                    if (currentNode.Value.AsSpan().SequenceEqual(element))
+                    {
+                        if (rank == -1)
+                        {
+                            lastFoundItemIndex = currentIndex;
+                            output.WriteInt32(currentIndex);
 
-                                noOfFoundItem++;
-                                if (noOfFoundItem == count)
-                                {
-                                    break;
-                                }
-                            }
-                            else
+                            noOfFoundItem++;
+                            if (noOfFoundItem == count)
                             {
-                                rank++;
+                                break;
                             }
                         }
-                        currentNode = nextNode;
-                        currentIndex--;
+                        else
+                        {
+                            rank++;
+                        }
                     }
-                    while (currentNode != null && currentIndex >= maxlenIndex);
+                    currentNode = nextNode;
+                    currentIndex--;
                 }
-
-                if (isDefaultCount && noOfFoundItem == 0)
-                {
-                    output_currptr = output_startptr;
-                    while (!RespWriteUtils.TryWriteNull(ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                }
-                else if (!isDefaultCount && noOfFoundItem == 0)
-                {
-                    output_currptr = output_startptr;
-                    while (!RespWriteUtils.TryWriteNullArray(ref output_currptr, output_end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-                }
-                else if (!isDefaultCount && noOfFoundItem != count)
-                {
-                    var newTotalArrayHeaderLen = 0;
-                    var startOutputStartptr = output_startptr;
-                    RespWriteUtils.TryWriteArrayLength(noOfFoundItem, ref startOutputStartptr, output_end, out var _, out newTotalArrayHeaderLen);  // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
-                    Debug.Assert(totalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array lenght in the buffer");
-
-                    if (totalArrayHeaderLen != newTotalArrayHeaderLen)
-                    {
-                        var remainingLength = (output_currptr - output_startptr) - totalArrayHeaderLen;
-                        Buffer.MemoryCopy(output_startptr + totalArrayHeaderLen, output_startptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
-                        output_currptr = output_currptr - (totalArrayHeaderLen - newTotalArrayHeaderLen);
-                    }
-                }
-
-                outputHeader.result1 = noOfFoundItem;
+                while (currentNode != null && currentIndex >= maxlenIndex);
             }
-            finally
+
+            if (isDefaultCount && noOfFoundItem == 0)
             {
-                while (!RespWriteUtils.TryWriteDirect(ref outputHeader, ref output_currptr, output_end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
-
-                if (isMemory)
-                    ptrHandle.Dispose();
-                output.Length = (int)(output_currptr - output_startptr);
+                output.ResetPosition();
+                output.WriteNull();
             }
+            else if (!isDefaultCount && noOfFoundItem == 0)
+            {
+                output.ResetPosition();
+                output.WriteEmptyArray();
+            }
+            else if (!isDefaultCount && noOfFoundItem != count)
+            {
+                output.DecreaseArrayLength(noOfFoundItem, totalArrayHeaderLen);
+            }
+
+            output.SetResult1(noOfFoundItem);
         }
 
         private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)

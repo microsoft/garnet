@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        internal byte respProtocolVersion = 2;
+        public byte respProtocolVersion { get; private set; } = ServerOptions.DEFAULT_RESP_VERSION;
 
         /// <summary>
         /// Client name for the session
@@ -315,6 +315,16 @@ namespace Garnet.server
         {
             this._userHandle = userHandle;
             clusterSession?.SetUserHandle(userHandle);
+        }
+
+        /// <summary>
+        /// Update RESP protocol version used by session
+        /// </summary>
+        /// <param name="_respProtocolVersion"></param>
+        public void UpdateRespProtocolVersion(byte _respProtocolVersion)
+        {
+            this.respProtocolVersion = _respProtocolVersion;
+            this.storageSession.UpdateRespProtocolVersion(respProtocolVersion);
         }
 
         public override void Dispose()
@@ -1304,9 +1314,39 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteNull()
+        private void WriteEmptySet()
         {
-            if (respProtocolVersion == 3)
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteMapLength(int count)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteMapLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count * 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteNull()
+        {
+            if (respProtocolVersion >= 3)
             {
                 while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
                     SendAndReset();
@@ -1314,6 +1354,21 @@ namespace Garnet.server
             else
             {
                 while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteSetLength(int count)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteSetLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
                     SendAndReset();
             }
         }
@@ -1525,7 +1580,7 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
@@ -1547,6 +1602,8 @@ namespace Garnet.server
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;
+
+            this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
     }
 }

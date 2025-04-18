@@ -14,6 +14,8 @@ namespace Garnet.server
     /// </summary>
     public class ServerOptions
     {
+        public const byte DEFAULT_RESP_VERSION = 2;
+
         /// <summary>
         /// Endpoints to bind server to.
         /// </summary>

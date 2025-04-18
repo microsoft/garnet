@@ -11,32 +11,6 @@ namespace Garnet.server
 {
     internal static class ObjectUtils
     {
-        public static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
-        {
-            int length = Math.Max(output.Length * 2, 1024);
-            var newMem = MemoryPool<byte>.Shared.Rent(length);
-            var newPtrHandle = newMem.Memory.Pin();
-            var newPtr = (byte*)newPtrHandle.Pointer;
-            int bytesWritten = (int)(curr - ptr);
-            Buffer.MemoryCopy(ptr, newPtr, length, bytesWritten);
-            if (isMemory)
-            {
-                ptrHandle.Dispose();
-                output.Memory.Dispose();
-            }
-            else
-            {
-                isMemory = true;
-                output.ConvertToHeap();
-            }
-            ptrHandle = newPtrHandle;
-            ptr = newPtr;
-            output.Memory = newMem;
-            output.Length = length;
-            curr = ptr + bytesWritten;
-            end = ptr + output.Length;
-        }
-
         /// <summary>
         /// Reads and parses scan parameters from RESP format
         /// </summary>
@@ -107,7 +81,7 @@ namespace Garnet.server
         /// <param name="items"></param>
         /// <param name="cursor"></param>
         /// <param name="output"></param>
-        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output)
+        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -121,30 +95,40 @@ namespace Garnet.server
             try
             {
                 while (!RespWriteUtils.TryWriteScanOutputHeader(cursor, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (items.Count == 0)
                 {
                     // Empty array
                     while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                        ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 else
                 {
                     // Write size of the array
                     while (!RespWriteUtils.TryWriteArrayLength(items.Count, ref curr, end))
-                        ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     foreach (var item in items)
                     {
                         if (item != null)
                         {
                             while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
-                                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         else
-                            while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        {
+                            if (respProtocolVersion >= 3)
+                            {
+                                while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
+                                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteNull(ref curr, end))
+                                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
+                        }
                     }
                 }
                 _output.result1 = items.Count;
@@ -152,7 +136,7 @@ namespace Garnet.server
             finally
             {
                 while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
@@ -178,12 +162,12 @@ namespace Garnet.server
             try
             {
                 while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
             {
                 while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);

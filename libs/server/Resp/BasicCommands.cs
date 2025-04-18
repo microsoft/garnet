@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
@@ -45,8 +44,7 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                     break;
             }
 
@@ -125,8 +123,7 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                     break;
             }
 
@@ -165,8 +162,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                         break;
                 }
             }
@@ -226,8 +222,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                            WriteNull();
                             o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                         }
                         else
@@ -258,8 +253,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
             }
@@ -685,8 +679,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
 
@@ -702,8 +695,7 @@ namespace Garnet.server
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 SpanByteAndMemory outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                GarnetStatus status = storageApi.SET_Conditional(ref key,
-                    ref input, ref outputBuffer);
+                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input, ref outputBuffer);
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 bool ok = status != GarnetStatus.NOTFOUND || withEtag;
@@ -717,8 +709,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                 }
 
                 return true;
@@ -1109,20 +1100,13 @@ namespace Garnet.server
                 }
             }
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var startptr = output.SpanByte.ToPointer();
-            var currptr = startptr;
-            var endptr = startptr + output.Length;
 
-            while (!RespWriteUtils.TryWriteArrayLength(docsCount * 2, ref currptr, endptr))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref startptr, ref ptrHandle, ref currptr, ref endptr);
-
-            while (!RespWriteUtils.TryWriteAsciiDirect(resultSb.ToString(), ref currptr, endptr))
-                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref startptr, ref ptrHandle, ref currptr, ref endptr);
-
-            output.Length = (int)(currptr - startptr);
+            using (var writer = new RespMemoryWriter(respProtocolVersion, ref output))
+            {
+                writer.WriteMapLength(docsCount);
+                writer.WriteAsciiDirect(resultSb.ToString());
+            }
 
             if (!output.IsSpanByte)
                 SendAndReset(output.Memory, output.Length);
@@ -1245,8 +1229,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(keys[i].Span, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteArrayLength(flags[i].Length, ref dcurr, dend))
-                    SendAndReset();
+                WriteSetLength(flags[i].Length);
 
                 foreach (var flag in flags[i])
                 {
@@ -1457,8 +1440,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                    SendAndReset();
+                WriteNull();
             }
 
             return true;
@@ -1546,7 +1528,7 @@ namespace Garnet.server
                     return;
                 }
 
-                this.respProtocolVersion = respProtocolVersion.Value;
+                this.UpdateRespProtocolVersion(respProtocolVersion.Value);
             }
 
             if (!username.IsEmpty)
