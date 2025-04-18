@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
@@ -67,6 +68,16 @@ namespace Garnet.common
         public void WriteArrayLength(int len)
         {
             while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end))
+                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
+
+        /// <summary>
+        /// Writes an array length to memory.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteArrayLength(int len, out int numDigits, out int totalLen)
+        {
+            while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end, out numDigits, out totalLen))
                 ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 
@@ -248,13 +259,13 @@ namespace Garnet.common
                 ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 
-        private static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
+        public static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
         {
-            int length = Math.Max(output.Length * 2, 1024);
+            var length = Math.Max(output.Length * 2, 1024);
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();
             var newPtr = (byte*)newPtrHandle.Pointer;
-            int bytesWritten = (int)(curr - ptr);
+            var bytesWritten = (int)(curr - ptr);
             Buffer.MemoryCopy(ptr, newPtr, length, bytesWritten);
             if (isMemory)
             {
@@ -272,6 +283,36 @@ namespace Garnet.common
             output.Length = length;
             curr = ptr + bytesWritten;
             end = ptr + output.Length;
+        }
+
+        /// <summary>
+        /// Decrease array length.
+        /// </summary>
+        /// <param name="newCount"></param>
+        /// <param name="oldArrayLen"></param>
+        /// <param name="arrayPos"></param>
+        public void DecreaseArrayLength(int newCount, int oldArrayLen, int arrayPos = 0)
+        {
+            var startOutputStartptr = ptr + arrayPos;
+
+            // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
+            _ = RespWriteUtils.TryWriteArrayLength(newCount, ref startOutputStartptr, end, out _, out var newTotalArrayHeaderLen);
+            Debug.Assert(oldArrayLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array length in the buffer");
+
+            if (oldArrayLen != newTotalArrayHeaderLen)
+            {
+                var remainingLength = curr - startOutputStartptr - oldArrayLen;
+                Buffer.MemoryCopy(startOutputStartptr + oldArrayLen, startOutputStartptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
+                curr += newTotalArrayHeaderLen - oldArrayLen;
+            }
+        }
+
+        /// <summary>
+        /// Reset position to starting position
+        /// </summary>
+        public void ResetPosition()
+        {
+            curr = ptr;
         }
 
         public void Dispose()
