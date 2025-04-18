@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744944788162,
+  "lastUpdate": 1744944857284,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -26956,6 +26956,270 @@ window.BENCHMARK_DATA = {
             "value": 280378.434382512,
             "unit": "ns",
             "range": "± 636.7639090480649"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kmontrose@microsoft.com",
+            "name": "kevin-montrose",
+            "username": "kevin-montrose"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "06bf4e5621459ecf6ea8ea41f075d7578d8abdb1",
+          "message": "fixes for fuzzers, some assumptions about pinning were not held (#1174)",
+          "timestamp": "2025-04-17T22:36:27-04:00",
+          "tree_id": "ef3c66076a04b5be96bad8973f36f1071fc7fbb2",
+          "url": "https://github.com/microsoft/garnet/commit/06bf4e5621459ecf6ea8ea41f075d7578d8abdb1"
+        },
+        "date": 1744944655835,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptLoad(Params: Managed,Limit)",
+            "value": 141569.28859863282,
+            "unit": "ns",
+            "range": "± 1493.2574799958304"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsTrue(Params: Managed,Limit)",
+            "value": 18823.68393758138,
+            "unit": "ns",
+            "range": "± 21.31333428768283"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsFalse(Params: Managed,Limit)",
+            "value": 16961.351174926756,
+            "unit": "ns",
+            "range": "± 178.10536889766186"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.Eval(Params: Managed,Limit)",
+            "value": 143653.9478062221,
+            "unit": "ns",
+            "range": "± 461.3231346440296"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.EvalSha(Params: Managed,Limit)",
+            "value": 45976.43134416853,
+            "unit": "ns",
+            "range": "± 169.738070196488"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.SmallScript(Params: Managed,Limit)",
+            "value": 133006.01239013672,
+            "unit": "ns",
+            "range": "± 341.25027086731365"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.LargeScript(Params: Managed,Limit)",
+            "value": 10443779.823660715,
+            "unit": "ns",
+            "range": "± 136897.949664747"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ArrayReturn(Params: Managed,Limit)",
+            "value": 277818.61035863904,
+            "unit": "ns",
+            "range": "± 13310.040869846356"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptLoad(Params: Managed,None)",
+            "value": 138212.80796595983,
+            "unit": "ns",
+            "range": "± 390.1415969708558"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsTrue(Params: Managed,None)",
+            "value": 18678.1632608267,
+            "unit": "ns",
+            "range": "± 17.196454709409295"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsFalse(Params: Managed,None)",
+            "value": 16778.13982035319,
+            "unit": "ns",
+            "range": "± 71.12659660353229"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.Eval(Params: Managed,None)",
+            "value": 144329.71518179087,
+            "unit": "ns",
+            "range": "± 126.33674409868208"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.EvalSha(Params: Managed,None)",
+            "value": 45695.608651297436,
+            "unit": "ns",
+            "range": "± 167.82632696813226"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.SmallScript(Params: Managed,None)",
+            "value": 134179.9702711839,
+            "unit": "ns",
+            "range": "± 74.82645772295048"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.LargeScript(Params: Managed,None)",
+            "value": 10521885.8828125,
+            "unit": "ns",
+            "range": "± 132322.60494808847"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ArrayReturn(Params: Managed,None)",
+            "value": 288039.83037692396,
+            "unit": "ns",
+            "range": "± 13671.038951804325"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptLoad(Params: Native,None)",
+            "value": 140726.37377929688,
+            "unit": "ns",
+            "range": "± 338.19578230219736"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsTrue(Params: Native,None)",
+            "value": 18319.028002421062,
+            "unit": "ns",
+            "range": "± 34.85442661672317"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsFalse(Params: Native,None)",
+            "value": 16959.475772564227,
+            "unit": "ns",
+            "range": "± 41.589844617747666"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.Eval(Params: Native,None)",
+            "value": 153259.0679234096,
+            "unit": "ns",
+            "range": "± 213.50193639769947"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.EvalSha(Params: Native,None)",
+            "value": 45580.96714070638,
+            "unit": "ns",
+            "range": "± 154.15029082308445"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.SmallScript(Params: Native,None)",
+            "value": 127247.84087665264,
+            "unit": "ns",
+            "range": "± 310.8077416477985"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.LargeScript(Params: Native,None)",
+            "value": 8592781.107142856,
+            "unit": "ns",
+            "range": "± 66924.99933687998"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ArrayReturn(Params: Native,None)",
+            "value": 256623.2489188058,
+            "unit": "ns",
+            "range": "± 539.273477252732"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptLoad(Params: Tracked,Limit)",
+            "value": 139647.84734235491,
+            "unit": "ns",
+            "range": "± 372.0789402481448"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsTrue(Params: Tracked,Limit)",
+            "value": 18978.15238080706,
+            "unit": "ns",
+            "range": "± 172.83177043083484"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsFalse(Params: Tracked,Limit)",
+            "value": 16886.886034647625,
+            "unit": "ns",
+            "range": "± 9.447906668715673"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.Eval(Params: Tracked,Limit)",
+            "value": 143510.90904017858,
+            "unit": "ns",
+            "range": "± 307.29646621642337"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.EvalSha(Params: Tracked,Limit)",
+            "value": 44843.98685564314,
+            "unit": "ns",
+            "range": "± 116.12977202795743"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.SmallScript(Params: Tracked,Limit)",
+            "value": 129771.87376302083,
+            "unit": "ns",
+            "range": "± 511.2577528726248"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.LargeScript(Params: Tracked,Limit)",
+            "value": 9638939.158482144,
+            "unit": "ns",
+            "range": "± 40327.699511991224"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ArrayReturn(Params: Tracked,Limit)",
+            "value": 281727.7364583333,
+            "unit": "ns",
+            "range": "± 1413.750570144414"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptLoad(Params: Tracked,None)",
+            "value": 140211.8324707031,
+            "unit": "ns",
+            "range": "± 866.4134540984547"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsTrue(Params: Tracked,None)",
+            "value": 18800.57720743815,
+            "unit": "ns",
+            "range": "± 70.40990559580705"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ScriptExistsFalse(Params: Tracked,None)",
+            "value": 17536.612424410305,
+            "unit": "ns",
+            "range": "± 9.220299786579602"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.Eval(Params: Tracked,None)",
+            "value": 143734.32893254206,
+            "unit": "ns",
+            "range": "± 424.31773946339894"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.EvalSha(Params: Tracked,None)",
+            "value": 44849.55635782878,
+            "unit": "ns",
+            "range": "± 173.59557198418358"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.SmallScript(Params: Tracked,None)",
+            "value": 130267.45314378005,
+            "unit": "ns",
+            "range": "± 218.18425307756527"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.LargeScript(Params: Tracked,None)",
+            "value": 9737700.965401785,
+            "unit": "ns",
+            "range": "± 32648.212352595496"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ScriptOperations.ArrayReturn(Params: Tracked,None)",
+            "value": 280695.7715169271,
+            "unit": "ns",
+            "range": "± 1084.9163077568778"
           }
         ]
       }
