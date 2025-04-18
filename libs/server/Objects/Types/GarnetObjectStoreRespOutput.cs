@@ -31,6 +31,9 @@ namespace Garnet.server
         internal void WriteArrayLength(int len) => writer.WriteArrayLength(len);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void WriteArrayLength(int len, out int numDigits, out int totalLen) => writer.WriteArrayLength(len, out numDigits, out totalLen);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void WriteBulkString(ReadOnlySpan<byte> item) => writer.WriteBulkString(item);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -70,6 +73,13 @@ namespace Garnet.server
         internal void WriteSetLength(int len) => writer.WriteSetLength(len);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ResetPosition() => writer.ResetPosition();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void DecreaseArrayLength(int newCount, int oldArrayLen, int arrayPos = 0) =>
+            writer.DecreaseArrayLength(newCount, oldArrayLen, arrayPos);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void IncResult1()
         {
             outputHeader.result1++;
@@ -84,7 +94,7 @@ namespace Garnet.server
         public void Dispose()
         {
             while (!RespWriteUtils.TryWriteDirect(ref outputHeader, ref writer.curr, writer.end))
-                ObjectUtils.ReallocateOutput(ref writer.output, ref writer.isMemory, ref writer.ptr, ref writer.ptrHandle, ref writer.curr, ref writer.end);
+                RespMemoryWriter.ReallocateOutput(ref writer.output, ref writer.isMemory, ref writer.ptr, ref writer.ptrHandle, ref writer.curr, ref writer.end);
 
             writer.Dispose();
         }
