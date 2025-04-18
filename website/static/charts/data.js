@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1744935581350,
+  "lastUpdate": 1744935583868,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -8174,6 +8174,102 @@ window.BENCHMARK_DATA = {
             "value": 80116.33415120443,
             "unit": "ns",
             "range": "± 458.1231922089197"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6bc94a2625bdcdf9647a2d32e770c81bfd59c866",
+          "message": "Bump http-proxy-middleware from 2.0.7 to 2.0.9 in /website (#1173)\n\nBumps [http-proxy-middleware](https://github.com/chimurai/http-proxy-middleware) from 2.0.7 to 2.0.9.\n- [Release notes](https://github.com/chimurai/http-proxy-middleware/releases)\n- [Changelog](https://github.com/chimurai/http-proxy-middleware/blob/v2.0.9/CHANGELOG.md)\n- [Commits](https://github.com/chimurai/http-proxy-middleware/compare/v2.0.7...v2.0.9)\n\n---\nupdated-dependencies:\n- dependency-name: http-proxy-middleware\n  dependency-version: 2.0.9\n  dependency-type: indirect\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2025-04-17T17:10:15-07:00",
+          "tree_id": "40dbb06a1004557d4c0c15d1969534c297e9a176",
+          "url": "https://github.com/microsoft/garnet/commit/6bc94a2625bdcdf9647a2d32e770c81bfd59c866"
+        },
+        "date": 1744935384892,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomRawStringCommand(Params: ACL)",
+            "value": 32943.19055645283,
+            "unit": "ns",
+            "range": "± 193.89901235754084"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomObjectCommand(Params: ACL)",
+            "value": 165216.84003557477,
+            "unit": "ns",
+            "range": "± 707.3786036876157"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomTransaction(Params: ACL)",
+            "value": 112466.64440917969,
+            "unit": "ns",
+            "range": "± 395.85992983519185"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomProcedure(Params: ACL)",
+            "value": 81484.0945085798,
+            "unit": "ns",
+            "range": "± 653.4894528912755"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomRawStringCommand(Params: AOF)",
+            "value": 33148.50179349459,
+            "unit": "ns",
+            "range": "± 161.7621927758111"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomObjectCommand(Params: AOF)",
+            "value": 171683.66287667412,
+            "unit": "ns",
+            "range": "± 669.8213480455747"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomTransaction(Params: AOF)",
+            "value": 130428.98456280048,
+            "unit": "ns",
+            "range": "± 698.5426389224322"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomProcedure(Params: AOF)",
+            "value": 106396.9348050631,
+            "unit": "ns",
+            "range": "± 232.03134303140575"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomRawStringCommand(Params: None)",
+            "value": 33992.885561116535,
+            "unit": "ns",
+            "range": "± 121.09092960220924"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomObjectCommand(Params: None)",
+            "value": 161601.2009765625,
+            "unit": "ns",
+            "range": "± 1145.52110956137"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomTransaction(Params: None)",
+            "value": 112282.32270100912,
+            "unit": "ns",
+            "range": "± 490.50353837730415"
+          },
+          {
+            "name": "BDN.benchmark.Operations.CustomOperations.CustomProcedure(Params: None)",
+            "value": 77512.75725446429,
+            "unit": "ns",
+            "range": "± 194.80409358017843"
           }
         ]
       }
