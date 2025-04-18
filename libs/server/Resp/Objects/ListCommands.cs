@@ -147,7 +147,6 @@ namespace Garnet.server
 
             // Get the key for List
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var element = parseState.GetArgSliceByRef(1).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
             // Prepare input
@@ -165,7 +164,25 @@ namespace Garnet.server
                     ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteNull();
+                    bool count = false;
+                    for (var i = 2; i < parseState.Count; ++i)
+                    {
+                        if (parseState.GetArgSliceByRef(i).Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                        {
+                            count = true;
+                            break;
+                        }
+                    }
+
+                    if (count)
+                    {
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteNull();
+                    }
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
