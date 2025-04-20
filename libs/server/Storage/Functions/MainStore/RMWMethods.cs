@@ -26,6 +26,7 @@ namespace Garnet.server
                 case RespCommand.EXPIREAT:
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
+                case RespCommand.DELIFEXPIREDINMEMORY:
                 case RespCommand.GETEX:
                     return false;
                 case RespCommand.SETEXXX:
@@ -103,7 +104,8 @@ namespace Garnet.server
 
                     long clientSentEtag = input.parseState.GetLong(1);
 
-                    clientSentEtag++;
+                    if (cmd == RespCommand.SETIFMATCH)
+                        clientSentEtag++;
 
                     recordInfo.SetHasETag();
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -397,7 +399,7 @@ namespace Garnet.server
 
                     recordInfo.SetHasETag();
 
-                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : (etagFromClient + 1);
+                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : etagFromClient;
 
                     long oldExtraMetadata = value.ExtraMetadata;
 
@@ -824,6 +826,17 @@ namespace Garnet.server
                     }
 
                     return false;
+                case RespCommand.DELIFEXPIREDINMEMORY:
+                    // Only if the key has expired, will we delete it.
+                    if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
+                    {
+                        // setting the action and returning false will tombstone this record
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        // reset etag state that may have been initialized earlier,
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+                    break;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -900,6 +913,8 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFEXPIREDINMEMORY:
+                    return false;
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     long etagToCheckWith = input.parseState.GetLong(1);
@@ -1049,10 +1064,12 @@ namespace Garnet.server
 
                     long etagFromClient = input.parseState.GetLong(1);
 
-                    // change the current etag to the the etag sent from client since rest remains same
-                    if (cmd == RespCommand.SETIFGREATER)
-                        functionsState.etagState.etag = etagFromClient;
 
+                    // outside the switch statment we always increment the Etag, by setting it one below we keep logic consistent with rest of SETIFMATCH
+                    if (cmd == RespCommand.SETIFGREATER)
+                        functionsState.etagState.etag = etagFromClient - 1;
+
+                    // Write back one incremented since for SETIFGREATER this is what was sent, and for SETIFMATCH this is the new ETag
                     long newEtag = functionsState.etagState.etag + 1;
 
                     recordInfo.SetHasETag();

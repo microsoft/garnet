@@ -27,7 +27,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
-    public sealed class StoreWrapper
+    public sealed partial class StoreWrapper
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
@@ -765,6 +765,10 @@ namespace Garnet.server
             {
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
+
+            // TODO: ACTIVE EXPIRE MAIN STORE AND OBJECT STORE
+            Task.Run(async () => await MainStoreGabageCollectExpiredKeys(), ctsCommit.Token);
+            Task.Run(async () => await ObjectStoreGabageCollectExpiredKeys(), ctsCommit.Token);
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
