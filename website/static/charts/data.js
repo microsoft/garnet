@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1745160708106,
+  "lastUpdate": 1745160716765,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -7976,6 +7976,54 @@ window.BENCHMARK_DATA = {
             "value": 29614.108479817707,
             "unit": "ns",
             "range": "± 54.6286354756069"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "nightroman@gmail.com",
+            "name": "Roman Kuzmin",
+            "username": "nightroman"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "83b202a339c73fad64918d3f85b5f4ef642f6df8",
+          "message": "Docs: use plus signs for commands with links. (#1175)",
+          "timestamp": "2025-04-20T07:42:51-07:00",
+          "tree_id": "1697ee5b26ded92e3d98070bacca54bc950e95c7",
+          "url": "https://github.com/microsoft/garnet/commit/83b202a339c73fad64918d3f85b5f4ef642f6df8"
+        },
+        "date": 1745160526594,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Get(Params: None)",
+            "value": 37644.129943847656,
+            "unit": "ns",
+            "range": "± 23.06890979074696"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Set(Params: None)",
+            "value": 33576.05651855469,
+            "unit": "ns",
+            "range": "± 53.01072211170828"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MGet(Params: None)",
+            "value": 30632.55135672433,
+            "unit": "ns",
+            "range": "± 23.845350145057417"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MSet(Params: None)",
+            "value": 30172.847696940105,
+            "unit": "ns",
+            "range": "± 66.51667820234931"
           }
         ]
       }
