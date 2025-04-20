@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1745161151564,
+  "lastUpdate": 1745161200388,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -30890,6 +30890,174 @@ window.BENCHMARK_DATA = {
             "value": 272852.9122488839,
             "unit": "ns",
             "range": "± 824.7408777520799"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "nightroman@gmail.com",
+            "name": "Roman Kuzmin",
+            "username": "nightroman"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "83b202a339c73fad64918d3f85b5f4ef642f6df8",
+          "message": "Docs: use plus signs for commands with links. (#1175)",
+          "timestamp": "2025-04-20T07:42:51-07:00",
+          "tree_id": "1697ee5b26ded92e3d98070bacca54bc950e95c7",
+          "url": "https://github.com/microsoft/garnet/commit/83b202a339c73fad64918d3f85b5f4ef642f6df8"
+        },
+        "date": 1745160987648,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringReadCommand(Params: ACL)",
+            "value": 32960.53379603795,
+            "unit": "ns",
+            "range": "± 41.87698808230322"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringRmwCommand(Params: ACL)",
+            "value": 49155.7851155599,
+            "unit": "ns",
+            "range": "± 60.79020749326611"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjRmwCommand(Params: ACL)",
+            "value": 72884.54402043269,
+            "unit": "ns",
+            "range": "± 76.21769706247098"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjReadCommand(Params: ACL)",
+            "value": 53749.162409855766,
+            "unit": "ns",
+            "range": "± 66.86505014506652"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpProc(Params: ACL)",
+            "value": 17836.752319335938,
+            "unit": "ns",
+            "range": "± 20.733948347841586"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpTxn(Params: ACL)",
+            "value": 28171.627807617188,
+            "unit": "ns",
+            "range": "± 24.430551428463488"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonGetCommand(Params: ACL)",
+            "value": 163428.2924107143,
+            "unit": "ns",
+            "range": "± 504.6027833404456"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonSetCommand(Params: ACL)",
+            "value": 284498.1005859375,
+            "unit": "ns",
+            "range": "± 1463.9821513723555"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringReadCommand(Params: AOF)",
+            "value": 32006.407819475447,
+            "unit": "ns",
+            "range": "± 31.108847231937563"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringRmwCommand(Params: AOF)",
+            "value": 55132.76497977121,
+            "unit": "ns",
+            "range": "± 120.20723926765018"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjRmwCommand(Params: AOF)",
+            "value": 75394.1825358073,
+            "unit": "ns",
+            "range": "± 170.1651728065084"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjReadCommand(Params: AOF)",
+            "value": 53881.1903889974,
+            "unit": "ns",
+            "range": "± 74.11785041332523"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpProc(Params: AOF)",
+            "value": 17856.51631673177,
+            "unit": "ns",
+            "range": "± 29.022955188791144"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpTxn(Params: AOF)",
+            "value": 34020.90846470424,
+            "unit": "ns",
+            "range": "± 123.75543847081414"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonGetCommand(Params: AOF)",
+            "value": 160022.24446614584,
+            "unit": "ns",
+            "range": "± 459.63275709300035"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonSetCommand(Params: AOF)",
+            "value": 298136.0807291667,
+            "unit": "ns",
+            "range": "± 1392.8890762627577"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringReadCommand(Params: None)",
+            "value": 33357.65263484074,
+            "unit": "ns",
+            "range": "± 37.81831421963069"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringRmwCommand(Params: None)",
+            "value": 52135.23210797991,
+            "unit": "ns",
+            "range": "± 97.1235375394888"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjRmwCommand(Params: None)",
+            "value": 73953.15813337054,
+            "unit": "ns",
+            "range": "± 59.24337976808863"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjReadCommand(Params: None)",
+            "value": 52972.43428548177,
+            "unit": "ns",
+            "range": "± 49.99999850278807"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpProc(Params: None)",
+            "value": 17659.915630634016,
+            "unit": "ns",
+            "range": "± 22.132703864280955"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpTxn(Params: None)",
+            "value": 30011.720041128305,
+            "unit": "ns",
+            "range": "± 12.597559616887448"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonGetCommand(Params: None)",
+            "value": 159169.56961495537,
+            "unit": "ns",
+            "range": "± 299.2961720501556"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonSetCommand(Params: None)",
+            "value": 282009.7916666667,
+            "unit": "ns",
+            "range": "± 484.83978644525723"
           }
         ]
       }
