@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1745160723677,
+  "lastUpdate": 1745160725425,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -9450,6 +9450,90 @@ window.BENCHMARK_DATA = {
             "value": 372.0527589461383,
             "unit": "ns",
             "range": "± 7.537317325186084"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "nightroman@gmail.com",
+            "name": "Roman Kuzmin",
+            "username": "nightroman"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "83b202a339c73fad64918d3f85b5f4ef642f6df8",
+          "message": "Docs: use plus signs for commands with links. (#1175)",
+          "timestamp": "2025-04-20T07:42:51-07:00",
+          "tree_id": "1697ee5b26ded92e3d98070bacca54bc950e95c7",
+          "url": "https://github.com/microsoft/garnet/commit/83b202a339c73fad64918d3f85b5f4ef642f6df8"
+        },
+        "date": 1745160520862,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Set(Params: None)",
+            "value": 239.35323878696985,
+            "unit": "ns",
+            "range": "± 1.138938453041907"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetEx(Params: None)",
+            "value": 280.6955121244703,
+            "unit": "ns",
+            "range": "± 1.3515759451503486"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetNx(Params: None)",
+            "value": 295.8919581572215,
+            "unit": "ns",
+            "range": "± 0.24577720331344802"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetXx(Params: None)",
+            "value": 316.2739149240347,
+            "unit": "ns",
+            "range": "± 0.3925751851675504"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetFound(Params: None)",
+            "value": 229.81356704235077,
+            "unit": "ns",
+            "range": "± 0.34182237226991824"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetNotFound(Params: None)",
+            "value": 192.8265923976898,
+            "unit": "ns",
+            "range": "± 0.9033370223413721"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Increment(Params: None)",
+            "value": 297.6521544456482,
+            "unit": "ns",
+            "range": "± 0.38600442859942696"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Decrement(Params: None)",
+            "value": 307.76046065489453,
+            "unit": "ns",
+            "range": "± 0.46659990449700683"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.IncrementBy(Params: None)",
+            "value": 351.60413878304615,
+            "unit": "ns",
+            "range": "± 1.4421892218103167"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.DecrementBy(Params: None)",
+            "value": 370.64885568618774,
+            "unit": "ns",
+            "range": "± 1.3692478357714883"
           }
         ]
       }
