@@ -103,7 +103,8 @@ namespace Garnet.server
 
                     long clientSentEtag = input.parseState.GetLong(1);
 
-                    clientSentEtag++;
+                    if (cmd == RespCommand.SETIFMATCH)
+                        clientSentEtag++;
 
                     recordInfo.SetHasETag();
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -397,7 +398,7 @@ namespace Garnet.server
 
                     recordInfo.SetHasETag();
 
-                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : (etagFromClient + 1);
+                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : etagFromClient;
 
                     long oldExtraMetadata = value.ExtraMetadata;
 
@@ -1049,10 +1050,12 @@ namespace Garnet.server
 
                     long etagFromClient = input.parseState.GetLong(1);
 
-                    // change the current etag to the the etag sent from client since rest remains same
-                    if (cmd == RespCommand.SETIFGREATER)
-                        functionsState.etagState.etag = etagFromClient;
 
+                    // outside the switch statment we always increment the Etag, by setting it one below we keep logic consistent with rest of SETIFMATCH
+                    if (cmd == RespCommand.SETIFGREATER)
+                        functionsState.etagState.etag = etagFromClient - 1;
+
+                    // Write back one incremented since for SETIFGREATER this is what was sent, and for SETIFMATCH this is the new ETag
                     long newEtag = functionsState.etagState.etag + 1;
 
                     recordInfo.SetHasETag();
