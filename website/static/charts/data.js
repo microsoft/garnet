@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1745160678010,
+  "lastUpdate": 1745160680538,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -9572,6 +9572,48 @@ window.BENCHMARK_DATA = {
             "value": 105776.45365397136,
             "unit": "ns",
             "range": "± 172.61232152747812"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "nightroman@gmail.com",
+            "name": "Roman Kuzmin",
+            "username": "nightroman"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "83b202a339c73fad64918d3f85b5f4ef642f6df8",
+          "message": "Docs: use plus signs for commands with links. (#1175)",
+          "timestamp": "2025-04-20T07:42:51-07:00",
+          "tree_id": "1697ee5b26ded92e3d98070bacca54bc950e95c7",
+          "url": "https://github.com/microsoft/garnet/commit/83b202a339c73fad64918d3f85b5f4ef642f6df8"
+        },
+        "date": 1745160494046,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: ACL)",
+            "value": 109611.35009765625,
+            "unit": "ns",
+            "range": "± 189.55570327141905"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: AOF)",
+            "value": 118377.17610677083,
+            "unit": "ns",
+            "range": "± 412.13502889207246"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ObjectOperations.LPushPop(Params: None)",
+            "value": 108456.298828125,
+            "unit": "ns",
+            "range": "± 270.8831646288054"
           }
         ]
       }
