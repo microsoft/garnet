@@ -1,0 +1,271 @@
+Prompt to write the program
+
+I need a python script that can go through and remove duplicates from a JSON file. 
+It starts with the section that has the formal name that has "    "(ubuntu-latest  net8.0 Release)" in it. An example of that line would be:   "Lua.LuaScripts (ubuntu-latest  net8.0 Release)": [
+After it finds that name, it needs to go to the "benches:" section (example of that is:  "benches": [)
+Once in the benches section of the json file, it gets the string associated with the first name ("name:").  The next line is "value:" so get that value.  After that, you go to the next "name:".  If the string for that is the same as the first name, then you know you have a duplicate. So get the value of the "value:" line after that second name.  Determine which "value:" is higher and delete the whole section of the name.  An example of the section of that name is:
+          {
+            "name": "BDN.benchmark.Lua.LuaScripts.Script1(Params: Managed,Limit)",
+            "value": 267.33223384221395,
+            "unit": "ns",
+            "range": "± 1.0644033814704676"
+          },
+After deleting it, go to the next "name:" and do the same thing.  Then go to the next "benches" and do the same thing.  Continue to loop through until you get to the next "formal name".  You will know you are at the next formal name because it is a line that has ".0 Release)" in it.
+
+The JSON file is 1 million lines long ... I don't think we can load it into a json.load(file)
+
+instead of deleting the lines, how about just marking it with a **** at the beginning to show where the lines will be deleted.  Then I can go through and delete them later.  So the output will be a new JSON file with the duplicates marked with a **** at the beginning of the line.  The output file will be the same name as the input file but with a .out at the end of the name.
+
+If it find the value: is higher, then it needs to delete that whole section that contains that high value. A section looks like:
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16766.165815080916,
+            "unit": "ns",
+            "range": "± 26.330193903782202"
+          },
+
+Does that change the code?
+
+Actually ... if you are going to save the new cleaned data to a new file, then we can just delete the sections that need to be and NOT mark them with ***
+
+I dont think you have the delete section correct. Given this snippet of the JSON:
+        "date": 1741925312742,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+            "value": 16766.165815080916,
+            "unit": "ns",
+            "range": "± 26.330193903782202"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+            "value": 15272.336033412388,
+            "unit": "ns",
+            "range": "± 23.998436246772204"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 14546.314442952475,
+            "unit": "ns",
+            "range": "± 17.529321816114578"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+            "value": 13072.04126211313,
+            "unit": "ns",
+            "range": "± 13.108651408145162"
+          },
+
+You would delete 
+         {
+           "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+           "value": 16766.165815080916,
+           "unit": "ns",
+           "range": "± 26.330193903782202"
+         },
+and also delete:
+
+          {
+            "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+            "value": 14546.314442952475,
+            "unit": "ns",
+            "range": "± 17.529321816114578"
+          },
+
+
+
+
+
+Example of JSON file:
+  "Cluster.ClusterOperations (windows-latest  net8.0 Release)": [
+    {
+      "commit": {
+        "author": {
+          "email": "badrishc@microsoft.com",
+          "name": "Badrish Chandramouli",
+          "username": "badrishc"
+        },
+        "committer": {
+          "email": "noreply@github.com",
+          "name": "GitHub",
+          "username": "web-flow"
+        },
+        "distinct": true,
+        "id": "4585ab0b03d399e977607e31eb736bbb24b0bcda",
+        "message": "Support SELECT inside multi-exec (#1095)",
+        "timestamp": "2025-03-13T18:30:03-07:00",
+        "tree_id": "dd17e11e22bc504fbbbe1392d78793c6039dc371",
+        "url": "https://github.com/microsoft/garnet/commit/4585ab0b03d399e977607e31eb736bbb24b0bcda"
+      },
+      "date": 1741916545224,
+      "tool": "benchmarkdotnet",
+      "benches": [
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+          "value": 16419.566599527996,
+          "unit": "ns",
+          "range": "± 19.077694158469907"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+          "value": 15023.333195277623,
+          "unit": "ns",
+          "range": "± 28.095112274998296"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+          "value": 14728.118368295523,
+          "unit": "ns",
+          "range": "± 15.20694056492636"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+          "value": 13194.218268761268,
+          "unit": "ns",
+          "range": "± 21.29670523734397"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+          "value": 140454.72237723213,
+          "unit": "ns",
+          "range": "± 140.17537862917493"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+          "value": 16531.96970621745,
+          "unit": "ns",
+          "range": "± 16.578751811356685"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+          "value": 14855.579669658955,
+          "unit": "ns",
+          "range": "± 19.043938522268284"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+          "value": 14313.995906284877,
+          "unit": "ns",
+          "range": "± 12.654487829406214"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+          "value": 12095.296478271484,
+          "unit": "ns",
+          "range": "± 16.25912507104695"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: DSV)",
+          "value": 117498.70692661831,
+          "unit": "ns",
+          "range": "± 93.51534949420585"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+          "value": 21520.996747698104,
+          "unit": "ns",
+          "range": "± 67.73089598641744"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+          "value": 19176.74336751302,
+          "unit": "ns",
+          "range": "± 13.126300289307759"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+          "value": 15247.052815755209,
+          "unit": "ns",
+          "range": "± 39.24079503165908"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+          "value": 15053.227233886719,
+          "unit": "ns",
+          "range": "± 15.878326576043218"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+          "value": 151028.79557291666,
+          "unit": "ns",
+          "range": "± 260.6959166668578"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: None)",
+          "value": 19986.500197190504,
+          "unit": "ns",
+          "range": "± 15.881814128254916"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: None)",
+          "value": 18723.801363431492,
+          "unit": "ns",
+          "range": "± 49.427991628913944"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: None)",
+          "value": 15439.206136067709,
+          "unit": "ns",
+          "range": "± 17.327495161093218"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: None)",
+          "value": 13370.926106770834,
+          "unit": "ns",
+          "range": "± 25.401497479772523"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.CTXNSET(Params: None)",
+          "value": 131974.22049386162,
+          "unit": "ns",
+          "range": "± 171.62587970870806"
+        }
+      ]
+    },
+    {
+      "commit": {
+        "author": {
+          "email": "talzacc@microsoft.com",
+          "name": "Tal Zaccai",
+          "username": "TalZaccai"
+        },
+        "committer": {
+          "email": "noreply@github.com",
+          "name": "GitHub",
+          "username": "web-flow"
+        },
+        "distinct": true,
+        "id": "75db9fc3cd0cd81d2983a776fdf47f169e5bea9e",
+        "message": "Changing build image for windows docker CI (#1101)\n\n* changing build image for windows\n\n* switched back to nanoserver build image",
+        "timestamp": "2025-03-13T20:56:50-07:00",
+        "tree_id": "6c9a8f406aa0fbf6d8e649c25a2bf529aefab9cd",
+        "url": "https://github.com/microsoft/garnet/commit/75db9fc3cd0cd81d2983a776fdf47f169e5bea9e"
+      },
+      "date": 1741925312742,
+      "tool": "benchmarkdotnet",
+      "benches": [
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Get(Params: DSV)",
+          "value": 16766.165815080916,
+          "unit": "ns",
+          "range": "± 26.330193903782202"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.Set(Params: DSV)",
+          "value": 15272.336033412388,
+          "unit": "ns",
+          "range": "± 23.998436246772204"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MGet(Params: DSV)",
+          "value": 14546.314442952475,
+          "unit": "ns",
+          "range": "± 17.529321816114578"
+        },
+        {
+          "name": "BDN.benchmark.Cluster.ClusterOperations.MSet(Params: DSV)",
+          "value": 13072.04126211313,
+          "unit": "ns",
+          "range": "± 13.108651408145162"
+        },
