@@ -395,7 +395,37 @@ namespace Garnet.test
 
         #endregion
 
-        # region Edgecases
+        #region ETAG DEL Happy Paths
+        [Test]
+        public void DelIfGreaterOnAnAlreadyExistingKeyWithEtagWorks()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "meow-key";
+            var value = "m";
+
+            RedisResult res = db.Execute("SET", key, value, "WITHETAG");
+            ClassicAssert.AreEqual(1, (long)res);
+
+            // does not delete when called with lesser or equal etag
+            res = db.Execute("DELIFGREATER", key, 0);
+            ClassicAssert.AreEqual(0, (long)res);
+
+            RedisValue returnedval = db.StringGet(key);
+            ClassicAssert.AreEqual(value, returnedval.ToString());
+
+            // Deletes when called with higher etag
+            res = db.Execute("DELIFGREATER", key, 2);
+            ClassicAssert.AreEqual(1, (long)res);
+
+            returnedval = db.StringGet(key);
+            ClassicAssert.IsTrue(returnedval.IsNull);
+        }
+
+        #endregion
+
+        #region Edgecases
         [Test]
         public void SetIfMatchSetsKeyValueOnNonExistingKey()
         {
@@ -514,6 +544,16 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, etag);
         }
 
+        [Test]
+        public void DelIfGreaterOnNonExistingKeyWorks()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+            
+            RedisResult res = db.Execute("DELIFGREATER", "nonexistingkey", 10);
+            ClassicAssert.AreEqual(0, (long)res);
+        }
+
         #endregion
 
         #region ETAG Apis with non-etag data
@@ -602,6 +642,33 @@ namespace Garnet.test
             var res = (RedisResult[])db.Execute("GETWITHETAG", ["h"]);
             ClassicAssert.AreEqual("0", res[0].ToString());
             ClassicAssert.AreEqual("k", res[1].ToString());
+        }
+
+        [Test]
+        public void DelIfGreaterOnAnAlreadyExistingKeyWithoutEtagWorks()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "meow-key";
+            var value = "m";
+
+            bool result = db.StringSet(key, value);
+            ClassicAssert.IsTrue(result);
+
+            // does not delete when called with lesser or equal etag
+            RedisResult res = db.Execute("DELIFGREATER", key, 0);
+            ClassicAssert.AreEqual(0, (long)res);
+
+            RedisValue returnedval = db.StringGet(key);
+            ClassicAssert.AreEqual(value, returnedval.ToString());
+
+            // Deletes when called with higher etag
+            res = db.Execute("DELIFGREATER", key, 2);
+            ClassicAssert.AreEqual(1, (long)res);
+
+            returnedval = db.StringGet(key);
+            ClassicAssert.IsTrue(returnedval.IsNull);
         }
 
         #endregion
