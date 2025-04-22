@@ -375,7 +375,7 @@ namespace Garnet.test
             RedisResult res = db.Execute("SET", key, value);
             ClassicAssert.AreEqual("OK", res.ToString());
 
-            // not greater etag sent so we expect a higher etag returned
+            // not greater etag sent so we expect the actual etag returned
             RedisResult[] arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, "check", 0);
             ClassicAssert.AreEqual(0, (long)arrRes[0]);
             ClassicAssert.AreEqual(value, arrRes[1].ToString());
