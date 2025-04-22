@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1745351816970,
+  "lastUpdate": 1745351859423,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -42574,6 +42574,210 @@ window.BENCHMARK_DATA = {
             "value": 26289.166259765625,
             "unit": "ns",
             "range": "± 98.53198660786423"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "42720645+hamdaankhalid@users.noreply.github.com",
+            "name": "Hamdaan Khalid",
+            "username": "hamdaankhalid"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "38bb088e2011e5382be19c35c0d6bdf5dcd6c8e0",
+          "message": "Bugfix Incorrect Etag increment on SETIFGREATER (#1177)\n\n* Bugfix Incorrect Etag increment on SETIFGREATER\n\n* Don't increment SETIFGREATER set ETags\n\n---------\n\nCo-authored-by: Hamdaan Khalid <hkhalid@microsoft.com>",
+          "timestamp": "2025-04-22T12:38:27-07:00",
+          "tree_id": "f056b59b4fa870a547fa7f11c64fdc6dbdba4853",
+          "url": "https://github.com/microsoft/garnet/commit/38bb088e2011e5382be19c35c0d6bdf5dcd6c8e0"
+        },
+        "date": 1745351667479,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Set(Params: ACL)",
+            "value": 13923.977443150112,
+            "unit": "ns",
+            "range": "± 22.61015507922414"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetEx(Params: ACL)",
+            "value": 20203.780038016183,
+            "unit": "ns",
+            "range": "± 19.784260201929282"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetNx(Params: ACL)",
+            "value": 20506.67948404948,
+            "unit": "ns",
+            "range": "± 34.25970228011633"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetXx(Params: ACL)",
+            "value": 20858.592442103796,
+            "unit": "ns",
+            "range": "± 57.568840378568325"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetFound(Params: ACL)",
+            "value": 15484.180123465401,
+            "unit": "ns",
+            "range": "± 16.62190108932565"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetNotFound(Params: ACL)",
+            "value": 10808.059844970703,
+            "unit": "ns",
+            "range": "± 14.918879101320517"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Increment(Params: ACL)",
+            "value": 23213.421194893974,
+            "unit": "ns",
+            "range": "± 140.33550109710205"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Decrement(Params: ACL)",
+            "value": 21660.384041922433,
+            "unit": "ns",
+            "range": "± 19.1795093331907"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.IncrementBy(Params: ACL)",
+            "value": 27465.179138183594,
+            "unit": "ns",
+            "range": "± 167.58065575401383"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.DecrementBy(Params: ACL)",
+            "value": 27658.234456380207,
+            "unit": "ns",
+            "range": "± 181.25184436336932"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Set(Params: AOF)",
+            "value": 19590.08331298828,
+            "unit": "ns",
+            "range": "± 46.92700780825583"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetEx(Params: AOF)",
+            "value": 26971.661158970423,
+            "unit": "ns",
+            "range": "± 42.207522586887904"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetNx(Params: AOF)",
+            "value": 25854.15781656901,
+            "unit": "ns",
+            "range": "± 49.02067927723255"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetXx(Params: AOF)",
+            "value": 28546.809823172433,
+            "unit": "ns",
+            "range": "± 53.999377183027306"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetFound(Params: AOF)",
+            "value": 15347.252400716146,
+            "unit": "ns",
+            "range": "± 11.19717853185362"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetNotFound(Params: AOF)",
+            "value": 10686.17183140346,
+            "unit": "ns",
+            "range": "± 17.74716248395837"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Increment(Params: AOF)",
+            "value": 25681.878763834637,
+            "unit": "ns",
+            "range": "± 41.241854375636755"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Decrement(Params: AOF)",
+            "value": 26449.332580566406,
+            "unit": "ns",
+            "range": "± 36.05021102823006"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.IncrementBy(Params: AOF)",
+            "value": 30527.143961588543,
+            "unit": "ns",
+            "range": "± 94.78953380757773"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.DecrementBy(Params: AOF)",
+            "value": 31694.044596354168,
+            "unit": "ns",
+            "range": "± 147.4223711088379"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Set(Params: None)",
+            "value": 13922.172311636117,
+            "unit": "ns",
+            "range": "± 20.284111176856463"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetEx(Params: None)",
+            "value": 19974.571881975447,
+            "unit": "ns",
+            "range": "± 75.32388927431923"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetNx(Params: None)",
+            "value": 22220.842684232273,
+            "unit": "ns",
+            "range": "± 30.88102471952948"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.SetXx(Params: None)",
+            "value": 21646.97549002511,
+            "unit": "ns",
+            "range": "± 55.35256399230391"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetFound(Params: None)",
+            "value": 15342.05562046596,
+            "unit": "ns",
+            "range": "± 20.897124122996264"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.GetNotFound(Params: None)",
+            "value": 11070.98893385667,
+            "unit": "ns",
+            "range": "± 17.493115492840545"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Increment(Params: None)",
+            "value": 20888.67427280971,
+            "unit": "ns",
+            "range": "± 38.916214480978084"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.Decrement(Params: None)",
+            "value": 21443.851797921317,
+            "unit": "ns",
+            "range": "± 39.97631017982512"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.IncrementBy(Params: None)",
+            "value": 25585.78164236886,
+            "unit": "ns",
+            "range": "± 140.66433944941494"
+          },
+          {
+            "name": "BDN.benchmark.Operations.RawStringOperations.DecrementBy(Params: None)",
+            "value": 25775.02248128255,
+            "unit": "ns",
+            "range": "± 112.55379614648723"
           }
         ]
       }
