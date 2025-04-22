@@ -292,6 +292,15 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
+        /// Upsert operation with a disk log record
+        /// </summary>
+        /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
+        /// <param name="diskLogRecord">Log record that was read from disk</param>
+        /// <returns></returns>
+        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord diskLogRecord)
+            where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
         /// Upsert operation with a disk log record and user-supplied key
         /// </summary>
         /// <param name="diskLogRecord">Log record that was read from disk</param>

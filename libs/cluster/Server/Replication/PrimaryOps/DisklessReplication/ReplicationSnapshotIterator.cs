@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -18,6 +19,11 @@ namespace Garnet.cluster
 
         public MainStoreSnapshotIterator mainStoreSnapshotIterator;
         public ObjectStoreSnapshotIterator objectStoreSnapshotIterator;
+
+        // For serialization from LogRecord to DiskLogRecord
+        SectorAlignedBufferPool bufferPool;
+        SectorAlignedMemory recordBuffer;
+        GarnetObjectSerializer valueObjectSerializer;
 
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
@@ -47,6 +53,9 @@ namespace Garnet.cluster
             mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
             if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
                 objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
+
+            bufferPool = new(recordSize: 1, sectorSize: 512);   // TODO: Does this sectorSize need to consider ReplicaSyncSessions device sector sizes?
+            valueObjectSerializer = new(customCommandManager: default);
         }
 
         /// <summary>
@@ -105,6 +114,28 @@ namespace Garnet.cluster
                 firstRead = true;
             }
 
+            DiskLogRecord diskLogRecord = default;
+            ReadOnlySpan<byte> recordSpan;
+            if (srcLogRecord.AsLogRecord(out var logRecord))
+            {
+                if (logRecord.Info.RecordIsInline)
+                    recordSpan = logRecord.RecordSpan;
+                else
+                {
+                    diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer:default, ref recordBuffer);
+                    recordSpan = diskLogRecord.RecordSpan;
+                }
+            }
+            else if (srcLogRecord.AsDiskLogRecord(out diskLogRecord))
+            {
+                // String DiskLogRecords are always inline
+                recordSpan = diskLogRecord.RecordSpan;
+            }
+            else
+            {
+                throw new GarnetException("Invalid log record type");
+            }
+
             var needToFlush = false;
             while (true)
             {
@@ -123,14 +154,15 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader(isMainStore: true);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueSpanByte(key, value, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(recordSpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
 
-                if (!needToFlush) break;
+                if (!needToFlush)
+                    break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
@@ -152,8 +184,32 @@ namespace Garnet.cluster
                 firstRead = true;
             }
 
+            DiskLogRecord diskLogRecord = default;
+            ReadOnlySpan<byte> recordSpan;
+            if (srcLogRecord.AsLogRecord(out var logRecord))
+            {
+                if (logRecord.Info.RecordIsInline)
+                    recordSpan = logRecord.RecordSpan;
+                else
+                {
+                    diskLogRecord.Serialize(ref logRecord, bufferPool, valueObjectSerializer, ref recordBuffer);
+                    recordSpan = diskLogRecord.RecordSpan;
+                }
+            }
+            else if (srcLogRecord.AsDiskLogRecord(out diskLogRecord))
+            {
+                // String DiskLogRecords are always inline
+                recordSpan = diskLogRecord.RecordSpan;
+            }
+            else
+            {
+                throw new GarnetException("Invalid log record type");
+            }
+
             var needToFlush = false;
+
             GarnetObjectSerializer.Serialize((IGarnetObject)value, out var objectData);
+
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -171,14 +227,15 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader(isMainStore: false);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueByteArray(key, objectData, srcLogRecord.Expiration, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(recordSpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
 
-                if (!needToFlush) break;
+                if (!needToFlush)
+                    break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();

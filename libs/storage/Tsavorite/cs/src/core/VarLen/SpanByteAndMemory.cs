@@ -131,5 +131,32 @@ namespace Tsavorite.core
         /// Convert to be used on heap (IMemoryOwner)
         /// </summary>
         public void ConvertToHeap() { SpanByte.Invalidate(); }
+
+        /// <summary>
+        /// Ensure the required size is available in this structure via the Span or the Memory.
+        /// </summary>
+        public void EnsureSize(int size, MemoryPool<byte> memoryPool)
+        {
+            if (IsSpanByte)
+            {
+                if (SpanByte.Length >= size)
+                    return;
+                ConvertToHeap();
+            }
+
+            if (Memory is null)
+            {
+                Memory = memoryPool.Rent(size);
+                return;
+            }
+
+            if (Memory.Memory.Length >= size)
+                return;
+
+            // Reallocate
+            Memory.Dispose();
+            Memory = null;  // In case the following throws OOM
+            Memory = memoryPool.Rent(size);
+        }
     }
 }

@@ -34,6 +34,9 @@ namespace Tsavorite.core
         /// <summary>The value object, if the value in this record is an IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
         IHeapObject ValueObject { get; }
 
+        /// <summary>The span of the entire record, if <see cref="RecordInfo.RecordIsInline"/>, else an exception is thrown.</summary>
+        ReadOnlySpan<byte> RecordSpan { get; }
+
         /// <summary>Whether the record's value is pinned in memory, e.g. inline in the log vs an overflow byte[]. If this is true, <see cref="PinnedValuePointer"/> is non-null.</summary>
         bool IsPinnedValue { get; }
 

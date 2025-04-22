@@ -46,18 +46,18 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
         GarnetStatus SET(PinnedSpanByte key, Memory<byte> value);
 
         /// <summary>
         /// SET
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
         GarnetStatus SET(PinnedSpanByte key, IGarnetObject value);
+
+        /// <summary>
+        /// SET
+        /// </summary>
+        GarnetStatus SET<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, StoreType storeType)
+            where TSourceLogRecord : ISourceLogRecord;
         #endregion
 
         #region SETEX

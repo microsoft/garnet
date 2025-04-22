@@ -1217,84 +1217,22 @@ namespace Garnet.common
 
         /// <summary>
         /// Read serialized data for migration
-        /// </summary>        
-        public static bool TryReadSerializedSpanByte(ref byte* keyPtr, ref byte keyMetaDataSize, ref byte* valPtr, ref byte valMetaDataSize, ref byte* ptr, byte* end)
-        {
-            //1. safe read ksize
-            if (ptr + sizeof(int) > end)
-                return false;
-            var ksize = *(int*)ptr;
-            ptr += sizeof(int);
-
-            //2. safe read key bytes
-            if (ptr + ksize + 1 > end)
-                return false;
-            keyPtr = ptr - sizeof(int);
-            ptr += ksize;
-            keyMetaDataSize = *ptr++;
-
-            //3. safe read vsize
-            if (ptr + 4 > end)
-                return false;
-            var vsize = *(int*)ptr;
-            ptr += sizeof(int);
-
-            //4. safe read value bytes
-            if (ptr + vsize + 1 > end)
-                return false;
-            valPtr = ptr - sizeof(int);
-            ptr += vsize;
-            valMetaDataSize = *ptr++;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read serialized data for migration
         /// </summary>  
-        public static bool TryReadSerializedData(out byte[] key, out byte[] value, out long expiration, ref byte* ptr, byte* end)
+        public static bool TryReadSerializedRecord(out long recordStartAddress, out int recordLength, ref byte* ptr, byte* end)
         {
-            expiration = -1;
-            key = null;
-            value = null;
+            recordStartAddress = 0;
+            recordLength = 0;
 
-            //1. safe read ksize
+            //1. safe read recordSize
             if (ptr + 4 > end)
                 return false;
-            var keyLen = *(int*)ptr;
+            recordLength = *(int*)ptr;
             ptr += 4;
 
             //2. safe read keyPtr
-            if (ptr + keyLen > end)
+            if (ptr + recordLength > end)
                 return false;
-            var keyPtr = ptr;
-            ptr += keyLen;
-
-            //3. safe read vsize
-            if (ptr + 4 > end)
-                return false;
-            var valLen = *(int*)ptr;
-            ptr += 4;
-
-            //4. safe read valPtr
-            if (ptr + valLen > end)
-                return false;
-            var valPtr = ptr;
-            ptr += valLen;
-
-            //5. safe read expiration info
-            if (ptr + 8 > end)
-                return false;
-            expiration = *(long*)ptr;
-            ptr += 8;
-
-            key = new byte[keyLen];
-            value = new byte[valLen];
-            fixed (byte* kPtr = key)
-                Buffer.MemoryCopy(keyPtr, kPtr, keyLen, keyLen);
-            fixed (byte* vPtr = value)
-                Buffer.MemoryCopy(valPtr, vPtr, valLen, valLen);
-
+            recordStartAddress = (long)ptr;
             return true;
         }
     }

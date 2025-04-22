@@ -441,35 +441,33 @@ namespace Garnet.cluster
             var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
 
-            var keyValuePairCount = *(int*)payloadPtr;
+            var recordCount = *(int*)payloadPtr;
             var i = 0;
             payloadPtr += 4;
             if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
             {
-                TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
-                while (i < keyValuePairCount)
+                TrackImportProgress(recordCount, isMainStore: true, recordCount == 0);
+                while (i < recordCount)
                 {
-                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
-                    payloadPtr += key.TotalSize;
-                    var value = PinnedSpanByte.FromLengthPrefixedPinnedPointer(payloadPtr);
-                    payloadPtr += value.TotalSize;
+                    if (!RespReadUtils.TryReadSerializedRecord(out long startAddress, out int length, ref payloadPtr, payloadEndPtr))
+                        return false;
 
-                    _ = basicGarnetApi.SET(key, value); // TODOMigrate: needs to be LogRecord-based
+                    var diskLogRecord = new DiskLogRecord(startAddress, length);
+                    _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Main);
                     i++;
                 }
             }
             else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
             {
-                TrackImportProgress(keyValuePairCount, isMainStore: false, keyValuePairCount == 0);
-                while (i < keyValuePairCount)
+                TrackImportProgress(recordCount, isMainStore: false, recordCount == 0);
+                while (i < recordCount)
                 {
-                    if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
+                    if (!RespReadUtils.TryReadSerializedRecord(out long startAddress, out int length, ref payloadPtr, payloadEndPtr))
                         return false;
 
-                    var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                    value.Expiration = expiration;
-                    fixed (byte* keyPtr = key)
-                        _ = basicGarnetApi.SET(SpanByte.FromPinnedPointer(keyPtr, key.Length), value);  // TODOMigrate: needs to be LogRecord-based
+                    var diskLogRecord = new DiskLogRecord(startAddress, length);
+                    diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);  // TODO: Can we defer this?
+                    _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Object);
                     i++;
                 }
             }

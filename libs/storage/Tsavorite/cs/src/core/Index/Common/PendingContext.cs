@@ -213,6 +213,9 @@ namespace Tsavorite.core
             public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
 
             /// <inheritdoc/>
+            public ReadOnlySpan<byte> RecordSpan => diskLogRecord.RecordSpan;
+
+            /// <inheritdoc/>
             public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
 
             /// <inheritdoc/>

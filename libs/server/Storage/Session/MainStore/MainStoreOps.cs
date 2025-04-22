@@ -451,6 +451,18 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+        public GarnetStatus SET<TContext, TObjectContext, TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (storeType == StoreType.Main)
+                context.Upsert(ref srcLogRecord);
+            else
+                objectContext.Upsert(ref srcLogRecord);
+            return GarnetStatus.OK;
+        }
+
         public unsafe GarnetStatus SETEX<TContext>(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs, ref TContext context)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), ref context);

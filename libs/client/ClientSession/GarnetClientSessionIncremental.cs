@@ -23,7 +23,7 @@ namespace Garnet.client
         IncrementalSendType ist;
         bool isMainStore;
         byte* curr, head;
-        int keyValuePairCount;
+        int recordCount;
         TaskCompletionSource<string> currTcsIterationTask = null;
 
         /// <summary>
@@ -50,7 +50,7 @@ namespace Garnet.client
             Flush();
             currTcsIterationTask = null;
             curr = head = null;
-            keyValuePairCount = 0;
+            recordCount = 0;
             this.iterationProgressFreq = default ? TimeSpan.FromSeconds(5) : iterationProgressFreq;
         }
 
@@ -59,7 +59,7 @@ namespace Garnet.client
         /// </summary>
         public Task<string> SendAndResetIterationBuffer()
         {
-            if (keyValuePairCount == 0) return null;
+            if (recordCount == 0) return null;
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
@@ -67,12 +67,12 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            TrackIterationProgress(keyValuePairCount, size);
+            TrackIterationProgress(recordCount, size);
             var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
             // Number of key value pairs in payload
-            *(int*)head = keyValuePairCount;
+            *(int*)head = recordCount;
 
             // Reset offset and flush buffer
             offset = curr;
@@ -83,8 +83,31 @@ namespace Garnet.client
             var task = currTcsIterationTask.Task;
             currTcsIterationTask = null;
             curr = head = null;
-            keyValuePairCount = 0;
+            recordCount = 0;
             return task;
+        }
+
+        /// <summary>
+        /// Try to write the span for the entire record directly to the client buffer
+        /// </summary>
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
+        {
+            task = null;
+
+            // We include space for newline at the end, to be added before sending
+            var totalLen = recordSpan.TotalSize() + 2;
+            if (totalLen > (int)(end - curr))
+            {
+                // If failed to write because no space left send outstanding data and retrieve task
+                // Caller is responsible for retrying
+                task = SendAndResetIterationBuffer();
+                return false;
+            }
+
+            recordSpan.SerializeTo(curr);
+            curr += recordSpan.TotalSize();
+            recordCount++;
+            return true;
         }
 
         /// <summary>
@@ -96,7 +119,7 @@ namespace Garnet.client
         /// <returns></returns>
         public bool TryWriteKeyValueSpanByte(PinnedSpanByte key, PinnedSpanByte value, out Task<string> task)
         {
-            task = null;
+            task = nullxx;
             // Try write key value pair directly to client buffer
             if (!WriteSerializedSpanByte(key, value))
             {
@@ -106,7 +129,7 @@ namespace Garnet.client
                 return false;
             }
 
-            keyValuePairCount++;
+            recordCount++;
             return true;
 
             bool WriteSerializedSpanByte(PinnedSpanByte key, PinnedSpanByte value)
@@ -133,7 +156,7 @@ namespace Garnet.client
         /// <returns></returns>
         public bool TryWriteKeyValueByteArray(PinnedSpanByte key, byte[] value, long expiration, out Task<string> task)
         {
-            task = null;
+            task = nullxx;
             // Try write key value pair directly to client buffer
             if (!WriteSerializedKeyValueByteArray(key, value, expiration))
             {
@@ -143,7 +166,7 @@ namespace Garnet.client
                 return false;
             }
 
-            keyValuePairCount++;
+            recordCount++;
             return true;
 
             bool WriteSerializedKeyValueByteArray(PinnedSpanByte key, byte[] value, long expiration)

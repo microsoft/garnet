@@ -238,11 +238,17 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(ref TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord
+            => Upsert(diskLogRecord.Key, ref diskLogRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord diskLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
         {
             TInput input = default;
             TOutput output = default;
             UpsertOptions upsertOptions = default;
-            return Upsert(diskLogRecord.Key, ref input, ref diskLogRecord, ref output, ref upsertOptions);
+            return Upsert(key, ref input, ref diskLogRecord, ref output, ref upsertOptions);
         }
 
         /// <inheritdoc/>

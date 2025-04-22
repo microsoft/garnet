@@ -5,7 +5,6 @@ using System;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -82,30 +81,13 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Try write main store key value pair
+        /// Try to write the span of an entire record.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="task"></param>
         /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out Task<string> task)
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.TryWriteKeyValueSpanByte(key, value, out task);
-        }
-
-        /// <summary>
-        /// Try write object store key value pair
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="expiration"></param>
-        /// <param name="task"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueByteArray(SpanByte key, byte[] value, long expiration, out Task<string> task)
-        {
-            WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
+            return AofSyncTask.garnetClient.TryWriteRecordSpan(recordSpan, out task);
         }
 
         /// <summary>

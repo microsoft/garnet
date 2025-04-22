@@ -257,12 +257,12 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            TrackIterationProgress(keyValuePairCount, size, completed: true);
+            TrackIterationProgress(recordCount, size, completed: true);
             var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
             // Number of key value pairs in payload
-            *(int*)head = keyValuePairCount;
+            *(int*)head = recordCount;
 
             // Reset offset and flush buffer
             offset = curr;
@@ -273,7 +273,7 @@ namespace Garnet.client
             var task = currTcsIterationTask.Task;
             currTcsIterationTask = null;
             curr = head = null;
-            keyValuePairCount = 0;
+            recordCount = 0;
             return task;
         }
     }

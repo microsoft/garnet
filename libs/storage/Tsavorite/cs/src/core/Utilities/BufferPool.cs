@@ -282,7 +282,7 @@ namespace Tsavorite.core
             Interlocked.Increment(ref totalGets);
 #endif
 
-            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            int requiredSize = sectorSize + ((numRecords * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
             int index = Position(requiredSize / sectorSize);
             if (queue[index] == null)
             {

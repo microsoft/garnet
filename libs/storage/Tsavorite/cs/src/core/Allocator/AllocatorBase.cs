@@ -1808,10 +1808,10 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
-                var diskLogRecord = new DiskLogRecord((long)ctx.record.GetValidPointer());
-                bool hasFullRecord = diskLogRecord.IsComplete(ctx.record, out bool hasFullKey, out int requiredBytes);      // TODO: support 'long' lengths
+                bool hasFullRecord = DiskLogRecord.IsComplete(ctx.record, out bool hasFullKey, out int requiredBytes);      // TODO: support 'long' lengths
                 if (hasFullKey || ctx.request_key.IsEmpty)
                 {
+                    var diskLogRecord = new DiskLogRecord((long)ctx.record.GetValidPointer());  // This ctor does not test for having the complete record; we've already set hasFullRecord
                     Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.

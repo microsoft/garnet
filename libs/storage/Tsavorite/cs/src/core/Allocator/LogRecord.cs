@@ -80,6 +80,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly Span<byte> ValueSpan
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 Debug.Assert(!Info.ValueIsObject, "ValueSpan is not valid for Object values");
@@ -101,6 +102,18 @@ namespace Tsavorite.core
                     return default;
                 var heapObj = objectIdMap.Get(objectId);
                 return Unsafe.As<object, IHeapObject>(ref heapObj);
+            }
+        }
+
+        /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> RecordSpan
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                if (!Info.RecordIsInline)
+                    throw new TsavoriteException("RecordSpan is not valid for non-inline records");
+                return new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
             }
         }
 

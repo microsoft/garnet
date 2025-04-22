@@ -42,8 +42,18 @@ namespace Tsavorite.core
         internal SectorAlignedMemory recordBuffer;
 
         /// <summary>Constructor that takes a physical address, which may come from a <see cref="SectorAlignedMemory"/> or some other allocation
-        /// that will have at least the lifetime of this <see cref="DiskLogRecord"/>. This <see cref="DiskLogRecord"/> does not own the memory allocation
-        /// so will not free it on <see cref="Dispose()"/>.</summary>
+        /// that will have at least the lifetime of this <see cref="DiskLogRecord"/>. This <see cref="DiskLogRecord"/> does not own the memory
+        /// allocation so will not free it on <see cref="Dispose()"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public DiskLogRecord(long physicalAddress, int length) : this(physicalAddress)
+        {
+            if (!IsComplete(physicalAddress, length, out _, out _))
+                throw new TsavoriteException("DiskLogRecord is not complete");
+        }
+
+        /// <summary>Constructor that takes a physical address, which may come from a <see cref="SectorAlignedMemory"/> or some other allocation
+        /// that will have at least the lifetime of this <see cref="DiskLogRecord"/> and is known to contain the entire record (as there is no length
+        /// supplied). This <see cref="DiskLogRecord"/> does not own the memory allocation so will not free it on <see cref="Dispose()"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal DiskLogRecord(long physicalAddress)
         {
@@ -54,16 +64,16 @@ namespace Tsavorite.core
         /// <summary>Constructor that takes a <see cref="SectorAlignedMemory"/> from which it obtains the physical address.
         /// This <see cref="DiskLogRecord"/> owns the memory allocation and must free it on <see cref="Dispose()"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(SectorAlignedMemory allocatedRecord)
-            : this((long)allocatedRecord.GetValidPointer())
+        public DiskLogRecord(SectorAlignedMemory allocatedRecord) : this((long)allocatedRecord.GetValidPointer())
         {
             recordBuffer = allocatedRecord;
+            if (!IsComplete(allocatedRecord, out _, out _))
+                throw new TsavoriteException("DiskLogRecord is not complete");
         }
 
         /// <summary>Constructor that takes an <see cref="AsyncIOContext"/> from which it obtains the physical address and ValueObject.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(ref AsyncIOContext ctx)
-            : this((long)ctx.record.GetValidPointer())
+        internal DiskLogRecord(ref AsyncIOContext ctx) : this(ctx.record)
         {
             valueObject = ctx.ValueObject;
         }
@@ -81,28 +91,30 @@ namespace Tsavorite.core
         public readonly long GetSerializedLength()
             => RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
-        /// <summary>Whether the record is complete (full serialized length has been read)</summary>
+        /// <summary>Called by IO to determine whether the record is complete (full serialized length has been read)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool IsComplete(SectorAlignedMemory recordBuffer, out bool hasFullKey, out int requiredBytes)
+        public static bool IsComplete(SectorAlignedMemory recordBuffer, out bool hasFullKey, out int requiredBytes)
+            => IsComplete((long)recordBuffer.GetValidPointer(), recordBuffer.available_bytes, out hasFullKey, out requiredBytes);
+
+        private static bool IsComplete(long physicalAddress, int availableBytes, out bool hasFullKey, out int requiredBytes)
         {
             hasFullKey = false;
 
             // Check for RecordInfo and either indicator byte or key length; InlineLengthPrefixSize is the larger.
-            if (recordBuffer.available_bytes < RecordInfo.GetLength() + LogField.InlineLengthPrefixSize)
+            if (availableBytes < RecordInfo.GetLength() + LogField.InlineLengthPrefixSize)
             {
                 requiredBytes = InitialIOSize;
                 return false;
             }
 
             // Now we can tell if this is a fully inline vs. varbyte record.
-            long physicalAddress = (long)recordBuffer.GetValidPointer();
             var address = physicalAddress;
             if ((*(RecordInfo*)address).RecordIsInline)
             {
                 address += RecordInfo.GetLength();
                 address += sizeof(int) + *(int*)address;                            // Inline key length is after RecordInfo; position address after the Key (but don't dereference it yet!)
                 requiredBytes = (int)(address + sizeof(int) - physicalAddress);     // Include value length int in the calculation
-                if (recordBuffer.available_bytes < requiredBytes)
+                if (availableBytes < requiredBytes)
                 {
                     // We have the RecordInfo and key length, but not the full key data. Get another page.
                     requiredBytes = RoundUp(requiredBytes, InitialIOSize);
@@ -121,7 +133,7 @@ namespace Tsavorite.core
                 var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask);
 
                 requiredBytes = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes; // Include the indicator byte in the calculation
-                if (recordBuffer.available_bytes < requiredBytes)
+                if (availableBytes < requiredBytes)
                     return false;
 
                 var ptr = (byte*)++address;  // Move past the indicator byte; the next bytes are key length, then value length
@@ -129,12 +141,16 @@ namespace Tsavorite.core
                 var valueLength = ReadVarBytes(valueLengthBytes, ref ptr);
 
                 requiredBytes += (int)keyLength;
-                hasFullKey = recordBuffer.available_bytes >= requiredBytes;
+                hasFullKey = availableBytes >= requiredBytes;
                 requiredBytes += (int)valueLength;      // TODO: Handle long values
             }
 
-            requiredBytes += OptionalLength;
-            return recordBuffer.available_bytes >= requiredBytes;
+            var info = *(RecordInfo*)physicalAddress;
+            var eTagLen = info.HasETag ? LogRecord.ETagSize : 0;
+            var expirationLen = info.HasExpiration ? LogRecord.ExpirationSize : 0;
+           
+            requiredBytes += eTagLen + expirationLen;
+            return availableBytes >= requiredBytes;
         }
 
         /// <summary>If true, this DiskLogRecord owns the buffer and must free it on <see cref="Dispose"/></summary>
@@ -310,6 +326,18 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        public readonly ReadOnlySpan<byte> RecordSpan
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                if (!Info.RecordIsInline)
+                    throw new TsavoriteException("RecordSpan is not valid for non-inline records");
+                return new((byte*)physicalAddress, (int)GetSerializedLength()); // TODO: Handle long object sizes
+            }
+        }
+
+        /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : LogRecord.NoETag;
 
         /// <inheritdoc/>
@@ -412,6 +440,9 @@ namespace Tsavorite.core
                 *(long*)ptr = valueSpan.Length;
                 ptr += sizeof(long);
                 valueSpan.CopyTo(new Span<byte>(ptr, valueSpan.Length));
+
+                allocatedRecord.available_bytes = (int)recordSize;
+                return;
             }
 
             // Value is an object so we use the varbyte format. For RUMD ops we don't serialize the object; we just carry it through the pending IO sequence.
@@ -427,6 +458,7 @@ namespace Tsavorite.core
 
             // This writes the value length, but not value data
             ptr = SerializeCommonVarByteFields(recordInfo:default, indicatorByte, key, keyLengthByteCount, valueLength, valueLengthByteCount, recordSize, bufferPool, ref allocatedRecord);
+            allocatedRecord.available_bytes = (int)recordSize;
 
             // Set the value
             this.valueObject = valueObject;
@@ -440,7 +472,7 @@ namespace Tsavorite.core
         /// <param name="bufferPool">Allocator for backing storage</param>
         /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+        public void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
             => Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
 
         /// <summary>
@@ -452,7 +484,7 @@ namespace Tsavorite.core
         /// <param name="allocatedRecord">The allocated record; may be owned by this instance, or owned by the caller for reuse</param>
         /// <remarks>This overload may be called either directly for a caller who owns the <paramref name="allocatedRecord"/>, or with this.allocatedRecord.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer, ref SectorAlignedMemory allocatedRecord)
+        public void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer, ref SectorAlignedMemory allocatedRecord)
         {
             if (logRecord.Info.RecordIsInline)
             {
@@ -496,6 +528,7 @@ namespace Tsavorite.core
                 InfoRef.SetValueIsObject();
             }
             ptr += valueLength;
+            allocatedRecord.available_bytes = (int)recordSize;
 
             CopyOptionals(in logRecord, ref ptr);
         }
@@ -534,7 +567,7 @@ namespace Tsavorite.core
         /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         /// <remarks>This overload converts from LogRecord to DiskLogRecord.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal IHeapObject DeserializeValueObject(IObjectSerializer<IHeapObject> valueSerializer)
+        public IHeapObject DeserializeValueObject(IObjectSerializer<IHeapObject> valueSerializer)
         {
             if (valueObject is not null)
                 return valueObject;
@@ -554,6 +587,7 @@ namespace Tsavorite.core
         {
             EnsureAllocation(recordSize, bufferPool, ref allocatedRecord);
             Buffer.MemoryCopy((byte*)srcPhysicalAddress, (byte*)physicalAddress, recordSize, recordSize);
+            allocatedRecord.available_bytes = (int)recordSize;
         }
 
         private void EnsureAllocation(long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
@@ -626,6 +660,7 @@ namespace Tsavorite.core
             // Set the Optionals
             ptr = (byte*)physicalAddress + partialRecordSize;
             CopyOptionals(ref inputDiskLogRecord, ref ptr);
+            recordBuffer.available_bytes = (int)allocatedRecordSize;
         }
 
         /// <summary>
