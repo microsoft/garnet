@@ -320,11 +320,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = LogField.ConvertInlineToObjectId(ref InfoRef, (long)ValueObjectIdAddress, objectIdMap);
+                            _ = LogField.ConvertInlineToHeapObject(ref InfoRef, (long)ValueObjectIdAddress, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = LogField.ConvertInlineToObjectId(ref InfoRef, (long)ValueObjectIdAddress, objectIdMap);
+                            _ = LogField.ConvertInlineToHeapObject(ref InfoRef, (long)ValueObjectIdAddress, objectIdMap);
                     }
                 }
                 else if (Info.ValueIsOverflow)
@@ -348,11 +348,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = LogField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap);
+                            _ = LogField.ConvertOverflowToHeapObject(ref InfoRef, valueAddress, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = LogField.ConvertOverflowToObjectId(ref InfoRef, valueAddress, objectIdMap);
+                            _ = LogField.ConvertOverflowToHeapObject(ref InfoRef, valueAddress, objectIdMap);
                     }
                 }
                 else
@@ -364,11 +364,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = LogField.ConvertObjectIdToInline(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
+                            _ = LogField.ConvertHeapObjectToInline(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = LogField.ConvertObjectIdToInline(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
+                            _ = LogField.ConvertHeapObjectToInline(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
                     }
                     else
                     {
@@ -377,11 +377,11 @@ namespace Tsavorite.core
                         if (shiftOptionals)
                         {
                             var optionalFields = OptionalFieldsShift.SaveAndClear(optionalStartAddress, ref InfoRef);
-                            _ = LogField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
+                            _ = LogField.ConvertHeapObjectToOverflow(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
                             optionalFields.Restore(optionalStartAddress + inlineValueGrowth, ref InfoRef, fillerLen);
                         }
                         else
-                            _ = LogField.ConvertObjectIdToOverflow(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
+                            _ = LogField.ConvertHeapObjectToOverflow(ref InfoRef, valueAddress, newInlineDataLength, objectIdMap);
                     }
                 }
             }
@@ -501,14 +501,23 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Called during cleanup of a record allocation, before the key was copied.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeForReuse(ref RecordSizeInfo sizeInfo)
         {
-            // This assumes Key and Value lengths have not been set; and further, that the record is zero'd.
+            Debug.Assert(!Info.HasETag && Info.HasExpiration, "Record should not have ETag or Expiration here");
+
+            // This assumes the record has just been allocated, so it's at the tail (or very close to it). The Key and Value have not been set.
+            // The record does not need to be zeroinitialized if we are not doing that on initial allocation; the zero-length key and value
+            // combined with lack of optionals will yield the correct location of filler length (or it will be within the less-than-int-size
+            // roundup to allocation size). Consistency Note: LogField.FreeObjectIdAndConvertToInline also sets the field length to 0, then
+            // its caller sets the filler length to the remaining record size.
             InfoRef.SetKeyIsInline();
-            _ = LogField.SetInlineDataLength(KeyAddress, sizeInfo.InlineTotalKeySize);
+            _ = LogField.SetInlineDataLength(KeyAddress, 0);
             InfoRef.SetValueIsInline();
-            _ = LogField.SetInlineDataLength(ValueAddress, sizeInfo.InlineTotalValueSize);
+            _ = LogField.SetInlineDataLength(ValueAddress, 0);
 
             // Anything remaining is filler.
             SetFillerLength(sizeInfo.AllocatedInlineRecordSize);
@@ -704,6 +713,7 @@ namespace Tsavorite.core
             }
             else
             {
+                Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
                 if (!TrySetValueObject(srcLogRecord.ValueObject, ref sizeInfo))
                     return false;
             }
@@ -745,7 +755,7 @@ namespace Tsavorite.core
         {
             if (!Info.KeyIsOverflow)
                 return false;
-            LogField.FreeOverflowAndConvertToInline(ref InfoRef, KeyAddress, objectIdMap, isKey: true);
+            LogField.FreeObjectIdAndConvertToInline(ref InfoRef, KeyAddress, objectIdMap, isKey: true);
             return true;
         }
 
@@ -754,65 +764,44 @@ namespace Tsavorite.core
         {
             if (!Info.ValueIsOverflow)
                 return false;
-            LogField.FreeOverflowAndConvertToInline(ref InfoRef, ValueAddress, objectIdMap, isKey: false);
+            LogField.FreeObjectIdAndConvertToInline(ref InfoRef, ValueAddress, objectIdMap, isKey: false);
             return true;
         }
 
+        /// <summary>
+        /// For revivification or reuse: prepare the current record to be passed to initial updaters, based upon the sizeInfo's key and value lengths.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PrepareForRevivification(RecordSizeInfo sizeInfo)   // TODO is this needed?
+        public void PrepareForRevivification(ref RecordSizeInfo sizeInfo, int allocatedSize)
         {
-            // For revivification: prepare the current record to be passed to initial updaters.
-            // The rules:
-            //  Zero things out, moving backward in address for both speed and zero-init correctness.
-            //      - However, retain any overflow allocations.
-            var newKeySize = Info.KeyIsInline && sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
-            var newValueSize = Info.ValueIsInline && sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            var keyAddress = KeyAddress;
+            var newKeySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            var newValueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            var fillerAddress = GetFillerLengthAddress();
 
-            // Zero out optionals, starting from highest addresses
-            var address = GetFillerLengthAddress();
-            var allocatedRecordSize = GetInlineRecordSizes().allocatedSize;
+            // We expect that the key and value are zero-length inline and there are no optionals, per LogRecord.InitalizeForReuse and LogField.FreeObjectIdAndConvertToInline.
+            Debug.Assert(Info.KeyIsInline && LogField.GetInlineLengthRef(keyAddress) == 0, "Expected Key to be 0-length inline in PrepareForRevivification");
+            Debug.Assert(Info.ValueIsInline && LogField.GetInlineLengthRef(ValueAddress) == 0, "Expected Value to be 0-length inline in PrepareForRevivification");
+            Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Expected no optionals in PrepareForRevivification");
+
+            Debug.Assert(newKeySize + newValueSize <= allocatedSize, "Insufficient new record size");   // Should not happen as we passed sizeInfo to BlockAllocate
+
+            // First zero out the filler. Per above assumption, the record before fillerAddress is already zero'd.
             if (Info.HasFiller)
             {
-                *(int*)address = 0;
+                *(int*)fillerAddress = 0;
                 InfoRef.ClearHasFiller();
             }
 
-            if (Info.HasExpiration)
-            {
-                address -= ExpirationSize;
-                *(long*)address = 0L;
-                InfoRef.ClearHasExpiration();
-            }
-            if (Info.HasETag)
-            {
-                *(long*)address = 0L;
-                address -= ETagSize;
-                InfoRef.ClearHasETag();
-            }
+            // We'll always set the key and value to inline, with the specified length. When AllocatorBase.SerializeKey and allocator.InitializeValue run, they will
+            // just write the same lengths (including filler) over the ones we're setting here.
+            InfoRef.SetKeyIsInline();
+            _ = LogField.SetInlineDataLength(keyAddress, newKeySize);
+            InfoRef.SetValueIsInline();
+            _ = LogField.SetInlineDataLength(ValueAddress, 0);  // Must re-get ValueAddress as we've changed Key size (that's why there's no valueAddress local)
 
-            // Value is going to take up whatever space is leftover after Key, so optimize zeroinit to be only from end of new Key length to end of old value, if this difference is > 0.
-            var endOfNewKey = KeyAddress + newKeySize;
-            var valueAddress = ValueAddress;
-            var endOfCurrentValue = valueAddress + LogField.GetInlineTotalSizeOfField(valueAddress, Info.ValueIsInline);
-            var zeroSize = (int)(endOfCurrentValue - endOfNewKey);
-            if (zeroSize > 0)
-                new Span<byte>((byte*)endOfNewKey, zeroSize).Clear();
-
-            // Set new key size
-            if (Info.KeyIsInline)
-                LogField.GetInlineLengthRef(KeyAddress) = newKeySize;
-
-            // Re-get ValueAddress due to the new KeyAddress and assign it all available space, unless it is already overflow, in which case the space after the overflow allocation pointer is filler space.
-            valueAddress = ValueAddress;
-            var spaceToEndOfRecord = allocatedRecordSize - (int)(valueAddress - physicalAddress) + newValueSize;
-            if (Info.ValueIsInline)
-                LogField.GetInlineLengthRef(valueAddress) = spaceToEndOfRecord;
-            else if (spaceToEndOfRecord - ObjectIdMap.ObjectIdSize > FillerLengthSize)
-            {
-                InfoRef.SetHasFiller(); // must do this first, for zero-init
-                address = valueAddress + ObjectIdMap.ObjectIdSize;  // FillerAddress
-                *(int*)address = spaceToEndOfRecord - ObjectIdMap.ObjectIdSize;
-            }
+            // Anything remaining is filler.
+            SetFillerLength(allocatedSize);
         }
 
         public override readonly string ToString()

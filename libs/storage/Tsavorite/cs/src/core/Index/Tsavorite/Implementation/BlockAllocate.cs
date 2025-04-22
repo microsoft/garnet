@@ -59,7 +59,8 @@ namespace Tsavorite.core
 
             if (options.recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress
                     && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
-            { 
+            {
+                new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
                 return true;
             }
             if (RevivificationManager.UseFreeRecordPool)
@@ -73,7 +74,10 @@ namespace Tsavorite.core
                         minRevivAddress = fuzzyStartAddress;
                 }
                 if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
+                {
+                    new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
                     return true;
+                }
             }
 
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).

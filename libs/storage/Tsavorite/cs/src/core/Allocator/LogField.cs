@@ -116,7 +116,8 @@ namespace Tsavorite.core
                 oldSpan.CopyTo(array);
             }
 
-            // If "shrinking" the allocation because the overflow objectId size is less than the current inline size, we must zeroinit the extra space.
+            // If the inline data length was > 0 we are "shrinking" because the overflow objectId replaces the inline field length (its size is the same
+            // as InlineLengthPrefixSize), so the entire previous data space must be zero-initialized.
             // Note: We don't zeroinit data in the overflow allocation, just as we don't zeroinit data in the inline value within the length.
             if (oldLength > 0)
                 ZeroInlineData(fieldAddress, 0, oldLength);
@@ -137,7 +138,7 @@ namespace Tsavorite.core
         /// prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertObjectIdToOverflow(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertHeapObjectToOverflow(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
         {
             var array = GC.AllocateUninitializedArray<byte>(newLength);
 
@@ -162,7 +163,7 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertInlineToObjectId(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap)
+        internal static int ConvertInlineToHeapObject(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap)
         {
             // Here we do not copy the data; we assume the caller will have already created an object that has converted from inline format to object format.
             var objectId = objectIdMap.Allocate();
@@ -186,7 +187,7 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertOverflowToObjectId(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap)
+        internal static int ConvertOverflowToHeapObject(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap)
         {
             var objectId = GetObjectIdRef(fieldAddress);
             if (objectId != ObjectIdMap.InvalidObjectId)
@@ -247,14 +248,22 @@ namespace Tsavorite.core
             return SetInlineDataLength(fieldAddress, newLength);
         }
 
+        /// <summary>
+        /// Called when disposing a record, to free an Object or Overflow allocation and convert to inline so the lengths are set for record scanning or revivification.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void FreeOverflowAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
+        internal static void FreeObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
         {
-            var objectId = GetObjectIdRef(fieldAddress);
+            // ObjectIdSize and InlineLengthPrefixSize are the same so we can just set the length to zero; there was no data associated with the objectId. This also
+            // means we don't have to adjust the filler length, since the field size here isn't changing. This method is called by record disposal, which also clears
+            // the optionals, which may adjust filler length). Consistency Note: LogRecord.InitializeForReuse also sets field lengths to zero and sets the filler length.
+            ref int objectIdRef = ref GetObjectIdRef(fieldAddress);
+            var objectId = objectIdRef;
+            objectIdRef = 0;
+
             if (objectId != ObjectIdMap.InvalidObjectId)
                 objectIdMap.Set(objectId, null);
 
-            // Our ObjectId space is now taken up exactly by FieldLengthPrefix (they're the same size), so inline length is zero.
             // Sequencing here is important for zeroinit correctness
             GetInlineLengthRef(fieldAddress) = 0;
             if (isKey)
@@ -272,7 +281,7 @@ namespace Tsavorite.core
         /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertObjectIdToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertHeapObjectToInline(ref RecordInfo recordInfo, long fieldAddress, int newLength, ObjectIdMap objectIdMap)
         {
             ref var objIdRef = ref GetObjectIdRef(fieldAddress);
             objectIdMap.Free(objIdRef);

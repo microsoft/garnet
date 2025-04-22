@@ -139,6 +139,9 @@ namespace Tsavorite.core
             }
             else
             {
+                // If it's a revivified record, it may have ValueIsInline set, so clear that.
+                LogRecord.GetInfoRef(physicalAddress).ClearValueIsInline();
+
                 if (sizeInfo.ValueIsObject)
                     LogRecord.GetInfoRef(physicalAddress).SetValueIsObject();
 
@@ -237,6 +240,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
+            logRecord.ClearOptionals();
             if (disposeReason != DisposeReason.Deleted)
                 _ = logRecord.FreeKeyOverflow();
 

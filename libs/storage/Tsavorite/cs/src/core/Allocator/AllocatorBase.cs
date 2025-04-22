@@ -407,7 +407,13 @@ namespace Tsavorite.core
                 keySpan = LogField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
             }
             else
+            {
+                Debug.Assert(objectIdMap is not null, "Inconsistent setting of maxInlineKeySize with null objectIdMap");
+
+                // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
+                logRecord.InfoRef.ClearKeyIsInline();
                 keySpan = LogField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
+            }
             key.CopyTo(keySpan);
         }
 

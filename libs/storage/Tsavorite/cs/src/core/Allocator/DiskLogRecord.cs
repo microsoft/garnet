@@ -183,8 +183,7 @@ namespace Tsavorite.core
             get
             {
                 var keyInfo = KeyInfo;
-
-                if (Info.RecordIsInline)    // For inline values the length is an int, stored immediately after key data
+                if (Info.RecordIsInline)    // For inline records the value length is an int, stored immediately after key data
                 {
                     var valueLengthAddress = keyInfo.dataAddress + keyInfo.length;
                     return (*(int*)valueLengthAddress, valueLengthAddress + sizeof(int));
@@ -371,7 +370,7 @@ namespace Tsavorite.core
         /// <param name="valueObject">Record value as an object, if Upsert</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeForPendingOperation(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool)
+        internal void SerializeForPendingRUMD(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool)
             => SerializeForPendingRUMD(key, valueSpan, valueObject, bufferPool, ref recordBuffer);
 
         /// <summary>
@@ -435,7 +434,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Serialize for Compact, Scan, Conditional Pending Operations, Migration, Replication, etc. The logRecord comes from the log or disk; there is no associated TInput, TOutput, TContext.
+        /// Serialize for Compact, Scan, Conditional Pending Operations, Migration, Replication, etc. The logRecord comes from the in-memory log; there is no associated TInput, TOutput, TContext.
         /// </summary>
         /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
@@ -525,7 +524,7 @@ namespace Tsavorite.core
             // Copy the key but not the value; the caller does that.
             key.CopyTo(new Span<byte>(ptr, key.Length));
 
-            // Return the pointer to the value data space (immediately following the key data space, with no value length prefix as the value was already written).
+            // Return the pointer to the value data space (immediately following the key data space; the value length was already written above).
             return ptr + key.Length;
         }
 
