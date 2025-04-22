@@ -103,7 +103,8 @@ namespace Garnet.server
 
                     long clientSentEtag = input.parseState.GetLong(1);
 
-                    clientSentEtag++;
+                    if (cmd == RespCommand.SETIFMATCH)
+                        clientSentEtag++;
 
                     recordInfo.SetHasETag();
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -397,7 +398,7 @@ namespace Garnet.server
 
                     recordInfo.SetHasETag();
 
-                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : (etagFromClient + 1);
+                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.etag + 1) : etagFromClient;
 
                     long oldExtraMetadata = value.ExtraMetadata;
 
@@ -586,7 +587,7 @@ namespace Garnet.server
                         return false;
 
                     // doesn't update etag, since it's only the metadata that was updated
-                    return true; ;
+                    return true;
                 case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIREAT:
                     expiryExists = value.MetadataSize > 0;
@@ -1049,11 +1050,9 @@ namespace Garnet.server
 
                     long etagFromClient = input.parseState.GetLong(1);
 
-                    // change the current etag to the the etag sent from client since rest remains same
-                    if (cmd == RespCommand.SETIFGREATER)
-                        functionsState.etagState.etag = etagFromClient;
+                    functionsState.etagState.etag = etagFromClient;
 
-                    long newEtag = functionsState.etagState.etag + 1;
+                    long etagForResponse = cmd == RespCommand.SETIFMATCH ? functionsState.etagState.etag + 1 : functionsState.etagState.etag;
 
                     recordInfo.SetHasETag();
 
@@ -1061,8 +1060,8 @@ namespace Garnet.server
                     // write back array of the format [etag, nil]
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.CountDigits(newEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
+                    var numDigitsInEtag = NumUtils.CountDigits(etagForResponse);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, etagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
@@ -1394,7 +1393,10 @@ namespace Garnet.server
 
             if (shouldUpdateEtag)
             {
-                newValue.SetEtagInPayload(functionsState.etagState.etag + 1);
+                if (cmd is not RespCommand.SETIFGREATER)
+                    functionsState.etagState.etag++;
+
+                newValue.SetEtagInPayload(functionsState.etagState.etag);
                 EtagState.ResetState(ref functionsState.etagState);
             }
             else if (recordHadEtagPreMutation)
