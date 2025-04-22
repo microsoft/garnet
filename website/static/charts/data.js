@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1745351526045,
+  "lastUpdate": 1745351545448,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net9.0 Release)": [
@@ -29680,6 +29680,174 @@ window.BENCHMARK_DATA = {
             "value": 246549.91398111978,
             "unit": "ns",
             "range": "± 2159.8001957465203"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "42720645+hamdaankhalid@users.noreply.github.com",
+            "name": "Hamdaan Khalid",
+            "username": "hamdaankhalid"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "38bb088e2011e5382be19c35c0d6bdf5dcd6c8e0",
+          "message": "Bugfix Incorrect Etag increment on SETIFGREATER (#1177)\n\n* Bugfix Incorrect Etag increment on SETIFGREATER\n\n* Don't increment SETIFGREATER set ETags\n\n---------\n\nCo-authored-by: Hamdaan Khalid <hkhalid@microsoft.com>",
+          "timestamp": "2025-04-22T12:38:27-07:00",
+          "tree_id": "f056b59b4fa870a547fa7f11c64fdc6dbdba4853",
+          "url": "https://github.com/microsoft/garnet/commit/38bb088e2011e5382be19c35c0d6bdf5dcd6c8e0"
+        },
+        "date": 1745351355378,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringReadCommand(Params: ACL)",
+            "value": 29227.265495300293,
+            "unit": "ns",
+            "range": "± 38.659030849871534"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringRmwCommand(Params: ACL)",
+            "value": 37985.38168569712,
+            "unit": "ns",
+            "range": "± 41.87818299066224"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjRmwCommand(Params: ACL)",
+            "value": 53345.19589468149,
+            "unit": "ns",
+            "range": "± 105.61416430060015"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjReadCommand(Params: ACL)",
+            "value": 58854.13130493164,
+            "unit": "ns",
+            "range": "± 228.69400745378962"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpProc(Params: ACL)",
+            "value": 15060.569753011068,
+            "unit": "ns",
+            "range": "± 77.75697538828656"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpTxn(Params: ACL)",
+            "value": 31179.086095174152,
+            "unit": "ns",
+            "range": "± 31.667622859915337"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonGetCommand(Params: ACL)",
+            "value": 143331.025,
+            "unit": "ns",
+            "range": "± 1815.9378465180464"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonSetCommand(Params: ACL)",
+            "value": 236969.79908970423,
+            "unit": "ns",
+            "range": "± 2025.6708099330324"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringReadCommand(Params: AOF)",
+            "value": 28253.836392211913,
+            "unit": "ns",
+            "range": "± 139.21423312022557"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringRmwCommand(Params: AOF)",
+            "value": 43858.46788330078,
+            "unit": "ns",
+            "range": "± 239.70471570300742"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjRmwCommand(Params: AOF)",
+            "value": 61396.60406087239,
+            "unit": "ns",
+            "range": "± 331.0366677533517"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjReadCommand(Params: AOF)",
+            "value": 57464.659751383464,
+            "unit": "ns",
+            "range": "± 330.0849763882029"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpProc(Params: AOF)",
+            "value": 16002.200178879957,
+            "unit": "ns",
+            "range": "± 15.514673315859826"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpTxn(Params: AOF)",
+            "value": 33703.33676147461,
+            "unit": "ns",
+            "range": "± 276.6943877063533"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonGetCommand(Params: AOF)",
+            "value": 143088.49549153645,
+            "unit": "ns",
+            "range": "± 893.6676037417659"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonSetCommand(Params: AOF)",
+            "value": 244050.6630859375,
+            "unit": "ns",
+            "range": "± 1332.878775882005"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringReadCommand(Params: None)",
+            "value": 28844.835807291667,
+            "unit": "ns",
+            "range": "± 180.66781372995513"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpRawStringRmwCommand(Params: None)",
+            "value": 40221.28318074544,
+            "unit": "ns",
+            "range": "± 279.2917101507835"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjRmwCommand(Params: None)",
+            "value": 55103.97493693034,
+            "unit": "ns",
+            "range": "± 473.32256126844254"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpObjReadCommand(Params: None)",
+            "value": 57488.71271362305,
+            "unit": "ns",
+            "range": "± 245.48650209072568"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpProc(Params: None)",
+            "value": 15060.209542338054,
+            "unit": "ns",
+            "range": "± 67.26752691322373"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleNoOpTxn(Params: None)",
+            "value": 27565.784115600585,
+            "unit": "ns",
+            "range": "± 126.79774323164041"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonGetCommand(Params: None)",
+            "value": 145603.09256417412,
+            "unit": "ns",
+            "range": "± 707.4311473497305"
+          },
+          {
+            "name": "BDN.benchmark.Operations.ModuleOperations.ModuleJsonSetCommand(Params: None)",
+            "value": 243129.22787710337,
+            "unit": "ns",
+            "range": "± 2313.8210583166797"
           }
         ]
       }
