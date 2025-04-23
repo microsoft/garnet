@@ -32,13 +32,18 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// As a span of the contained data.
+        /// </summary>
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new(ptr, (int)(curr - ptr));
+
+        /// <summary>
         /// Encodes the <paramref name="chars"/> as ASCII bulk string to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteAsciiBulkString(string chars)
         {
             while (!RespWriteUtils.TryWriteAsciiBulkString(chars, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -48,7 +53,7 @@ namespace Garnet.common
         public void WriteAsciiDirect(ReadOnlySpan<char> span)
         {
             while (!RespWriteUtils.TryWriteAsciiDirect(span, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -58,7 +63,7 @@ namespace Garnet.common
         public void WriteArrayItem(long item)
         {
             while (!RespWriteUtils.TryWriteArrayItem(item, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -68,7 +73,7 @@ namespace Garnet.common
         public void WriteArrayLength(int len)
         {
             while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -78,7 +83,7 @@ namespace Garnet.common
         public void WriteArrayLength(int len, out int numDigits, out int totalLen)
         {
             while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end, out numDigits, out totalLen))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -88,7 +93,7 @@ namespace Garnet.common
         public void WriteBulkString(ReadOnlySpan<byte> item)
         {
             while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -98,7 +103,7 @@ namespace Garnet.common
         public void WriteDirect(ReadOnlySpan<byte> span)
         {
             while (!RespWriteUtils.TryWriteDirect(span, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -108,7 +113,7 @@ namespace Garnet.common
         public void WriteDoubleBulkString(double value)
         {
             while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -121,12 +126,12 @@ namespace Garnet.common
             if (resp3)
             {
                 while (!RespWriteUtils.TryWriteDoubleNumeric(value, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
             else
             {
                 while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
         }
 
@@ -137,7 +142,7 @@ namespace Garnet.common
         public void WriteEmptyArray()
         {
             while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -148,7 +153,7 @@ namespace Garnet.common
         public void WriteError(ReadOnlySpan<byte> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -158,7 +163,7 @@ namespace Garnet.common
         public void WriteInt32(int value)
         {
             while (!RespWriteUtils.TryWriteInt32(value, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -168,7 +173,7 @@ namespace Garnet.common
         public void WriteInt64(long value)
         {
             while (!RespWriteUtils.TryWriteInt64(value, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -178,7 +183,7 @@ namespace Garnet.common
         public void WriteIntegerFromBytes(byte[] resultBytes)
         {
             while (!RespWriteUtils.TryWriteIntegerFromBytes(resultBytes, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -191,12 +196,12 @@ namespace Garnet.common
             if (resp3)
             {
                 while (!RespWriteUtils.TryWriteMapLength(len, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
             else
             {
                 while (!RespWriteUtils.TryWriteArrayLength(len * 2, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
         }
 
@@ -209,12 +214,12 @@ namespace Garnet.common
             if (resp3)
             {
                 while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
             else
             {
                 while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
         }
 
@@ -225,7 +230,7 @@ namespace Garnet.common
         public void WriteNullArray()
         {
             while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -238,12 +243,12 @@ namespace Garnet.common
             if (resp3)
             {
                 while (!RespWriteUtils.TryWriteSetLength(len, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
             else
             {
                 while (!RespWriteUtils.TryWriteArrayLength(len, ref curr, end))
-                    ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    ReallocateOutput();
             }
         }
 
@@ -256,7 +261,13 @@ namespace Garnet.common
         public void WriteSimpleString(ReadOnlySpan<char> simpleString)
         {
             while (!RespWriteUtils.TryWriteSimpleString(simpleString, ref curr, end))
-                ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                ReallocateOutput();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReallocateOutput()
+        {
+            ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
         }
 
         public static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
@@ -288,8 +299,8 @@ namespace Garnet.common
         /// <summary>
         /// Decrease array length.
         /// </summary>
-        /// <param name="newCount"></param>
-        /// <param name="oldTotalArrayHeaderLen"></param>
+        /// <param name="newCount">New count of array items</param>
+        /// <param name="oldTotalArrayHeaderLen">Array Header length</param>
         public void DecreaseArrayLength(int newCount, int oldTotalArrayHeaderLen)
         {
             var startOutputStartptr = ptr;
@@ -303,6 +314,49 @@ namespace Garnet.common
                 var remainingLength = curr - ptr - oldTotalArrayHeaderLen;
                 Buffer.MemoryCopy(ptr + oldTotalArrayHeaderLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
                 curr += newTotalArrayHeaderLen - oldTotalArrayHeaderLen;
+            }
+        }
+
+        /// <summary>
+        /// Increment map length.
+        /// </summary>
+        /// <param name="oldCount">Old count of array items</param>
+        public void IncrementMapLength(int oldCount)
+        {
+            int oldLen, newCount, newLen;
+            var startOutputStartptr = ptr;
+
+            if (resp3)
+            {
+                oldLen = NumUtils.CountDigits(oldCount);
+                newCount = oldCount + 1;
+            }
+            else
+            {
+                oldLen = NumUtils.CountDigits(2 * oldCount);
+                newCount = 2 * (oldCount + 1);
+            }
+            newLen = NumUtils.CountDigits(newCount);
+
+            if (oldLen != newLen)
+            {
+                ReallocateOutput();
+                startOutputStartptr = ptr;
+
+                var oldTotalArrayHeaderLen = oldLen + 3;
+                var newTotalArrayHeaderLen = newLen + 3;
+                var remainingLength = curr - ptr - oldTotalArrayHeaderLen;
+                Buffer.MemoryCopy(ptr + oldTotalArrayHeaderLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
+                curr += newTotalArrayHeaderLen - oldTotalArrayHeaderLen;
+            }
+
+            if (resp3)
+            {
+                _ = RespWriteUtils.TryWriteMapLength(newCount, ref startOutputStartptr, end);
+            }
+            else
+            {
+                _ = RespWriteUtils.TryWriteArrayLength(newCount, ref startOutputStartptr, end, out _, out _);
             }
         }
 
