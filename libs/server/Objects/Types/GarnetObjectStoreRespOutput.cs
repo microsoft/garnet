@@ -76,8 +76,8 @@ namespace Garnet.server
         internal void ResetPosition() => writer.ResetPosition();
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void DecreaseArrayLength(int newCount, int oldArrayLen, int arrayPos = 0) =>
-            writer.DecreaseArrayLength(newCount, oldArrayLen, arrayPos);
+        internal void DecreaseArrayLength(int newCount, int oldTotalArrayHeaderLen) =>
+            writer.DecreaseArrayLength(newCount, oldTotalArrayHeaderLen);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void IncResult1()
