@@ -289,21 +289,20 @@ namespace Garnet.common
         /// Decrease array length.
         /// </summary>
         /// <param name="newCount"></param>
-        /// <param name="oldArrayLen"></param>
-        /// <param name="arrayPos"></param>
-        public void DecreaseArrayLength(int newCount, int oldArrayLen, int arrayPos = 0)
+        /// <param name="oldTotalArrayHeaderLen"></param>
+        public void DecreaseArrayLength(int newCount, int oldTotalArrayHeaderLen)
         {
-            var startOutputStartptr = ptr + arrayPos;
+            var startOutputStartptr = ptr;
 
             // ReallocateOutput is not needed here as there should be always be available space in the output buffer as we have already written the max array length
             _ = RespWriteUtils.TryWriteArrayLength(newCount, ref startOutputStartptr, end, out _, out var newTotalArrayHeaderLen);
-            Debug.Assert(oldArrayLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array length in the buffer");
+            Debug.Assert(oldTotalArrayHeaderLen >= newTotalArrayHeaderLen, "newTotalArrayHeaderLen can't be bigger than totalArrayHeaderLen as we have already written max array length in the buffer");
 
-            if (oldArrayLen != newTotalArrayHeaderLen)
+            if (oldTotalArrayHeaderLen != newTotalArrayHeaderLen)
             {
-                var remainingLength = curr - ptr - oldArrayLen;
-                Buffer.MemoryCopy(ptr + oldArrayLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
-                curr += newTotalArrayHeaderLen - oldArrayLen;
+                var remainingLength = curr - ptr - oldTotalArrayHeaderLen;
+                Buffer.MemoryCopy(ptr + oldTotalArrayHeaderLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
+                curr += newTotalArrayHeaderLen - oldTotalArrayHeaderLen;
             }
         }
 
