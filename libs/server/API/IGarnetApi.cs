@@ -39,6 +39,11 @@ namespace Garnet.server
         GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input);
 
         /// <summary>
+        /// DEL Conditional
+        /// </summary>
+        GarnetStatus DEL_Conditional(ref SpanByte key, ref RawStringInput input);
+
+        /// <summary>
         /// SET Conditional
         /// </summary>
         GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);

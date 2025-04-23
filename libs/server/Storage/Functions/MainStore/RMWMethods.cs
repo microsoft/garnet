@@ -357,12 +357,11 @@ namespace Garnet.server
                     // Nothing is set because being in this block means NX was already violated
                     return true;
                 case RespCommand.DELIFGREATER:
-                    long etagFromClient = input.parseState.GetLong(1);
-                    if (etagFromClient > functionsState.etagState.etag)
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-
+                    long etagFromClient = input.parseState.GetLong(0);
+                    rmwInfo.Action = etagFromClient > functionsState.etagState.etag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
                     EtagState.ResetState(ref functionsState.etagState);
                     return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     etagFromClient = input.parseState.GetLong(1);
@@ -911,6 +910,12 @@ namespace Garnet.server
             {
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                    // During checkpointing we can skip going via IPU route, and so we reinit the etag state to handle that edge case
+                    if (rmwInfo.RecordInfo.ETag)
+                    {
+                        EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
+                    }
+
                     long etagToCheckWith = input.parseState.GetLong(1);
 
                     // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
@@ -945,13 +950,17 @@ namespace Garnet.server
                     EtagState.ResetState(ref functionsState.etagState);
                     return false;
                 case RespCommand.DELIFGREATER:
-                    // at NCU we already know whether to delete or not so we are safe to never go into RCU
-                    etagToCheckWith = input.parseState.GetLong(1);
-                    if (etagToCheckWith > functionsState.etagState.etag)
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                    // During checkpointing we can skip going via IPU route, and so we reinit the etag state to handle that edge case
+                    if (rmwInfo.RecordInfo.ETag)
+                    {
+                        EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
+                    }
 
+                    etagToCheckWith = input.parseState.GetLong(0);
+                    rmwInfo.Action = etagToCheckWith > functionsState.etagState.etag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
                     EtagState.ResetState(ref functionsState.etagState);
                     return false;
+
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist

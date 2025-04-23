@@ -585,7 +585,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, etag);
         }
 
-
         [Test]
         public void SetIfMatchOnNonEtagDataReturnsNewEtagAndNoValue()
         {

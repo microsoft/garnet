@@ -88,7 +88,7 @@ namespace Garnet.server
         private bool NetworkDELIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-           if (parseState.Count != 3)
+           if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFGREATER));
 
             SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
@@ -102,13 +102,13 @@ namespace Garnet.server
             RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
             input.header.SetWithEtagFlag();
 
-            GarnetStatus status = storageApi.SET_Conditional(ref key, ref input);
+            GarnetStatus status = storageApi.DEL_Conditional(ref key, ref input);
 
-            // HK TODO: this keys deleted is probably not even correct lmao need to test this manuall at some point
             int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
             while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         } 
 
