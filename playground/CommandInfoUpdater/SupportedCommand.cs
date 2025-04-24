@@ -126,6 +126,7 @@ namespace CommandInfoUpdater
             new("DECR", RespCommand.DECR),
             new("DECRBY", RespCommand.DECRBY),
             new("DEL", RespCommand.DEL),
+            new("DELIFGREATER", RespCommand.DELIFGREATER),
             new("DISCARD", RespCommand.DISCARD),
             new("DUMP", RespCommand.DUMP),
             new("ECHO", RespCommand.ECHO),

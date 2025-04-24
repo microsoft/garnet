@@ -394,6 +394,30 @@
     "SubCommands": null
   },
   {
+    "Command": "DELIFGREATER",
+    "Name": "DELIFGREATER",
+    "Arity": 2,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RM, Delete"
+      }
+    ]
+  },
+  {
     "Command": "FORCEGC",
     "Name": "FORCEGC",
     "Arity": -1,

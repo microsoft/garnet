@@ -216,6 +216,28 @@
     ]
   },
   {
+    "Command": "DELIFGREATER",
+    "Name": "DELIFGREATER",
+    "Summary": "Given a key and an Etag only deletes the key if the Etag given in the request is strictly greater than the already existing etag for the key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "FORCEGC",
     "Name": "FORCEGC",
     "Summary": "Forces garbage collection.",
