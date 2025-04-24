@@ -76,7 +76,7 @@ namespace Garnet.server
         {
         }
 
-        protected int ToByteRespFormat(ref RespMemoryWriter output)
+        protected void ToByteRespFormat(ref RespMemoryWriter output, bool increment)
         {
             var ArgCount = 2; // name, type
 
@@ -96,6 +96,11 @@ namespace Garnet.server
             }
 
             if (ArgumentFlags != RespCommandArgumentFlags.None)
+            {
+                ArgCount++;
+            }
+
+            if (increment)
             {
                 ArgCount++;
             }
@@ -136,8 +141,6 @@ namespace Garnet.server
                     output.WriteSimpleString(respArgFlag);
                 }
             }
-
-            return ArgCount;
         }
 
         /// <inheritdoc />
@@ -150,7 +153,7 @@ namespace Garnet.server
 
             var output = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-            _ = ToByteRespFormat(ref output);
+            ToByteRespFormat(ref output, false);
             var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
             return s;
         }
@@ -196,12 +199,10 @@ namespace Garnet.server
 
             var output = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-            var ArgCount = ToByteRespFormat(ref output);
+            ToByteRespFormat(ref output, true);
 
             output.WriteAsciiBulkString("key_spec_index");
             output.WriteInt32(KeySpecIndex);
-
-            output.IncrementMapLength(ArgCount++);
 
             return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
@@ -235,14 +236,16 @@ namespace Garnet.server
             SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
             var output = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-            var ArgCount = ToByteRespFormat(ref output);
-
             if (Value != null)
             {
+                ToByteRespFormat(ref output, true);
+
                 output.WriteAsciiBulkString("value");
                 output.WriteAsciiDirect(Value);
-
-                output.IncrementMapLength(ArgCount++);
+            }
+            else
+            {
+                ToByteRespFormat(ref output, false);
             }
 
             var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
@@ -302,18 +305,20 @@ namespace Garnet.server
 
             var output = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-            var ArgCount = ToByteRespFormat(ref output);
-
             if (Arguments != null)
             {
+                ToByteRespFormat(ref output, true);
+
                 output.WriteAsciiBulkString("arguments");
                 output.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
                     output.WriteAsciiDirect(argument.ToRespFormat(respProtocolVersion));
                 }
-
-                output.IncrementMapLength(ArgCount++);
+            }
+            else
+            {
+                ToByteRespFormat(ref output, false);
             }
 
             return Encoding.ASCII.GetString(output.AsReadOnlySpan());
