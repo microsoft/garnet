@@ -549,7 +549,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
-            
+
             RedisResult res = db.Execute("DELIFGREATER", "nonexistingkey", 10);
             ClassicAssert.AreEqual(0, (long)res);
         }
