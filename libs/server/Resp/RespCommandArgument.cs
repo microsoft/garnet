@@ -4,11 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -144,18 +142,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public virtual unsafe string ToRespFormat(byte respProtocolVersion = 2)
+        public virtual void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             ToByteRespFormat(ref output, false);
-            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
-            return s;
         }
     }
 
@@ -190,21 +179,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             ToByteRespFormat(ref output, true);
 
             output.WriteAsciiBulkString("key_spec_index");
             output.WriteInt32(KeySpecIndex);
-
-            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 
@@ -228,14 +208,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             if (Value != null)
             {
                 ToByteRespFormat(ref output, true);
@@ -247,9 +221,6 @@ namespace Garnet.server
             {
                 ToByteRespFormat(ref output, false);
             }
-
-            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
-            return s;
         }
     }
 
@@ -296,15 +267,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             if (Arguments != null)
             {
                 ToByteRespFormat(ref output, true);
@@ -313,15 +277,13 @@ namespace Garnet.server
                 output.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    output.WriteAsciiDirect(argument.ToRespFormat(respProtocolVersion));
+                    argument.ToRespFormat(ref output);
                 }
             }
             else
             {
                 ToByteRespFormat(ref output, false);
             }
-
-            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 

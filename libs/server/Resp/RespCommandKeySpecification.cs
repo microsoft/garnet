@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -46,17 +45,9 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
-
         [JsonIgnore]
         public string[] RespFormatFlags => respFormatFlags;
 
-        private string respFormat;
         private readonly KeySpecificationFlags flags;
         private readonly string[] respFormatFlags;
 
@@ -64,7 +55,7 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public void ToRespFormat(ref RespMemoryWriter output)
         {
             var elemCount = 0;
 
@@ -88,13 +79,6 @@ namespace Garnet.server
                 elemCount++;
             }
 
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             output.WriteMapLength(elemCount);
 
             if (Notes != null)
@@ -114,15 +98,13 @@ namespace Garnet.server
 
             if (BeginSearch != null)
             {
-                output.WriteAsciiDirect(BeginSearch.ToRespFormat(respProtocolVersion));
+                BeginSearch.ToRespFormat(ref output);
             }
 
             if (FindKeys != null)
             {
-                output.WriteAsciiDirect(FindKeys.ToRespFormat(respProtocolVersion));
+                FindKeys.ToRespFormat(ref output);
             }
-
-            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 
@@ -187,15 +169,8 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
             output.WriteAsciiBulkString("type");
@@ -204,8 +179,6 @@ namespace Garnet.server
             output.WriteAsciiBulkString("spec");
             output.WriteAsciiDirect(RespFormatSpec);
             output.WriteAsciiDirect("\r\n");
-
-            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 
