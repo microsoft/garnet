@@ -988,8 +988,11 @@ namespace Garnet.server
 
             foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
             {
+                if (string.IsNullOrEmpty(customCmd.Value.Name))
+                    continue;
+
                 cmdCount++;
-                resultSb.Append(customCmd.Value.RespFormat);
+                resultSb.Append(customCmd.Value.ToRespFormat(respProtocolVersion));
             }
 
             if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
@@ -997,7 +1000,7 @@ namespace Garnet.server
                 foreach (var cmd in respCommandsInfo.Values)
                 {
                     cmdCount++;
-                    resultSb.Append(cmd.RespFormat);
+                    resultSb.Append(cmd.ToRespFormat(respProtocolVersion));
                 }
             }
 
@@ -1059,7 +1062,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Processes COMMAND INFO subcommand.
+        /// Processes COMMAND DOCS subcommand.
         /// </summary>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_DOCS()
@@ -1077,13 +1080,13 @@ namespace Garnet.server
                 foreach (var cmdDocs in cmdsDocs.Values)
                 {
                     docsCount++;
-                    resultSb.Append(cmdDocs.RespFormat);
+                    resultSb.Append(cmdDocs.ToRespFormat(respProtocolVersion));
                 }
 
                 foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsDocs())
                 {
                     docsCount++;
-                    resultSb.Append(customCmd.Value.RespFormat);
+                    resultSb.Append(customCmd.Value.ToRespFormat(respProtocolVersion));
                 }
             }
             else
@@ -1095,7 +1098,7 @@ namespace Garnet.server
                         customCommandManagerSession.TryGetCustomCommandDocs(cmdName, out cmdDocs))
                     {
                         docsCount++;
-                        resultSb.Append(cmdDocs.RespFormat);
+                        resultSb.Append(cmdDocs.ToRespFormat(respProtocolVersion));
                     }
                 }
             }
@@ -1140,7 +1143,7 @@ namespace Garnet.server
                     if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
                         customCommandManagerSession.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                     {
-                        while (!RespWriteUtils.TryWriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteAsciiDirect(cmdInfo.ToRespFormat(respProtocolVersion), ref dcurr, dend))
                             SendAndReset();
                     }
                     else
