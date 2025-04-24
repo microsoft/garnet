@@ -283,11 +283,11 @@ One of the following:
 DELIFGREATER key etag
 ```
 
-Given a key and an Etag only deletes the key if the Etag given in the request is strictly greater than the already existing etag for the key.
+Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.
 
 #### **Response**
 
-- **Integer reply**: 1 if key was deleted else 0.
+- **Integer reply**: Returns 1 if the key was successfully deleted; otherwise, returns 0.
 
 ---
 

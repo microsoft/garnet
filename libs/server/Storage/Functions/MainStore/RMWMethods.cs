@@ -910,11 +910,8 @@ namespace Garnet.server
             {
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    // During checkpointing we can skip going via IPU route, and so we reinit the etag state to handle that edge case
                     if (rmwInfo.RecordInfo.ETag)
-                    {
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
-                    }
 
                     long etagToCheckWith = input.parseState.GetLong(1);
 
@@ -949,18 +946,6 @@ namespace Garnet.server
 
                     EtagState.ResetState(ref functionsState.etagState);
                     return false;
-                case RespCommand.DELIFGREATER:
-                    // During checkpointing we can skip going via IPU route, and so we reinit the etag state to handle that edge case
-                    if (rmwInfo.RecordInfo.ETag)
-                    {
-                        EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
-                    }
-
-                    etagToCheckWith = input.parseState.GetLong(0);
-                    rmwInfo.Action = etagToCheckWith > functionsState.etagState.etag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
-                    EtagState.ResetState(ref functionsState.etagState);
-                    return false;
-
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
@@ -1050,10 +1035,17 @@ namespace Garnet.server
 
             switch (cmd)
             {
+                case RespCommand.DELIFGREATER:
+                    // We are doing this in copy updater instead of NCU because we need to tombstone the record in InternalRMW.
+                    // NCU does not tombstone the record.
+                    long etagFromClient = input.parseState.GetLong(0);
+                    rmwInfo.Action = etagFromClient > functionsState.etagState.etag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
+                    EtagState.ResetState(ref functionsState.etagState);
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
-
                     shouldUpdateEtag = true;
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
@@ -1072,7 +1064,7 @@ namespace Garnet.server
                         newValue.ExtraMetadata = input.arg1;
                     }
 
-                    long etagFromClient = input.parseState.GetLong(1);
+                    etagFromClient = input.parseState.GetLong(1);
 
                     functionsState.etagState.etag = etagFromClient;
 

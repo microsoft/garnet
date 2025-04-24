@@ -218,7 +218,7 @@
   {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
-    "Summary": "Given a key and an Etag only deletes the key if the Etag given in the request is strictly greater than the already existing etag for the key.",
+    "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
     "Group": "Generic",
     "Complexity": "O(1)",
     "Arguments": [

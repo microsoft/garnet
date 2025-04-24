@@ -79,8 +79,6 @@ namespace Garnet.server
 
         /// <summary>
         /// DELIFGREATER key etag
-        /// since normal delete tombstoning provides no support for doing a conditional delete on records that are in the stable region
-        /// we will use conditional SET to get RMW access and use that for deletion
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="storageApi"></param>
@@ -88,7 +86,7 @@ namespace Garnet.server
         private bool NetworkDELIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-           if (parseState.Count != 2)
+            if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFGREATER));
 
             SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
@@ -98,7 +96,10 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-            
+
+            // Conditional delete is not natively supported for records in the stable region.
+            // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
+
             RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
             input.header.SetWithEtagFlag();
 
@@ -110,7 +111,7 @@ namespace Garnet.server
                 SendAndReset();
 
             return true;
-        } 
+        }
 
         /// <summary>
         /// SETIFMATCH key val etag [EX|PX] [expiry] [NOGET]
