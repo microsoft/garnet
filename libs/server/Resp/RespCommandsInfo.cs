@@ -7,12 +7,10 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
-using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
 using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -364,15 +362,8 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public unsafe void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 1000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             if (string.IsNullOrWhiteSpace(Name))
             {
                 output.WriteNull();
@@ -421,7 +412,7 @@ namespace Garnet.server
                 if (KeySpecifications != null && ksCount > 0)
                 {
                     foreach (var ks in KeySpecifications)
-                        output.WriteAsciiDirect(ks.ToRespFormat(respProtocolVersion));
+                        ks.ToRespFormat(ref output);
                 }
 
                 // 10) SubCommands
@@ -430,12 +421,9 @@ namespace Garnet.server
                 if (SubCommands != null && subCommandCount > 0)
                 {
                     foreach (var subCommand in SubCommands)
-                        output.WriteAsciiDirect(subCommand.ToRespFormat(respProtocolVersion));
+                        subCommand.ToRespFormat(ref output);
                 }
             }
-
-            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
-            return s;
         }
     }
 }

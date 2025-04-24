@@ -6,12 +6,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
 using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -212,15 +210,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
+        public void ToRespFormat(ref RespMemoryWriter output)
         {
-            const int outputBufferLength = 2000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
-
-            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
-
             var argCount = 1; // group
 
             if (Summary != null)
@@ -278,8 +269,7 @@ namespace Garnet.server
                 output.WriteSetLength(respFormatDocFlags.Length);
                 foreach (var respDocFlag in respFormatDocFlags)
                 {
-                    //output.WriteSimpleString(respDocFlag);
-                    output.WriteSimpleString(respDocFlag.Length.ToString());
+                    output.WriteSimpleString(respDocFlag);
                 }
             }
 
@@ -295,7 +285,7 @@ namespace Garnet.server
                 output.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    output.WriteAsciiDirect(argument.ToRespFormat(respProtocolVersion));
+                    argument.ToRespFormat(ref output);
                 }
             }
 
@@ -305,12 +295,9 @@ namespace Garnet.server
                 output.WriteMapLength(SubCommands.Length);
                 foreach (var subCommand in SubCommands)
                 {
-                    output.WriteAsciiDirect(subCommand.ToRespFormat(respProtocolVersion));
+                    subCommand.ToRespFormat(ref output);
                 }
             }
-
-            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
-            return s;
         }
     }
 
