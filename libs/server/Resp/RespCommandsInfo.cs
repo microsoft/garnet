@@ -417,7 +417,7 @@ namespace Garnet.server
 
                 // 10) SubCommands
                 var subCommandCount = SubCommands?.Length ?? 0;
-                output.WriteSetLength(subCommandCount);
+                output.WriteArrayLength(subCommandCount);
                 if (SubCommands != null && subCommandCount > 0)
                 {
                     foreach (var subCommand in SubCommands)

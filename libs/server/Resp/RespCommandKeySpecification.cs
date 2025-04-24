@@ -155,31 +155,8 @@ namespace Garnet.server
         /// </summary>
         public abstract string MethodName { get; }
 
-        /// <summary>
-        /// Type of the key specification method in RESP format
-        /// </summary>
-        public abstract string RespFormatType { get; }
-
-        /// <summary>
-        /// Spec of the key specification method in RESP format
-        /// </summary>
-        public abstract string RespFormatSpec { get; }
-
-        /// <summary>
-        /// Serializes the current object to RESP format
-        /// </summary>
-        /// <returns>Serialized value</returns>
-        public void ToRespFormat(ref RespMemoryWriter output)
-        {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiDirect(RespFormatType);
-            output.WriteAsciiDirect("\r\n");
-            output.WriteAsciiBulkString("spec");
-            output.WriteAsciiDirect(RespFormatSpec);
-            output.WriteAsciiDirect("\r\n");
-        }
+        /// <inheritdoc />
+        public abstract void ToRespFormat(ref RespMemoryWriter output);
     }
 
     /// <summary>
@@ -213,17 +190,17 @@ namespace Garnet.server
         public int Index { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$5\r\nindex";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            get { return this.respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiBulkString("index");
+            output.WriteAsciiBulkString("spec");
+            output.WriteMapLength(1);
+            output.WriteAsciiBulkString("index");
+            output.WriteInt32(Index);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public BeginSearchIndex()
@@ -267,17 +244,19 @@ namespace Garnet.server
         public int StartFrom { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$7\r\nkeyword";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            get { return this.respFormatSpec ??= $"*4\r\n$7\r\nkeyword\r\n${this.Keyword?.Length ?? 0}\r\n{this.Keyword}\r\n$9\r\nstartfrom\r\n:{this.StartFrom}"; }
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiBulkString("keyword");
+            output.WriteAsciiBulkString("spec");
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("keyword");
+            output.WriteAsciiBulkString(Keyword);
+            output.WriteAsciiBulkString("startfrom");
+            output.WriteInt32(StartFrom);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public BeginSearchKeyword() { }
@@ -323,17 +302,15 @@ namespace Garnet.server
     public class BeginSearchUnknown : BeginSearchKeySpecMethodBase
     {
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$7\r\nunknown";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            get { return this.respFormatSpec ??= $"*0"; }
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiBulkString("unknown");
+            output.WriteAsciiBulkString("spec");
+            output.WriteEmptyArray();
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public override bool TryGetStartIndex(ref SessionParseState parseState, out int index)
@@ -384,17 +361,21 @@ namespace Garnet.server
         public int Limit { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$5\r\nrange";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            get { return this.respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiBulkString("range");
+            output.WriteAsciiBulkString("spec");
+            output.WriteMapLength(3);
+            output.WriteAsciiBulkString("lastkey");
+            output.WriteInt32(LastKey);
+            output.WriteAsciiBulkString("keystep");
+            output.WriteInt32(KeyStep);
+            output.WriteAsciiBulkString("limit");
+            output.WriteInt32(Limit);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public FindKeysRange() { }
@@ -460,17 +441,21 @@ namespace Garnet.server
         public int KeyStep { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$6\r\nkeynum";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            get { return this.respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiBulkString("keynum");
+            output.WriteAsciiBulkString("spec");
+            output.WriteMapLength(3);
+            output.WriteAsciiBulkString("keynumidx");
+            output.WriteInt32(KeyNumIdx);
+            output.WriteAsciiBulkString("firstkey");
+            output.WriteInt32(FirstKey);
+            output.WriteAsciiBulkString("keystep");
+            output.WriteInt32(KeyStep);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public FindKeysKeyNum() { }
@@ -530,17 +515,15 @@ namespace Garnet.server
     public class FindKeysUnknown : FindKeysKeySpecMethodBase
     {
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$7\r\nunknown";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter output)
         {
-            get { return this.respFormatSpec ??= $"*0"; }
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiBulkString("unknown");
+            output.WriteAsciiBulkString("spec");
+            output.WriteEmptyArray();
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
