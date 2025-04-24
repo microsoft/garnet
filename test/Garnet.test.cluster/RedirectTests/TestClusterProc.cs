@@ -44,11 +44,11 @@ namespace Garnet.test.cluster
             var getB = GetNextArg(ref procInput, ref offset);
             var getC = GetNextArg(ref procInput, ref offset);
 
-            var status = api.GET(getA, out _);
+            var status = api.GET(getA, out PinnedSpanByte _);
             ClassicAssert.AreEqual(GarnetStatus.NOTFOUND, status);
-            _ = api.GET(getB, out _);
+            _ = api.GET(getB, out PinnedSpanByte _);
             ClassicAssert.AreEqual(GarnetStatus.NOTFOUND, status);
-            _ = api.GET(getC, out _);
+            _ = api.GET(getC, out PinnedSpanByte _);
             ClassicAssert.AreEqual(GarnetStatus.NOTFOUND, status);
             WriteSimpleString(ref output, "SUCCESS");
         }
@@ -95,7 +95,6 @@ namespace Garnet.test.cluster
         ///  CLUSTERSETPROC key1 key2 key3
         /// </summary>
         /// <typeparam name="TGarnetReadApi"></typeparam>
-        /// <param name="api"></param>
         /// <returns></returns>
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
@@ -115,10 +114,10 @@ namespace Garnet.test.cluster
         {
             var offset = 0;
             var getA = GetNextArg(ref procInput, ref offset);
-            var setB = GetNextArg(ref procInput, ref offset).SpanByte;
-            var setC = GetNextArg(ref procInput, ref offset).SpanByte;
+            var setB = GetNextArg(ref procInput, ref offset);
+            var setC = GetNextArg(ref procInput, ref offset);
 
-            _ = api.GET(getA, out _);
+            _ = api.GET(getA, out PinnedSpanByte _);
             var status = api.SET(setB, setB);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
             status = api.SET(setC, setC);

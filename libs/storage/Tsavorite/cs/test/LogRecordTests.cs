@@ -217,7 +217,7 @@ namespace Tsavorite.test
             diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
             Assert.That(diskLogRecord.Info.RecordIsInline);
             // verify inline copy by checking SerializedSize
-            Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(logRecord.GetSerializedLength()));
+            Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(logRecord.ActualRecordSize));
             // verify getting the key and value - length and data; eTag; expiration
             Assert.That(diskLogRecord.Key.SequenceEqual(logRecord.Key));
             Assert.That(diskLogRecord.ValueSpan.SequenceEqual(logRecord.ValueSpan));
@@ -236,7 +236,7 @@ namespace Tsavorite.test
             diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
             Assert.That(!diskLogRecord.Info.RecordIsInline);
             // verify out-of-line copy by checking SerializedSize
-            Assert.That(diskLogRecord.GetSerializedLength(), Is.Not.EqualTo(logRecord.GetSerializedLength()));
+            Assert.That(diskLogRecord.GetSerializedLength(), Is.GreaterThan(logRecord.ActualRecordSize));
             // verify indicator byte
             Assert.That(diskLogRecord.Version, Is.EqualTo(0));
             // verify getting the key and value - length and data; eTag; expiration

@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet
 {

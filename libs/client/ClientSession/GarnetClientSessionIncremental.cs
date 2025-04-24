@@ -42,6 +42,11 @@ namespace Garnet.client
         public bool NeedsInitialization => curr == null;
 
         /// <summary>
+        /// Return a <see cref="Span{_byte_}"/> of all remaining available space in the network buffer.
+        /// </summary>
+        public PinnedSpanByte GetAvailableNetworkBufferSpan() => PinnedSpanByte.FromPinnedPointer(curr, (int)(end - curr));
+
+        /// <summary>
         /// Flush and initialize buffers/parameters used for migrate command
         /// </summary>
         /// <param name="iterationProgressFreq"></param>
@@ -92,106 +97,21 @@ namespace Garnet.client
         /// </summary>
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
         {
-            task = null;
-
             // We include space for newline at the end, to be added before sending
             var totalLen = recordSpan.TotalSize() + 2;
             if (totalLen > (int)(end - curr))
             {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
+                // If there is no space left, send outstanding data and return the send-completion task.
+                // Caller is responsible for waiting for task completion and retrying.
                 task = SendAndResetIterationBuffer();
                 return false;
             }
 
             recordSpan.SerializeTo(curr);
             curr += recordSpan.TotalSize();
-            recordCount++;
+            ++recordCount;
+            task = null;
             return true;
-        }
-
-        /// <summary>
-        /// Try write key value pair for main store directly to the client buffer
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="task"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(PinnedSpanByte key, PinnedSpanByte value, out Task<string> task)
-        {
-            task = nullxx;
-            // Try write key value pair directly to client buffer
-            if (!WriteSerializedSpanByte(key, value))
-            {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
-                task = SendAndResetIterationBuffer();
-                return false;
-            }
-
-            recordCount++;
-            return true;
-
-            bool WriteSerializedSpanByte(PinnedSpanByte key, PinnedSpanByte value)
-            {
-                var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
-                if (totalLen > (int)(end - curr))
-                    return false;
-
-                key.SerializeTo(curr);
-                curr += key.TotalSize;
-                value.SerializeTo(curr);
-                curr += value.TotalSize;
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// Try write key value pair for object store directly to the client buffer
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="expiration"></param>
-        /// <param name="task"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueByteArray(PinnedSpanByte key, byte[] value, long expiration, out Task<string> task)
-        {
-            task = nullxx;
-            // Try write key value pair directly to client buffer
-            if (!WriteSerializedKeyValueByteArray(key, value, expiration))
-            {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
-                task = SendAndResetIterationBuffer();
-                return false;
-            }
-
-            recordCount++;
-            return true;
-
-            bool WriteSerializedKeyValueByteArray(PinnedSpanByte key, byte[] value, long expiration)
-            {
-                // We include space for newline at the end, to be added before sending
-                int totalLen = 4 + key.Length + 4 + value.Length + 8 + 2;
-                if (totalLen > (int)(end - curr))
-                    return false;
-
-                *(int*)curr = key.Length;
-                curr += 4;
-                Buffer.MemoryCopy(key.ToPointer(), curr, key.Length, key.Length);
-                curr += key.Length;
-
-                *(int*)curr = value.Length;
-                curr += 4;
-                fixed (byte* valPtr = value)
-                    Buffer.MemoryCopy(valPtr, curr, value.Length, value.Length);
-                curr += value.Length;
-
-                *(long*)curr = expiration;
-                curr += 8;
-
-                return true;
-            }
         }
 
         long lastLog = 0;

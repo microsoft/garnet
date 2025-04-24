@@ -40,7 +40,7 @@ namespace Garnet.test
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (var i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
                 {
                     if (!ResetBuffer(garnetApi, ref output, buffOffset))
@@ -49,8 +49,8 @@ namespace Garnet.test
             }
 
             buffOffset = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
-            garnetApi.GET(key, out var outval2);
+            garnetApi.GET(key, out PinnedSpanByte outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
             if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             buffOffset = garnetApi.GetScratchBufferOffset();
@@ -79,7 +79,7 @@ namespace Garnet.test
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (int i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
                 {
                     if (!garnetApi.ResetScratchBuffer(buffOffset))
@@ -100,10 +100,10 @@ namespace Garnet.test
             var key = GetNextArg(ref procInput, ref offset);
 
             var buffOffset1 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval1);
 
             var buffOffset2 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval2);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
 
             if (!garnetApi.ResetScratchBuffer(buffOffset1))
             {
@@ -210,7 +210,7 @@ namespace Garnet.test
                 PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
                 // since we are setting with retain to etag, this change should be reflected in an etag update
-                garnetApi.SET_Conditional(key.ReadOnlySpan, ref input);
+                garnetApi.SET_Conditional(key, ref input);
             }
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);

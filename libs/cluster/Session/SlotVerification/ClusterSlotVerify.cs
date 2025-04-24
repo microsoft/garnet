@@ -16,15 +16,6 @@ namespace Garnet.cluster
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
 
-        private bool CheckIfKeyExists(byte[] key)
-        {
-            fixed (byte* keyPtr = key)
-            {
-                var keySlice = PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length);
-                return Exists(keySlice);
-            }
-        }
-
         private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, int slot = -1)
         {
             return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(ref config, ref keySlice);

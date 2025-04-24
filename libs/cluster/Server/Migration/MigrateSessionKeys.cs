@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -21,35 +20,25 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromMainStore()
         {
-            var bufferSize = 1 << 10;
-            SectorAlignedMemory buffer = new(bufferSize, 1);
-            var bufPtr = buffer.GetValidPointer();
-            var bufPtrEnd = bufPtr + bufferSize;
-            var output = SpanByteAndMemory.FromPinnedPointer(bufPtr, (int)(bufPtrEnd - bufPtr));
+            var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+            var output = new SpanByteAndMemory();
 
             try
             {
-                // Transition keys to MIGRATING status
+                // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
+                // Transition all QUEUED to MIGRATING state
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
-                ////////////////
-                // Build Input//
-                ////////////////
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
-
                 foreach (var pair in _keys.GetKeys())
                 {
-                    // Process only keys in MIGRATING status
+                    // Process only keys that are in MIGRATING status
                     if (pair.Value != KeyMigrationStatus.MIGRATING)
                         continue;
 
-                    var key = pair.Key;
-
-                    // Read value for key
-                    var status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
-
-                    // Check if found in main store
+                    // Read the value for the key. This will populate output with the entire serialized record.
+                    output.SpanByte = _gcs.GetAvailableNetworkBufferSpan();
+                    var status = localServerSession.BasicGarnetApi.Read_MainStore(pair.Key, ref input, ref output);
                     if (status == GarnetStatus.NOTFOUND)
                     {
                         // Transition key status back to QUEUED to unblock any writers
@@ -57,27 +46,13 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    Debug.Assert(!ClusterSession.Expired(ref value), "Expired record should have returned GarnetStatus.NOTFOUND");
-
-                    // Get SpanByte from stack if it was within size range, else from pinned heap memory
-                    bool ok;
-                    if (output.IsSpanByte)
-                        ok = WriteOrSendMainStoreKeyValuePair(key, output.SpanByte);
-                    else
-                    {
-                        fixed (byte* ptr = output.Memory.Memory.Span)
-                            ok = WriteOrSendMainStoreKeyValuePair(key, PinnedSpanByte.FromLengthPrefixedPinnedPointer(ptr));
-                    }
-
-                    if (!ok)
+                    // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, and
+                    // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
+                    if (!output.IsSpanByte && !WriteOrSendRecordSpan(ref output))
                         return false;
-
-                    // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                    output.SpanByte = PinnedSpanByte.FromPinnedPointer(bufPtr, (int)(bufPtrEnd - bufPtr));
                 }
 
-                // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
+                if (!FlushFinalMigrationBuffer())
                     return false;
 
                 DeleteKeys();
@@ -87,7 +62,6 @@ namespace Garnet.cluster
                 // If allocated memory in heap dispose it here.
                 if (output.Memory != default)
                     output.Memory.Dispose();
-                buffer.Dispose();
             }
             return true;
         }
@@ -99,6 +73,9 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromObjectStore()
         {
+            var input = new ObjectInput(RespCommandAccessor.MIGRATE);
+            var output = new GarnetObjectStoreOutput();
+
             try
             {
                 // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
@@ -106,33 +83,28 @@ namespace Garnet.cluster
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
-                foreach (var mKey in _keys.GetKeys())
+                foreach (var pair in _keys.GetKeys())
                 {
                     // Process only keys in MIGRATING status
-                    if (mKey.Value != KeyMigrationStatus.MIGRATING)
+                    if (pair.Value != KeyMigrationStatus.MIGRATING)
                         continue;
-                    var key = mKey.Key;
 
-                    ObjectInput input = new(RespCommand.MIGRATE);
-                    GarnetObjectStoreOutput value = default;
-                    var status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref value);
+                    output.SpanByteAndMemory.SpanByte = _gcs.GetAvailableNetworkBufferSpan();
+                    var status = localServerSession.BasicGarnetApi.Read_ObjectStore(pair.Key, ref input, ref output);
                     if (status == GarnetStatus.NOTFOUND)
                     {
                         // Transition key status back to QUEUED to unblock any writers
-                        _keys.UpdateStatus(mKey.Key, KeyMigrationStatus.QUEUED);
+                        _keys.UpdateStatus(pair.Key, KeyMigrationStatus.QUEUED);
                         continue;
                     }
 
-                    // Serialize the object.
-                    Debug.Assert(!ClusterSession.Expired(ref value.garnetObject), "Expired record should have returned GarnetStatus.NOTFOUND");
-                    GarnetObjectSerializer.Serialize(value.GarnetObject, out var objectData);
-
-                    if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
+                    // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, and
+                    // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
+                    if (!output.SpanByteAndMemory.IsSpanByte && !WriteOrSendRecordSpan(ref output.SpanByteAndMemory))
                         return false;
                 }
 
-                // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
+                if (!FlushFinalMigrationBuffer())
                     return false;
             }
             finally

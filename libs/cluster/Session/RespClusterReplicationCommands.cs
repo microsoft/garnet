@@ -449,7 +449,7 @@ namespace Garnet.cluster
                 TrackImportProgress(recordCount, isMainStore: true, recordCount == 0);
                 while (i < recordCount)
                 {
-                    if (!RespReadUtils.TryReadSerializedRecord(out long startAddress, out int length, ref payloadPtr, payloadEndPtr))
+                    if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
                         return false;
 
                     var diskLogRecord = new DiskLogRecord(startAddress, length);
@@ -462,11 +462,11 @@ namespace Garnet.cluster
                 TrackImportProgress(recordCount, isMainStore: false, recordCount == 0);
                 while (i < recordCount)
                 {
-                    if (!RespReadUtils.TryReadSerializedRecord(out long startAddress, out int length, ref payloadPtr, payloadEndPtr))
+                    if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
                         return false;
 
                     var diskLogRecord = new DiskLogRecord(startAddress, length);
-                    diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);  // TODO: Can we defer this?
+                    _ = diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);
                     _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Object);
                     i++;
                 }

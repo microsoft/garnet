@@ -56,11 +56,6 @@ namespace Tsavorite.core
             this.objectIdMap = objectIdMap;
         }
 
-        /// <summary>Serialized length of the record</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetSerializedLength()
-            => RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
-
         #region ISourceLogRecord
         /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0;

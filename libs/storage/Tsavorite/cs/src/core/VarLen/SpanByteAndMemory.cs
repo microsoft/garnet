@@ -135,8 +135,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Ensure the required size is available in this structure via the Span or the Memory.
         /// </summary>
-        public void EnsureSize(int size, MemoryPool<byte> memoryPool)
+        public void EnsureMemorySize(int size, MemoryPool<byte> memoryPool = null)
         {
+            if (memoryPool is null)
+                memoryPool = MemoryPool<byte>.Shared;
+
             if (IsSpanByte)
             {
                 if (SpanByte.Length >= size)

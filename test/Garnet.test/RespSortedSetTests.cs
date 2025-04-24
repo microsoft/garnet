@@ -18,12 +18,12 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
-    using TestBasicGarnetApi = GarnetApi<BasicContext<SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>,
-            ObjectAllocator<IGarnetObject, StoreFunctions<IGarnetObject, SpanByteComparer, DefaultRecordDisposer<IGarnetObject>>>>>;
+    using TestBasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     [TestFixture]
     public class RespSortedSetTests

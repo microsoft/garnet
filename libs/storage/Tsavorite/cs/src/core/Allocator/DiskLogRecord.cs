@@ -488,7 +488,7 @@ namespace Tsavorite.core
         {
             if (logRecord.Info.RecordIsInline)
             {
-                DirectCopyRecord(logRecord.GetInlineRecordSizes().actualSize, logRecord.physicalAddress, bufferPool, ref allocatedRecord);
+                DirectCopyRecord(logRecord.ActualRecordSize, logRecord.physicalAddress, bufferPool, ref allocatedRecord);
                 return;
             }
 

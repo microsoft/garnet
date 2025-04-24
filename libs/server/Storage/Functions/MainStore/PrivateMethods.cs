@@ -83,7 +83,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory dst, bool isFromPending)
+        void CopyRespToWithInput<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, bool isFromPending)
             where TSourceLogRecord : ISourceLogRecord
         {
             var value = srcLogRecord.ValueSpan;
@@ -95,46 +95,47 @@ namespace Garnet.server
                     // to the network buffer in case the operation does go pending (latter is indicated by isFromPending)
                     // This is accomplished by calling ConvertToHeap on the destination SpanByteAndMemory
                     if (isFromPending)
-                        dst.ConvertToHeap();
-                    CopyRespTo(value, ref dst);
+                        output.ConvertToHeap();
+                    CopyRespTo(value, ref output);
                     break;
 
                 case RespCommand.MIGRATE:
-                    if (value.Length <= dst.Length)
+                    if (value.Length <= output.Length)
                     {
-                        value.CopyTo(dst.SpanByte.Span);
-                        dst.Length = value.Length;
+                        value.CopyTo(output.SpanByte.Span);
+                        output.Length = value.Length;
                         return;
                     }
 
-                    dst.ConvertToHeap();
-                    dst.Length = value.TotalSize();
+                    output.ConvertToHeap();
+                    output.EnsureMemorySize(DiskLogRecord.GetSerializedSize(), functionsState.memoryPool);
+                    output.Length = value.TotalSize();
 
-                    if (dst.Memory == default) // Allocate new heap buffer
-                        dst.Memory = functionsState.memoryPool.Rent(dst.Length);
-                    else if (dst.Memory.Memory.Span.Length < value.TotalSize())
+                    if (output.Memory == default) // Allocate new heap buffer
+                        output.Memory = functionsState.memoryPool.Rent(output.Length);
+                    else if (output.Memory.Memory.Span.Length < value.TotalSize())
                     // Allocate new heap buffer only if existing one is smaller
                     // otherwise it is safe to re-use existing buffer
                     {
-                        dst.Memory.Dispose();
-                        dst.Memory = functionsState.memoryPool.Rent(dst.Length);
+                        output.Memory.Dispose();
+                        output.Memory = functionsState.memoryPool.Rent(output.Length);
                     }
-                    value.CopyTo(dst.Memory.Memory.Span);
+                    value.CopyTo(output.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
-                    if (value.Length <= dst.Length)
+                    if (value.Length <= output.Length)
                     {
-                        dst.Length = value.Length;
-                        value.CopyTo(dst.SpanByte.Span);
+                        output.Length = value.Length;
+                        value.CopyTo(output.SpanByte.Span);
                         return;
                     }
 
-                    dst.ConvertToHeap();
-                    dst.Length = value.Length;
-                    dst.Memory = functionsState.memoryPool.Rent(value.Length);
-                    value.CopyTo(dst.Memory.Memory.Span);
+                    output.ConvertToHeap();
+                    output.Length = value.Length;
+                    output.Memory = functionsState.memoryPool.Rent(value.Length);
+                    value.CopyTo(output.Memory.Memory.Span);
                     break;
 
                 case RespCommand.GETBIT:
@@ -148,9 +149,9 @@ namespace Garnet.server
                             oldValSet = BitmapManager.GetBit(offset, valuePtr, value.Length);
 
                     if (oldValSet == 0)
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref dst);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref dst);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
                     break;
 
                 case RespCommand.BITCOUNT:
@@ -177,7 +178,7 @@ namespace Garnet.server
                         fixed(byte* valuePtr = value)
                             count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, valuePtr, value.Length);
 
-                    functionsState.CopyRespNumber(count, ref dst);
+                    functionsState.CopyRespNumber(count, ref output);
                     break;
 
                 case RespCommand.BITPOS:
@@ -210,20 +211,20 @@ namespace Garnet.server
                             pos = BitmapManager.BitPosDriver(input: valuePtr, inputLen: value.Length, startOffset: bpStartOffset,
                                 endOffset: bpEndOffset, searchFor: bpSetVal, offsetType: bpOffsetType);
 
-                    *(long*)dst.SpanByte.ToPointer() = pos;
-                    functionsState.CopyRespNumber(pos, ref dst);
+                    *(long*)output.SpanByte.ToPointer() = pos;
+                    functionsState.CopyRespNumber(pos, ref output);
                     break;
 
                 case RespCommand.BITOP:
-                    var output = dst.SpanByte.ToPointer();
+                    var outPtr = output.SpanByte.ToPointer();
 
                     if (srcLogRecord.IsPinnedValue)
-                        *(long*)output = ((IntPtr)srcLogRecord.PinnedValuePointer).ToInt64();
+                        *(long*)outPtr = ((IntPtr)srcLogRecord.PinnedValuePointer).ToInt64();
                     else
                         fixed(byte* valuePtr = value)
-                            *(long*)output = ((IntPtr)valuePtr).ToInt64();
+                            *(long*)outPtr = ((IntPtr)valuePtr).ToInt64();
 
-                    *(int*)(output + sizeof(long)) = value.Length;
+                    *(int*)(outPtr + sizeof(long)) = value.Length;
                     return;
 
                 case RespCommand.BITFIELD:
@@ -238,9 +239,9 @@ namespace Garnet.server
                             (retValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, value.Length);
 
                     if (!overflow)
-                        functionsState.CopyRespNumber(retValue, ref dst);
+                        functionsState.CopyRespNumber(retValue, ref output);
                     else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
                     return;
 
                 case RespCommand.BITFIELD_RO:
@@ -253,7 +254,7 @@ namespace Garnet.server
                         fixed (byte* valuePtr = value)
                             retValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, valuePtr, value.Length);
 
-                    functionsState.CopyRespNumber(retValue_RO, ref dst);
+                    functionsState.CopyRespNumber(retValue_RO, ref output);
                     return;
 
                 case RespCommand.PFCOUNT:
@@ -262,26 +263,26 @@ namespace Garnet.server
                     if (srcLogRecord.IsPinnedValue)
                     {
                         if (ok = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, value.Length))
-                            Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, dst.SpanByte.ToPointer(), value.Length, value.Length);
+                            Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, output.SpanByte.ToPointer(), value.Length, value.Length);
                     }
                     else
                     {
                         fixed (byte* valuePtr = value)
                         {
                             if (ok = HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length))
-                                Buffer.MemoryCopy(valuePtr, dst.SpanByte.ToPointer(), value.Length, value.Length);
+                                Buffer.MemoryCopy(valuePtr, output.SpanByte.ToPointer(), value.Length, value.Length);
                         }
                     }
 
                     if (!ok)
                     {
-                        *(long*)dst.SpanByte.ToPointer() = -1;
+                        *(long*)output.SpanByte.ToPointer() = -1;
                         return;
                     }
 
-                    if (value.Length <= dst.Length)
+                    if (value.Length <= output.Length)
                     {
-                        dst.SpanByte.Length = value.Length;
+                        output.SpanByte.Length = value.Length;
                         return;
                     }
 
@@ -289,12 +290,12 @@ namespace Garnet.server
 
                 case RespCommand.TTL:
                     var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(ttlValue, ref dst);
+                    functionsState.CopyRespNumber(ttlValue, ref output);
                     return;
 
                 case RespCommand.PTTL:
                     var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(pttlValue, ref dst);
+                    functionsState.CopyRespNumber(pttlValue, ref output);
                     return;
 
                 case RespCommand.GETRANGE:
@@ -303,16 +304,16 @@ namespace Garnet.server
                     var end = input.parseState.GetInt(1);
 
                     (start, end) = NormalizeRange(start, end, len);
-                    CopyRespTo(value, ref dst, start, end);
+                    CopyRespTo(value, ref output, start, end);
                     return;
                 case RespCommand.EXPIRETIME:
                     var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(expireTime, ref dst);
+                    functionsState.CopyRespNumber(expireTime, ref output);
                     return;
 
                 case RespCommand.PEXPIRETIME:
                     var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                    functionsState.CopyRespNumber(pexpireTime, ref dst);
+                    functionsState.CopyRespNumber(pexpireTime, ref output);
                     return;
 
                 default:

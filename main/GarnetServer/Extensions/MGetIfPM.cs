@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet
 {
@@ -43,7 +44,7 @@ namespace Garnet
             List<PinnedSpanByte> values = [];
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
-                if (api.GET(key, out var value) == GarnetStatus.OK)
+                if (api.GET(key, out PinnedSpanByte value) == GarnetStatus.OK)
                 {
                     if (value.ReadOnlySpan.StartsWith(prefix.ReadOnlySpan))
                     {

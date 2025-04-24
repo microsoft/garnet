@@ -54,74 +54,82 @@ namespace Garnet.test
             ClassicAssert.AreEqual(obj, output);
         }
 
+        const int keyNum = 0;
+
         [Test]
         public async Task WriteCheckpointRead()
         {
-            var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            var bContext = session.BasicContext;
-
-            var key = new ReadOnlySpan<byte>([0]);
             var obj = new SortedSetObject();
-            obj.Add([15], 10);
 
-            _ = bContext.Upsert(key, obj);
-
-            session.Dispose();
-
+            LocalWrite();
             _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
-
             store.Dispose();
             CreateStore();
-
             _ = store.Recover();
+            LocalRead();
 
-            session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            bContext = session.BasicContext;
+            void LocalWrite()
+            {
+                using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
 
-            IGarnetObject output = null;
-            var status = bContext.Read(key, ref output);
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                obj.Add([15], 10);
 
-            session.Dispose();
+                _ = bContext.Upsert(key, obj);
+            }
 
-            ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
+            void LocalRead()
+            {
+                using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
+
+                IGarnetObject output = null;
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                var status = bContext.Read(key, ref output);
+
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(obj.Equals((SortedSetObject)output));
+            }
         }
 
         [Test]
         public async Task CopyUpdate()
         {
-            var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            var bContext = session.BasicContext;
-
-            var key = new ReadOnlySpan<byte>([0]);
             IGarnetObject obj = new SortedSetObject();
-            ((SortedSetObject)obj).Add([15], 10);
 
-            _ = bContext.Upsert(key, obj);
-
-            store.Log.Flush(true);
-
-            _ = bContext.RMW(key, ref obj);
-
-            session.Dispose();
-
+            LocalWrite();
             _ = await store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver);
-
             store.Dispose();
             CreateStore();
-
             _ = store.Recover();
+            LocalRead();
 
-            session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
-            bContext = session.BasicContext;
+            void LocalWrite()
+            {
+                using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
 
-            IGarnetObject output = null;
-            var status = bContext.Read(key, ref output);
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                ((SortedSetObject)obj).Add([15], 10);
 
-            session.Dispose();
+                _ = bContext.Upsert(key, obj);
+                store.Log.Flush(true);
+                _ = bContext.RMW(key, ref obj);
+            }
 
-            ClassicAssert.IsTrue(status.Found);
-            ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
+            void LocalRead()
+            {
+                using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+                var bContext = session.BasicContext;
+
+                IGarnetObject output = null;
+                var key = new ReadOnlySpan<byte>([keyNum]);
+                var status = bContext.Read(key, ref output);
+
+                ClassicAssert.IsTrue(status.Found);
+                ClassicAssert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
+            }
         }
 
         private class MyFunctions : SessionFunctionsBase<IGarnetObject, IGarnetObject, Empty>
