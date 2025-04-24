@@ -318,49 +318,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Increment map length.
-        /// </summary>
-        /// <param name="oldCount">Old count of array items</param>
-        public void IncrementMapLength(int oldCount)
-        {
-            int oldLen, newCount, newLen;
-            var startOutputStartptr = ptr;
-
-            if (resp3)
-            {
-                oldLen = NumUtils.CountDigits(oldCount);
-                newCount = oldCount + 1;
-            }
-            else
-            {
-                oldLen = NumUtils.CountDigits(2 * oldCount);
-                newCount = 2 * (oldCount + 1);
-            }
-            newLen = NumUtils.CountDigits(newCount);
-
-            if (oldLen != newLen)
-            {
-                ReallocateOutput();
-                startOutputStartptr = ptr;
-
-                var oldTotalArrayHeaderLen = oldLen + 3;
-                var newTotalArrayHeaderLen = newLen + 3;
-                var remainingLength = curr - ptr - oldTotalArrayHeaderLen;
-                Buffer.MemoryCopy(ptr + oldTotalArrayHeaderLen, ptr + newTotalArrayHeaderLen, remainingLength, remainingLength);
-                curr += newTotalArrayHeaderLen - oldTotalArrayHeaderLen;
-            }
-
-            if (resp3)
-            {
-                _ = RespWriteUtils.TryWriteMapLength(newCount, ref startOutputStartptr, end);
-            }
-            else
-            {
-                _ = RespWriteUtils.TryWriteArrayLength(newCount, ref startOutputStartptr, end, out _, out _);
-            }
-        }
-
-        /// <summary>
         /// Reset position to starting position
         /// </summary>
         public void ResetPosition()
