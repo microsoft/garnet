@@ -11,6 +11,7 @@ using System.Text.Json.Serialization;
 using Garnet.common;
 using Garnet.server.Resp;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -72,16 +73,8 @@ namespace Garnet.server
         /// </summary>
         public RespCommandArgumentBase[] Arguments { get; init; }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
-
         private const string RespCommandsDocsEmbeddedFileName = @"RespCommandsDocs.json";
 
-        private string respFormat;
         private readonly RespCommandDocFlags docFlags;
         private readonly string[] respFormatDocFlags;
 
@@ -219,84 +212,105 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public string ToRespFormat()
+        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
-            var sb = new StringBuilder();
-            var argCount = 0;
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
 
-            string key;
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
 
-            if (this.Summary != null)
+            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            var argCount = 1; // group
+
+            if (Summary != null)
             {
-                key = "summary";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Summary.Length}\r\n{this.Summary}\r\n");
-                argCount += 2;
+                argCount++;
             }
 
-            key = "group";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            var respType = EnumUtils.GetEnumDescriptions(this.Group)[0];
-            sb.Append($"${respType.Length}\r\n{respType}\r\n");
-            argCount += 2;
-
-            if (this.Complexity != null)
+            if (Complexity != null)
             {
-                key = "complexity";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Complexity.Length}\r\n{this.Complexity}\r\n");
-                argCount += 2;
+                argCount++;
             }
 
-            if (this.DocFlags != RespCommandDocFlags.None)
+            if (DocFlags != RespCommandDocFlags.None)
             {
-                key = "doc_flags";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{respFormatDocFlags.Length}\r\n");
-                foreach (var respDocFlag in respFormatDocFlags)
-                {
-                    sb.Append($"+{respDocFlag.Length}\r\n");
-                }
-
-                argCount += 2;
+                argCount++;
             }
 
-            if (this.ReplacedBy != null)
+            if (ReplacedBy != null)
             {
-                key = "replaced_by";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.ReplacedBy.Length}\r\n{this.ReplacedBy}\r\n");
-                argCount += 2;
+                argCount++;
             }
 
             if (Arguments != null)
             {
-                key = "arguments";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{Arguments.Length}\r\n");
-                foreach (var argument in Arguments)
-                {
-                    sb.Append(argument.RespFormat);
-                }
-
-                argCount += 2;
+                argCount++;
             }
 
             if (SubCommands != null)
             {
-                key = "subcommands";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{SubCommands.Length * 2}\r\n");
-                foreach (var subCommand in SubCommands)
-                {
-                    sb.Append(subCommand.RespFormat);
-                }
-
-                argCount += 2;
+                argCount++;
             }
 
-            sb.Insert(0, $"${Name.Length}\r\n{Name}\r\n*{argCount}\r\n");
-            return sb.ToString();
+            output.WriteAsciiBulkString(Name);
+            output.WriteMapLength(argCount);
+
+            if (Summary != null)
+            {
+                output.WriteAsciiBulkString("summary");
+                output.WriteAsciiBulkString(Summary);
+            }
+
+            output.WriteAsciiBulkString("group");
+            var respType = EnumUtils.GetEnumDescriptions(Group)[0];
+            output.WriteAsciiBulkString(respType);
+
+            if (Complexity != null)
+            {
+                output.WriteAsciiBulkString("complexity");
+                output.WriteAsciiBulkString(Complexity);
+            }
+
+            if (DocFlags != RespCommandDocFlags.None)
+            {
+                output.WriteAsciiBulkString("doc_flags");
+                output.WriteSetLength(respFormatDocFlags.Length);
+                foreach (var respDocFlag in respFormatDocFlags)
+                {
+                    //output.WriteSimpleString(respDocFlag);
+                    output.WriteSimpleString(respDocFlag.Length.ToString());
+                }
+            }
+
+            if (ReplacedBy != null)
+            {
+                output.WriteAsciiBulkString("replaced_by");
+                output.WriteAsciiBulkString(ReplacedBy);
+            }
+
+            if (Arguments != null)
+            {
+                output.WriteAsciiBulkString("arguments");
+                output.WriteArrayLength(Arguments.Length);
+                foreach (var argument in Arguments)
+                {
+                    output.WriteAsciiDirect(argument.ToRespFormat(respProtocolVersion));
+                }
+            }
+
+            if (SubCommands != null)
+            {
+                output.WriteAsciiBulkString("subcommands");
+                output.WriteMapLength(SubCommands.Length);
+                foreach (var subCommand in SubCommands)
+                {
+                    output.WriteAsciiDirect(subCommand.ToRespFormat(respProtocolVersion));
+                }
+            }
+
+            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
+            return s;
         }
     }
 

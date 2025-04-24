@@ -12,6 +12,6 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value in RESP format</returns>
-        string ToRespFormat();
+        string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
     }
 }

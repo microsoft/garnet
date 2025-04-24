@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -41,8 +42,6 @@ namespace Garnet.server
         /// </summary>
         public string Summary { get; init; }
 
-        protected int ArgCount { get; set; }
-
         /// <summary>
         /// Argument flags
         /// </summary>
@@ -56,14 +55,7 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
 
-        private string respFormat;
         private readonly RespCommandArgumentFlags argFlags;
         private readonly string[] respFormatArgFlags;
 
@@ -82,63 +74,85 @@ namespace Garnet.server
         /// </summary>
         protected RespCommandArgumentBase()
         {
-            ArgCount = 0;
+        }
+
+        protected int ToByteRespFormat(ref RespMemoryWriter output)
+        {
+            var ArgCount = 2; // name, type
+
+            if (DisplayText != null)
+            {
+                ArgCount++;
+            }
+
+            if (Token != null)
+            {
+                ArgCount++;
+            }
+
+            if (Summary != null)
+            {
+                ArgCount++;
+            }
+
+            if (ArgumentFlags != RespCommandArgumentFlags.None)
+            {
+                ArgCount++;
+            }
+
+            output.WriteMapLength(ArgCount);
+
+            output.WriteAsciiBulkString("name");
+            output.WriteAsciiBulkString(Name);
+
+            output.WriteAsciiBulkString("type");
+            var respType = EnumUtils.GetEnumDescriptions(Type)[0];
+            output.WriteAsciiBulkString(respType);
+
+            if (DisplayText != null)
+            {
+                output.WriteAsciiBulkString("display_text");
+                output.WriteAsciiBulkString(DisplayText);
+            }
+
+            if (Token != null)
+            {
+                output.WriteAsciiBulkString("token");
+                output.WriteAsciiBulkString(Token);
+            }
+
+            if (Summary != null)
+            {
+                output.WriteAsciiBulkString("summary");
+                output.WriteAsciiBulkString(Summary);
+            }
+
+            if (ArgumentFlags != RespCommandArgumentFlags.None)
+            {
+                output.WriteAsciiBulkString("flags");
+                output.WriteSetLength(respFormatArgFlags.Length);
+                foreach (var respArgFlag in respFormatArgFlags)
+                {
+                    output.WriteSimpleString(respArgFlag);
+                }
+            }
+
+            return ArgCount;
         }
 
         /// <inheritdoc />
-        public virtual string ToRespFormat()
+        public virtual unsafe string ToRespFormat(byte respProtocolVersion = 2)
         {
-            var sb = new StringBuilder();
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
 
-            var key = "name";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            sb.Append($"${this.Name.Length}\r\n{this.Name}\r\n");
-            ArgCount += 2;
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
 
-            key = "type";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            var respType = EnumUtils.GetEnumDescriptions(this.Type)[0];
-            sb.Append($"${respType.Length}\r\n{respType}\r\n");
-            ArgCount += 2;
+            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-            if (this.DisplayText != null)
-            {
-                key = "display_text";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.DisplayText.Length}\r\n{this.DisplayText}\r\n");
-                ArgCount += 2;
-            }
-
-            if (this.Token != null)
-            {
-                key = "token";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Token.Length}\r\n{this.Token}\r\n");
-                ArgCount += 2;
-            }
-
-            if (this.Summary != null)
-            {
-                key = "summary";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Summary.Length}\r\n{this.Summary}\r\n");
-                ArgCount += 2;
-            }
-
-            if (this.ArgumentFlags != RespCommandArgumentFlags.None)
-            {
-                key = "flags";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{respFormatArgFlags.Length}\r\n");
-                foreach (var respArgFlag in respFormatArgFlags)
-                {
-                    sb.Append($"+{respArgFlag}\r\n");
-                }
-
-                ArgCount += 2;
-            }
-
-            return sb.ToString();
+            _ = ToByteRespFormat(ref output);
+            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
+            return s;
         }
     }
 
@@ -173,17 +187,23 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override string ToRespFormat()
+        public override unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
-            var baseRespFormat = base.ToRespFormat();
-            var sb = new StringBuilder();
-            sb.Append(baseRespFormat);
-            var key = "key_spec_index";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            sb.Append($":{KeySpecIndex}\r\n");
-            ArgCount += 2;
-            sb.Insert(0, $"*{ArgCount}\r\n");
-            return sb.ToString();
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
+
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
+
+            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            var ArgCount = ToByteRespFormat(ref output);
+
+            output.WriteAsciiBulkString("key_spec_index");
+            output.WriteInt32(KeySpecIndex);
+
+            output.IncrementMapLength(ArgCount++);
+
+            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 
@@ -207,18 +227,26 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override string ToRespFormat()
+        public override unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
-            var baseRespFormat = base.ToRespFormat();
-            if (Value == null) return baseRespFormat;
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
 
-            var sb = new StringBuilder();
-            sb.Append(baseRespFormat);
-            var key = "value";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            sb.Append($"${Value.Length}\r\n{Value}\r\n");
-            ArgCount += 2;
-            return sb.ToString();
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
+            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            var ArgCount = ToByteRespFormat(ref output);
+
+            if (Value != null)
+            {
+                output.WriteAsciiBulkString("value");
+                output.WriteAsciiDirect(Value);
+
+                output.IncrementMapLength(ArgCount++);
+            }
+
+            var s = Encoding.ASCII.GetString(output.AsReadOnlySpan());
+            return s;
         }
     }
 
@@ -239,18 +267,8 @@ namespace Garnet.server
         {
 
         }
-
-        /// <inheritdoc />
-        public override string ToRespFormat()
-        {
-            var baseRespFormat = base.ToRespFormat();
-            var sb = new StringBuilder();
-            sb.Append($"*{ArgCount}\r\n");
-            sb.Append(baseRespFormat);
-            return sb.ToString();
-        }
     }
-
+ 
     /// <summary>
     /// Represents a RESP command's argument of type OneOf or Block
     /// </summary>
@@ -275,26 +293,30 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override string ToRespFormat()
+        public override unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
-            var baseRespFormat = base.ToRespFormat();
-            var sb = new StringBuilder();
-            sb.Append(baseRespFormat);
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
+
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
+
+            var output = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            var ArgCount = ToByteRespFormat(ref output);
+
             if (Arguments != null)
             {
-                var key = "arguments";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{Arguments.Length}\r\n");
+                output.WriteAsciiBulkString("arguments");
+                output.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    sb.Append(argument.RespFormat);
+                    output.WriteAsciiDirect(argument.ToRespFormat(respProtocolVersion));
                 }
 
-                ArgCount += 2;
+                output.IncrementMapLength(ArgCount++);
             }
 
-            sb.Insert(0, $"*{ArgCount}\r\n");
-            return sb.ToString();
+            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 

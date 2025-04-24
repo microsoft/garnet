@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -63,40 +64,65 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public string ToRespFormat()
+        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
-            var sb = new StringBuilder();
             var elemCount = 0;
 
-            if (this.Notes != null)
+            if (Notes != null)
             {
-                elemCount += 2;
-                sb.Append("$5\r\nnotes\r\n");
-                sb.Append($"${this.Notes.Length}\r\n{this.Notes}\r\n");
+                elemCount++;
             }
 
-            if (this.Flags != KeySpecificationFlags.None)
+            if (Flags != KeySpecificationFlags.None)
             {
-                elemCount += 2;
-                sb.Append("$5\r\nflags\r\n");
-                sb.Append($"*{this.respFormatFlags.Length}\r\n");
+                elemCount++;
+            }
+
+            if (BeginSearch != null)
+            {
+                elemCount++;
+            }
+
+            if (FindKeys != null)
+            {
+                elemCount++;
+            }
+
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
+
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
+
+            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            output.WriteMapLength(elemCount);
+
+            if (Notes != null)
+            {
+                output.WriteAsciiBulkString("notes");
+                output.WriteAsciiBulkString(Notes);
+            }
+
+            if (Flags != KeySpecificationFlags.None)
+            {
+                output.WriteAsciiBulkString("flags");
+                output.WriteSetLength(respFormatFlags.Length);
+
                 foreach (var flag in this.respFormatFlags)
-                    sb.Append($"+{flag}\r\n");
+                    output.WriteSimpleString(flag);
             }
 
-            if (this.BeginSearch != null)
+            if (BeginSearch != null)
             {
-                elemCount += 2;
-                sb.Append(this.BeginSearch.RespFormat);
+                output.WriteAsciiDirect(BeginSearch.ToRespFormat(respProtocolVersion));
             }
 
-            if (this.FindKeys != null)
+            if (FindKeys != null)
             {
-                elemCount += 2;
-                sb.Append(this.FindKeys.RespFormat);
+                output.WriteAsciiDirect(FindKeys.ToRespFormat(respProtocolVersion));
             }
 
-            return $"*{elemCount}\r\n{sb}";
+            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 
@@ -158,27 +184,28 @@ namespace Garnet.server
         public abstract string RespFormatSpec { get; }
 
         /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        public string RespFormat => respFormat ??= ToRespFormat();
-
-        private string respFormat;
-
-        /// <summary>
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public string ToRespFormat()
+        public unsafe string ToRespFormat(byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
-            var sb = new StringBuilder();
-            sb.Append($"${this.MethodName.Length}\r\n{this.MethodName}\r\n");
-            sb.Append("*4\r\n");
-            sb.Append("$4\r\ntype\r\n");
-            sb.Append($"{this.RespFormatType}\r\n");
-            sb.Append("$4\r\nspec\r\n");
-            sb.Append($"{this.RespFormatSpec}\r\n");
-            return sb.ToString();
+            const int outputBufferLength = 2000;
+            var outputBuffer = stackalloc byte[outputBufferLength];
+
+            SpanByteAndMemory spam = new(outputBuffer, outputBufferLength);
+
+            using var output = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            output.WriteAsciiBulkString(MethodName);
+            output.WriteMapLength(2);
+            output.WriteAsciiBulkString("type");
+            output.WriteAsciiDirect(RespFormatType);
+            output.WriteAsciiDirect("\r\n");
+            output.WriteAsciiBulkString("spec");
+            output.WriteAsciiDirect(RespFormatSpec);
+            output.WriteAsciiDirect("\r\n");
+
+            return Encoding.ASCII.GetString(output.AsReadOnlySpan());
         }
     }
 
