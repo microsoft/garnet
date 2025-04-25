@@ -68,6 +68,16 @@ namespace Garnet.server
         public bool CleanClusterConfig = false;
 
         /// <summary>
+        /// Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.
+        /// </summary>
+        public int ParallelMigrateTasks = 1;
+
+        /// <summary>
+        /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
+        /// </summary>
+        public bool FastMigrate = false;
+
+        /// <summary>
         /// Authentication settings
         /// </summary>
         public IAuthenticationSettings AuthSettings = null;
