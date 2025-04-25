@@ -29,6 +29,7 @@ namespace Garnet.server
                     // because at most one/few of my scanned records will be from a redundant region, but acquiring an epoch here would be more expensive IMO.
                     long safeInMemoryRegionAddrOfMainStore = this.store.Log.SafeReadOnlyAddress; 
                     // currenly I am not using scannedTIll because I dont think I need it, but i will revisit this
+
                     storageSession.ScanExpiredKeys(cursor: safeInMemoryRegionAddrOfMainStore, storeCursor: out long scannedTill,keys: out List<byte[]> keys, count: perRoundObjectCollection);
 
                     foreach (byte[] key in keys)
@@ -41,7 +42,8 @@ namespace Garnet.server
                             {
                                 SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
 
-                                storageSession.basicContext.RMW(ref keySb, ref input);
+                                // Use basic session for transient locking
+                                storageSession.DELIFEXPIREDINMEMORY(ref keySb, ref input, ref storageSession.basicContext);
                             }
                         }
 

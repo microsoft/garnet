@@ -226,6 +226,21 @@ namespace Garnet.server
             }
         }
 
+        public unsafe GarnetStatus DELIFEXPIREDINMEMORY<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            var pbOutput = stackalloc byte[8];
+            var o = new SpanByteAndMemory(pbOutput, 8);
+            var status = context.RMW(ref key, ref input, ref o);
+
+            // This method was created solely to be able to handle disk IO pending status
+            if (status.IsPending)
+                CompletePendingForSession(ref status, ref o, ref context);
+
+            return GarnetStatus.OK;
+        }
+
+
 
         /// <summary>
         /// Returns the remaining time to live of a key that has a timeout.
