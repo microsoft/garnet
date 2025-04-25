@@ -28,6 +28,9 @@ namespace Garnet.server
             {
                 switch (input.header.type)
                 {
+                    case GarnetObjectType.Migrate:
+                        DiskLogRecord.Serialize(ref srcLogRecord, functionsState.garnetObjectSerializer, ref output.SpanByteAndMemory, functionsState.memoryPool);
+                        return true;
                     case GarnetObjectType.Ttl:
                         var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                         functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);

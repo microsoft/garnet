@@ -19,8 +19,5 @@ namespace Tsavorite.core
         /// Total serialized size of the object; the size it will take when written to disk or other storage.
         /// </summary>
         long DiskSize { get; set; }
-
-        long Size { get => 0; set { } }
-
     }
 }

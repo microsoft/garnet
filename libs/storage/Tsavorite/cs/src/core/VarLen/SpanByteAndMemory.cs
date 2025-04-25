@@ -135,31 +135,34 @@ namespace Tsavorite.core
         /// <summary>
         /// Ensure the required size is available in this structure via the Span or the Memory.
         /// </summary>
-        public void EnsureMemorySize(int size, MemoryPool<byte> memoryPool = null)
+        public void EnsureHeapMemorySize(int size, MemoryPool<byte> memoryPool = null)
         {
             if (memoryPool is null)
                 memoryPool = MemoryPool<byte>.Shared;
 
-            if (IsSpanByte)
-            {
-                if (SpanByte.Length >= size)
-                    return;
-                ConvertToHeap();
-            }
+            // In case it is still SpanByte, we need to convert it to heap. This should only be done when the SpanByte is too small.
+            Debug.Assert(!IsSpanByte || SpanByte.Length < size, $"SpanByte Length of {SpanByte.Length} is sufficient for size of {size}, so this calling path should have used the SpanByte.");
+            ConvertToHeap();
 
+            SpanByte.Length = 0;
             if (Memory is null)
             {
                 Memory = memoryPool.Rent(size);
+                SpanByte.Length = size;
                 return;
             }
 
             if (Memory.Memory.Length >= size)
+            {
+                SpanByte.Length = size;
                 return;
+            }
 
-            // Reallocate
+            // We have a Memory that is too small, so we need to release it and allocate a new one.
             Memory.Dispose();
             Memory = null;  // In case the following throws OOM
             Memory = memoryPool.Rent(size);
+            SpanByte.Length = size;
         }
     }
 }
