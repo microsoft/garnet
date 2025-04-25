@@ -11,9 +11,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    public sealed partial class  StoreWrapper
+    public sealed partial class StoreWrapper
     {
-        public async Task CollectExpiredMainStoreKeys(int collectionFrequency, long perRoundObjectCollection ,CancellationToken token = default)
+        public async Task CollectExpiredMainStoreKeys(int collectionFrequency, long perRoundObjectCollection, CancellationToken token = default)
         {
             Debug.Assert(collectionFrequency > 0);
             try
@@ -27,15 +27,13 @@ namespace Garnet.server
 
                     // So I take an unlocked look of the SafeReadOnlyRegion as the starting point for our scan. Now if there is any sort of shift I am not too concerned
                     // because at most one/few of my scanned records will be from a redundant region, but acquiring an epoch here would be more expensive IMO.
-                    long safeInMemoryRegionAddrOfMainStore = this.store.Log.SafeReadOnlyAddress; 
-                    // currenly I am not using scannedTIll because I dont think I need it, but i will revisit this
+                    long safeInMemoryRegionAddrOfMainStore = this.store.Log.SafeReadOnlyAddress;
+                    storageSession.ScanExpiredKeys(cursor: safeInMemoryRegionAddrOfMainStore, storeCursor: out long scannedTill, keys: out List<byte[]> keys, count: perRoundObjectCollection);
 
-                    storageSession.ScanExpiredKeys(cursor: safeInMemoryRegionAddrOfMainStore, storeCursor: out long scannedTill,keys: out List<byte[]> keys, count: perRoundObjectCollection);
-
+                    // between the scan and dels maybe a few records move to non-mutable region, but that is ok since that will just be noop in NCU section
+                    RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIREDINMEMORY);
                     foreach (byte[] key in keys)
                     {
-                        RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIREDINMEMORY);
-
                         unsafe
                         {
                             fixed (byte* keyPtr = key)
@@ -43,7 +41,7 @@ namespace Garnet.server
                                 SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
 
                                 // Use basic session for transient locking
-                                storageSession.DELIFEXPIREDINMEMORY(ref keySb, ref input, ref storageSession.basicContext);
+                                storageSession.DEL_Conditional(ref keySb, ref input, ref storageSession.basicContext);
                             }
                         }
 
