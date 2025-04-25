@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -147,13 +147,12 @@ namespace Garnet.server
                 }
             }
 
-            AllRespCommandsDocs =
-                new Dictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs, StringComparer.OrdinalIgnoreCase);
-            AllRespSubCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllSubCommandsDocs);
-            ExternalRespCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs
+            AllRespCommandsDocs = tmpAllRespCommandsDocs.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            AllRespSubCommandsDocs = tmpAllSubCommandsDocs.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            ExternalRespCommandsDocs = tmpAllRespCommandsDocs
                 .Where(ci => allExternalCommands.Contains(ci.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
-            ExternalRespSubCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpExternalSubCommandsDocs);
+                .ToFrozenDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+            ExternalRespSubCommandsDocs = tmpExternalSubCommandsDocs.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
             return true;
         }
@@ -249,23 +248,23 @@ namespace Garnet.server
 
             if (Summary != null)
             {
-                output.WriteAsciiBulkString("summary");
+                output.WriteBulkString("summary"u8);
                 output.WriteAsciiBulkString(Summary);
             }
 
-            output.WriteAsciiBulkString("group");
+            output.WriteBulkString("group"u8);
             var respType = EnumUtils.GetEnumDescriptions(Group)[0];
             output.WriteAsciiBulkString(respType);
 
             if (Complexity != null)
             {
-                output.WriteAsciiBulkString("complexity");
+                output.WriteBulkString("complexity"u8);
                 output.WriteAsciiBulkString(Complexity);
             }
 
             if (DocFlags != RespCommandDocFlags.None)
             {
-                output.WriteAsciiBulkString("doc_flags");
+                output.WriteBulkString("doc_flags"u8);
                 output.WriteSetLength(respFormatDocFlags.Length);
                 foreach (var respDocFlag in respFormatDocFlags)
                 {
@@ -275,13 +274,13 @@ namespace Garnet.server
 
             if (ReplacedBy != null)
             {
-                output.WriteAsciiBulkString("replaced_by");
+                output.WriteBulkString("replaced_by"u8);
                 output.WriteAsciiBulkString(ReplacedBy);
             }
 
             if (Arguments != null)
             {
-                output.WriteAsciiBulkString("arguments");
+                output.WriteBulkString("arguments"u8);
                 output.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
@@ -291,7 +290,7 @@ namespace Garnet.server
 
             if (SubCommands != null)
             {
-                output.WriteAsciiBulkString("subcommands");
+                output.WriteBulkString("subcommands"u8);
                 output.WriteMapLength(SubCommands.Length);
                 foreach (var subCommand in SubCommands)
                 {
