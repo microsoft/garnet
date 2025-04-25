@@ -465,7 +465,7 @@ namespace Garnet.test
             IServer garnetServer = redis.GetServer(TestUtils.EndPoint);
 
             string key = "rcuplease";
-            string value = "havepatiencercushallbedone";
+            string value = "havepatiencercushallbedonethisvalueisunnecssarilylongsoicanmakesureRCUdoesnotAllocateThismuch,anythinglesserthanthisisgoodenough";
 
             RedisResult res = db.Execute("SET", key, value, "WITHETAG");
             ClassicAssert.AreEqual(1, (long)res);
@@ -481,6 +481,7 @@ namespace Garnet.test
             // The first record inserted (key0) is now read-only
             ClassicAssert.IsTrue(info.ReadOnlyAddress >= prevTailAddr);
 
+            long tailAddressBeforeNonDeletingReq = info.TailAddress;
             // does not delete when called with lesser or equal etag
             res = db.Execute("DELIFGREATER", key, 0);
             ClassicAssert.AreEqual(0, (long)res);
@@ -488,9 +489,23 @@ namespace Garnet.test
             RedisValue returnedval = db.StringGet(key);
             ClassicAssert.AreEqual(value, returnedval.ToString());
 
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+            long lastTailAddr = info.TailAddress;
+
+            // non deleting req adds nothing to hlog
+            ClassicAssert.AreEqual(tailAddressBeforeNonDeletingReq, lastTailAddr);
+
             // Deletes when called with higher etag
+            // Moved by 32 bytes...
             res = db.Execute("DELIFGREATER", key, 2);
             ClassicAssert.AreEqual(1, (long)res);
+
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+            // check that deletion has happened
+            long newTailAddr = info.TailAddress;
+
+            // tombstoned size?
+            ClassicAssert.IsTrue(newTailAddr - lastTailAddr < value.Length);
 
             returnedval = db.StringGet(key);
             ClassicAssert.IsTrue(returnedval.IsNull);
@@ -508,24 +523,26 @@ namespace Garnet.test
 
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             IDatabase db = redis.GetDatabase(0);
-            IServer redisServer = redis.GetServer(TestUtils.EndPoint);
+            IServer garnetServer = redis.GetServer(TestUtils.EndPoint);
 
             string key = "rcuplease";
-            string value = "havepatiencercushallbedone";
+            string value = "havepatiencercushallbedonethisvalueisneedlesslylongsoIcantestnorecordwasaddedtohlogofthissize";
 
             bool result = db.StringSet(key, value);
             ClassicAssert.IsTrue(result);
 
-            StoreAddressInfo info = TestUtils.GetStoreAddressInfo(redisServer);
+            StoreAddressInfo info = TestUtils.GetStoreAddressInfo(garnetServer);
 
             // now move this key all the way to stable region
             long prevTailAddr = info.TailAddress;
-            MakeReadOnly(prevTailAddr, redisServer, db);
+            MakeReadOnly(prevTailAddr, garnetServer, db);
 
-            info = TestUtils.GetStoreAddressInfo(redisServer);
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
 
             // The first record inserted (key0) is now read-only
             ClassicAssert.IsTrue(info.ReadOnlyAddress >= prevTailAddr);
+
+            long nonDeletingReqTailAddr = info.TailAddress;
 
             // does not delete when called with lesser or equal etag
             RedisResult res = db.Execute("DELIFGREATER", key, 0);
@@ -534,9 +551,22 @@ namespace Garnet.test
             RedisValue returnedval = db.StringGet(key);
             ClassicAssert.AreEqual(value, returnedval.ToString());
 
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+            long lastTailAddr = info.TailAddress;
+
+            // nothing added to hlog by last DELIFGREATER
+            ClassicAssert.AreEqual(nonDeletingReqTailAddr, lastTailAddr);
+
             // Deletes when called with higher etag
             res = db.Execute("DELIFGREATER", key, 2);
             ClassicAssert.AreEqual(1, (long)res);
+
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+            // check that deletion has happened
+            long newTailAddr = info.TailAddress;
+
+            // tombstoned size?
+            ClassicAssert.IsTrue(newTailAddr - lastTailAddr < value.Length);
 
             returnedval = db.StringGet(key);
             ClassicAssert.IsTrue(returnedval.IsNull);
