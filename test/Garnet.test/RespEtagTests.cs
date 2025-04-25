@@ -423,6 +423,140 @@ namespace Garnet.test
             ClassicAssert.IsTrue(returnedval.IsNull);
         }
 
+        [Test]
+        public void DelIfGreaterOnAnAlreadyExistingKeyWithoutEtagWorks()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "meow-key";
+            var value = "m";
+
+            bool result = db.StringSet(key, value);
+            ClassicAssert.IsTrue(result);
+
+            // does not delete when called with lesser or equal etag
+            RedisResult res = db.Execute("DELIFGREATER", key, 0);
+            ClassicAssert.AreEqual(0, (long)res);
+
+            RedisValue returnedval = db.StringGet(key);
+            ClassicAssert.AreEqual(value, returnedval.ToString());
+
+            // Deletes when called with higher etag
+            res = db.Execute("DELIFGREATER", key, 2);
+            ClassicAssert.AreEqual(1, (long)res);
+
+            returnedval = db.StringGet(key);
+            ClassicAssert.IsTrue(returnedval.IsNull);
+        }
+
+        [Test]
+        public void DelIfGreaterOnAnAlreadyExistingKeyWithEtagRCUWorks()
+        {
+            // get rid of the server we create at setup
+            server.Dispose();
+
+            // create a low memory server so we can get to the RCU state faster
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, lowMemory: true);
+            server.Start();
+
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            IDatabase db = redis.GetDatabase(0);
+            IServer garnetServer = redis.GetServer(TestUtils.EndPoint);
+
+            string key = "rcuplease";
+            string value = "havepatiencercushallbedone";
+
+            RedisResult res = db.Execute("SET", key, value, "WITHETAG");
+            ClassicAssert.AreEqual(1, (long)res);
+
+            StoreAddressInfo info = TestUtils.GetStoreAddressInfo(garnetServer);
+
+            // now push the above key back all the way to stable region
+            long prevTailAddr = info.TailAddress;
+            MakeReadOnly(prevTailAddr, garnetServer, db);
+
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+
+            // The first record inserted (key0) is now read-only
+            ClassicAssert.IsTrue(info.ReadOnlyAddress >= prevTailAddr);
+
+            // does not delete when called with lesser or equal etag
+            res = db.Execute("DELIFGREATER", key, 0);
+            ClassicAssert.AreEqual(0, (long)res);
+
+            RedisValue returnedval = db.StringGet(key);
+            ClassicAssert.AreEqual(value, returnedval.ToString());
+
+            // Deletes when called with higher etag
+            res = db.Execute("DELIFGREATER", key, 2);
+            ClassicAssert.AreEqual(1, (long)res);
+
+            returnedval = db.StringGet(key);
+            ClassicAssert.IsTrue(returnedval.IsNull);
+        }
+
+        [Test]
+        public void DelIfGreaterOnAnAlreadyExistingKeyWithoutEtagRCUWorks()
+        {
+            // get rid of the server created by setup and instead use a low mem server
+            server.Dispose();
+
+            // create a low memory server so we can get to the RCU state faster
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, lowMemory: true);
+            server.Start();
+
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            IDatabase db = redis.GetDatabase(0);
+            IServer redisServer = redis.GetServer(TestUtils.EndPoint);
+
+            string key = "rcuplease";
+            string value = "havepatiencercushallbedone";
+
+            bool result = db.StringSet(key, value);
+            ClassicAssert.IsTrue(result);
+
+            StoreAddressInfo info = TestUtils.GetStoreAddressInfo(redisServer);
+
+            // now move this key all the way to stable region
+            long prevTailAddr = info.TailAddress;
+            MakeReadOnly(prevTailAddr, redisServer, db);
+
+            info = TestUtils.GetStoreAddressInfo(redisServer);
+
+            // The first record inserted (key0) is now read-only
+            ClassicAssert.IsTrue(info.ReadOnlyAddress >= prevTailAddr);
+
+            // does not delete when called with lesser or equal etag
+            RedisResult res = db.Execute("DELIFGREATER", key, 0);
+            ClassicAssert.AreEqual(0, (long)res);
+
+            RedisValue returnedval = db.StringGet(key);
+            ClassicAssert.AreEqual(value, returnedval.ToString());
+
+            // Deletes when called with higher etag
+            res = db.Execute("DELIFGREATER", key, 2);
+            ClassicAssert.AreEqual(1, (long)res);
+
+            returnedval = db.StringGet(key);
+            ClassicAssert.IsTrue(returnedval.IsNull);
+        }
+
+        private void MakeReadOnly(long untilAddress, IServer server, IDatabase db)
+        {
+            var i = 1000;
+            var info = TestUtils.GetStoreAddressInfo(server);
+
+            // Add keys so that the first record enters the read-only region
+            // Each record is 40 bytes here, because they do not have expirations
+            while (info.ReadOnlyAddress < untilAddress)
+            {
+                var key = $"key{i++:00000}";
+                _ = db.StringSet(key, key);
+                info = TestUtils.GetStoreAddressInfo(server);
+            }
+        }
+
         #endregion
 
         #region Edgecases
@@ -641,33 +775,6 @@ namespace Garnet.test
             var res = (RedisResult[])db.Execute("GETWITHETAG", ["h"]);
             ClassicAssert.AreEqual("0", res[0].ToString());
             ClassicAssert.AreEqual("k", res[1].ToString());
-        }
-
-        [Test]
-        public void DelIfGreaterOnAnAlreadyExistingKeyWithoutEtagWorks()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            IDatabase db = redis.GetDatabase(0);
-
-            var key = "meow-key";
-            var value = "m";
-
-            bool result = db.StringSet(key, value);
-            ClassicAssert.IsTrue(result);
-
-            // does not delete when called with lesser or equal etag
-            RedisResult res = db.Execute("DELIFGREATER", key, 0);
-            ClassicAssert.AreEqual(0, (long)res);
-
-            RedisValue returnedval = db.StringGet(key);
-            ClassicAssert.AreEqual(value, returnedval.ToString());
-
-            // Deletes when called with higher etag
-            res = db.Execute("DELIFGREATER", key, 2);
-            ClassicAssert.AreEqual(1, (long)res);
-
-            returnedval = db.StringGet(key);
-            ClassicAssert.IsTrue(returnedval.IsNull);
         }
 
         #endregion

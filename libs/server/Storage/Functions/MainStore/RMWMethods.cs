@@ -908,6 +908,17 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFGREATER:
+                    if (rmwInfo.RecordInfo.ETag)
+                        EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
+                    long etagFromClient = input.parseState.GetLong(0);
+                    if (etagFromClient <= functionsState.etagState.etag)
+                    {
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+
+                    return true;
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     if (rmwInfo.RecordInfo.ETag)
@@ -1021,6 +1032,7 @@ namespace Garnet.server
                 return false;
             }
 
+            // threw an exception here
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
             RespCommand cmd = input.header.cmd;
@@ -1036,10 +1048,9 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.DELIFGREATER:
-                    // We are doing this in copy updater instead of NCU because we need to tombstone the record in InternalRMW.
-                    // NCU does not tombstone the record.
+                    // NCU has already checked for making sure the etag is greater than the existing etag by this point
                     long etagFromClient = input.parseState.GetLong(0);
-                    rmwInfo.Action = etagFromClient > functionsState.etagState.etag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
                     EtagState.ResetState(ref functionsState.etagState);
                     return false;
 

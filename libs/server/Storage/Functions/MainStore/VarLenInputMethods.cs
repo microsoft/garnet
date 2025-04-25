@@ -235,6 +235,10 @@ namespace Garnet.server
                         var valueLength = input.parseState.GetArgSliceByRef(0).Length;
                         return sizeof(int) + t.Length + valueLength;
 
+                    case RespCommand.DELIFGREATER:
+                        // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
+                        return sizeof(int);
+            
                     default:
                         if (cmd > RespCommandExtensions.LastValidCommand)
                         {
