@@ -83,13 +83,13 @@ namespace Garnet.server
 
             if (Notes != null)
             {
-                output.WriteAsciiBulkString("notes");
+                output.WriteBulkString("notes"u8);
                 output.WriteAsciiBulkString(Notes);
             }
 
             if (Flags != KeySpecificationFlags.None)
             {
-                output.WriteAsciiBulkString("flags");
+                output.WriteBulkString("flags"u8);
                 output.WriteSetLength(respFormatFlags.Length);
 
                 foreach (var flag in this.respFormatFlags)
@@ -194,11 +194,11 @@ namespace Garnet.server
         {
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiBulkString("index");
-            output.WriteAsciiBulkString("spec");
+            output.WriteBulkString("type"u8);
+            output.WriteBulkString("index"u8);
+            output.WriteBulkString("spec"u8);
             output.WriteMapLength(1);
-            output.WriteAsciiBulkString("index");
+            output.WriteBulkString("index"u8);
             output.WriteInt32(Index);
         }
 
@@ -248,13 +248,13 @@ namespace Garnet.server
         {
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiBulkString("keyword");
-            output.WriteAsciiBulkString("spec");
+            output.WriteBulkString("type"u8);
+            output.WriteBulkString("keyword"u8);
+            output.WriteBulkString("spec"u8);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("keyword");
+            output.WriteBulkString("keyword"u8);
             output.WriteAsciiBulkString(Keyword);
-            output.WriteAsciiBulkString("startfrom");
+            output.WriteBulkString("startfrom"u8);
             output.WriteInt32(StartFrom);
         }
 
@@ -306,9 +306,9 @@ namespace Garnet.server
         {
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiBulkString("unknown");
-            output.WriteAsciiBulkString("spec");
+            output.WriteBulkString("type"u8);
+            output.WriteBulkString("unknown"u8);
+            output.WriteBulkString("spec"u8);
             output.WriteEmptyArray();
         }
 
@@ -365,15 +365,15 @@ namespace Garnet.server
         {
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiBulkString("range");
-            output.WriteAsciiBulkString("spec");
+            output.WriteBulkString("type"u8);
+            output.WriteBulkString("range"u8);
+            output.WriteBulkString("spec"u8);
             output.WriteMapLength(3);
-            output.WriteAsciiBulkString("lastkey");
+            output.WriteBulkString("lastkey"u8);
             output.WriteInt32(LastKey);
-            output.WriteAsciiBulkString("keystep");
+            output.WriteBulkString("keystep"u8);
             output.WriteInt32(KeyStep);
-            output.WriteAsciiBulkString("limit");
+            output.WriteBulkString("limit"u8);
             output.WriteInt32(Limit);
         }
 
@@ -445,15 +445,15 @@ namespace Garnet.server
         {
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiBulkString("keynum");
-            output.WriteAsciiBulkString("spec");
+            output.WriteBulkString("type"u8);
+            output.WriteBulkString("keynum"u8);
+            output.WriteBulkString("spec"u8);
             output.WriteMapLength(3);
-            output.WriteAsciiBulkString("keynumidx");
+            output.WriteBulkString("keynumidx"u8);
             output.WriteInt32(KeyNumIdx);
-            output.WriteAsciiBulkString("firstkey");
+            output.WriteBulkString("firstkey"u8);
             output.WriteInt32(FirstKey);
-            output.WriteAsciiBulkString("keystep");
+            output.WriteBulkString("keystep"u8);
             output.WriteInt32(KeyStep);
         }
 
@@ -519,9 +519,9 @@ namespace Garnet.server
         {
             output.WriteAsciiBulkString(MethodName);
             output.WriteMapLength(2);
-            output.WriteAsciiBulkString("type");
-            output.WriteAsciiBulkString("unknown");
-            output.WriteAsciiBulkString("spec");
+            output.WriteBulkString("type"u8);
+            output.WriteBulkString("unknown"u8);
+            output.WriteBulkString("spec"u8);
             output.WriteEmptyArray();
         }
 

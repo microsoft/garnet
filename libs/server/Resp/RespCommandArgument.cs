@@ -105,34 +105,34 @@ namespace Garnet.server
 
             output.WriteMapLength(ArgCount);
 
-            output.WriteAsciiBulkString("name");
+            output.WriteBulkString("name"u8);
             output.WriteAsciiBulkString(Name);
 
-            output.WriteAsciiBulkString("type");
+            output.WriteBulkString("type"u8);
             var respType = EnumUtils.GetEnumDescriptions(Type)[0];
             output.WriteAsciiBulkString(respType);
 
             if (DisplayText != null)
             {
-                output.WriteAsciiBulkString("display_text");
+                output.WriteBulkString("display_text"u8);
                 output.WriteAsciiBulkString(DisplayText);
             }
 
             if (Token != null)
             {
-                output.WriteAsciiBulkString("token");
+                output.WriteBulkString("token"u8);
                 output.WriteAsciiBulkString(Token);
             }
 
             if (Summary != null)
             {
-                output.WriteAsciiBulkString("summary");
+                output.WriteBulkString("summary"u8);
                 output.WriteAsciiBulkString(Summary);
             }
 
             if (ArgumentFlags != RespCommandArgumentFlags.None)
             {
-                output.WriteAsciiBulkString("flags");
+                output.WriteBulkString("flags"u8);
                 output.WriteSetLength(respFormatArgFlags.Length);
                 foreach (var respArgFlag in respFormatArgFlags)
                 {
@@ -183,7 +183,7 @@ namespace Garnet.server
         {
             ToByteRespFormat(ref output, true);
 
-            output.WriteAsciiBulkString("key_spec_index");
+            output.WriteBulkString("key_spec_index"u8);
             output.WriteInt32(KeySpecIndex);
         }
     }
@@ -214,7 +214,7 @@ namespace Garnet.server
             {
                 ToByteRespFormat(ref output, true);
 
-                output.WriteAsciiBulkString("value");
+                output.WriteBulkString("value"u8);
                 output.WriteAsciiDirect(Value);
             }
             else
@@ -273,7 +273,7 @@ namespace Garnet.server
             {
                 ToByteRespFormat(ref output, true);
 
-                output.WriteAsciiBulkString("arguments");
+                output.WriteBulkString("arguments"u8);
                 output.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
