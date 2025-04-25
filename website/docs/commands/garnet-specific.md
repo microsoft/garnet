@@ -275,6 +275,22 @@ One of the following:
 
 ---
 
+### **DELIFGREATER**
+
+#### **Syntax**
+
+```bash
+DELIFGREATER key etag
+```
+
+Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.
+
+#### **Response**
+
+- **Integer reply**: Returns 1 if the key was successfully deleted; otherwise, returns 0.
+
+---
+
 ### Compatibility and Behavior with Non-ETag Commands
 
 ETags are currently not supported for servers running in Cluster mode. This will be supported soon.

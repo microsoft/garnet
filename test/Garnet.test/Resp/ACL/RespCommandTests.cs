@@ -5603,6 +5603,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task DelIfGreaterACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "DELIFGREATER",
+               [DoDelIfGreaterAsync]
+           );
+
+            static async Task DoDelIfGreaterAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("DELIFGREATER", ["foo", "1"]);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
         public async Task GetIfNotMatchACLsAsync()
         {
             await CheckCommandsAsync(

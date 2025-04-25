@@ -1896,6 +1896,29 @@
     ]
   },
   {
+    "Command": "DELIFGREATER",
+    "Name": "DELIFGREATER",
+    "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      }
+    ]
+  },
+
+  {
     "Command": "DISCARD",
     "Name": "DISCARD",
     "Summary": "Discards a transaction.",
