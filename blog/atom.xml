@@ -101,7 +101,7 @@
 <p>ETags are more of a lower level primitives that you can use to build abstractions that let you build logical clocks, and lock free transactions tailored to your needs. If you find yourself in the above commonly found distributed scenarios, you now have another tool in your toolbag to help overcome your scaling needs.</p>]]></content>
         <author>
             <name>Hamdaan Khalid</name>
-            <uri>https://hamdaan-rails-personal.herokuapp.com/assets/me-f1fa367c094eedf1c151b0b0dfbc057c2b047dec4e10f3974167ec3f803d81f0.jpg</uri>
+            <uri>https://hamdaan-rails-personal.herokuapp.com/about</uri>
         </author>
         <author>
             <name>Badrish Chandramouli</name>
