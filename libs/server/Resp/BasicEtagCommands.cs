@@ -172,8 +172,9 @@ namespace Garnet.server
                 break;
             }
 
+            int lowestAllowedSentEtag = 0;
             bool etagRead = parseState.TryGetLong(2, out long etag);
-            if (!etagRead || etag < 0)
+            if (!etagRead || etag < lowestAllowedSentEtag)
             {
                 errorMessage = CmdStrings.RESP_ERR_INVALID_ETAG;
             }

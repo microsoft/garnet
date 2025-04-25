@@ -16,6 +16,7 @@ namespace Garnet.server
         // Iterators for SCAN command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
+        private ArrayKeyIterationFunctions.MainStoreGetExpiredKeys mainStoreDbExpiredScanFuncs;
 
         // Iterators for KEYS command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
@@ -107,6 +108,17 @@ namespace Garnet.server
 
             lastScanCursor = storeCursor;
             return true;
+        }
+
+        internal void ScanExpiredKeys(long cursor, out long storeCursor, out List<byte[]> keys, long count, ReadOnlySpan<byte> typeObject = default)
+        {
+            keys = new List<byte[]>();
+            // Why have I made this a member variable I dont know but I will come back to this at some point
+            mainStoreDbExpiredScanFuncs ??= new();
+            mainStoreDbExpiredScanFuncs.Initialize(keys);
+
+            storeCursor = cursor;
+            basicContext.Session.ScanCursor(ref storeCursor, count, mainStoreDbExpiredScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
         }
 
         /// <summary>
@@ -209,6 +221,36 @@ namespace Garnet.server
                     this.patternLength = length;
                     this.matchType = matchType;
                 }
+            }
+
+            internal sealed class MainStoreGetExpiredKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            {
+                private readonly GetDBKeysInfo info;
+
+                internal MainStoreGetExpiredKeys() => info = new();
+
+                internal void Initialize(List<byte[]> keys)
+                    => info.Initialize(keys, default, 0);
+
+                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                        => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                {
+                    if (value.MetadataSize == 0 || !MainSessionFunctions.CheckExpiry(ref value))
+                        cursorRecordResult = CursorRecordResult.Skip;
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Accept;
+                        info.keys.Add(key.ToByteArray());
+                    }
+
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress) => true;
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
             }
 
             internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>

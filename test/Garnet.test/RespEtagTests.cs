@@ -353,13 +353,13 @@ namespace Garnet.test
             // greater etag sent so we expect the same etag returned
             var newValue = "meow";
             arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 2);
-            ClassicAssert.AreEqual(3, (long)arrRes[0]);
+            ClassicAssert.AreEqual(2, (long)arrRes[0]);
             ClassicAssert.IsTrue(arrRes[1].IsNull);
 
             // shrink value size and send greater etag
             newValue = "m";
             arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 5);
-            ClassicAssert.AreEqual(6, (long)arrRes[0]);
+            ClassicAssert.AreEqual(5, (long)arrRes[0]);
             ClassicAssert.IsTrue(arrRes[1].IsNull);
         }
 
@@ -375,7 +375,7 @@ namespace Garnet.test
             RedisResult res = db.Execute("SET", key, value);
             ClassicAssert.AreEqual("OK", res.ToString());
 
-            // not greater etag sent so we expect a higher etag returned
+            // not greater etag sent so we expect the actual etag returned
             RedisResult[] arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, "check", 0);
             ClassicAssert.AreEqual(0, (long)arrRes[0]);
             ClassicAssert.AreEqual(value, arrRes[1].ToString());
@@ -383,13 +383,13 @@ namespace Garnet.test
             // greater etag sent so we expect the same etag returned
             var newValue = "meow";
             arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 2);
-            ClassicAssert.AreEqual(3, (long)arrRes[0]);
+            ClassicAssert.AreEqual(2, (long)arrRes[0]);
             ClassicAssert.IsTrue(arrRes[1].IsNull);
 
             // shrink value size and send greater etag
             newValue = "m";
             arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 5);
-            ClassicAssert.AreEqual(6, (long)arrRes[0]);
+            ClassicAssert.AreEqual(5, (long)arrRes[0]);
             ClassicAssert.IsTrue(arrRes[1].IsNull);
         }
 
@@ -415,7 +415,7 @@ namespace Garnet.test
             IDatabase db = redis.GetDatabase(0);
 
             RedisResult[] result = (RedisResult[])db.Execute("SETIFGREATER", "key", "valueanother", 1, "EX", 3);
-            ClassicAssert.AreEqual(2, (long)result[0]);
+            ClassicAssert.AreEqual(1, (long)result[0]);
             ClassicAssert.IsTrue(result[1].IsNull);
         }
 

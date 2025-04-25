@@ -766,9 +766,8 @@ namespace Garnet.server
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
 
-            // TODO: ACTIVE EXPIRE MAIN STORE AND OBJECT STORE
-            Task.Run(async () => await MainStoreGabageCollectExpiredKeys(), ctsCommit.Token);
-            Task.Run(async () => await ObjectStoreGabageCollectExpiredKeys(), ctsCommit.Token);
+            // TODO: make this configurable
+            Task.Run(async () => await CollectExpiredMainStoreKeys(60, 10_000), ctsCommit.Token);
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
