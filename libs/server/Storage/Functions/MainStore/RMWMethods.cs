@@ -27,6 +27,7 @@ namespace Garnet.server
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
+                case RespCommand.DELIFGREATER:
                     return false;
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
@@ -355,9 +356,15 @@ namespace Garnet.server
                     EtagState.ResetState(ref functionsState.etagState);
                     // Nothing is set because being in this block means NX was already violated
                     return true;
+                case RespCommand.DELIFGREATER:
+                    long etagFromClient = input.parseState.GetLong(0);
+                    rmwInfo.Action = etagFromClient > functionsState.etagState.etag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
+                    EtagState.ResetState(ref functionsState.etagState);
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    long etagFromClient = input.parseState.GetLong(1);
+                    etagFromClient = input.parseState.GetLong(1);
                     // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
                     int comparisonResult = etagFromClient.CompareTo(functionsState.etagState.etag);
                     int expectedResult = cmd is RespCommand.SETIFMATCH ? 0 : 1;
@@ -901,8 +908,22 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFGREATER:
+                    if (rmwInfo.RecordInfo.ETag)
+                        EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
+                    long etagFromClient = input.parseState.GetLong(0);
+                    if (etagFromClient <= functionsState.etagState.etag)
+                    {
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+
+                    return true;
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                    if (rmwInfo.RecordInfo.ETag)
+                        EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
+
                     long etagToCheckWith = input.parseState.GetLong(1);
 
                     // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
@@ -936,7 +957,6 @@ namespace Garnet.server
 
                     EtagState.ResetState(ref functionsState.etagState);
                     return false;
-
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
@@ -1026,10 +1046,16 @@ namespace Garnet.server
 
             switch (cmd)
             {
+                case RespCommand.DELIFGREATER:
+                    // NCU has already checked for making sure the etag is greater than the existing etag by this point
+                    long etagFromClient = input.parseState.GetLong(0);
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    EtagState.ResetState(ref functionsState.etagState);
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
-
                     shouldUpdateEtag = true;
                     // Copy input to value
                     Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
@@ -1048,7 +1074,7 @@ namespace Garnet.server
                         newValue.ExtraMetadata = input.arg1;
                     }
 
-                    long etagFromClient = input.parseState.GetLong(1);
+                    etagFromClient = input.parseState.GetLong(1);
 
                     functionsState.etagState.etag = etagFromClient;
 

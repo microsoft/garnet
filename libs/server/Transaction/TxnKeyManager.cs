@@ -160,6 +160,7 @@ namespace Garnet.server
                 RespCommand.SETEXNX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXXX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DEL => ListKeys(inputCount, false, LockType.Exclusive),
+                RespCommand.DELIFGREATER => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.EXISTS => SingleKey(1, false, LockType.Shared),
                 RespCommand.RENAME => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCR => SingleKey(1, false, LockType.Exclusive),

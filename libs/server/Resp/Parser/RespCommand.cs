@@ -117,6 +117,7 @@ namespace Garnet.server
         DECR,
         DECRBY,
         DEL,
+        DELIFGREATER,
         EXPIRE,
         EXPIREAT,
         FLUSHALL,
@@ -2562,6 +2563,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
             {
                 return RespCommand.GETIFNOTMATCH;
+            }
+            else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
+            {
+                return RespCommand.DELIFGREATER;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.

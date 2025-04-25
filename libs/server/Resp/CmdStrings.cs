@@ -155,6 +155,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
         public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
+        public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> MEMBERS => "MEMBERS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
