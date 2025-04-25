@@ -11,8 +11,16 @@ namespace Tsavorite.core
     public interface IHeapObject : IDisposable
     {
         /// <summary>
-        /// Total memory size of the object
+        /// Total size of the object in memory, including .NET object overheads.
         /// </summary>
-        long Size { get; set; }
+        long MemorySize { get; set; }
+
+        /// <summary>
+        /// Total serialized size of the object; the size it will take when written to disk or other storage.
+        /// </summary>
+        long DiskSize { get; set; }
+
+        long Size { get => 0; set { } }
+
     }
 }

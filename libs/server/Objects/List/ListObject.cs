@@ -64,8 +64,8 @@ namespace Garnet.server
         /// <summary>
         /// Constructor
         /// </summary>
-        public ListObject(long expiration = 0)
-            : base(expiration, MemoryUtils.ListOverhead)
+        public ListObject()
+            : base(new(MemoryUtils.ListOverhead, sizeof(int)))
         {
             list = new LinkedList<byte[]>();
         }
@@ -74,7 +74,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public ListObject(BinaryReader reader)
-            : base(reader, MemoryUtils.ListOverhead)
+            : base(reader, new(MemoryUtils.ListOverhead, sizeof(int)))
         {
             list = new LinkedList<byte[]>();
 
@@ -91,8 +91,8 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public ListObject(LinkedList<byte[]> list, long expiration, long size)
-            : base(expiration, size)
+        public ListObject(LinkedList<byte[]> list, ObjectSizes sizes)
+            : base(sizes)
         {
             this.list = list;
         }
@@ -125,12 +125,12 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
+        public override GarnetObjectBase Clone() => new ListObject(list, sizes);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long memorySizeChange)
         {
-            sizeChange = 0;
+            memorySizeChange = 0;
 
             fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.Span)
             {
@@ -142,7 +142,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var previousSize = this.Size;
+                var previousMemorySize = this.MemorySize;
                 switch (input.header.ListOp)
                 {
                     case ListOperation.LPUSH:
@@ -188,7 +188,7 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
                 }
 
-                sizeChange = this.Size - previousSize;
+                memorySizeChange = this.MemorySize - previousMemorySize;
             }
 
             if (list.Count == 0)
@@ -199,9 +199,21 @@ namespace Garnet.server
 
         internal void UpdateSize(byte[] item, bool add = true)
         {
-            var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.ListOverhead);
+            var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
+            var diskSize = sizeof(int) + item.Length;
+
+            if (add)
+            {
+                this.MemorySize += memorySize;
+                this.DiskSize += diskSize;
+            }
+            else
+            {
+                this.MemorySize -= memorySize;
+                this.DiskSize -= diskSize;
+                Debug.Assert(this.MemorySize >= MemoryUtils.ListOverhead);
+                Debug.Assert(this.DiskSize >= sizeof(int));
+            }
         }
 
         /// <inheritdoc />

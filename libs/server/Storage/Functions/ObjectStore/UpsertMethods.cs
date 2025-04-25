@@ -62,7 +62,7 @@ namespace Garnet.server
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Size);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.MemorySize);
         }
 
         /// <inheritdoc />
@@ -81,7 +81,7 @@ namespace Garnet.server
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
             var size = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(size);
         }
 
@@ -90,7 +90,7 @@ namespace Garnet.server
         {
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
 
             _ = logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -115,7 +115,7 @@ namespace Garnet.server
 
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
 
             _ = logRecord.TrySetValueObject(srcValue, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -127,7 +127,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Size - oldSize);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.MemorySize - oldSize);
             return true;
         }
 
@@ -137,7 +137,7 @@ namespace Garnet.server
         {
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
 
             _ = logRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -156,7 +156,7 @@ namespace Garnet.server
 
             var newSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.Size);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
             return true;
         }

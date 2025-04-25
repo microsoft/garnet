@@ -1152,7 +1152,7 @@ namespace Garnet.server
                 {
                     memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length
                         Utility.RoundUp(key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                        objectValue.GarnetObject.Size; // Value allocation in heap
+                        objectValue.GarnetObject.MemorySize; // Value allocation in heap
                 }
             }
             else

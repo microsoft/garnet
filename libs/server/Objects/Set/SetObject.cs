@@ -46,8 +46,8 @@ namespace Garnet.server
         /// <summary>
         ///  Constructor
         /// </summary>
-        public SetObject(long expiration = 0)
-            : base(expiration, MemoryUtils.HashSetOverhead)
+        public SetObject()
+            : base(new(MemoryUtils.HashSetOverhead, sizeof(int)))
         {
             set = new HashSet<byte[]>(ByteArrayComparer.Instance);
         }
@@ -56,7 +56,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SetObject(BinaryReader reader)
-            : base(reader, MemoryUtils.HashSetOverhead)
+            : base(reader, new(MemoryUtils.HashSetOverhead, sizeof(int)))
         {
             set = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
@@ -73,8 +73,8 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SetObject(HashSet<byte[]> set, long expiration, long size)
-            : base(expiration, size)
+        public SetObject(HashSet<byte[]> set, ObjectSizes sizes)
+            : base(sizes)
         {
             this.set = set;
         }
@@ -102,12 +102,12 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
+        public override GarnetObjectBase Clone() => new SetObject(set, sizes);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long memorySizeChange)
         {
-            sizeChange = 0;
+            memorySizeChange = 0;
 
             fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.Span)
             {
@@ -119,7 +119,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var prevSize = this.Size;
+                var prevMemorySize = this.MemorySize;
                 switch (input.header.SetOp)
                 {
                     case SetOperation.SADD:
@@ -163,7 +163,7 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
                 }
 
-                sizeChange = this.Size - prevSize;
+                memorySizeChange = this.MemorySize - prevMemorySize;
             }
 
             if (set.Count == 0)
@@ -174,9 +174,21 @@ namespace Garnet.server
 
         internal void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
-            var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.HashSetOverhead);
+            var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
+            var kvSize = sizeof(int) + item.Length;
+
+            if (add)
+            {
+                this.MemorySize += memorySize;
+                this.DiskSize += kvSize;
+            }
+            else
+            {
+                this.MemorySize -= memorySize;
+                this.DiskSize -= kvSize;
+                Debug.Assert(this.MemorySize >= MemoryUtils.HashSetOverhead);
+                Debug.Assert(this.DiskSize >= sizeof(int));
+            }
         }
 
         /// <inheritdoc />

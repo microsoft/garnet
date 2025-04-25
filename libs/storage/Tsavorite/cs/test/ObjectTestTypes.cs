@@ -27,7 +27,8 @@ namespace Tsavorite.test
     {
         public int value;
 
-        public long Size { get => sizeof(int); set => throw new System.NotImplementedException("TestValueObject.Size.set"); }
+        public long MemorySize { get => sizeof(int); set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
+        public long DiskSize { get => MemorySize; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
 
         public void Dispose() { }
 
@@ -177,7 +178,8 @@ namespace Tsavorite.test
     {
         public byte[] value;
 
-        public long Size { get => sizeof(int) + value.Length; set => throw new System.NotImplementedException("TestValueObject.Size.set"); }
+        public long MemorySize { get => sizeof(int) + 24 /* TODO: ByteArrayOverhead */; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
+        public long DiskSize { get => MemorySize; set => throw new NotImplementedException("TestValueObject.DiskSize.set"); }
 
         public void Dispose() { }
 

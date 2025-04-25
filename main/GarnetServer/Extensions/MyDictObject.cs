@@ -22,13 +22,13 @@ namespace Garnet
         readonly Dictionary<byte[], byte[]> dict;
 
         public MyDict(byte type)
-            : base(type, 0, MemoryUtils.DictionaryOverhead)
+            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
         {
             dict = new(ByteArrayComparer.Instance);
         }
 
         public MyDict(byte type, BinaryReader reader)
-            : base(type, reader, MemoryUtils.DictionaryOverhead)
+            : base(type, reader, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
         {
             dict = new(ByteArrayComparer.Instance);
 
@@ -132,9 +132,7 @@ namespace Garnet
         public bool Set(byte[] key, byte[] value)
         {
             if (dict.TryGetValue(key, out var oldValue))
-            {
                 UpdateSize(key, oldValue, false);
-            }
 
             dict[key] = value;
             UpdateSize(key, value);
@@ -143,15 +141,25 @@ namespace Garnet
 
         private void UpdateSize(byte[] key, byte[] value, bool add = true)
         {
-            var size = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
+            var memorySize = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
                 + (2 * MemoryUtils.ByteArrayOverhead) + MemoryUtils.DictionaryEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.DictionaryOverhead);
+            var kvSize = sizeof(int) * 2 + key.Length + value.Length;
+
+            if (add)
+            {
+                this.MemorySize += memorySize;
+                this.DiskSize += kvSize;
+            }
+            else
+            {
+                this.MemorySize -= memorySize;
+                this.DiskSize -= kvSize;
+                Debug.Assert(this.MemorySize >= MemoryUtils.DictionaryOverhead);
+                Debug.Assert(this.DiskSize >= sizeof(int));
+            }
         }
 
         public bool TryGetValue(byte[] key, [MaybeNullWhen(false)] out byte[] value)
-        {
-            return dict.TryGetValue(key, out value);
-        }
+            => dict.TryGetValue(key, out value);
     }
 }

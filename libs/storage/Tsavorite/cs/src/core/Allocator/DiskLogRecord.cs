@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -498,7 +499,7 @@ namespace Tsavorite.core
             // Value length prefix on the disk is a long, as it may be an object.
             var valueLength = !logRecord.Info.ValueIsObject
                 ? logRecord.ValueSpan.Length
-                : (valueSerializer is not null ? logRecord.ValueObject.Size : 0);
+                : (valueSerializer is not null ? logRecord.ValueObject.DiskSize : 0);
 
             var indicatorByte = CreateIndicatorByte(logRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
 
@@ -518,7 +519,7 @@ namespace Tsavorite.core
             {
                 if (valueSerializer is not null)
                 {
-                    var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.Size, logRecord.ValueObject.Size, FileAccess.ReadWrite);
+                    var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.DiskSize, logRecord.ValueObject.DiskSize, FileAccess.ReadWrite);
                     valueSerializer.BeginSerialize(stream);
                     valueSerializer.Serialize(logRecord.ValueObject);
                     valueSerializer.EndSerialize();
@@ -528,9 +529,9 @@ namespace Tsavorite.core
                 InfoRef.SetValueIsObject();
             }
             ptr += valueLength;
-            allocatedRecord.available_bytes = (int)recordSize;
-
             CopyOptionals(in logRecord, ref ptr);
+
+            allocatedRecord.available_bytes = (int)recordSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -538,8 +539,13 @@ namespace Tsavorite.core
                 long valueLength, int valueLengthByteCount, long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
             EnsureAllocation(recordSize, bufferPool, ref allocatedRecord);
-            var ptr = (byte*)physicalAddress;
+            return SerializeCommonVarByteFields(recordInfo, indicatorByte, key, keyLengthByteCount, valueLength, valueLengthByteCount, allocatedRecord.GetValidPointer());
+        }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe byte* SerializeCommonVarByteFields(RecordInfo recordInfo, byte indicatorByte, ReadOnlySpan<byte> key, int keyLengthByteCount,
+                long valueLength, int valueLengthByteCount, byte* ptr)
+        {
             // RecordInfo is a stack copy so we can modify it here. Write the key "inline" status; keys are always inline in DiskLogRecord, as they cannot
             // be object. Value, however, does not set ValueIsInline for varbyte records, because then Info.RecordIsInline would be true. Instead we clear
             // ValueIsInline and use ValueIsObject to determine whether the serialized bytes are string or object, and whether DeserializeValueObject can
@@ -590,6 +596,81 @@ namespace Tsavorite.core
             allocatedRecord.available_bytes = (int)recordSize;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void DirectCopyRecord(long recordSize, long srcPhysicalAddress, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
+        {
+            if (output.IsSpanByte && output.SpanByte.Length >= (int)recordSize)     // TODO: long value sizes
+            {
+                Buffer.MemoryCopy((byte*)srcPhysicalAddress, output.SpanByte.ToPointer(), recordSize, recordSize);
+                return;
+            }
+
+            output.EnsureMemorySize((int)recordSize, memoryPool);
+            fixed (byte* ptr = output.Memory.Memory.Span)
+                Buffer.MemoryCopy((byte*)srcPhysicalAddress, ptr, recordSize, recordSize);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static long SerializeRecord<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, long srcPhysicalAddress, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool,
+                IObjectSerializer<IHeapObject> valueSerializer)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            // If we have an object and we don't serialize it, we don't need to allocate space for it.
+            // Value length prefix on the disk is a long, as it may be an object.
+            var valueLength = !srcLogRecord.Info.ValueIsObject
+                ? srcLogRecord.ValueSpan.Length
+                : srcLogRecord.ValueObject.DiskSize;
+
+            var indicatorByte = CreateIndicatorByte(srcLogRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
+
+            var recordSize = RecordInfo.GetLength()
+                + 1 // indicator byte
+                + keyLengthByteCount + srcLogRecord.Key.Length
+                + valueLengthByteCount + valueLength
+                + (srcLogRecord.Info.HasETag ? LogRecord.ETagSize : 0)
+                + (srcLogRecord.Info.HasExpiration ? LogRecord.ExpirationSize : 0);
+
+            // Copy in varbyte format. If the object was not serialized in srcLogRecord we need to revise the length which is varbyte, so we can't just Buffer copy the whole record.
+            var serializedSize = 0L;
+            if (output.IsSpanByte && output.SpanByte.Length >= (int)recordSize)     // TODO: long value sizes
+            {
+                var ptr = output.SpanByte.ToPointer();
+                var startPtr = ptr;
+                ptr = SerializeCommonVarByteFields(srcLogRecord.Info, indicatorByte, srcLogRecord.Key, keyLengthByteCount, valueLength, valueLengthByteCount, ptr);
+                ptr = SerializeValueAndOptionals(ref srcLogRecord, valueLength, ptr, valueSerializer);
+                serializedSize = ptr - startPtr;
+            }
+            else
+            {
+                output.EnsureMemorySize((int)recordSize, memoryPool);
+                fixed (byte* spanPtr = output.Memory.Memory.Span)
+                {
+                    var ptr = spanPtr;
+                    var startPtr = ptr;
+                    ptr = SerializeCommonVarByteFields(srcLogRecord.Info, indicatorByte, srcLogRecord.Key, keyLengthByteCount, valueLength, valueLengthByteCount, spanPtr);
+                    ptr = SerializeValueAndOptionals(ref srcLogRecord, valueLength, ptr, valueSerializer);
+                    serializedSize = ptr - startPtr;
+                }
+            }
+            Debug.Assert(serializedSize == recordSize, $"Serialized size {serializedSize} does not match expected size {recordSize}");
+            return serializedSize;
+        }
+
+        private static byte* SerializeValueAndOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, long valueLength, byte* ptr, IObjectSerializer<IHeapObject> valueSerializer)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (!srcLogRecord.Info.ValueIsObject)
+                srcLogRecord.ValueSpan.CopyTo(new Span<byte>(ptr, (int)valueLength));
+            else
+            {
+                var stream = new UnmanagedMemoryStream(ptr, srcLogRecord.ValueObject.DiskSize, srcLogRecord.ValueObject.DiskSize, FileAccess.ReadWrite);
+                valueSerializer.BeginSerialize(stream);
+                valueSerializer.Serialize(srcLogRecord.ValueObject);
+                valueSerializer.EndSerialize();
+            }
+            return ptr + valueLength;
+        }
+
         private void EnsureAllocation(long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
             var allocatedSize = RoundUp((int)recordSize, Constants.kRecordAlignment);
@@ -620,7 +701,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Clone from a temporary <see cref="DiskLogRecord"/> (having no <see cref="SectorAlignedMemory"/>) to a longer-lasting one.
+        /// Clone from a temporary <see cref="DiskLogRecord"/> (having no overflow <see cref="SectorAlignedMemory"/>) to a longer-lasting one.
         /// </summary>
         /// <param name="inputDiskLogRecord"></param>
         /// <param name="bufferPool"></param>
@@ -636,8 +717,8 @@ namespace Tsavorite.core
                 return;
             }
 
-            // The source DiskLogRecord has a Value object so it is in varbyte format. Copy everything up to the end of the key; ignore the serialized
-            // value data even if the source source still has it. inputDiskLogRecord can Return() its recordBuffer, releasing any serialized value data.
+            // The source DiskLogRecord has a Value object rather than serialized bytes so it is in varbyte format. Copy everything up to the end of the key; ignore
+            // the serialized value data even if the source source still has it. inputDiskLogRecord can Return() its recordBuffer, releasing any serialized value data.
             var (length, dataAddress) = KeyInfo;
             var partialRecordSize = dataAddress + length - inputDiskLogRecord.physicalAddress;
             var allocatedRecordSize = partialRecordSize + OptionalLength;
@@ -646,10 +727,11 @@ namespace Tsavorite.core
                 recordBuffer.pool.EnsureSize(ref recordBuffer, (int)allocatedRecordSize);       // TODO handle 'long' valuelength
             else
                 recordBuffer = bufferPool.Get((int)allocatedRecordSize);                        // TODO handle 'long' valuelength
+            physicalAddress = (long)recordBuffer.GetValidPointer();
 
             Buffer.MemoryCopy((void*)inputDiskLogRecord.physicalAddress, (void*)physicalAddress, partialRecordSize, partialRecordSize);
 
-            // Clear the value length in the indicator byte, as we did not copy the serialized data.
+            // Clear the value length in the indicator byte, as we did not copy any serialized data.
             var ptr = (byte*)physicalAddress + RecordInfo.GetLength();
             *ptr = (byte)(*ptr & ~kValueLengthBitMask);
 
@@ -678,6 +760,37 @@ namespace Tsavorite.core
             recordBuffer = diskLogRecord.recordBuffer;
             diskLogRecord.recordBuffer = null;   // Transfers ownership
             physicalAddress = (long)recordBuffer.GetValidPointer();
+        }
+
+        /// <summary>
+        /// Serialize a log record to the <see cref="SpanByteAndMemory"/> <paramref name="output"/> in DiskLogRecord format, with the objectValue
+        /// serialized to the Value span if it is not already there in the source (there will be no ValueObject in the result). This is used for migration.
+        /// </summary>
+        internal static void Serialize<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool, IObjectSerializer<IHeapObject> valueSerializer)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.AsLogRecord(out var logRecord))
+            {
+                if (logRecord.Info.RecordIsInline)
+                    DirectCopyRecord(logRecord.ActualRecordSize, logRecord.physicalAddress, ref output, memoryPool);
+                else
+                    SerializeRecord(ref logRecord, logRecord.physicalAddress, ref output, memoryPool, valueSerializer);
+                return;
+            }
+
+            if (!srcLogRecord.AsDiskLogRecord(out var diskLogRecord))
+                throw new TsavoriteException("Unknown TSourceLogRecord type");
+
+            var valueInfo = diskLogRecord.ValueInfo;
+
+            // Either the value is present in serialized byte form or there should be an object. If there is no object we have nothing to serialize
+            if (diskLogRecord.Info.RecordIsInline
+                || (diskLogRecord.Info.KeyIsInline && (valueInfo.length > 0 || diskLogRecord.valueObject is null)))
+            {
+                DirectCopyRecord(logRecord.ActualRecordSize, logRecord.physicalAddress, ref output, memoryPool);
+                return;
+            }
+            SerializeRecord(ref diskLogRecord, diskLogRecord.physicalAddress, ref output, memoryPool, valueSerializer);
         }
         #endregion //Serialized Record Creation
 

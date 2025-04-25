@@ -80,7 +80,7 @@ namespace Garnet.server
                 WriteLogRMW(dstLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             }
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(dstLogRecord.ValueObject.Size);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(dstLogRecord.ValueObject.MemorySize);
         }
 
         /// <inheritdoc />
@@ -206,7 +206,7 @@ namespace Garnet.server
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
-            var oldValueSize = srcLogRecord.ValueObject.Size;
+            var oldValueSize = srcLogRecord.ValueObject.MemorySize;
             var value = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
 
             // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
@@ -292,7 +292,7 @@ namespace Garnet.server
             sizeInfo.AssertOptionals(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
-            var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.Size - oldValueSize : value.Size;
+            var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.MemorySize - oldValueSize : value.MemorySize;
             functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)

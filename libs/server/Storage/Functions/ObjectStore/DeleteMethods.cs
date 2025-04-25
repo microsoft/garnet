@@ -30,7 +30,7 @@ namespace Garnet.server
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.Size);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.MemorySize);
             return true;
         }
     }

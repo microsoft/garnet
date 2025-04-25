@@ -312,14 +312,14 @@ namespace Tsavorite.test
                 Assert.That(keyInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress));
 
                 valueInfo = diskLogRecord.ValueInfo;
-                Assert.That(valueInfo.length, Is.EqualTo(valueObject.Size));
+                Assert.That(valueInfo.length, Is.EqualTo(valueObject.DiskSize));
                 Assert.That(valueInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress + keyInfo.length));
 
                 Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
                 Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
 
                 Assert.That(diskLogRecord.Info.ValueIsObject);
-                expectedSerializedValueLength = (int)valueObject.Size;
+                expectedSerializedValueLength = (int)valueObject.DiskSize;
                 expectedRecordSize = RoundUp(expectedKeyDataOffset + key.Length + expectedSerializedValueLength + optionalLength, Constants.kRecordAlignment);
                 Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(expectedRecordSize));
 

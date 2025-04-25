@@ -100,15 +100,17 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.MIGRATE:
-                    if (value.Length <= output.Length)
+                    var requiredLength = DiskLogRecord.GetSerializedSize(ref srcLogRecord);
+                    if (requiredLength <= output.Length)
                     {
+                        var diskLogRecord = new(output.SpanByte);
                         value.CopyTo(output.SpanByte.Span);
                         output.Length = value.Length;
                         return;
                     }
 
                     output.ConvertToHeap();
-                    output.EnsureMemorySize(DiskLogRecord.GetSerializedSize(), functionsState.memoryPool);
+                    output.EnsureMemorySize(DiskLogRecord.GetSerializedSize(ref srcLogRecord), functionsState.memoryPool);
                     output.Length = value.TotalSize();
 
                     if (output.Memory == default) // Allocate new heap buffer

@@ -49,7 +49,7 @@ namespace GarnetJSON
         /// </summary>
         /// <param name="type">The type of the object.</param>
         public JsonObject(byte type)
-            : base(type, 0, MemoryUtils.DictionaryOverhead)
+            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
         {
         }
 
@@ -89,8 +89,8 @@ namespace GarnetJSON
         /// <param name="writer">The binary writer to serialize to.</param>
         public override void SerializeObject(BinaryWriter writer)
         {
-            if (jNode == null) return;
-
+            if (jNode == null)
+                return;
             writer.Write(jNode.ToJsonString());
         }
 
@@ -150,11 +150,11 @@ namespace GarnetJSON
         /// <param name="logger">The logger to log any errors.</param>
         /// <returns><c>true</c> if the value was successfully set; otherwise, <c>false</c>.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="path"/> or <paramref name="value"/> is <c>null</c>.</exception>
+        /// <remarks>TODO: This currently does not update <see cref="GarnetObjectBase.MemorySize"/> or <see cref="GarnetObjectBase.DiskSize"/></remarks>
         public bool TrySet(string path, string value, ILogger? logger = null)
         {
             if (path == null)
                 throw new ArgumentNullException(nameof(path));
-
             if (value == null)
                 throw new ArgumentNullException(nameof(value));
 
@@ -231,9 +231,7 @@ namespace GarnetJSON
 
                     // Replace matched value with input value
                     if (match.Value is JsonValue matchValue)
-                    {
                         matchValue.ReplaceWith(valNode);
-                    }
                 }
             }
         }
@@ -241,9 +239,8 @@ namespace GarnetJSON
         private static string GetParentPathExt(string jsonPath)
         {
             var matches = Regex.Matches(jsonPath, JsonPathPattern);
-
-            if (matches.Count == 0) return "$";
-
+            if (matches.Count == 0)
+                return "$";
             return jsonPath.Substring(0, matches[^1].Index);
         }
 
@@ -261,9 +258,7 @@ namespace GarnetJSON
             {
                 var indexString = path.Substring(startIndex + 1, endIndex - startIndex - 1);
                 if (int.TryParse(indexString, out var index))
-                {
                     return index;
-                }
             }
 
             throw new ArgumentException("Invalid array index in path");

@@ -140,8 +140,8 @@ namespace Garnet.server
         /// <summary>
         /// Constructor
         /// </summary>
-        public SortedSetObject(long expiration = 0)
-            : base(expiration, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
+        public SortedSetObject()
+            : base(new (MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int)))
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
@@ -151,7 +151,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SortedSetObject(BinaryReader reader)
-            : base(reader, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
+            : base(reader, new(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int)))
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
@@ -171,8 +171,8 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SortedSetObject(SortedSet<(double, byte[])> sortedSet, Dictionary<byte[], double> sortedSetDict, long expiration, long size)
-            : base(expiration, size)
+        public SortedSetObject(SortedSet<(double, byte[])> sortedSet, Dictionary<byte[], double> sortedSetDict, ObjectSizes sizes)
+            : base(sizes)
         {
             this.sortedSet = sortedSet;
             this.sortedSetDict = sortedSetDict;
@@ -236,12 +236,12 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SortedSetObject(sortedSet, sortedSetDict, Expiration, Size);
+        public override GarnetObjectBase Clone() => new SortedSetObject(sortedSet, sortedSetDict, sizes);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long memorySizeChange)
         {
-            sizeChange = 0;
+            memorySizeChange = 0;
 
             fixed (byte* outputSpan = output.SpanByteAndMemory.Span)
             {
@@ -254,7 +254,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var prevSize = this.Size;
+                var prevMemorySize = this.MemorySize;
                 var op = header.SortedSetOp;
                 switch (op)
                 {
@@ -342,7 +342,7 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
                 }
 
-                sizeChange = this.Size - prevSize;
+                memorySizeChange = this.MemorySize - prevMemorySize;
             }
 
             if (sortedSetDict.Count == 0)
@@ -463,10 +463,22 @@ namespace Garnet.server
         private void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
             // item's length + overhead to store item + value of type double added to sorted set and dictionary + overhead for those datastructures
-            var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + (2 * sizeof(double))
+            var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + (2 * sizeof(double))
                 + MemoryUtils.SortedSetEntryOverhead + MemoryUtils.DictionaryEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
+            var kvSize = sizeof(int) + item.Length + sizeof(double);
+
+            if (add)
+            {
+                this.MemorySize += memorySize;
+                this.DiskSize += kvSize;
+            }
+            else
+            {
+                this.MemorySize -= memorySize;
+                this.DiskSize -= kvSize;
+                Debug.Assert(this.MemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
+                Debug.Assert(this.DiskSize >= sizeof(int));
+            }
         }
     }
 }

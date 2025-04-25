@@ -10,6 +10,24 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    public struct ObjectSizes
+    {
+        /// <summary>In-memory size, including .NET object overheads</summary>
+        public long Memory;
+
+        /// <summary>Serialized size, for disk IO or other storage</summary>
+        public long Disk;
+
+        public ObjectSizes(long memory, long disk)
+        {
+            Memory = memory;
+            Disk = disk;
+        }
+
+        [Conditional("DEBUG")]
+        public void Verify() => Debug.Assert(Memory >= 0 && Disk >= 0, $"Invalid sizes [{Memory}, {Disk}]");
+    }
+
     /// <summary>
     /// Base class for Garnet heap objects
     /// </summary>
@@ -22,21 +40,23 @@ namespace Garnet.server
         public abstract byte Type { get; }
 
         /// <inheritdoc />
-        public long Expiration { get; set; }
+        public long MemorySize { get => sizes.Memory; set => sizes.Memory = value; }
 
         /// <inheritdoc />
-        public long Size { get; set; }
+        public long DiskSize { get => sizes.Disk; set => sizes.Disk = value; }
 
-        protected GarnetObjectBase(long expiration, long size)
+        public ObjectSizes sizes;
+
+        protected GarnetObjectBase(ObjectSizes sizes)
         {
-            Debug.Assert(size >= 0);
-            this.Expiration = expiration;
-            this.Size = size;
+            sizes.Verify();
+            this.sizes = sizes;
         }
 
-        protected GarnetObjectBase(BinaryReader reader, long size)
-            : this(expiration: reader.ReadInt64(), size: size)
+        protected GarnetObjectBase(BinaryReader reader, ObjectSizes sizes)
+            : this(sizes)
         {
+            // Add anything here that should match DoSerialize()
         }
 
         /// <inheritdoc />
@@ -128,7 +148,7 @@ namespace Garnet.server
         /// </summary>
         public virtual void DoSerialize(BinaryWriter writer)
         {
-            writer.Write(Expiration);
+            // Add anything here that needs to be in front of the derived object data
         }
 
         private bool MakeTransition(SerializationPhase expectedPhase, SerializationPhase nextPhase)
