@@ -1032,7 +1032,6 @@ namespace Garnet.server
                 return false;
             }
 
-            // threw an exception here
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref newValue, newValue.TotalSize);
 
             RespCommand cmd = input.header.cmd;
