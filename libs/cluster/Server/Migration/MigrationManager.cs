@@ -44,6 +44,12 @@ namespace Garnet.cluster
             var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+
+            logger?.LogInformation("NetworkBufferSettings.sendBufferSize:{sendBufferSize}", networkBufferSettings.sendBufferSize);
+            logger?.LogInformation("NetworkBufferSettings.initialReceiveBufferSize:{initialReceiveBufferSize}", networkBufferSettings.initialReceiveBufferSize);
+            logger?.LogInformation("NetworkBufferSettings.maxReceiveBufferSize:{maxReceiveBufferSize}", networkBufferSettings.maxReceiveBufferSize);
+            logger?.LogInformation("ParallelMigrateTasks:{ParallelMigrateTasks}", clusterProvider.serverOptions.ParallelMigrateTasks);
+            logger?.LogInformation("FastMigrate:{FastMigrate}", clusterProvider.serverOptions.FastMigrate ? "Enabled" : "Disabled");
         }
 
         /// <summary>
