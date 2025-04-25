@@ -21,7 +21,8 @@ namespace Garnet
 
         public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType)
         {
-            return destinationType == typeof(string) || destinationType == typeof(bool) || destinationType == typeof(bool?);
+            return destinationType == typeof(bool) || destinationType == typeof(bool?) ||
+                   destinationType == typeof(string) || destinationType == typeof(CommandLineBooleanOption);
         }
 
         public override object ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, object value)
@@ -55,6 +56,11 @@ namespace Garnet
             if (destinationType == typeof(string))
             {
                 return rbValue.ToString().ToLowerInvariant();
+            }
+
+            if (destinationType == typeof(CommandLineBooleanOption))
+            {
+                return rbValue == RedisBoolean.Yes ? CommandLineBooleanOption.Yes : CommandLineBooleanOption.No;
             }
 
             throw new NotImplementedException();
