@@ -120,7 +120,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>A string ASCII decoded string from the slice.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public override readonly string ToString() => Encoding.ASCII.GetString(ReadOnlySpan);
+        public override readonly string ToString() => IsValid ? Encoding.ASCII.GetString(ReadOnlySpan) : $"<invalid>, len {Length}";
 
         /// <summary>
         /// Create a <see cref="PinnedSpanByte"/> from the given <paramref name="span"/>.

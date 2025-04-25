@@ -278,7 +278,7 @@ namespace Tsavorite.core
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
                 RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
-                var stop = scanCursorState.functions.Reader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
+                var stop = !scanCursorState.functions.Reader(ref srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
                 if (stop)
                     scanCursorState.stop = true;
                 else

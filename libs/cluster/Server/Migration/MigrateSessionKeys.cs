@@ -30,6 +30,10 @@ namespace Garnet.cluster
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
+                // Must check this here because we use the network buffer as output.
+                if (_gcs.NeedsInitialization)
+                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+
                 foreach (var pair in _keys.GetKeys())
                 {
                     // Process only keys that are in MIGRATING status
@@ -82,6 +86,10 @@ namespace Garnet.cluster
                 // Transition all QUEUED to MIGRATING state
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
+
+                // Must check this here because we use the network buffer as output.
+                if (_gcs.NeedsInitialization)
+                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
 
                 foreach (var pair in _keys.GetKeys())
                 {
