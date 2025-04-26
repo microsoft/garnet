@@ -96,7 +96,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -173,7 +173,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     switch (op)
@@ -291,7 +291,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    ProcessOutputWithHeader(output);
+                    ProcessOutput(output);
                     return true;
                 }
             }

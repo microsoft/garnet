@@ -364,7 +364,7 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREM:
                     SortedSetRemove(ref input, ref output);
@@ -373,70 +373,70 @@ namespace Garnet.server
                     SortedSetLength(ref output);
                     break;
                 case SortedSetOperation.ZPOPMAX:
-                    SortedSetPopMinOrMaxCount(ref input, ref output.SpanByteAndMemory, respProtocolVersion, op);
+                    SortedSetPopMinOrMaxCount(ref input, ref output, respProtocolVersion, op);
                     break;
                 case SortedSetOperation.ZSCORE:
-                    SortedSetScore(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetScore(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZMSCORE:
-                    SortedSetScores(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetScores(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCOUNT:
-                    SortedSetCount(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetCount(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZINCRBY:
-                    SortedSetIncrement(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetIncrement(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZRANK:
-                    SortedSetRank(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetRank(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZEXPIRE:
-                    SortedSetExpire(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetExpire(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZTTL:
-                    SortedSetTimeToLive(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetTimeToLive(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZPERSIST:
-                    SortedSetPersist(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetPersist(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCOLLECT:
                     SortedSetCollect(ref input, ref output);
                     break;
                 case SortedSetOperation.GEOADD:
-                    GeoAdd(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    GeoAdd(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.GEOHASH:
-                    GeoHash(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    GeoHash(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.GEODIST:
-                    GeoDistance(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    GeoDistance(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.GEOPOS:
-                    GeoPosition(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    GeoPosition(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZRANGE:
-                    SortedSetRange(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetRange(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREVRANK:
-                    SortedSetRank(ref input, ref output.SpanByteAndMemory, respProtocolVersion, ascending: false);
+                    SortedSetRank(ref input, ref output, respProtocolVersion, ascending: false);
                     break;
                 case SortedSetOperation.ZREMRANGEBYLEX:
                     SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
                     break;
                 case SortedSetOperation.ZREMRANGEBYRANK:
-                    SortedSetRemoveRangeByRank(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetRemoveRangeByRank(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREMRANGEBYSCORE:
-                    SortedSetRemoveRangeByScore(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetRemoveRangeByScore(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZLEXCOUNT:
                     SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
                     break;
                 case SortedSetOperation.ZPOPMIN:
-                    SortedSetPopMinOrMaxCount(ref input, ref output.SpanByteAndMemory, respProtocolVersion, op);
+                    SortedSetPopMinOrMaxCount(ref input, ref output, respProtocolVersion, op);
                     break;
                 case SortedSetOperation.ZRANDMEMBER:
-                    SortedSetRandomMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SortedSetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZSCAN:
                     if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
@@ -444,11 +444,11 @@ namespace Garnet.server
                     {
                         Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                             patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, respProtocolVersion);
                     }
                     else
                     {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
+                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory, respProtocolVersion);
                     }
                     break;
                 default:

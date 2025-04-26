@@ -51,7 +51,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Perform RMW operation in object store 
+        /// Perform RMW operation in object store
         /// use this method in commands that return an array
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -73,7 +73,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Perform Read operation in object store 
+        /// Perform Read operation in object store
         /// use this method in commands that return an array
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -95,7 +95,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Perform Read operation in object store 
+        /// Perform Read operation in object store
         /// use this method in commands that return an array
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -139,7 +139,7 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(match))
                 match = "*";
 
-            // Prepare the parse state 
+            // Prepare the parse state
             var matchPattern = match.Trim();
 
             var countLength = NumUtils.CountDigits(count);
@@ -437,7 +437,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Processes RESP output as pairs of score and member. 
+        /// Processes RESP output as pairs of score and member.
         /// </summary>
         unsafe (ArgSlice member, ArgSlice score)[] ProcessRespArrayOutputAsPairs(GarnetObjectStoreOutput outputFooter, out string error)
         {

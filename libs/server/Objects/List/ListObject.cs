@@ -149,14 +149,14 @@ namespace Garnet.server
                     ListPush(ref input, ref output, true);
                     break;
                 case ListOperation.LPOP:
-                    ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, true);
+                    ListPop(ref input, ref output, respProtocolVersion, true);
                     break;
                 case ListOperation.RPUSH:
                 case ListOperation.RPUSHX:
                     ListPush(ref input, ref output, false);
                     break;
                 case ListOperation.RPOP:
-                    ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, false);
+                    ListPop(ref input, ref output, respProtocolVersion, false);
                     break;
                 case ListOperation.LLEN:
                     ListLength(ref output);
@@ -165,10 +165,10 @@ namespace Garnet.server
                     ListTrim(ref input, ref output);
                     break;
                 case ListOperation.LRANGE:
-                    ListRange(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    ListRange(ref input, ref output, respProtocolVersion);
                     break;
                 case ListOperation.LINDEX:
-                    ListIndex(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    ListIndex(ref input, ref output, respProtocolVersion);
                     break;
                 case ListOperation.LINSERT:
                     ListInsert(ref input, ref output);
@@ -177,10 +177,10 @@ namespace Garnet.server
                     ListRemove(ref input, ref output);
                     break;
                 case ListOperation.LSET:
-                    ListSet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    ListSet(ref input, ref output, respProtocolVersion);
                     break;
                 case ListOperation.LPOS:
-                    ListPosition(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    ListPosition(ref input, ref output, respProtocolVersion);
                     break;
 
                 default:

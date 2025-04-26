@@ -45,7 +45,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -194,7 +194,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
@@ -273,7 +273,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     WriteNull();
@@ -319,7 +319,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteArrayWithNullElements(parseState.Count - 1, ref dcurr, dend))
@@ -388,7 +388,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
@@ -548,7 +548,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -664,7 +664,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.NOTFOUND:
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -729,7 +729,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     WriteNull();
@@ -784,7 +784,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -868,7 +868,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     if (includedCount)
@@ -1066,7 +1066,7 @@ namespace Garnet.server
             var aggregateType = SortedSetAggregateType.Sum;
             var currentArg = nKeys + 1;
 
-            // Read all the keys 
+            // Read all the keys
             var keys = parseState.Parameters.Slice(1, nKeys);
 
             // Parse optional arguments
@@ -1782,7 +1782,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -1875,7 +1875,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -1944,7 +1944,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 

@@ -102,7 +102,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     WriteNull();
@@ -145,7 +145,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -189,7 +189,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     // Write an empty array of count - 1 elements with null values.
@@ -277,7 +277,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     if (includedCount)
@@ -313,7 +313,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("HLEN");
             }
 
-            // Get the key 
+            // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
@@ -510,7 +510,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
@@ -526,7 +526,7 @@ namespace Garnet.server
 
         /// <summary>
         /// HashIncrement: Increments the number stored at field in the hash stored at key by increment.
-        /// HashIncrementByFloat: Increment the specified field of a hash stored at key, and representing a floating point number, by the specified increment. 
+        /// HashIncrementByFloat: Increment the specified field of a hash stored at key, and representing a floating point number, by the specified increment.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="command"></param>
@@ -570,7 +570,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
             return true;
@@ -673,7 +673,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -763,7 +763,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 
@@ -825,7 +825,7 @@ namespace Garnet.server
                     }
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
             }
 

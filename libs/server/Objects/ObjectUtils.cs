@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using Garnet.common;
 using Tsavorite.core;
@@ -28,7 +27,7 @@ namespace Garnet.server
             // Cursor
             cursorInput = input.arg1;
 
-            // Largest number of items to print 
+            // Largest number of items to print
             var limitCountInOutput = input.arg2;
 
             patternLength = 0;
@@ -80,67 +79,38 @@ namespace Garnet.server
         /// </summary>
         /// <param name="items"></param>
         /// <param name="cursor"></param>
-        /// <param name="output"></param>
-        public static unsafe void WriteScanOutput(List<byte[]> items, long cursor, ref SpanByteAndMemory output, byte respProtocolVersion)
+        /// <param name="outputFooter"></param>
+        public static void WriteScanOutput(List<byte[]> items, long cursor, ref GarnetObjectStoreOutput outputFooter, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputFooter.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            output.WriteArrayLength(2);
+            output.WriteInt64AsBulkString(cursor);
 
-            ObjectOutputHeader _output = default;
-
-            try
+            if (items.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteScanOutputHeader(cursor, ref curr, end))
-                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                // Empty array
+                output.WriteEmptyArray();
+            }
+            else
+            {
+                // Write size of the array
+                output.WriteArrayLength(items.Count);
 
-                if (items.Count == 0)
+                foreach (var item in items)
                 {
-                    // Empty array
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                        RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-                else
-                {
-                    // Write size of the array
-                    while (!RespWriteUtils.TryWriteArrayLength(items.Count, ref curr, end))
-                        RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    foreach (var item in items)
+                    if (item != null)
                     {
-                        if (item != null)
-                        {
-                            while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
-                                RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else
-                        {
-                            if (respProtocolVersion >= 3)
-                            {
-                                while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
-                                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-                            else
-                            {
-                                while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-                        }
+                        output.WriteBulkString(item);
+                    }
+                    else
+                    {
+                        output.WriteNull();
                     }
                 }
-                _output.result1 = items.Count;
             }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            outputFooter.Header.result1 = items.Count;
         }
 
         /// <summary>
@@ -148,30 +118,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="errorMessage"></param>
         /// <param name="output"></param>
-        public static unsafe void WriteScanError(ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory output)
+        public static void WriteScanError(ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-
-            try
-            {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
-                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            writer.WriteError(errorMessage);
         }
     }
 }

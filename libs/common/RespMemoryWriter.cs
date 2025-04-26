@@ -167,6 +167,16 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write a signed 64-bit integer as bulk string
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteInt64AsBulkString(long value)
+        {
+            while (!RespWriteUtils.TryWriteInt64AsBulkString(value, ref curr, end, out _))
+                ReallocateOutput();
+        }
+
+        /// <summary>
         /// Write long to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
