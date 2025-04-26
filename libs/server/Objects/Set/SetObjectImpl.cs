@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     ///  Set - RESP specific operations
     /// </summary>
-    public unsafe partial class SetObject : IGarnetObject
+    public partial class SetObject : IGarnetObject
     {
         private void SetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {

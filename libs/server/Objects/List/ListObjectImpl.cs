@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// List - RESP specific operations
     /// </summary>
-    public unsafe partial class ListObject : IGarnetObject
+    public partial class ListObject : IGarnetObject
     {
         private void ListRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
@@ -447,7 +447,7 @@ namespace Garnet.server
             outputStore.Header.result1 = noOfFoundItem;
         }
 
-        private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)
+        private static bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)
         {
             rank = 1; // By default, LPOS takes first match element
             count = 1; // By default, LPOS return 1 element

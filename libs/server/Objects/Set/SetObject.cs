@@ -39,7 +39,7 @@ namespace Garnet.server
     /// <summary>
     ///  Set Object Class
     /// </summary>
-    public unsafe partial class SetObject : GarnetObjectBase
+    public partial class SetObject : GarnetObjectBase
     {
         public HashSet<byte[]> Set { get; }
 
@@ -122,8 +122,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SetObject(Set, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                            byte respProtocolVersion, out long sizeChange)
+        public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                     byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -163,17 +163,7 @@ namespace Garnet.server
                     SetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SSCAN:
-                    if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
-                            out var patternLength, out var limitCount, out _, out var error))
-                    {
-                        Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                            patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, respProtocolVersion);
-                    }
-                    else
-                    {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory, respProtocolVersion);
-                    }
+                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");

@@ -80,7 +80,9 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteScanOutputHeader(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteInt32AsBulkString(0, ref dcurr, dend))
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                         SendAndReset();

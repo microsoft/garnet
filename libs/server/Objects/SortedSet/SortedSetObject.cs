@@ -345,8 +345,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SortedSetObject(this);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                            byte respProtocolVersion, out long sizeChange)
+        public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                     byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -439,17 +439,7 @@ namespace Garnet.server
                     SortedSetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZSCAN:
-                    if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
-                            out var patternLength, out var limitCount, out var _, out var error))
-                    {
-                        Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                            patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, respProtocolVersion);
-                    }
-                    else
-                    {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory, respProtocolVersion);
-                    }
+                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");

@@ -670,27 +670,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Create header for *Scan output
-        /// *scan commands have an array of two elements
-        /// a cursor and an array of items or fields
-        /// </summary>
-        /// <param name="cursor"></param>
-        /// <param name="curr"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
-        public static bool TryWriteScanOutputHeader(long cursor, ref byte* curr, byte* end)
-        {
-            if (!TryWriteArrayLength(2, ref curr, end))
-                return false;
-
-            // Cursor value
-            if (!TryWriteInt32AsBulkString((int)cursor, ref curr, end))
-                return false;
-
-            return true;
-        }
-
-        /// <summary>
         /// Write empty array
         /// </summary>
         public static bool TryWriteEmptyArray(ref byte* curr, byte* end)

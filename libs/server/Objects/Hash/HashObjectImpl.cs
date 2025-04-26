@@ -10,11 +10,10 @@ using Garnet.common;
 
 namespace Garnet.server
 {
-
     /// <summary>
     ///  Hash - RESP specific operations
     /// </summary>
-    public unsafe partial class HashObject : IGarnetObject
+    public partial class HashObject : IGarnetObject
     {
         private void HashGet(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
@@ -57,7 +56,7 @@ namespace Garnet.server
             }
         }
 
-        private void HashGetAll(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void HashGetAll(ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
             using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
