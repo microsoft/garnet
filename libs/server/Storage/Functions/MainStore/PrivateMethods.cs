@@ -212,10 +212,8 @@ namespace Garnet.server
                                                 value.Length - functionsState.etagState.etagSkippedStart);
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
-                    else if (!functionsState.IsResp3)
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
                     else
-                        CopyDefaultResp(CmdStrings.RESP3_NULL_REPLY, ref dst);
+                        CopyDefaultResp(functionsState.nilResp, ref dst);
                     return;
 
                 case RespCommand.BITFIELD_RO:
