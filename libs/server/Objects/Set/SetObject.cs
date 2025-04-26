@@ -127,62 +127,59 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
+            if (input.header.type != GarnetObjectType.Set)
             {
-                if (input.header.type != GarnetObjectType.Set)
-                {
-                    // Indicates an incorrect type of key
-                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
-                    output.SpanByteAndMemory.Length = 0;
-                    return true;
-                }
-
-                var prevSize = this.Size;
-                switch (input.header.SetOp)
-                {
-                    case SetOperation.SADD:
-                        SetAdd(ref input, outputSpan);
-                        break;
-                    case SetOperation.SMEMBERS:
-                        SetMembers(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case SetOperation.SISMEMBER:
-                        SetIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case SetOperation.SMISMEMBER:
-                        SetMultiIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case SetOperation.SREM:
-                        SetRemove(ref input, outputSpan);
-                        break;
-                    case SetOperation.SCARD:
-                        SetLength(outputSpan);
-                        break;
-                    case SetOperation.SPOP:
-                        SetPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case SetOperation.SRANDMEMBER:
-                        SetRandomMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case SetOperation.SSCAN:
-                        if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
-                                out var patternLength, out var limitCount, out _, out var error))
-                        {
-                            Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                                patternLength: patternLength);
-                            ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
-                        }
-                        else
-                        {
-                            ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
-                        }
-                        break;
-                    default:
-                        throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
-                }
-
-                sizeChange = this.Size - prevSize;
+                // Indicates an incorrect type of key
+                output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                output.SpanByteAndMemory.Length = 0;
+                return true;
             }
+
+            var prevSize = this.Size;
+            switch (input.header.SetOp)
+            {
+                case SetOperation.SADD:
+                    SetAdd(ref input, ref output);
+                    break;
+                case SetOperation.SMEMBERS:
+                    SetMembers(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case SetOperation.SISMEMBER:
+                    SetIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case SetOperation.SMISMEMBER:
+                    SetMultiIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case SetOperation.SREM:
+                    SetRemove(ref input, ref output);
+                    break;
+                case SetOperation.SCARD:
+                    SetLength(ref output);
+                    break;
+                case SetOperation.SPOP:
+                    SetPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case SetOperation.SRANDMEMBER:
+                    SetRandomMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case SetOperation.SSCAN:
+                    if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
+                            out var patternLength, out var limitCount, out _, out var error))
+                    {
+                        Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                            patternLength: patternLength);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
+                    }
+                    else
+                    {
+                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
+                    }
+                    break;
+                default:
+                    throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
+            }
+
+            sizeChange = this.Size - prevSize;
 
             if (Set.Count == 0)
                 output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;

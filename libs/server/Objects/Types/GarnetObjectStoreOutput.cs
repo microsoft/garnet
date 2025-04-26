@@ -36,6 +36,11 @@ namespace Garnet.server
     public struct GarnetObjectStoreOutput
     {
         /// <summary>
+        /// Object header
+        /// </summary>
+        public ObjectOutputHeader Header;
+
+        /// <summary>
         /// Span byte and memory
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
