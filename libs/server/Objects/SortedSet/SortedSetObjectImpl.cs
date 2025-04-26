@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Sorted Set - RESP specific operations
     /// </summary>
-    public unsafe partial class SortedSetObject : GarnetObjectBase
+    public partial class SortedSetObject : GarnetObjectBase
     {
         /// <summary>
         /// Small struct to store options for ZRange command

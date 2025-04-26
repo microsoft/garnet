@@ -362,7 +362,7 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public unsafe void ToRespFormat(ref RespMemoryWriter output)
+        public void ToRespFormat(ref RespMemoryWriter output)
         {
             if (string.IsNullOrWhiteSpace(Name))
             {

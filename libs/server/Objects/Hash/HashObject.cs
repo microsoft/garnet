@@ -45,7 +45,7 @@ namespace Garnet.server
     /// <summary>
     ///  Hash Object Class
     /// </summary>
-    public unsafe partial class HashObject : GarnetObjectBase
+    public partial class HashObject : GarnetObjectBase
     {
         readonly Dictionary<byte[], byte[]> hash;
         Dictionary<byte[], long> expirationTimes;
@@ -155,8 +155,8 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                            byte respProtocolVersion, out long sizeChange)
+        public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                     byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -184,7 +184,7 @@ namespace Garnet.server
                     HashMultipleGet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HGETALL:
-                    HashGetAll(ref input, ref output, respProtocolVersion);
+                    HashGetAll(ref output, respProtocolVersion);
                     break;
                 case HashOperation.HDEL:
                     HashDelete(ref input, ref output);
@@ -229,17 +229,7 @@ namespace Garnet.server
                     HashCollect(ref input, ref output);
                     break;
                 case HashOperation.HSCAN:
-                    if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
-                            out var patternLength, out var limitCount, out var isNoValue, out var error))
-                    {
-                        Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                            patternLength: patternLength, isNoValue);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, respProtocolVersion);
-                    }
-                    else
-                    {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory, respProtocolVersion);
-                    }
+                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -10,6 +9,59 @@ namespace Garnet.server
 {
     internal static class ObjectUtils
     {
+        /// <summary>
+        /// Scan an object
+        /// </summary>
+        /// <param name="obj"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="respProtocolVersion"></param>
+        /// <returns></returns>
+        public static unsafe void Scan(GarnetObjectBase obj, ref ObjectInput input,
+                                       ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            if (ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
+                              out var patternLength, out var limitCount, out _, out var error))
+            {
+                obj.Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
+                         patternLength: patternLength);
+
+                writer.WriteArrayLength(2);
+                writer.WriteInt64AsBulkString(cursorOutput);
+
+                if (items.Count == 0)
+                {
+                    // Empty array
+                    writer.WriteEmptyArray();
+                }
+                else
+                {
+                    // Write size of the array
+                    writer.WriteArrayLength(items.Count);
+
+                    foreach (var item in items)
+                    {
+                        if (item != null)
+                        {
+                            writer.WriteBulkString(item);
+                        }
+                        else
+                        {
+                            writer.WriteNull();
+                        }
+                    }
+                }
+
+                output.Header.result1 = items.Count;
+            }
+            else
+            {
+                writer.WriteError(error);
+            }
+        }
+
         /// <summary>
         /// Reads and parses scan parameters from RESP format
         /// </summary>
@@ -21,7 +73,7 @@ namespace Garnet.server
         /// <param name="countInInput"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        public static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output,
+        private static unsafe bool ReadScanInput(ref ObjectInput input, ref SpanByteAndMemory output,
             out int cursorInput, out byte* pattern, out int patternLength, out int countInInput, out bool isNoValue, out ReadOnlySpan<byte> error)
         {
             // Cursor
@@ -71,57 +123,6 @@ namespace Garnet.server
             }
 
             return true;
-        }
-
-
-        /// <summary>
-        /// Writes output for scan command using RESP format
-        /// </summary>
-        /// <param name="items"></param>
-        /// <param name="cursor"></param>
-        /// <param name="outputFooter"></param>
-        public static void WriteScanOutput(List<byte[]> items, long cursor, ref GarnetObjectStoreOutput outputFooter, byte respProtocolVersion)
-        {
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputFooter.SpanByteAndMemory);
-
-            output.WriteArrayLength(2);
-            output.WriteInt64AsBulkString(cursor);
-
-            if (items.Count == 0)
-            {
-                // Empty array
-                output.WriteEmptyArray();
-            }
-            else
-            {
-                // Write size of the array
-                output.WriteArrayLength(items.Count);
-
-                foreach (var item in items)
-                {
-                    if (item != null)
-                    {
-                        output.WriteBulkString(item);
-                    }
-                    else
-                    {
-                        output.WriteNull();
-                    }
-                }
-            }
-
-            outputFooter.Header.result1 = items.Count;
-        }
-
-        /// <summary>
-        /// Writes output for scan command using RESP format
-        /// </summary>
-        /// <param name="errorMessage"></param>
-        /// <param name="output"></param>
-        public static void WriteScanError(ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory output, byte respProtocolVersion)
-        {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
-            writer.WriteError(errorMessage);
         }
     }
 }
