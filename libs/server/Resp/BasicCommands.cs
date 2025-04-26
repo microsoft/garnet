@@ -983,41 +983,42 @@ namespace Garnet.server
         /// </summary>
         private void WriteCOMMANDResponse()
         {
-            var resultSb = new StringBuilder();
-            var cmdCount = 0;
-            var hasInfo = false;
-
-            const int outputBufferLength = 100000;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-            var spam = new SpanByteAndMemory(outputBuffer, outputBufferLength);
+            var spam = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-            var customCmds = customCommandManagerSession.GetAllCustomCommandsInfos();
-            cmdCount = customCmds.Count;
-
-            // Perhaps we should just about if this fails?
-            if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
+            try
             {
-                cmdCount += respCommandsInfo.Count;
-                hasInfo = true;
-            }
+                var customCmds = customCommandManagerSession.GetAllCustomCommandsInfos();
+                var cmdCount = customCmds.Count;
+                var hasInfo = false;
 
-            writer.WriteArrayLength(cmdCount);
-
-            foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
-            {
-                customCmd.Value.ToRespFormat(ref writer);
-            }
-
-            if (hasInfo)
-            {
-                foreach (var cmd in respCommandsInfo.Values)
+                if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
                 {
-                    cmd.ToRespFormat(ref writer);
+                    cmdCount += respCommandsInfo.Count;
+                    hasInfo = true;
+                }
+
+                writer.WriteArrayLength(cmdCount);
+
+                foreach (var customCmd in customCommandManagerSession.GetAllCustomCommandsInfos())
+                {
+                    customCmd.Value.ToRespFormat(ref writer);
+                }
+
+                if (hasInfo)
+                {
+                    foreach (var cmd in respCommandsInfo.Values)
+                    {
+                        cmd.ToRespFormat(ref writer);
+                    }
                 }
             }
+            finally
+            {
+                writer.Dispose();
+            }
 
-            WriteDirectLarge(writer.AsReadOnlySpan());
+            ProcessOutput(spam);
         }
 
         /// <summary>
@@ -1079,58 +1080,59 @@ namespace Garnet.server
         {
             var count = parseState.Count;
 
-            if (count == 0)
+            var spam = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            try
             {
-                if (!RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
-                    return true;
-
-                const int outputBufferLength = 200000;
-                var outputBuffer = stackalloc byte[outputBufferLength];
-                var spam = new SpanByteAndMemory(outputBuffer, outputBufferLength);
-                var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
-
-                var customCmds = customCommandManagerSession.GetAllCustomCommandsDocs();
-                writer.WriteMapLength(cmdsDocs.Count + customCmds.Count);
-
-                foreach (var cmdDocs in cmdsDocs.Values)
+                if (count == 0)
                 {
-                    cmdDocs.ToRespFormat(ref writer);
-                }
-
-                foreach (var customCmd in customCmds)
-                {
-                    customCmd.Value.ToRespFormat(ref writer);
-                }
-
-                WriteDirectLarge(writer.AsReadOnlySpan());
-            }
-            else
-            {
-                const int outputBufferLength = 20000;
-                var outputBuffer = stackalloc byte[outputBufferLength];
-                var spam = new SpanByteAndMemory(outputBuffer, outputBufferLength);
-                var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
-
-                System.Collections.Generic.List<RespCommandDocs> docs = [];
-                for (var i = 0; i < count; i++)
-                {
-                    var cmdName = parseState.GetString(i);
-                    if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
-                        customCommandManagerSession.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                    if (RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
                     {
-                        docs.Add(cmdDocs);
+                        var customCmds = customCommandManagerSession.GetAllCustomCommandsDocs();
+                        writer.WriteMapLength(cmdsDocs.Count + customCmds.Count);
+
+                        foreach (var cmdDocs in cmdsDocs.Values)
+                        {
+                            cmdDocs.ToRespFormat(ref writer);
+                        }
+
+                        foreach (var customCmd in customCmds)
+                        {
+                            customCmd.Value.ToRespFormat(ref writer);
+                        }
+                    }
+                    else
+                    {
+                        writer.WriteEmptyArray();
                     }
                 }
-
-                writer.WriteMapLength(docs.Count);
-                foreach (var cmdDocs in docs)
+                else
                 {
-                    cmdDocs.ToRespFormat(ref writer);
-                }
+                    System.Collections.Generic.List<RespCommandDocs> docs = [];
+                    for (var i = 0; i < count; i++)
+                    {
+                        var cmdName = parseState.GetString(i);
+                        if (RespCommandDocs.TryGetRespCommandDocs(cmdName, out var cmdDocs, true, true, logger) ||
+                            customCommandManagerSession.TryGetCustomCommandDocs(cmdName, out cmdDocs))
+                        {
+                            docs.Add(cmdDocs);
+                        }
+                    }
 
-                WriteDirectLarge(writer.AsReadOnlySpan());
+                    writer.WriteMapLength(docs.Count);
+                    foreach (var cmdDocs in docs)
+                    {
+                        cmdDocs.ToRespFormat(ref writer);
+                    }
+                }
+            }
+            finally
+            {
+                writer.Dispose();
             }
 
+            ProcessOutput(spam);
             return true;
         }
 
@@ -1148,29 +1150,34 @@ namespace Garnet.server
             }
             else
             {
-                const int outputBufferLength = 20000;
-                var outputBuffer = stackalloc byte[outputBufferLength];
-                var spam = new SpanByteAndMemory(outputBuffer, outputBufferLength);
+                var spam = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
 
-                writer.WriteArrayLength(count);
-
-                for (var i = 0; i < count; i++)
+                try
                 {
-                    var cmdName = parseState.GetString(i);
+                    writer.WriteArrayLength(count);
 
-                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                        customCommandManagerSession.TryGetCustomCommandInfo(cmdName, out cmdInfo))
+                    for (var i = 0; i < count; i++)
                     {
-                        cmdInfo.ToRespFormat(ref writer);
-                    }
-                    else
-                    {
-                        writer.WriteNull();
+                        var cmdName = parseState.GetString(i);
+
+                        if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
+                            customCommandManagerSession.TryGetCustomCommandInfo(cmdName, out cmdInfo))
+                        {
+                            cmdInfo.ToRespFormat(ref writer);
+                        }
+                        else
+                        {
+                            writer.WriteNull();
+                        }
                     }
                 }
+                finally
+                {
+                    writer.Dispose();
+                }
 
-                WriteDirectLarge(writer.AsReadOnlySpan());
+                ProcessOutput(spam);
             }
 
             return true;
