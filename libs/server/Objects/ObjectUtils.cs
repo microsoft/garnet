@@ -23,10 +23,13 @@ namespace Garnet.server
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
-                              out var patternLength, out var limitCount, out _, out var error))
+                              out var patternLength, out var limitCount, out var isNoValue, out var error))
             {
-                obj.Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                         patternLength: patternLength);
+                if (obj is not HashObject)
+                    isNoValue = false;
+
+                obj.Scan(cursorInput, out var items, out var cursorOutput, limitCount, pattern,
+                         patternLength, isNoValue);
 
                 writer.WriteArrayLength(2);
                 writer.WriteInt64AsBulkString(cursorOutput);
