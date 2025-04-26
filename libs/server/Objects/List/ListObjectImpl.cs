@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -108,28 +107,28 @@ namespace Garnet.server
             }
         }
 
-        private void ListIndex(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void ListIndex(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
             var index = input.arg1;
 
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
-            output.SetResult1(-1);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            outputStore.Header.result1 = -1;
 
             index = index < 0 ? list.Count + index : index;
             var item = list.ElementAtOrDefault(index);
             if (item != default)
             {
                 output.WriteBulkString(item);
-                output.SetResult1(1);
+                outputStore.Header.result1 = 1;
             }
         }
 
-        private void ListRange(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void ListRange(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
             var start = input.arg1;
             var stop = input.arg2;
 
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             if (0 == list.Count)
             {
@@ -165,7 +164,7 @@ namespace Garnet.server
                         output.WriteBulkString(bytes);
                     }
 
-                    output.SetResult1(count);
+                    outputStore.Header.result1 = count;
                 }
             }
         }
@@ -243,14 +242,14 @@ namespace Garnet.server
             output.Header.result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion, bool fDelAtHead)
+        private void ListPop(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion, bool fDelAtHead)
         {
             var count = input.arg1;
 
             if (list.Count < count)
                 count = list.Count;
 
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             if (list.Count == 0)
             {
@@ -280,13 +279,13 @@ namespace Garnet.server
                 output.WriteBulkString(node.Value);
 
                 count--;
-                output.IncResult1();
+                outputStore.Header.result1++;
             }
         }
 
-        private void ListSet(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void ListSet(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             if (list.Count == 0)
             {
@@ -321,17 +320,17 @@ namespace Garnet.server
             UpdateSize(targetNode.Value);
 
             output.WriteDirect(CmdStrings.RESP_OK);
-            output.SetResult1(1);
+            outputStore.Header.result1 = 1;
         }
 
-        private void ListPosition(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void ListPosition(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
             var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var count = 0;
             var isDefaultCount = true;
 
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
             {
@@ -445,7 +444,7 @@ namespace Garnet.server
                 output.DecreaseArrayLength(noOfFoundItem, totalArrayHeaderLen);
             }
 
-            output.SetResult1(noOfFoundItem);
+            outputStore.Header.result1 = noOfFoundItem;
         }
 
         private static unsafe bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)

@@ -142,13 +142,13 @@ namespace Garnet.server
                     SetAdd(ref input, ref output);
                     break;
                 case SetOperation.SMEMBERS:
-                    SetMembers(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SetMembers(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SISMEMBER:
-                    SetIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SetIsMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SMISMEMBER:
-                    SetMultiIsMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SetMultiIsMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SREM:
                     SetRemove(ref input, ref output);
@@ -157,10 +157,10 @@ namespace Garnet.server
                     SetLength(ref output);
                     break;
                 case SetOperation.SPOP:
-                    SetPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SetPop(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SRANDMEMBER:
-                    SetRandomMember(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    SetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SSCAN:
                     if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
@@ -168,11 +168,11 @@ namespace Garnet.server
                     {
                         Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                             patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, respProtocolVersion);
                     }
                     else
                     {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
+                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory, respProtocolVersion);
                     }
                     break;
                 default:

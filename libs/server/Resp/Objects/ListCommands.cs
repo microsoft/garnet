@@ -116,7 +116,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     WriteNull();
@@ -161,7 +161,7 @@ namespace Garnet.server
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     bool count = false;
@@ -569,7 +569,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -623,8 +623,8 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
-                    if (objOutputHeader.result1 == -1)
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
+                    if (outputFooter.Header.result1 == -1)
                         WriteNull();
                     break;
                 case GarnetStatus.NOTFOUND:
@@ -898,7 +898,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))

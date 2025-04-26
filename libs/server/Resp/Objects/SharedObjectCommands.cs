@@ -74,9 +74,9 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     // Process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(outputFooter.SpanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (objOutputHeader.result1 == int.MinValue)
+                    if (outputFooter.Header.result1 == int.MinValue)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:

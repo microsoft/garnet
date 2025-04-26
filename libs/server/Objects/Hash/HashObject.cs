@@ -178,13 +178,13 @@ namespace Garnet.server
                     HashSet(ref input, ref output);
                     break;
                 case HashOperation.HGET:
-                    HashGet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashGet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HMGET:
-                    HashMultipleGet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashMultipleGet(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HGETALL:
-                    HashGetAll(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashGetAll(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HDEL:
                     HashDelete(ref input, ref output);
@@ -199,31 +199,31 @@ namespace Garnet.server
                     HashExists(ref input, ref output);
                     break;
                 case HashOperation.HEXPIRE:
-                    HashExpire(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashExpire(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HTTL:
-                    HashTimeToLive(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashTimeToLive(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HPERSIST:
-                    HashPersist(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashPersist(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HKEYS:
-                    HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HVALS:
-                    HashGetKeysOrValues(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HINCRBY:
-                    HashIncrement(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashIncrement(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HINCRBYFLOAT:
-                    HashIncrement(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashIncrement(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HSETNX:
                     HashSet(ref input, ref output);
                     break;
                 case HashOperation.HRANDFIELD:
-                    HashRandomField(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    HashRandomField(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HCOLLECT:
                     HashCollect(ref input, ref output);
@@ -234,11 +234,11 @@ namespace Garnet.server
                     {
                         Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
                             patternLength: patternLength, isNoValue);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory, respProtocolVersion);
+                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, respProtocolVersion);
                     }
                     else
                     {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
+                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory, respProtocolVersion);
                     }
                     break;
                 default:

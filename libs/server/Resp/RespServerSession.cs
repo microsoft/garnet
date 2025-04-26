@@ -76,7 +76,7 @@ namespace Garnet.server
         byte* recvBufferPtr;
 
         /// <summary>
-        /// Current readHead. On successful parsing, this is left at the start of 
+        /// Current readHead. On successful parsing, this is left at the start of
         /// the command payload for use by legacy operators.
         /// </summary>
         int readHead;
@@ -124,7 +124,7 @@ namespace Garnet.server
 
         /// <summary>
         /// If set, commands can use this to enumerate details about the server or other sessions.
-        /// 
+        ///
         /// It is not guaranteed to be set.
         /// </summary>
         public IGarnetServer Server { get; set; }
@@ -614,7 +614,7 @@ namespace Garnet.server
             //  *.\r\n$8\r\n........\r\n  = 18 bytes
             //
             // Where . is <= 95
-            // 
+            //
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
@@ -1173,9 +1173,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Attempt to kill this session.
-        /// 
+        ///
         /// Returns true if this call actually kills the underlying network connection.
-        /// 
+        ///
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
@@ -1293,7 +1293,7 @@ namespace Garnet.server
                 // Compute space left on output buffer
                 int destSpace = (int)(dend - dcurr);
 
-                // Fast path if there is enough space 
+                // Fast path if there is enough space
                 if (src.Length <= destSpace)
                 {
                     src.CopyTo(new Span<byte>(dcurr, src.Length));
@@ -1433,33 +1433,17 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets the output object from the SpanByteAndMemory object
+        /// Writes current output object
         /// </summary>
         /// <param name="output"></param>
         /// <returns></returns>
-        private unsafe ObjectOutputHeader ProcessOutputWithHeader(SpanByteAndMemory output)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void ProcessOutput(SpanByteAndMemory output)
         {
-            ReadOnlySpan<byte> outputSpan;
-            ObjectOutputHeader header;
-
-            if (output.IsSpanByte)
-            {
-                header = *(ObjectOutputHeader*)(output.SpanByte.ToPointer() + output.Length - sizeof(ObjectOutputHeader));
-
-                // Only increment dcurr if the operation was completed
-                dcurr += output.Length - sizeof(ObjectOutputHeader);
-            }
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
             else
-            {
-                outputSpan = output.Memory.Memory.Span;
-                fixed (byte* p = outputSpan)
-                {
-                    header = *(ObjectOutputHeader*)(p + output.Length - sizeof(ObjectOutputHeader));
-                }
-                SendAndReset(output.Memory, output.Length - sizeof(ObjectOutputHeader));
-            }
-
-            return header;
+                dcurr += output.Length;
         }
 
         /// <summary>
@@ -1496,7 +1480,7 @@ namespace Garnet.server
                 return true;
 
             // Try to get or set the database sessions
-            // Note that the dbIdForSessionCreation is set to the other DB ID - 
+            // Note that the dbIdForSessionCreation is set to the other DB ID -
             // That is because the databases have been swapped prior to the session swap
             var dbSession1 = TryGetOrSetDatabaseSession(dbId1, out var success, dbId2);
             if (!success)

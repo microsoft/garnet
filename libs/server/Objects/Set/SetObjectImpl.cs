@@ -5,7 +5,6 @@ using System;
 using System.Linq;
 using System.Security.Cryptography;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -32,22 +31,22 @@ namespace Garnet.server
             }
         }
 
-        private void SetMembers(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void SetMembers(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             output.WriteSetLength(Set.Count);
 
             foreach (var item in Set)
             {
                 output.WriteBulkString(item);
-                output.IncResult1();
+                outputStore.Header.result1++;
             }
         }
 
-        private void SetIsMember(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void SetIsMember(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 #if NET9_0_OR_GREATER
@@ -56,12 +55,12 @@ namespace Garnet.server
             var isMember = Set.Contains(member.ToArray());
 #endif
             output.WriteInt32(isMember ? 1 : 0);
-            output.SetResult1(1);
+            outputStore.Header.result1 = 1;
         }
 
-        private void SetMultiIsMember(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void SetMultiIsMember(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             output.WriteArrayLength(input.parseState.Count);
 
@@ -76,7 +75,7 @@ namespace Garnet.server
                 output.WriteInt32(isMember ? 1 : 0);
             }
 
-            output.SetResult1(input.parseState.Count);
+            outputStore.Header.result1 = input.parseState.Count;
         }
 
         private void SetRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
@@ -103,13 +102,13 @@ namespace Garnet.server
             output.Header.result1 = Set.Count;
         }
 
-        private void SetPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void SetPop(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
             // SPOP key [count]
             var count = input.arg1;
             var countDone = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             // key [count]
             if (count >= 1)
@@ -152,17 +151,17 @@ namespace Garnet.server
                 countDone++;
             }
 
-            output.SetResult1(countDone);
+            outputStore.Header.result1 = countDone;
         }
 
-        private void SetRandomMember(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
+        private void SetRandomMember(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
         {
             var count = input.arg1;
             var seed = input.arg2;
 
             var countDone = 0;
 
-            using var output = new GarnetObjectStoreRespOutput(respProtocolVersion, ref outputFooter);
+            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
             Span<int> indexes = default;
 
@@ -227,7 +226,7 @@ namespace Garnet.server
                 }
             }
 
-            output.SetResult1(countDone);
+            outputStore.Header.result1 = countDone;
         }
     }
 }
