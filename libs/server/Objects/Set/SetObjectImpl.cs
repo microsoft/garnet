@@ -14,11 +14,8 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class SetObject : IGarnetObject
     {
-        private void SetAdd(ref ObjectInput input, byte* output)
+        private void SetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -29,7 +26,7 @@ namespace Garnet.server
                 if (Set.Add(member.ToArray()))
 #endif
                 {
-                    _output->result1++;
+                    output.Header.result1++;
                     UpdateSize(member);
                 }
             }
@@ -82,11 +79,8 @@ namespace Garnet.server
             output.SetResult1(input.parseState.Count);
         }
 
-        private void SetRemove(ref ObjectInput input, byte* output)
+        private void SetRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var field = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
@@ -97,17 +91,16 @@ namespace Garnet.server
                 if (Set.Remove(field.ToArray()))
 #endif
                 {
-                    _output->result1++;
+                    output.Header.result1++;
                     UpdateSize(field, false);
                 }
             }
         }
 
-        private void SetLength(byte* output)
+        private void SetLength(ref GarnetObjectStoreOutput output)
         {
             // SCARD key
-            var _output = (ObjectOutputHeader*)output;
-            _output->result1 = Set.Count;
+            output.Header.result1 = Set.Count;
         }
 
         private void SetPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)

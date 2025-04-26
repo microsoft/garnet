@@ -133,64 +133,61 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            fixed (byte* outputSpan = output.SpanByteAndMemory.SpanByte.AsSpan())
+            if (input.header.type != GarnetObjectType.List)
             {
-                if (input.header.type != GarnetObjectType.List)
-                {
-                    // Indicates an incorrect type of key
-                    output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
-                    output.SpanByteAndMemory.Length = 0;
-                    return true;
-                }
-
-                var previousSize = this.Size;
-                switch (input.header.ListOp)
-                {
-                    case ListOperation.LPUSH:
-                    case ListOperation.LPUSHX:
-                        ListPush(ref input, outputSpan, true);
-                        break;
-                    case ListOperation.LPOP:
-                        ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, true);
-                        break;
-                    case ListOperation.RPUSH:
-                    case ListOperation.RPUSHX:
-                        ListPush(ref input, outputSpan, false);
-                        break;
-                    case ListOperation.RPOP:
-                        ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, false);
-                        break;
-                    case ListOperation.LLEN:
-                        ListLength(outputSpan);
-                        break;
-                    case ListOperation.LTRIM:
-                        ListTrim(ref input, outputSpan);
-                        break;
-                    case ListOperation.LRANGE:
-                        ListRange(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case ListOperation.LINDEX:
-                        ListIndex(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case ListOperation.LINSERT:
-                        ListInsert(ref input, outputSpan);
-                        break;
-                    case ListOperation.LREM:
-                        ListRemove(ref input, outputSpan);
-                        break;
-                    case ListOperation.LSET:
-                        ListSet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-                    case ListOperation.LPOS:
-                        ListPosition(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
-                        break;
-
-                    default:
-                        throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
-                }
-
-                sizeChange = this.Size - previousSize;
+                // Indicates an incorrect type of key
+                output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                output.SpanByteAndMemory.Length = 0;
+                return true;
             }
+
+            var previousSize = this.Size;
+            switch (input.header.ListOp)
+            {
+                case ListOperation.LPUSH:
+                case ListOperation.LPUSHX:
+                    ListPush(ref input, ref output, true);
+                    break;
+                case ListOperation.LPOP:
+                    ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, true);
+                    break;
+                case ListOperation.RPUSH:
+                case ListOperation.RPUSHX:
+                    ListPush(ref input, ref output, false);
+                    break;
+                case ListOperation.RPOP:
+                    ListPop(ref input, ref output.SpanByteAndMemory, respProtocolVersion, false);
+                    break;
+                case ListOperation.LLEN:
+                    ListLength(ref output);
+                    break;
+                case ListOperation.LTRIM:
+                    ListTrim(ref input, ref output);
+                    break;
+                case ListOperation.LRANGE:
+                    ListRange(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case ListOperation.LINDEX:
+                    ListIndex(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case ListOperation.LINSERT:
+                    ListInsert(ref input, ref output);
+                    break;
+                case ListOperation.LREM:
+                    ListRemove(ref input, ref output);
+                    break;
+                case ListOperation.LSET:
+                    ListSet(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+                case ListOperation.LPOS:
+                    ListPosition(ref input, ref output.SpanByteAndMemory, respProtocolVersion);
+                    break;
+
+                default:
+                    throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
+            }
+
+            sizeChange = this.Size - previousSize;
 
             if (list.Count == 0)
                 output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;

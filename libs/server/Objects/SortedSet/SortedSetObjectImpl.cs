@@ -186,12 +186,9 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetRemove(ref ObjectInput input, byte* output)
+        private void SortedSetRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             DeleteExpiredItems();
-
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -201,7 +198,7 @@ namespace Garnet.server
                 if (!sortedSetDict.TryGetValue(valueArray, out var key))
                     continue;
 
-                _output->result1++;
+                output.Header.result1++;
                 sortedSetDict.Remove(valueArray);
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
@@ -210,11 +207,11 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetLength(byte* output)
+        private void SortedSetLength(ref GarnetObjectStoreOutput output)
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
-            ((ObjectOutputHeader*)output)->result1 = Count();
+            output.Header.result1 = Count();
         }
 
         private void SortedSetScore(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
@@ -630,15 +627,13 @@ namespace Garnet.server
             output.SetResult1(count);
         }
 
-        private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, byte* output, SortedSetOperation op)
+        private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, ref GarnetObjectStoreOutput output, SortedSetOperation op)
         {
             // ZREMRANGEBYLEX key min max
             // ZLEXCOUNT key min max
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
 
             // Using minValue for partial execution detection
-            _output->result1 = int.MinValue;
+            output.Header.result1 = int.MinValue;
 
             var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
@@ -652,9 +647,9 @@ namespace Garnet.server
 
             var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, isRemove, out int errorCode);
 
-            _output->result1 = errorCode;
+            output.Header.result1 = errorCode;
             if (errorCode == 0)
-                _output->result1 = rem.Count;
+                output.Header.result1 = rem.Count;
         }
 
         /// <summary>
@@ -880,14 +875,11 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetCollect(ref ObjectInput input, byte* output)
+        private void SortedSetCollect(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             DeleteExpiredItems();
 
-            _output->result1 = 1;
+            output.Header.result1 = 1;
         }
 
         #region CommonMethods

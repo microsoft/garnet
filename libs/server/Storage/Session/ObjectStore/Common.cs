@@ -25,15 +25,15 @@ namespace Garnet.server
             if (objectStoreContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
-            output = new();
             var objStoreOutput = new GarnetObjectStoreOutput
             {
-                SpanByteAndMemory =
-                    new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size))
+                SpanByteAndMemory = new(null), Header = new()
             };
 
             // Perform RMW on object store
             var status = objectStoreContext.RMW(ref key, ref input, ref objStoreOutput);
+
+            output = objStoreOutput.Header;
 
             return CompletePendingAndGetGarnetStatus(status, ref objectStoreContext, ref objStoreOutput);
         }
@@ -573,8 +573,7 @@ namespace Garnet.server
 
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
-            output = new();
-            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null), Header = new() };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref _output);
@@ -582,10 +581,10 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
+            output = _output.Header;
+
             if (_output.HasWrongType)
                 return GarnetStatus.WRONGTYPE;
-
-            Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
 
             if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.OK;
@@ -608,8 +607,7 @@ namespace Garnet.server
             if (objectStoreContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
-            output = new();
-            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null), Header = new() };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref input, ref _output);
@@ -617,10 +615,10 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
+            output = _output.Header;
+
             if (_output.HasWrongType)
                 return GarnetStatus.WRONGTYPE;
-
-            Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
 
             if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.OK;

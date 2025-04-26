@@ -78,43 +78,34 @@ namespace Garnet.server
             }
         }
 
-        private void HashDelete(ref ObjectInput input, byte* output)
+        private void HashDelete(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
                 if (Remove(key, out var hashValue))
                 {
-                    _output->result1++;
+                    output.Header.result1++;
                 }
             }
         }
 
-        private void HashLength(byte* output)
+        private void HashLength(ref GarnetObjectStoreOutput output)
         {
-            ((ObjectOutputHeader*)output)->result1 = Count();
+            output.Header.result1 = Count();
         }
 
-        private void HashStrLength(ref ObjectInput input, byte* output)
+        private void HashStrLength(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-            _output->result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+            output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
-        private void HashExists(ref ObjectInput input, byte* output)
+        private void HashExists(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-            _output->result1 = ContainsKey(field) ? 1 : 0;
+            output.Header.result1 = ContainsKey(field) ? 1 : 0;
         }
 
         private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)
@@ -182,11 +173,8 @@ namespace Garnet.server
             output.SetResult1(countDone);
         }
 
-        private void HashSet(ref ObjectInput input, byte* output)
+        private void HashSet(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             var hop = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
@@ -196,7 +184,7 @@ namespace Garnet.server
                 if (!TryGetValue(key, out var hashValue))
                 {
                     Add(key, value);
-                    _output->result1++;
+                    output.Header.result1++;
                 }
                 else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
                 {
@@ -205,14 +193,11 @@ namespace Garnet.server
             }
         }
 
-        private void HashCollect(ref ObjectInput input, byte* output)
+        private void HashCollect(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             DeleteExpiredItems();
 
-            _output->result1 = 1;
+            output.Header.result1 = 1;
         }
 
         private void HashGetKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion)

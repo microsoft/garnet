@@ -14,20 +14,18 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class ListObject : IGarnetObject
     {
-        private void ListRemove(ref ObjectInput input, byte* output)
+        private void ListRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             var count = input.arg1;
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
 
             //indicates partial execution
-            _output->result1 = int.MinValue;
+            output.Header.result1 = int.MinValue;
 
             // get the source string to remove
             var itemSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var removedCount = 0;
-            _output->result1 = 0;
+            output.Header.result1 = 0;
 
             //remove all equals to item
             if (count == 0)
@@ -60,23 +58,20 @@ namespace Garnet.server
                     if (currentNode.Value.AsSpan().SequenceEqual(itemSpan))
                     {
                         list.Remove(currentNode);
-                        this.UpdateSize(currentNode.Value, false);
+                        UpdateSize(currentNode.Value, false);
                         removedCount++;
                     }
 
                     currentNode = nextNode;
                 }
             }
-            _output->result1 = removedCount;
+            output.Header.result1 = removedCount;
         }
 
-        private void ListInsert(ref ObjectInput input, byte* output)
+        private void ListInsert(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             //indicates partial execution
-            _output->result1 = int.MinValue;
+            output.Header.result1 = int.MinValue;
 
             if (list.Count > 0)
             {
@@ -91,7 +86,7 @@ namespace Garnet.server
 
                 var insertBefore = position.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BEFORE);
 
-                _output->result1 = -1;
+                output.Header.result1 = -1;
 
                 // find the first ocurrence of the pivot element
                 var currentNode = list.First;
@@ -104,8 +99,8 @@ namespace Garnet.server
                         else
                             list.AddAfter(currentNode, item);
 
-                        this.UpdateSize(item);
-                        _output->result1 = list.Count;
+                        UpdateSize(item);
+                        output.Header.result1 = list.Count;
                         break;
                     }
                 }
@@ -175,12 +170,10 @@ namespace Garnet.server
             }
         }
 
-        private void ListTrim(ref ObjectInput input, byte* output)
+        private void ListTrim(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             var start = input.arg1;
             var end = input.arg2;
-
-            var outputHeader = (ObjectOutputHeader*)output;
 
             if (list.Count > 0)
             {
@@ -206,7 +199,7 @@ namespace Garnet.server
                             list.RemoveLast();
                             this.UpdateSize(value, false);
                         }
-                        outputHeader->result1 = numDeletes;
+                        output.Header.result1 = numDeletes;
                     }
                     else
                     {
@@ -221,23 +214,20 @@ namespace Garnet.server
                             }
                             i++;
                         }
-                        outputHeader->result1 = i;
+                        output.Header.result1 = i;
                     }
                 }
             }
         }
 
-        private void ListLength(byte* output)
+        private void ListLength(ref GarnetObjectStoreOutput output)
         {
-            ((ObjectOutputHeader*)output)->result1 = list.Count;
+            output.Header.result1 = list.Count;
         }
 
-        private void ListPush(ref ObjectInput input, byte* output, bool fAddAtHead)
+        private void ListPush(ref ObjectInput input, ref GarnetObjectStoreOutput output, bool fAddAtHead)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
-            _output->result1 = 0;
+            output.Header.result1 = 0;
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var value = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
@@ -250,7 +240,7 @@ namespace Garnet.server
 
                 UpdateSize(value);
             }
-            _output->result1 = list.Count;
+            output.Header.result1 = list.Count;
         }
 
         private void ListPop(ref ObjectInput input, ref SpanByteAndMemory outputFooter, byte respProtocolVersion, bool fDelAtHead)
