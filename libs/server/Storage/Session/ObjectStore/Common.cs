@@ -27,7 +27,7 @@ namespace Garnet.server
 
             var objStoreOutput = new GarnetObjectStoreOutput
             {
-                SpanByteAndMemory = new(null), Header = new()
+                SpanByteAndMemory = new(null)
             };
 
             // Perform RMW on object store
@@ -573,7 +573,7 @@ namespace Garnet.server
 
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
-            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null), Header = new() };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null) };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref _output);
@@ -607,7 +607,7 @@ namespace Garnet.server
             if (objectStoreContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
-            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null), Header = new() };
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null) };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref input, ref _output);
