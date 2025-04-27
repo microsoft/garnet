@@ -21,7 +21,7 @@ namespace Garnet.cluster
             if (_gcs.NeedsInitialization)
                 _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
 
-            fixed (byte* ptr = output.Memory.Memory.Span)
+            fixed (byte* ptr = output.MemorySpan)
             {
                 // Try to write serialized record to client buffer
                 while (!_gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))

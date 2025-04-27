@@ -1255,7 +1255,6 @@ namespace Garnet.server
         /// <returns></returns>
         private unsafe ObjectOutputHeader ProcessOutputWithHeader(SpanByteAndMemory output)
         {
-            ReadOnlySpan<byte> outputSpan;
             ObjectOutputHeader header;
 
             if (output.IsSpanByte)
@@ -1267,11 +1266,8 @@ namespace Garnet.server
             }
             else
             {
-                outputSpan = output.Memory.Memory.Span;
-                fixed (byte* p = outputSpan)
-                {
+                fixed (byte* p = output.MemorySpan)
                     header = *(ObjectOutputHeader*)(p + output.Length - sizeof(ObjectOutputHeader));
-                }
                 SendAndReset(output.Memory, output.Length - sizeof(ObjectOutputHeader));
             }
 

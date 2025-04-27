@@ -32,7 +32,7 @@ namespace Garnet.server
 
             dst.Memory = memoryPool.Rent(srcLength);
             dst.Length = srcLength;
-            src.CopyTo(dst.Memory.Memory.Span);
+            src.CopyTo(dst.MemorySpan);
         }
 
         void CopyRespTo(ReadOnlySpan<byte> src, ref SpanByteAndMemory dst, int start = 0, int end = -1)
@@ -69,7 +69,7 @@ namespace Garnet.server
 
             dst.Memory = functionsState.memoryPool.Rent(totalSize);
             dst.Length = totalSize;
-            fixed (byte* ptr = dst.Memory.Memory.Span)
+            fixed (byte* ptr = dst.MemorySpan)
             {
                 var tmp = ptr;
                 *tmp++ = (byte)'$';
@@ -115,7 +115,7 @@ namespace Garnet.server
                     output.ConvertToHeap();
                     output.Length = value.Length;
                     output.Memory = functionsState.memoryPool.Rent(value.Length);
-                    value.CopyTo(output.Memory.Memory.Span);
+                    value.CopyTo(output.MemorySpan);
                     break;
 
                 case RespCommand.GETBIT:
@@ -755,7 +755,7 @@ namespace Garnet.server
             dst.ConvertToHeap();
             dst.Length = desiredLength;
             dst.Memory = memoryPool.Rent(desiredLength);
-            fixed (byte* ptr = dst.Memory.Memory.Span)
+            fixed (byte* ptr = dst.MemorySpan)
             {
                 byte* curr = ptr;
                 byte* end = ptr + desiredLength;

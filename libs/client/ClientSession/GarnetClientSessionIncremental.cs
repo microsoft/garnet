@@ -46,6 +46,8 @@ namespace Garnet.client
         /// </summary>
         public PinnedSpanByte GetAvailableNetworkBufferSpan() => PinnedSpanByte.FromPinnedPointer(curr, (int)(end - curr));
 
+        public void IncrementCurr(int size) => curr += size;
+
         /// <summary>
         /// Flush and initialize buffers/parameters used for migrate command
         /// </summary>

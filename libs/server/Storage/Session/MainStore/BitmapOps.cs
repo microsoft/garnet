@@ -54,7 +54,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK && !output.IsSpanByte)
             {
-                fixed (byte* outputPtr = output.Memory.Memory.Span)
+                fixed (byte* outputPtr = output.MemorySpan)
                 {
                     var refPtr = outputPtr;
                     if (*refPtr == ':')
@@ -252,7 +252,7 @@ namespace Garnet.server
             {
                 if (!output.IsSpanByte)
                 {
-                    fixed (byte* outputPtr = output.Memory.Memory.Span)
+                    fixed (byte* outputPtr = output.MemorySpan)
                     {
                         var refPtr = outputPtr;
                         _ = RespReadUtils.TryReadInt64(out result, ref refPtr, refPtr + sizeof(long));
@@ -364,7 +364,7 @@ namespace Garnet.server
                         var error = false;
                         if (!output.IsSpanByte)
                         {
-                            fixed (byte* outputPtr = output.Memory.Memory.Span)
+                            fixed (byte* outputPtr = output.MemorySpan)
                             {
                                 var refPtr = outputPtr;
                                 if (!RespReadUtils.TryReadInt64(out resultCmd, ref refPtr, refPtr + output.Length))

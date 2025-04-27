@@ -73,7 +73,7 @@ namespace Tsavorite.core
         public ReadOnlySpan<byte> ReadOnlySpan
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return IsSpanByte ? SpanByte.ReadOnlySpan : Memory.Memory.Span.Slice(0, Length); }
+            get { return IsSpanByte ? SpanByte.ReadOnlySpan : MemorySpan.Slice(0, Length); }
         }
 
         /// <summary>
@@ -82,7 +82,7 @@ namespace Tsavorite.core
         public ReadOnlySpan<byte> Span
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return IsSpanByte ? SpanByte.Span : Memory.Memory.Span.Slice(0, Length); }
+            get { return IsSpanByte ? SpanByte.Span : MemorySpan.Slice(0, Length); }
         }
 
         /// <summary>
@@ -93,7 +93,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
+                Debug.Assert(!IsSpanByte, "Cannot call MemoryReadOnlySpan when IsSpanByte");
                 return Memory.Memory.Span.Slice(0, Length);
             }
         }
@@ -101,12 +101,12 @@ namespace Tsavorite.core
         /// <summary>
         /// As a Span of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
         /// </summary>
-        public readonly ReadOnlySpan<byte> MemorySpan
+        public readonly Span<byte> MemorySpan
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
+                Debug.Assert(!IsSpanByte, "Cannot call MemoryReadOnlySpan when IsSpanByte");
                 return Memory.Memory.Span.Slice(0, Length);
             }
         }

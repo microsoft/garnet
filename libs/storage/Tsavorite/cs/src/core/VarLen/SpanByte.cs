@@ -64,7 +64,7 @@ namespace Tsavorite.core
 
             dst.Memory = memoryPool.Rent(src.Length);
             dst.Length = src.Length;
-            src.CopyTo(dst.Memory.Memory.Span);
+            src.CopyTo(dst.MemorySpan);
         }
 
         /// <summary>Copy to given <see cref="SpanByteAndMemory"/>, using the Span{byte} if possible, else allocating from <paramref name="memoryPool"/></summary>

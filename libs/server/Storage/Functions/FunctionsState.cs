@@ -50,7 +50,7 @@ namespace Garnet.server
             dst.ConvertToHeap();
             dst.Length = resp.Length;
             dst.Memory = memoryPool.Rent(resp.Length);
-            resp.CopyTo(dst.Memory.Memory.Span);
+            resp.CopyTo(dst.MemorySpan);
         }
 
         internal unsafe void CopyRespNumber(long number, ref SpanByteAndMemory dst)
@@ -67,7 +67,7 @@ namespace Garnet.server
             dst.ConvertToHeap();
             dst.Length = totalLen;
             dst.Memory = memoryPool.Rent(totalLen);
-            fixed (byte* ptr = dst.Memory.Memory.Span)
+            fixed (byte* ptr = dst.MemorySpan)
             {
                 byte* cc = ptr;
                 *cc++ = (byte)':';

@@ -465,9 +465,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-
-            return status;
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -532,8 +530,7 @@ namespace Tsavorite.core
                 internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            return status;
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -567,8 +564,7 @@ namespace Tsavorite.core
                 internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            return status;
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -599,8 +595,7 @@ namespace Tsavorite.core
                 internalStatus = InternalDelete(key, keyHash, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            return status;
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         /// <summary>

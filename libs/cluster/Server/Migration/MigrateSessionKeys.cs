@@ -36,23 +36,13 @@ namespace Garnet.cluster
 
                 foreach (var pair in _keys.GetKeys())
                 {
-                    // Process only keys that are in MIGRATING status
                     if (pair.Value != KeyMigrationStatus.MIGRATING)
                         continue;
 
                     // Read the value for the key. This will populate output with the entire serialized record.
                     output.SpanByte = _gcs.GetAvailableNetworkBufferSpan();
                     var status = localServerSession.BasicGarnetApi.Read_MainStore(pair.Key, ref input, ref output);
-                    if (status == GarnetStatus.NOTFOUND)
-                    {
-                        // Transition key status back to QUEUED to unblock any writers
-                        _keys.UpdateStatus(pair.Key, KeyMigrationStatus.QUEUED);
-                        continue;
-                    }
-
-                    // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, and
-                    // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
-                    if (!output.IsSpanByte && !WriteOrSendRecordSpan(ref output))
+                    if (!WriteRecord(pair.Key, ref output, status))
                         return false;
                 }
 
@@ -82,8 +72,8 @@ namespace Garnet.cluster
 
             try
             {
-                // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
-                // Transition all QUEUED to MIGRATING state
+                // Transition keys to MIGRATING status.
+                // NOTE: Any keys not found in main store are automatically set to QUEUED.
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
@@ -93,22 +83,13 @@ namespace Garnet.cluster
 
                 foreach (var pair in _keys.GetKeys())
                 {
-                    // Process only keys in MIGRATING status
                     if (pair.Value != KeyMigrationStatus.MIGRATING)
                         continue;
 
+                    // Read the value for the key. This will populate output with the entire serialized record.
                     output.SpanByteAndMemory.SpanByte = _gcs.GetAvailableNetworkBufferSpan();
                     var status = localServerSession.BasicGarnetApi.Read_ObjectStore(pair.Key, ref input, ref output);
-                    if (status == GarnetStatus.NOTFOUND)
-                    {
-                        // Transition key status back to QUEUED to unblock any writers
-                        _keys.UpdateStatus(pair.Key, KeyMigrationStatus.QUEUED);
-                        continue;
-                    }
-
-                    // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, and
-                    // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
-                    if (!output.SpanByteAndMemory.IsSpanByte && !WriteOrSendRecordSpan(ref output.SpanByteAndMemory))
+                    if (!WriteRecord(pair.Key, ref output.SpanByteAndMemory, status))
                         return false;
                 }
 
@@ -121,6 +102,25 @@ namespace Garnet.cluster
                 DeleteKeys();
             }
             return true;
+        }
+
+        bool WriteRecord(PinnedSpanByte key, ref SpanByteAndMemory output, GarnetStatus status)
+        {
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                // Transition key status back to QUEUED to unblock any writers
+                _keys.UpdateStatus(key, KeyMigrationStatus.QUEUED);
+                return true;
+            }
+
+            // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, so increment curr and
+            // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
+            if (output.IsSpanByte)
+            {
+                _gcs.IncrementCurr(output.SpanByte.Length);
+                return true;
+            }
+            return WriteOrSendRecordSpan(ref output);
         }
 
         /// <summary>

@@ -601,12 +601,13 @@ namespace Tsavorite.core
         {
             if (output.IsSpanByte && output.SpanByte.Length >= (int)recordSize)     // TODO: long value sizes
             {
-                Buffer.MemoryCopy((byte*)srcPhysicalAddress, output.SpanByte.ToPointer(), recordSize, recordSize);
+                Buffer.MemoryCopy((byte*)srcPhysicalAddress, output.SpanByte.ToPointer(), output.SpanByte.Length, recordSize);
+                output.SpanByte.Length = (int)recordSize;
                 return;
             }
 
             output.EnsureHeapMemorySize((int)recordSize, memoryPool);
-            fixed (byte* ptr = output.Memory.Memory.Span)
+            fixed (byte* ptr = output.MemorySpan)
                 Buffer.MemoryCopy((byte*)srcPhysicalAddress, ptr, recordSize, recordSize);
         }
 
@@ -636,11 +637,12 @@ namespace Tsavorite.core
             {
                 var ptr = output.SpanByte.ToPointer();
                 serializedSize = SerializeVarbyteRecordToPinnedPointer(ref srcLogRecord, ptr, indicatorByte, keyLengthByteCount, valueLength, valueLengthByteCount, valueSerializer);
+                output.SpanByte.Length = (int)serializedSize;
             }
             else
             {
                 output.EnsureHeapMemorySize((int)recordSize, memoryPool);
-                fixed (byte* spanPtr = output.Memory.Memory.Span)
+                fixed (byte* spanPtr = output.MemorySpan)
                     serializedSize = SerializeVarbyteRecordToPinnedPointer(ref srcLogRecord, spanPtr, indicatorByte, keyLengthByteCount, valueLength, valueLengthByteCount, valueSerializer);
             }
             Debug.Assert(serializedSize == recordSize, $"Serialized size {serializedSize} does not match expected size {recordSize}");

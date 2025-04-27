@@ -978,13 +978,13 @@ namespace Garnet.test.cluster
                 {
                     resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
                 }
-                ClassicAssert.AreEqual(resp, "MOVED");
-                ClassicAssert.AreEqual(_workingSlot, slot);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex), endpoint);
+                Assert.That(resp, Is.EqualTo("MOVED"));
+                Assert.That(slot, Is.EqualTo(_workingSlot));
+                Assert.That(endpoint, Is.EqualTo(context.clusterTestUtils.GetEndPoint(targetNodeIndex)));
 
                 resp = context.clusterTestUtils.GetKey(targetNodeIndex, _key, out _, out _, out responseState, logger: context.logger);
-                ClassicAssert.AreEqual(responseState, ResponseState.OK);
-                ClassicAssert.AreEqual(resp, _key);
+                Assert.That(responseState, Is.EqualTo(ResponseState.OK));
+                Assert.That(resp, Is.EqualTo(_key));
             }
             context.logger.LogDebug("14. Checking migrate keys done");
 
