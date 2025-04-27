@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
@@ -1104,12 +1105,12 @@ namespace Garnet.server
                     }
                     else
                     {
-                        writer.WriteEmptyArray();
+                        writer.WriteEmptyMap();
                     }
                 }
                 else
                 {
-                    System.Collections.Generic.List<RespCommandDocs> docs = [];
+                    List<RespCommandDocs> docs = [];
                     for (var i = 0; i < count; i++)
                     {
                         var cmdName = parseState.GetString(i);

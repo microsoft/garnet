@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -133,11 +132,7 @@ namespace Garnet.server
             }
             var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-            var curr = ptr;
-            var end = curr + output.Length;
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
             try
             {
@@ -166,8 +161,7 @@ namespace Garnet.server
                 {
                     // Expire/Delete the destination key if the source key is not found
                     _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
-                    while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
-                        RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
 
@@ -180,10 +174,9 @@ namespace Garnet.server
                     ref var currOutPtr = ref searchOutPtr;
                     var endOutPtr = searchOutPtr + searchOutMem.Length;
 
-                    if (RespReadUtils.TryReadErrorAsSpan(out var error, ref currOutPtr, endOutPtr))
+                    if (RespReadUtils.TryReadErrorAsString(out var error, ref currOutPtr, endOutPtr))
                     {
-                        while (!RespWriteUtils.TryWriteError(error, ref curr, end))
-                            RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        writer.WriteError(error);
                         return GarnetStatus.OK;
                     }
 
@@ -216,8 +209,7 @@ namespace Garnet.server
                     var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
 
-                    while (!RespWriteUtils.TryWriteInt32(foundItems, ref curr, end))
-                        RespMemoryWriter.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteInt32(foundItems);
                 }
                 finally
                 {
@@ -231,8 +223,7 @@ namespace Garnet.server
                 if (createTransaction)
                     txnManager.Commit(true);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+                writer.Dispose();
             }
         }
     }
