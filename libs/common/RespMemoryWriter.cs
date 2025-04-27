@@ -14,13 +14,13 @@ namespace Garnet.common
     /// </summary>
     public unsafe ref struct RespMemoryWriter : IDisposable
     {
-        public byte* curr;
-        public byte* end;
-        public byte* ptr;
-        public MemoryHandle ptrHandle;
-        public ref SpanByteAndMemory output;
-        public bool isMemory;
-        readonly bool resp3;
+        byte* curr;
+        byte* end;
+        byte* ptr;
+        MemoryHandle ptrHandle;
+        ref SpanByteAndMemory output;
+        bool isMemory;
+        public readonly bool resp3;
 
         public unsafe RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
         {
@@ -30,11 +30,6 @@ namespace Garnet.common
             curr = ptr;
             end = curr + output.Length;
         }
-
-        /// <summary>
-        /// As a span of the contained data.
-        /// </summary>
-        public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new(ptr, (int)(curr - ptr));
 
         /// <summary>
         /// Encodes the <paramref name="chars"/> as ASCII bulk string to memory.
@@ -146,11 +141,39 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write empty array to memory.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteEmptyMap()
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteMapLength(0, ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
+                    ReallocateOutput();
+            }
+        }
+
+        /// <summary>
         /// Write simple error to memory.
         /// </summary>
         /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteError(ReadOnlySpan<byte> errorString)
+        {
+            while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
+                ReallocateOutput();
+        }
+
+        /// <summary>
+        /// Write simple error
+        /// </summary>
+        /// <param name="errorString">An ASCII error string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
+        public void WriteError(ReadOnlySpan<char> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
                 ReallocateOutput();
@@ -328,6 +351,17 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// As a span of the contained data.
+        /// </summary>
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new(ptr, (int)(curr - ptr));
+
+        /// <summary>
+        /// Get position
+        /// </summary>
+        /// <returns></returns>
+        public readonly long GetPosition() => curr - ptr;
+
+        /// <summary>
         /// Reset position to starting position
         /// </summary>
         public void ResetPosition()
@@ -335,6 +369,7 @@ namespace Garnet.common
             curr = ptr;
         }
 
+        /// <inheritdoc />
         public void Dispose()
         {
             if (isMemory) ptrHandle.Dispose();
