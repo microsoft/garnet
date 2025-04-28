@@ -142,10 +142,12 @@ namespace Garnet.server
             // Prepare the parse state
             var matchPattern = match.Trim();
 
+            var cursorLength = NumUtils.CountDigits(cursor);
             var countLength = NumUtils.CountDigits(count);
 
             // Calculate # of bytes to store parameters
-            var sliceBytes = CmdStrings.MATCH.Length +
+            var sliceBytes = cursorLength +
+                             CmdStrings.MATCH.Length +
                              matchPattern.Length +
                              CmdStrings.COUNT.Length +
                              countLength;
@@ -156,6 +158,11 @@ namespace Garnet.server
             var paramsSpanOffset = 0;
 
             // Store parameters in buffer
+            // cursor
+            var cursorSpan = paramsSpan.Slice(paramsSpanOffset, cursorLength);
+            NumUtils.WriteInt64(cursor, cursorSpan);
+            paramsSpanOffset += cursorLength;
+            var cursorSlice = ArgSlice.FromPinnedSpan(cursorSpan);
 
             // MATCH
             var matchSpan = paramsSpan.Slice(paramsSpanOffset, CmdStrings.MATCH.Length);
@@ -180,12 +187,12 @@ namespace Garnet.server
             NumUtils.WriteInt64(count, countValueSpan);
             var countValueSlice = ArgSlice.FromPinnedSpan(countValueSpan);
 
-            parseState.InitializeWithArguments(matchSlice, matchPatternSlice,
+            parseState.InitializeWithArguments(cursorSlice, matchSlice, matchPatternSlice,
                 countSlice, countValueSlice);
 
             // Prepare the input
             var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, ref parseState, arg1: (int)cursor, arg2: ObjectScanCountLimit);
+            var input = new ObjectInput(header, ref parseState, arg2: ObjectScanCountLimit);
 
             switch (objectType)
             {
