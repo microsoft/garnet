@@ -602,24 +602,24 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void DirectCopyRecord(long recordSize, long srcPhysicalAddress, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
+        private static void DirectCopyRecord(long srcPhysicalAddress, long srcRecordSize, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
         {
             // TotalSize includes the length prefix, which is included in the output stream if we can write to the SpanByte.
-            if (output.IsSpanByte && output.SpanByte.TotalSize >= (int)recordSize)     // TODO: long value sizes
+            if (output.IsSpanByte && output.SpanByte.TotalSize >= (int)srcRecordSize)     // TODO: long value sizes
             {
                 var outPtr = output.SpanByte.ToPointer();
-                *(int*)outPtr = (int)recordSize;
-                Buffer.MemoryCopy((byte*)srcPhysicalAddress, outPtr + sizeof(int), output.SpanByte.Length, recordSize);
-                output.SpanByte.Length = (int)recordSize;
+                *(int*)outPtr = (int)srcRecordSize;
+                Buffer.MemoryCopy((byte*)srcPhysicalAddress, outPtr + sizeof(int), output.SpanByte.Length, srcRecordSize);
+                output.SpanByte.Length = (int)srcRecordSize;
                 return;
             }
 
             // Do not include the length prefix in the output stream; this is done by the caller before writing the stream, from the SpanByte.Length we set here.
-            output.EnsureHeapMemorySize((int)recordSize + sizeof(int), memoryPool);
+            output.EnsureHeapMemorySize((int)srcRecordSize + sizeof(int), memoryPool);
             fixed (byte* outPtr = output.MemorySpan)
             {
-                Buffer.MemoryCopy((byte*)srcPhysicalAddress, outPtr, recordSize, recordSize);
-                output.Length = (int)recordSize;
+                Buffer.MemoryCopy((byte*)srcPhysicalAddress, outPtr, srcRecordSize, srcRecordSize);
+                output.Length = (int)srcRecordSize;
             }
         }
 
@@ -764,7 +764,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CloneFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord, bool preferDeserializedObject)
         {
-            Debug.Assert(!inputDiskLogRecord.IsSet, "inputDiskLogRecord is not set");
+            Debug.Assert(inputDiskLogRecord.IsSet, "inputDiskLogRecord is not set");
 
             if (!inputDiskLogRecord.Info.ValueIsObject || !preferDeserializedObject)
             {
@@ -831,7 +831,7 @@ namespace Tsavorite.core
             if (srcLogRecord.AsLogRecord(out var logRecord))
             {
                 if (logRecord.Info.RecordIsInline)
-                    DirectCopyRecord(logRecord.ActualRecordSize, logRecord.physicalAddress, ref output, memoryPool);
+                    DirectCopyRecord(logRecord.physicalAddress, logRecord.ActualRecordSize, ref output, memoryPool);
                 else
                     _ = SerializeVarbyteRecord(ref logRecord, logRecord.physicalAddress, valueSerializer, ref output, memoryPool);
                 return;
@@ -847,7 +847,7 @@ namespace Tsavorite.core
             if (diskLogRecord.Info.RecordIsInline
                 || (diskLogRecord.Info.KeyIsInline && (valueInfo.length > 0 || diskLogRecord.valueObject is null)))
             {
-                DirectCopyRecord(logRecord.ActualRecordSize, logRecord.physicalAddress, ref output, memoryPool);
+                DirectCopyRecord(diskLogRecord.physicalAddress, diskLogRecord.GetSerializedLength(), ref output, memoryPool);
                 return;
             }
             _ = SerializeVarbyteRecord(ref diskLogRecord, diskLogRecord.physicalAddress, valueSerializer, ref output, memoryPool);

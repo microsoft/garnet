@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Threading;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -21,9 +21,9 @@ namespace Garnet.cluster
         public ObjectStoreSnapshotIterator objectStoreSnapshotIterator;
 
         // For serialization from LogRecord to DiskLogRecord
-        SectorAlignedBufferPool bufferPool;
-        SectorAlignedMemory recordBuffer;
+        SpanByteAndMemory serializationOutput;
         GarnetObjectSerializer valueObjectSerializer;
+        MemoryPool<byte> memoryPool;
 
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
@@ -54,7 +54,7 @@ namespace Garnet.cluster
             if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
                 objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
 
-            bufferPool = new(recordSize: 1, sectorSize: 512);   // TODO: Does this sectorSize need to consider ReplicaSyncSessions device sector sizes?
+            memoryPool = MemoryPool<byte>.Shared;
             valueObjectSerializer = new(customCommandManager: default);
         }
 
@@ -89,7 +89,8 @@ namespace Garnet.cluster
 
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
+                if (!replicationSyncManager.IsActive(i))
+                    continue;
                 sessions[i].InitializeIterationBuffer();
                 if (isMainStore)
                     sessions[i].currentStoreVersion = targetVersion;
@@ -115,28 +116,7 @@ namespace Garnet.cluster
             }
 
             // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-
-            DiskLogRecord diskLogRecord = default;
-            ReadOnlySpan<byte> recordSpan;
-            if (srcLogRecord.AsLogRecord(out var logRecord))
-            {
-                if (logRecord.Info.RecordIsInline)
-                    recordSpan = logRecord.RecordSpan;
-                else
-                {
-                    diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer: default, ref recordBuffer);
-                    recordSpan = diskLogRecord.RecordSpan;
-                }
-            }
-            else if (srcLogRecord.AsDiskLogRecord(out diskLogRecord))
-            {
-                // String DiskLogRecords are always directly copyable
-                recordSpan = diskLogRecord.RecordSpan;
-            }
-            else
-            {
-                throw new GarnetException("Invalid log record type");
-            }
+            DiskLogRecord.Serialize(ref srcLogRecord, valueSerializer: null, ref serializationOutput, memoryPool);
 
             var needToFlush = false;
             while (true)
@@ -150,13 +130,14 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActive(i)) continue;
+                    if (!replicationSyncManager.IsActive(i))
+                        continue;
 
                     // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader(isMainStore: true);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(recordSpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -187,39 +168,9 @@ namespace Garnet.cluster
             }
 
             // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-
-            DiskLogRecord diskLogRecord = default;
-            ReadOnlySpan<byte> recordSpan;
-            if (srcLogRecord.AsLogRecord(out var logRecord))
-            {
-                if (logRecord.Info.RecordIsInline)
-                    recordSpan = logRecord.RecordSpan;
-                else
-                {
-                    diskLogRecord.Serialize(ref logRecord, bufferPool, valueObjectSerializer, ref recordBuffer);
-                    recordSpan = diskLogRecord.RecordSpan;
-                }
-            }
-            else if (srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord))
-            {
-                // For an iterator, we probably have a fully-serialized log record that was just read from the disk to copy to our buffer,
-                // but it may be a temporary disk log record, e.g. for pending.
-                if (inputDiskLogRecord.IsDirectlyCopyable)
-                    recordSpan = inputDiskLogRecord.RecordSpan;
-                else
-                {
-                    // We need to serialize the log record to the network buffer
-                    diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, ref recordBuffer, preferDeserializedObject: false);
-                    recordSpan = diskLogRecord.RecordSpan;
-                }
-            }
-            else
-            {
-                throw new GarnetException("Invalid log record type");
-            }
+            DiskLogRecord.Serialize(ref srcLogRecord, valueObjectSerializer, ref serializationOutput, memoryPool);
 
             var needToFlush = false;
-
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -231,13 +182,14 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActive(i)) continue;
+                    if (!replicationSyncManager.IsActive(i))
+                        continue;
 
                     // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader(isMainStore: false);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(recordSpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -260,8 +212,8 @@ namespace Garnet.cluster
             // Flush remaining data
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
-                sessions[i].SendAndResetIterationBuffer();
+                if (replicationSyncManager.IsActive(i))
+                    sessions[i].SendAndResetIterationBuffer();
             }
 
             // Wait for flush and response to complete
@@ -272,6 +224,8 @@ namespace Garnet.cluster
 
             // Reset read marker
             firstRead = false;
+
+            serializationOutput.Dispose();
         }
     }
 

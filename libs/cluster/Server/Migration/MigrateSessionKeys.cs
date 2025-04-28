@@ -54,7 +54,7 @@ namespace Garnet.cluster
             finally
             {
                 // If allocated memory in heap dispose it here.
-                output.Memory?.Dispose();
+                output.Dispose();
             }
             return true;
         }
@@ -100,7 +100,7 @@ namespace Garnet.cluster
                 // Delete keys if COPY option is false or transition KEYS from MIGRATING to MIGRATED status
                 DeleteKeys();
 
-                output.SpanByteAndMemory.Memory?.Dispose();
+                output.SpanByteAndMemory.Dispose();
             }
             return true;
         }

@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Output that encapsulates sync stack output (via <see cref="core.PinnedSpanByte"/>) and async heap output (via IMemoryOwner)
     /// </summary>
-    public unsafe struct SpanByteAndMemory
+    public unsafe struct SpanByteAndMemory : IDisposable
     {
         /// <summary>
         /// Stack output as <see cref="core.SpanByte"/>
@@ -163,6 +163,13 @@ namespace Tsavorite.core
             Memory = null;  // In case the following throws OOM
             Memory = memoryPool.Rent(size);
             SpanByte.Length = size;
+        }
+
+        public void Dispose()
+        {
+            var memory = Memory;
+            Memory = null;
+            memory?.Dispose();
         }
     }
 }

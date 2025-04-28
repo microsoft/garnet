@@ -70,7 +70,7 @@ namespace Tsavorite.core
         public bool IsPinnedKey => Info.KeyIsInline;
 
         /// <inheritdoc/>
-        public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)KeyAddress : null;
+        public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)LogField.GetInlineDataAddress(KeyAddress) : null;
 
         /// <inheritdoc/>
         public readonly Span<byte> ValueSpan
@@ -116,7 +116,7 @@ namespace Tsavorite.core
         public bool IsPinnedValue => Info.ValueIsInline;
 
         /// <inheritdoc/>
-        public byte* PinnedValuePointer => IsPinnedValue ? (byte*)ValueAddress : null;
+        public byte* PinnedValuePointer => IsPinnedValue ? (byte*)LogField.GetInlineDataAddress(ValueAddress) : null;
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : NoETag;
