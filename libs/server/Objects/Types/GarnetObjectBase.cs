@@ -239,14 +239,14 @@ namespace Garnet.server
             {
                 var sbParam = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
-                if (sbParam.SequenceEqual(CmdStrings.MATCH) || sbParam.SequenceEqual(CmdStrings.match))
+                if (sbParam.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MATCH))
                 {
                     // Read pattern for keys filter
                     var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
                     pattern = sbPattern.ToPointer();
                     patternLength = sbPattern.Length;
                 }
-                else if (sbParam.SequenceEqual(CmdStrings.COUNT) || sbParam.SequenceEqual(CmdStrings.count))
+                else if (sbParam.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
                     if (!input.parseState.TryGetInt(currTokenIdx++, out countInInput))
                     {
@@ -258,7 +258,7 @@ namespace Garnet.server
                     if (countInInput > limitCountInOutput)
                         countInInput = limitCountInOutput;
                 }
-                else if (sbParam.SequenceEqual(CmdStrings.NOVALUES) || sbParam.SequenceEqual(CmdStrings.novalues))
+                else if (sbParam.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NOVALUES))
                 {
                     isNoValue = true;
                 }
