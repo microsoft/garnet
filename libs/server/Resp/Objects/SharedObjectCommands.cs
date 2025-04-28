@@ -39,15 +39,15 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Get cursor value
-            if (!parseState.TryGetInt(1, out var cursorValue) || cursorValue < 0)
+            if (!parseState.TryGetLong(1, out var cursorValue) || cursorValue < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: cursorValue,
+            var input = new ObjectInput(header, ref parseState, startIdx: 1,
                 arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)

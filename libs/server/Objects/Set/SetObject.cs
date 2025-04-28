@@ -163,7 +163,7 @@ namespace Garnet.server
                     SetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SetOperation.SSCAN:
-                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
