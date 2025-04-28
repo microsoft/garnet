@@ -76,7 +76,7 @@ namespace Garnet.server
             {
                 // Scan Command
                 case RespCommand.COSCAN:
-                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     if ((byte)input.header.type != this.type)

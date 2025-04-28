@@ -439,7 +439,7 @@ namespace Garnet.server
                     SortedSetRandomMember(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZSCAN:
-                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");

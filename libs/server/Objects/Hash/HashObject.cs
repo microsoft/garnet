@@ -229,7 +229,7 @@ namespace Garnet.server
                     HashCollect(ref input, ref output);
                     break;
                 case HashOperation.HSCAN:
-                    ObjectUtils.Scan(this, ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
