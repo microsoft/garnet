@@ -83,11 +83,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> FLUSHDB => "FLUSHDB"u8;
         public static ReadOnlySpan<byte> FORCEGC => "FORCEGC"u8;
         public static ReadOnlySpan<byte> MATCH => "MATCH"u8;
-        public static ReadOnlySpan<byte> match => "match"u8;
         public static ReadOnlySpan<byte> COUNT => "COUNT"u8;
         public static ReadOnlySpan<byte> count => "count"u8;
         public static ReadOnlySpan<byte> NOVALUES => "NOVALUES"u8;
-        public static ReadOnlySpan<byte> novalues => "novalues"u8;
         public static ReadOnlySpan<byte> TYPE => "TYPE"u8;
         public static ReadOnlySpan<byte> type => "type"u8;
         public static ReadOnlySpan<byte> REGISTERCS => "REGISTERCS"u8;
