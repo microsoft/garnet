@@ -165,6 +165,11 @@ namespace Tsavorite.core
         };
         #endregion // ISourceLogRecord
 
+        /// <summary>
+        /// The record is directly copyable if it is entirely inline; otherwise it must be Serialized to linear format
+        /// </summary>
+        public readonly bool IsDirectlyCopyable => Info.RecordIsInline;
+
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoRef(long physicalAddress) => ref *(RecordInfo*)(physicalAddress);

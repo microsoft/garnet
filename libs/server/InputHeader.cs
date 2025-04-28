@@ -208,16 +208,6 @@ namespace Garnet.server
         /// <summary>
         /// Create a new instance of ObjectInput
         /// </summary>
-        /// <param name="cmd"><see cref="RespCommand"/> to be set into the Input header</param>
-        /// <param name="arg1">First general-purpose argument</param>
-        /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(ushort cmd, int arg1 = 0, int arg2 = 0) : this(new RespInputHeader((RespCommand)cmd), arg1, arg2)
-        {
-        }
-
-        /// <summary>
-        /// Create a new instance of ObjectInput
-        /// </summary>
         /// <param name="header">Input header</param>
         /// <param name="arg1">First general-purpose argument</param>
         /// <param name="arg2">Second general-purpose argument</param>
@@ -253,17 +243,6 @@ namespace Garnet.server
             : this(header, arg1, arg2)
         {
             this.parseState = parseState.Slice(startIdx);
-        }
-
-        /// <summary>
-        /// Create a new instance of ObjectInput for the specified command
-        /// </summary>
-        /// <param name="cmd">The command to perform</param>
-        /// <param name="arg1">First general-purpose argument</param>
-        /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespCommand cmd, int arg1 = 0, int arg2 = 0)
-            : this(new RespInputHeader(cmd), arg1, arg2)
-        {
         }
 
         /// <inheritdoc />

@@ -15,11 +15,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="output">Output buffer from Read(), containing the full serialized record</param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendRecordSpan(ref SpanByteAndMemory output)
+        private bool WriteOrSendRecordSpan(ref SpanByteAndMemory output, bool isMainStore)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.NeedsInitialization)
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
 
             fixed (byte* ptr = output.MemorySpan)
             {
@@ -31,7 +31,7 @@ namespace Garnet.cluster
                         return false;
 
                     // Re-initialize cluster migrate command parameters for the next loop iteration
-                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
                 }
             }
             return true;
@@ -41,11 +41,8 @@ namespace Garnet.cluster
         /// Flush the final partial buffer to the client.
         /// </summary>
         /// <returns>True on success, else false</returns>
-        private bool FlushFinalMigrationBuffer()
+        private bool FlushFinalMigrationBuffer(bool isMainStore)
         {
-            // Check if we need to initialize cluster migrate command arguments
-            if (_gcs.NeedsInitialization)
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
             return HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer());
         }
 

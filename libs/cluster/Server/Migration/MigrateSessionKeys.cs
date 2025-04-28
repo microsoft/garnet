@@ -30,7 +30,7 @@ namespace Garnet.cluster
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
-                // Must check this here because we use the network buffer as output.
+                // Must initialize this here because we use the network buffer as output.
                 if (_gcs.NeedsInitialization)
                     _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
 
@@ -42,11 +42,11 @@ namespace Garnet.cluster
                     // Read the value for the key. This will populate output with the entire serialized record.
                     output.SpanByte = _gcs.GetAvailableNetworkBufferSpan();
                     var status = localServerSession.BasicGarnetApi.Read_MainStore(pair.Key, ref input, ref output);
-                    if (!WriteRecord(pair.Key, ref output, status))
+                    if (!WriteRecord(pair.Key, ref output, status, isMainStore: true))
                         return false;
                 }
 
-                if (!FlushFinalMigrationBuffer())
+                if (!FlushFinalMigrationBuffer(isMainStore: true))
                     return false;
 
                 DeleteKeys();
@@ -54,8 +54,7 @@ namespace Garnet.cluster
             finally
             {
                 // If allocated memory in heap dispose it here.
-                if (output.Memory != default)
-                    output.Memory.Dispose();
+                output.Memory?.Dispose();
             }
             return true;
         }
@@ -67,7 +66,7 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromObjectStore()
         {
-            var input = new ObjectInput(RespCommandAccessor.MIGRATE);
+            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
             var output = new GarnetObjectStoreOutput();
 
             try
@@ -77,9 +76,9 @@ namespace Garnet.cluster
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
                 WaitForConfigPropagation();
 
-                // Must check this here because we use the network buffer as output.
+                // Must initialize this here because we use the network buffer as output.
                 if (_gcs.NeedsInitialization)
-                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
 
                 foreach (var pair in _keys.GetKeys())
                 {
@@ -89,22 +88,24 @@ namespace Garnet.cluster
                     // Read the value for the key. This will populate output with the entire serialized record.
                     output.SpanByteAndMemory.SpanByte = _gcs.GetAvailableNetworkBufferSpan();
                     var status = localServerSession.BasicGarnetApi.Read_ObjectStore(pair.Key, ref input, ref output);
-                    if (!WriteRecord(pair.Key, ref output.SpanByteAndMemory, status))
+                    if (!WriteRecord(pair.Key, ref output.SpanByteAndMemory, status, isMainStore: false))
                         return false;
                 }
 
-                if (!FlushFinalMigrationBuffer())
+                if (!FlushFinalMigrationBuffer(isMainStore: false))
                     return false;
             }
             finally
             {
                 // Delete keys if COPY option is false or transition KEYS from MIGRATING to MIGRATED status
                 DeleteKeys();
+
+                output.SpanByteAndMemory.Memory?.Dispose();
             }
             return true;
         }
 
-        bool WriteRecord(PinnedSpanByte key, ref SpanByteAndMemory output, GarnetStatus status)
+        bool WriteRecord(PinnedSpanByte key, ref SpanByteAndMemory output, GarnetStatus status, bool isMainStore)
         {
             if (status == GarnetStatus.NOTFOUND)
             {
@@ -117,10 +118,10 @@ namespace Garnet.cluster
             // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
             if (output.IsSpanByte)
             {
-                _gcs.IncrementCurr(output.SpanByte.Length);
+                _gcs.IncrementRecordDirect(output.SpanByte.TotalSize);
                 return true;
             }
-            return WriteOrSendRecordSpan(ref output);
+            return WriteOrSendRecordSpan(ref output, isMainStore);
         }
 
         /// <summary>

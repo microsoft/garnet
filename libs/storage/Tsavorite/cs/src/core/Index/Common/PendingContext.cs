@@ -172,7 +172,7 @@ namespace Tsavorite.core
                     if (inputDiskLogRecord.OwnsMemory)
                         diskLogRecord.Transfer(ref inputDiskLogRecord);
                     else
-                        diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool);
+                        diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
                 }
             }
 

@@ -172,8 +172,10 @@ namespace Garnet.client
         /// <param name="isMainStore"></param>
         public void SetClusterMigrateHeader(string sourceNodeId, bool replace, bool isMainStore)
         {
-            currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcsQueue.Enqueue(currTcsIterationTask);
+            // For Migration we send the (curr - end) buffer as the SpanByteAndMemory.SpanByte output to Tsavorite. Thus we must
+            // initialize the header first, so we have curr properly positioned, but we cannot yet enqueue currTcsIterationTask.
+            // Therefore we defer this until the actual Flush(), when we know we have records to send. This is not a concern for
+            // Replication, because it uses an iterator and thus knows it has a record before it initializes the header.
             curr = offset;
             this.isMainStore = isMainStore;
             this.ist = IncrementalSendType.MIGRATE;
@@ -266,6 +268,7 @@ namespace Garnet.client
 
             // Reset offset and flush buffer
             offset = curr;
+            EnsureTcsIsEnqueued();
             Flush();
             Interlocked.Increment(ref numCommands);
 

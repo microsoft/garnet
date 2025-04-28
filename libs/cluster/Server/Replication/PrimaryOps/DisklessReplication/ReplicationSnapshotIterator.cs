@@ -114,6 +114,8 @@ namespace Garnet.cluster
                 firstRead = true;
             }
 
+            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
+
             DiskLogRecord diskLogRecord = default;
             ReadOnlySpan<byte> recordSpan;
             if (srcLogRecord.AsLogRecord(out var logRecord))
@@ -122,13 +124,13 @@ namespace Garnet.cluster
                     recordSpan = logRecord.RecordSpan;
                 else
                 {
-                    diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer:default, ref recordBuffer);
+                    diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer: default, ref recordBuffer);
                     recordSpan = diskLogRecord.RecordSpan;
                 }
             }
             else if (srcLogRecord.AsDiskLogRecord(out diskLogRecord))
             {
-                // String DiskLogRecords are always inline
+                // String DiskLogRecords are always directly copyable
                 recordSpan = diskLogRecord.RecordSpan;
             }
             else
@@ -184,6 +186,8 @@ namespace Garnet.cluster
                 firstRead = true;
             }
 
+            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
+
             DiskLogRecord diskLogRecord = default;
             ReadOnlySpan<byte> recordSpan;
             if (srcLogRecord.AsLogRecord(out var logRecord))
@@ -196,10 +200,18 @@ namespace Garnet.cluster
                     recordSpan = diskLogRecord.RecordSpan;
                 }
             }
-            else if (srcLogRecord.AsDiskLogRecord(out diskLogRecord))
+            else if (srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord))
             {
-                // String DiskLogRecords are always inline
-                recordSpan = diskLogRecord.RecordSpan;
+                // For an iterator, we probably have a fully-serialized log record that was just read from the disk to copy to our buffer,
+                // but it may be a temporary disk log record, e.g. for pending.
+                if (inputDiskLogRecord.IsDirectlyCopyable)
+                    recordSpan = inputDiskLogRecord.RecordSpan;
+                else
+                {
+                    // We need to serialize the log record to the network buffer
+                    diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, ref recordBuffer, preferDeserializedObject: false);
+                    recordSpan = diskLogRecord.RecordSpan;
+                }
             }
             else
             {
@@ -207,8 +219,6 @@ namespace Garnet.cluster
             }
 
             var needToFlush = false;
-
-            GarnetObjectSerializer.Serialize((IGarnetObject)value, out var objectData);
 
             while (true)
             {

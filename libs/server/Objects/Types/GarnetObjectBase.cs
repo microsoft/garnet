@@ -21,7 +21,7 @@ namespace Garnet.server
         public ObjectSizes(long memory, long disk)
         {
             Memory = memory;
-            Disk = disk;
+            Disk = disk + sizeof(byte); // Additional byte for GarnetObjectBase.Type
         }
 
         [Conditional("DEBUG")]

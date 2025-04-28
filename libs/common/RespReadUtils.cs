@@ -1224,15 +1224,16 @@ namespace Garnet.common
             recordLength = 0;
 
             //1. safe read recordSize
-            if (ptr + 4 > end)
+            if (ptr + sizeof(int) > end)
                 return false;
             recordLength = *(int*)ptr;
-            ptr += 4;
+            ptr += sizeof(int);
 
             //2. safe read keyPtr
             if (ptr + recordLength > end)
                 return false;
             recordStartAddress = (long)ptr;
+            ptr += recordLength;
             return true;
         }
     }

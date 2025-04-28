@@ -46,14 +46,29 @@ namespace Garnet.client
         /// </summary>
         public PinnedSpanByte GetAvailableNetworkBufferSpan() => PinnedSpanByte.FromPinnedPointer(curr, (int)(end - curr));
 
-        public void IncrementCurr(int size) => curr += size;
+        public void IncrementRecordDirect(int size)
+        {
+            ++recordCount;
+            curr += size;
+        }
+
+        private void EnsureTcsIsEnqueued()
+        {
+            // See comments in SetClusterMigrateHeader() as to why this is decoupled from the header initialization.
+            if (recordCount > 0 && currTcsIterationTask == null)
+            {
+                currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                tcsQueue.Enqueue(currTcsIterationTask);
+            }
+        }
 
         /// <summary>
-        /// Flush and initialize buffers/parameters used for migrate command
+        /// Flush and initialize buffers/parameters used for Migrate and Replica commands
         /// </summary>
         /// <param name="iterationProgressFreq"></param>
         public void InitializeIterationBuffer(TimeSpan iterationProgressFreq = default)
         {
+            EnsureTcsIsEnqueued();
             Flush();
             currTcsIterationTask = null;
             curr = head = null;
@@ -66,7 +81,14 @@ namespace Garnet.client
         /// </summary>
         public Task<string> SendAndResetIterationBuffer()
         {
-            if (recordCount == 0) return null;
+            Task<string> task = null;
+            if (recordCount == 0)
+            {
+                // No records to Flush(), but we need to reset buffer offsets as we may have written a header due to the need to initialize the buffer
+                // before passing it to Tsavorite as the output SpanByteAndMemory.SpanByte for Read().
+                ResetOffset();
+                goto done;
+            }
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
@@ -83,14 +105,17 @@ namespace Garnet.client
 
             // Reset offset and flush buffer
             offset = curr;
+            EnsureTcsIsEnqueued();
             Flush();
             Interlocked.Increment(ref numCommands);
 
             // Return outstanding task and reset current tcs
-            var task = currTcsIterationTask.Task;
+            task = currTcsIterationTask.Task;
             currTcsIterationTask = null;
-            curr = head = null;
             recordCount = 0;
+
+        done:
+            curr = head = null;
             return task;
         }
 
