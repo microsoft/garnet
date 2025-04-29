@@ -735,13 +735,33 @@ namespace Garnet.server
 
             var count = input.arg1;
             var countDone = 0;
+            var withHeader = true;
+
+            if (count == -1)
+            {
+                withHeader = false;
+                count = 1;
+            }
 
             if (sortedSet.Count < count)
                 count = sortedSet.Count;
 
             using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
 
-            output.WriteArrayLength(count * 2);
+            if (count == 0)
+            {
+                output.WriteEmptyArray();
+                outputStore.Header.result1 = 0;
+                return;
+            }
+
+            if (withHeader)
+            {
+                if (respProtocolVersion >= 3)
+                    output.WriteArrayLength(count);
+                else
+                    output.WriteArrayLength(count * 2);
+            }
 
             while (count > 0)
             {
@@ -752,8 +772,11 @@ namespace Garnet.server
 
                 UpdateSize(max.Element, false);
 
+                if (!withHeader || respProtocolVersion >= 3)
+                    output.WriteArrayLength(2);
+
                 output.WriteBulkString(max.Element);
-                output.WriteDoubleBulkString(max.Score);
+                output.WriteDoubleNumeric(max.Score);
 
                 countDone++;
                 count--;

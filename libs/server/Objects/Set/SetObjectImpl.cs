@@ -117,7 +117,7 @@ namespace Garnet.server
                 var countParameter = count > Set.Count ? Set.Count : count;
 
                 // Write the size of the array reply
-                output.WriteArrayLength(countParameter);
+                output.WriteSetLength(countParameter);
 
                 for (var i = 0; i < countParameter; i++)
                 {
@@ -174,7 +174,7 @@ namespace Garnet.server
                 indexes = RandomUtils.PickKRandomIndexes(Set.Count, countParameter, seed);
 
                 // Write the size of the array reply
-                output.WriteArrayLength(countParameter);
+                output.WriteSetLength(countParameter);
 
                 foreach (var index in indexes)
                 {

@@ -354,17 +354,14 @@ namespace Garnet.server
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
-            var popCount = 1;
+            var popCount = -1;
 
             if (parseState.Count == 2)
             {
                 // Read count
-                if (!parseState.TryGetInt(1, out popCount))
+                if (!parseState.TryGetInt(1, out popCount) || (popCount < 0))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
                 }
             }
 
@@ -959,22 +956,33 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    // write the size of the array reply
-                    var resultCount = result?.Count ?? 0;
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? resultCount * 2 : resultCount, ref dcurr, dend))
-                        SendAndReset();
-
-                    if (result != null)
+                    if (result == null)
                     {
-                        foreach (var (element, score) in result)
-                        {
-                            while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
-                                SendAndReset();
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        // write the size of the array reply
+                        while (!RespWriteUtils.TryWriteArrayLength(
+                                includeWithScores && (respProtocolVersion == 2) ? result.Count * 2 : result.Count, ref dcurr, dend))
+                            SendAndReset();
 
-                            if (includeWithScores)
+                        if (result != null)
+                        {
+                            foreach (var (element, score) in result)
                             {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
+                                if (respProtocolVersion == 3 && includeWithScores)
+                                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                        SendAndReset();
+
+                                while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                                     SendAndReset();
+
+                                if (includeWithScores)
+                                {
+                                    WriteDoubleNumeric(score);
+                                }
                             }
                         }
                     }
@@ -1568,8 +1576,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteBulkString(result.Item, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Score, ref dcurr, dend))
-                    SendAndReset();
+                WriteDoubleNumeric(result.Score);
             }
 
             return true;
