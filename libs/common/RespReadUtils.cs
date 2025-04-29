@@ -987,7 +987,7 @@ namespace Garnet.common
             // Error strings need to start with a '-'
             if (*ptr != '-')
             {
-                return false;
+                RespParsingException.ThrowUnexpectedToken(*ptr);
             }
 
             ptr++;
