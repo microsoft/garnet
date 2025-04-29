@@ -978,6 +978,7 @@ namespace Garnet.common
         /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP message.</param>
         /// <returns>True if a RESP error string was successfully read.</returns>
+        /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         public static bool TryReadErrorAsString(out string result, ref byte* ptr, byte* end)
         {
             result = null;
