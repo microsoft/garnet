@@ -85,7 +85,7 @@ namespace Garnet.common
         /// Write bulk string to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteBulkString(ReadOnlySpan<byte> item)
+        public void WriteBulkString(scoped ReadOnlySpan<byte> item)
         {
             while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                 ReallocateOutput();
@@ -95,7 +95,7 @@ namespace Garnet.common
         /// Writes the contents of <paramref name="span"/> as byte array to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteDirect(ReadOnlySpan<byte> span)
+        public void WriteDirect(scoped ReadOnlySpan<byte> span)
         {
             while (!RespWriteUtils.TryWriteDirect(span, ref curr, end))
                 ReallocateOutput();
@@ -163,7 +163,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteError(ReadOnlySpan<byte> errorString)
+        public void WriteError(scoped ReadOnlySpan<byte> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
                 ReallocateOutput();

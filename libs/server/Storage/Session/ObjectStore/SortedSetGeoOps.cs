@@ -174,7 +174,7 @@ namespace Garnet.server
                     ref var currOutPtr = ref searchOutPtr;
                     var endOutPtr = searchOutPtr + searchOutMem.Length;
 
-                    if (RespReadUtils.TryReadErrorAsString(out var error, ref currOutPtr, endOutPtr))
+                    if (RespReadUtils.TryReadErrorAsSpan(out var error, ref currOutPtr, endOutPtr))
                     {
                         writer.WriteError(error);
                         return GarnetStatus.OK;

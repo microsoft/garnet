@@ -215,7 +215,7 @@ namespace Garnet.server
                 ToByteRespFormat(ref output, true);
 
                 output.WriteBulkString("value"u8);
-                output.WriteAsciiDirect(Value);
+                output.WriteAsciiBulkString(Value);
             }
             else
             {
