@@ -199,7 +199,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, srcObjectValue: default, ref output, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, ref output, out _, userContext, sessionFunctions);
             }
             finally
             {
@@ -215,7 +215,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, srcObjectValue: default, ref output, out recordMetadata, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -258,7 +258,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: desiredValue, ref output, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, srcObjectValue: desiredValue, ref output, out _, userContext, sessionFunctions);
             }
             finally
             {
@@ -274,7 +274,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, srcObjectValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -315,7 +315,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, inputLogRecord: ref inputLogRecord, ref output, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, inputLogRecord: ref inputLogRecord, ref output, out _, userContext, sessionFunctions);
             }
             finally
             {

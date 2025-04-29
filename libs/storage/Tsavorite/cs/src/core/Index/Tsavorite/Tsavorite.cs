@@ -481,9 +481,8 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
-            return status;
+            recordMetadata = new(pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -512,48 +511,49 @@ namespace Tsavorite.core
                 internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
-            return status;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
-                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
-            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
-            OperationStatus internalStatus;
-            DiskLogRecord inputLogRecord = default;
-
-            do
-                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
-
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
-                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+                ReadOnlySpan<byte> srcStringValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<TInput, TOutput, TContext>);
             OperationStatus internalStatus;
-            DiskLogRecord inputLogRecord = default;
+            DiskLogRecord emptyLogRecord = default;
 
             do
-                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert<SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
+                        key, keyHash, ref input, srcStringValue, srcObjectValue:null, ref emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
-            return status;
+            recordMetadata = new(pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+                IHeapObject srcObjectValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            var pcontext = default(PendingContext<TInput, TOutput, TContext>);
+            OperationStatus internalStatus;
+            DiskLogRecord emptyLogRecord = default;
+
+            do
+                internalStatus = InternalUpsert<ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
+                        key, keyHash, ref input, srcStringValue: default, srcObjectValue, ref emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+            recordMetadata = new(pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
-                ref TSourceLogRecord inputLogRecord, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+                ref TSourceLogRecord inputLogRecord, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -561,9 +561,11 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+                internalStatus = InternalUpsert<LogRecordUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                        key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
+            recordMetadata = new(pcontext.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -579,9 +581,8 @@ namespace Tsavorite.core
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-            recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.logicalAddress) : default;
-            return status;
+            recordMetadata = new(pcontext.logicalAddress);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

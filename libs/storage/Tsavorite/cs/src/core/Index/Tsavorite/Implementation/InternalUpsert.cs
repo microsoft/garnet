@@ -44,9 +44,10 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
+        internal OperationStatus InternalUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
                             ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TSourceLogRecord inputLogRecord, ref TOutput output,
                             ref TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -116,30 +117,19 @@ namespace Tsavorite.core
                         // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
-                            if (TryRevivifyInChain(ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
+                            if (TryRevivifyInChain<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                                        ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref upsertInfo, out status)
                                     || status != OperationStatus.SUCCESS)
                                 goto LatchRelease;
                         }
                         goto CreateNewRecord;
                     }
 
-                    bool ok;
-                    if (!srcStringValue.IsEmpty)
-                    {
-                        var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, srcStringValue, ref input, sessionFunctions);
-                        ok = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
-                    }
-                    else if (srcObjectValue is not null)
-                    {
-                        var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, srcObjectValue, ref input, sessionFunctions);
-                        ok = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
-                    }
-                    else
-                    {
-                        Debug.Assert(inputLogRecord.IsSet);
-                        var sizeInfo = hlog.GetUpsertRecordSize(srcLogRecord.Key, ref inputLogRecord, ref input, sessionFunctions);
-                        ok = sessionFunctions.InPlaceWriter(ref srcLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
-                    }
+                    var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, srcLogRecord.Key, srcStringValue, srcObjectValue, ref inputLogRecord, ref input, sessionFunctions);
+
+                    // Type arg specification is needed because we don't pass TContext
+                    var ok = TValueSelector.InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                            ref srcLogRecord, ref sizeInfo, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
                     if (ok)
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -167,10 +157,11 @@ namespace Tsavorite.core
                 Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Transactional-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
-                status = CreateNewRecordUpsert(key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx);
+                status = CreateNewRecordUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
+                        key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
-                    // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
+                // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                     Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                     if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
                         CreatePendingUpsertContext(key, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
@@ -221,9 +212,10 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref LogRecord logRecord, ref TInput input,
+        private bool TryRevivifyInChain<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref LogRecord logRecord, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref UpsertInfo upsertInfo, out OperationStatus status)
+            where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -237,22 +229,11 @@ namespace Tsavorite.core
                 logRecord.ClearOptionals();
                 logRecord.InfoRef.ClearTombstone();
 
-                if (!srcStringValue.IsEmpty)
-                {
-                    var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcStringValue, ref input, sessionFunctions);
-                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
-                }
-                else if (srcObjectValue is not null)
-                {
-                    var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, srcObjectValue, ref input, sessionFunctions);
-                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
-                }
-                else
-                {
-                    Debug.Assert(inputLogRecord.IsSet);
-                    var sizeInfo = hlog.GetUpsertRecordSize(logRecord.Key, ref inputLogRecord, ref input, sessionFunctions);
-                    ok = sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
-                }
+                var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, logRecord.Key, srcStringValue, srcObjectValue, ref inputLogRecord, ref input, sessionFunctions);
+
+                // Type arg specification is needed because we don't pass TContext
+                ok = TValueSelector.InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                        ref logRecord, ref sizeInfo, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
                 if (ok)
                 {
                     // Success
@@ -316,17 +297,14 @@ namespace Tsavorite.core
         /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        private OperationStatus CreateNewRecordUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, ref LogRecord srcLogRecord, ref TInput input,
+        private OperationStatus CreateNewRecordUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, ref LogRecord srcLogRecord, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TValueSelector : IUpsertValueSelector
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            var sizeInfo = !srcStringValue.IsEmpty
-                ? hlog.GetUpsertRecordSize(key, srcStringValue, ref input, sessionFunctions)
-                : (srcObjectValue is not null
-                    ? hlog.GetUpsertRecordSize(key, srcObjectValue, ref input, sessionFunctions)
-                    : hlog.GetUpsertRecordSize(key, ref inputLogRecord, ref input, sessionFunctions));
+            var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, key, srcStringValue, srcObjectValue, ref inputLogRecord, ref input, sessionFunctions);
             AllocateOptions allocOptions = new()
             {
                 recycle = true,
@@ -352,11 +330,9 @@ namespace Tsavorite.core
             hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
-            var success = !srcStringValue.IsEmpty
-                ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo)
-                : (srcObjectValue is not null
-                    ? sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo)
-                    : sessionFunctions.InitialWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo));
+            // Type arg specification is needed because we don't pass TContext
+            var success = TValueSelector.InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                    ref newLogRecord, ref sizeInfo, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
             if (!success)
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
@@ -377,15 +353,9 @@ namespace Tsavorite.core
             {
                 PostCopyToTail(ref srcLogRecord, ref stackCtx);
 
-                if (!srcStringValue.IsEmpty)
-                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcStringValue, ref output, ref upsertInfo);
-                else if (srcObjectValue is not null)
-                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, srcObjectValue, ref output, ref upsertInfo);
-                else
-                {
-                    Debug.Assert(inputLogRecord.IsSet);
-                    sessionFunctions.PostInitialWriter(ref newLogRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
-                }
+                // Type arg specification is needed because we don't pass TContext
+                TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                        ref newLogRecord, ref sizeInfo, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
 
                 // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.

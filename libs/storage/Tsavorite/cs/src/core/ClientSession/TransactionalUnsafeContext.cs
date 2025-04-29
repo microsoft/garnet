@@ -311,7 +311,7 @@ namespace Tsavorite.core
         private Status Upsert(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, srcObjectValue: default, ref output, userContext, sessionFunctions);
+            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, ref output, out _, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -319,7 +319,7 @@ namespace Tsavorite.core
         public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
-            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, srcObjectValue: default, ref output, out recordMetadata, userContext, sessionFunctions);
+            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -355,7 +355,7 @@ namespace Tsavorite.core
         private Status Upsert(ReadOnlySpan<byte> key, long keyHash, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: desiredValue, ref output, userContext, sessionFunctions);
+            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcObjectValue: desiredValue, ref output, out _, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -363,7 +363,7 @@ namespace Tsavorite.core
         public Status Upsert(ReadOnlySpan<byte> key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
-            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcStringValue: default, srcObjectValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
+            return clientSession.store.ContextUpsert(key, keyHash, ref input, srcObjectValue: desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -396,7 +396,7 @@ namespace Tsavorite.core
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
-            return clientSession.store.ContextUpsert(key, keyHash, ref input, inputLogRecord: ref inputLogRecord, ref output, userContext, sessionFunctions);
+            return clientSession.store.ContextUpsert(key, keyHash, ref input, inputLogRecord: ref inputLogRecord, ref output, out _, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

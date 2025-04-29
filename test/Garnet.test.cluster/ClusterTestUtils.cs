@@ -1748,7 +1748,7 @@ namespace Garnet.test.cluster
             {
                 target.Address.ToString(),
                 target.Port,
-                $"\"\"",
+                "",
                 0,
                 -1,
                 "KEYS"
