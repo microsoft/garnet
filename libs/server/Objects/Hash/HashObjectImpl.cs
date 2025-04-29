@@ -136,11 +136,15 @@ namespace Garnet.server
                 var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
 
                 // Write the size of the array reply
-                output.WriteArrayLength(withValues ? absCount * 2 : absCount);
+                output.WriteArrayLength(withValues && (respProtocolVersion == 2) ? absCount * 2 : absCount);
 
                 foreach (var index in indexes)
                 {
                     var pair = ElementAt(index);
+
+                    if ((respProtocolVersion >= 3) && withValues)
+                        output.WriteArrayLength(2);
+
                     output.WriteBulkString(pair.Key);
 
                     if (withValues)

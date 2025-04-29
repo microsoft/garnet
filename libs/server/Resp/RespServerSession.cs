@@ -1315,6 +1315,21 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteDoubleNumeric(double value)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteDoubleNumeric(value, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteEmptySet()
         {
             if (respProtocolVersion >= 3)
