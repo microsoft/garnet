@@ -29,11 +29,11 @@ namespace Tsavorite.core
             // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
             if (UseReadCache)
             {
-                var minRC = IsReadCache(pendingContext.InitialEntryAddress) ? pendingContext.InitialEntryAddress + 1 : Constants.kInvalidAddress;
+                var minRC = IsReadCache(pendingContext.initialEntryAddress) ? pendingContext.initialEntryAddress + 1 : Constants.kInvalidAddress;
                 if (FindInReadCache(key, ref stackCtx, minAddress: minRC))
                     return true;
             }
-            var minLog = pendingContext.InitialLatestLogicalAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : pendingContext.InitialLatestLogicalAddress + 1;
+            var minLog = pendingContext.initialLatestLogicalAddress < hlogBase.HeadAddress ? hlogBase.HeadAddress : pendingContext.initialLatestLogicalAddress + 1;
             return TryFindRecordInMainLog(key, ref stackCtx, minAddress: minLog);
         }
 

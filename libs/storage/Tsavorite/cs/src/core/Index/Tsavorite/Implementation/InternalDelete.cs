@@ -200,13 +200,10 @@ namespace Tsavorite.core
             CreateNewRecord:
                 // Immutable region or new record
                 status = CreateNewRecordDelete(key, ref srcLogRecord, ref pendingContext, sessionFunctions, ref stackCtx);
-                if (!OperationStatusUtils.IsAppend(status))
-                {
-                    // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
-                    Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                    if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
-                        CreatePendingDeleteContext(key, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                }
+
+                // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
+                Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
+                goto LatchRelease;
             }
             finally
             {
@@ -229,19 +226,6 @@ namespace Tsavorite.core
                 }
             }
             return status;
-        }
-
-        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalDelete if the compiler decides not to inline this.
-        private void CreatePendingDeleteContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
-            pendingContext.type = OperationType.DELETE;
-            TInput input = default;
-            TOutput output = default;
-            pendingContext.Serialize(key, ref input, valueSpan: default, valueObject: null, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
-            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
         private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)

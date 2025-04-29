@@ -4,7 +4,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
@@ -54,11 +53,6 @@ namespace Tsavorite.core
         public AsyncQueue<AsyncIOContext> callbackQueue;
 
         /// <summary>
-        /// Async Operation ValueTask backer
-        /// </summary>
-        public TaskCompletionSource<AsyncIOContext> asyncOperation;
-
-        /// <summary>
         /// Synchronous completion event
         /// </summary>
         internal AsyncIOContextCompletionEvent completionEvent;
@@ -66,7 +60,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Indicates whether this is a default instance with no pending operation
         /// </summary>
-        public readonly bool IsDefault() => callbackQueue is null && asyncOperation is null && completionEvent is null;
+        public readonly bool IsDefault() => callbackQueue is null && completionEvent is null;
 
         /// <summary>
         /// Dispose

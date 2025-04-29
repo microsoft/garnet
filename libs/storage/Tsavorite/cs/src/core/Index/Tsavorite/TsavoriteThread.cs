@@ -61,12 +61,14 @@ namespace Tsavorite.core
                 InternalCompletePendingRequests(sessionFunctions, completedOutputs);
                 if (wait) sessionFunctions.Ctx.WaitPending(epoch);
 
-                if (sessionFunctions.Ctx.HasNoPendingRequests) return true;
+                if (sessionFunctions.Ctx.HasNoPendingRequests)
+                    return true;
 
                 InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
 
-                if (!wait) return false;
-                Thread.Yield();
+                if (!wait)
+                    return false;
+                _ = Thread.Yield();
             }
         }
 

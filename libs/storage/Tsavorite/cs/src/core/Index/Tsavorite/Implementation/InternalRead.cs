@@ -99,8 +99,8 @@ namespace Tsavorite.core
                     return status;
 
                 // Track the latest searched-below addresses. They are the same if there are no readcache records.
-                pendingContext.InitialEntryAddress = stackCtx.hei.Address;
-                pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                pendingContext.initialEntryAddress = stackCtx.hei.Address;
+                pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                 // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
@@ -167,8 +167,6 @@ namespace Tsavorite.core
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
                 status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, wantIO: false);
-                if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly; this is a different case from pending IO as it is allocation-related. TODO is isAsync still needed?
-                    CreatePendingReadContext(srcLogRecord.Key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                 return status;
             }
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && TryCopyToReadCache(ref srcLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
@@ -313,7 +311,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;
-            pendingContext.Serialize(key, ref input, valueSpan: default, valueObject: null, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            pendingContext.SerializeForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
             pendingContext.logicalAddress = logicalAddress;
         }
     }

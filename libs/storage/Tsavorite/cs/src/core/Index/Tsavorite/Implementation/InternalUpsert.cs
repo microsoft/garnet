@@ -159,13 +159,8 @@ namespace Tsavorite.core
             CreateNewRecord:
                 status = CreateNewRecordUpsert<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                         key, ref srcLogRecord, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, ref pendingContext, sessionFunctions, ref stackCtx);
-                if (!OperationStatusUtils.IsAppend(status))
-                {
                 // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
-                    Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
-                    if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
-                        CreatePendingUpsertContext(key, ref input, srcStringValue, srcObjectValue, ref inputLogRecord, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                }
+                Debug.Assert(OperationStatusUtils.IsAppend(status) || OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                 goto LatchRelease;
             }
             finally
@@ -190,26 +185,6 @@ namespace Tsavorite.core
                 }
             }
             return status;
-        }
-
-        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
-        private void CreatePendingUpsertContext<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input,
-                ReadOnlySpan<byte> srcStringValue, IHeapObject srcObjectValue, ref TSourceLogRecord inputLogRecord, ref TOutput output, TContext userContext,
-                ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            pendingContext.type = OperationType.UPSERT;
-
-            if (!pendingContext.IsSet)
-            {
-                if (!inputLogRecord.IsSet)
-                    pendingContext.Serialize(key, ref input, valueSpan: srcStringValue, valueObject: srcObjectValue, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
-                else
-                    pendingContext.Serialize(ref inputLogRecord, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
-            }
-
-            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
         private bool TryRevivifyInChain<TValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ref LogRecord logRecord, ref TInput input,

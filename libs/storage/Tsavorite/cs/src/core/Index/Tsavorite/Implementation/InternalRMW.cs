@@ -73,8 +73,8 @@ namespace Tsavorite.core
                     return status;
 
                 // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
-                pendingContext.InitialEntryAddress = stackCtx.hei.Address;
-                pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                pendingContext.initialEntryAddress = stackCtx.hei.Address;
+                pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
 
                 // If there is a readcache record, use it as the CopyUpdater source.
                 if (stackCtx.recSrc.HasReadCacheSrc)
@@ -183,12 +183,8 @@ namespace Tsavorite.core
                     // Here, the input* data for 'doingCU' is the same as recSrc.
                     status = CreateNewRecordRMW(key, ref srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx,
                                                 doingCU: stackCtx.recSrc.HasInMemorySrc && !srcLogRecord.Info.Tombstone);
-                    if (!OperationStatusUtils.IsAppend(status))
-                    {
-                        // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
-                        if ((status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync) || status == OperationStatus.RECORD_ON_DISK)
-                            CreatePendingRMWContext(key, ref input, ref output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
-                    }
+
+                    // OperationStatus.SUCCESS is OK here even if !OperationStatusUtils.IsAppend(status); it means NeedCopyUpdate or NeedInitialUpdate returned false
                     goto LatchRelease;
                 }
             }
@@ -222,7 +218,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.RMW;
-            pendingContext.Serialize(key, ref input, valueSpan:default, valueObject:null, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            pendingContext.SerializeForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 

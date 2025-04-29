@@ -119,8 +119,8 @@ namespace Tsavorite.core
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
             pendingContext.maxAddress = maxAddress;
-            pendingContext.InitialEntryAddress = Constants.kInvalidAddress;
-            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+            pendingContext.initialEntryAddress = Constants.kInvalidAddress;
+            pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             if (!pendingContext.IsSet)

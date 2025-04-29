@@ -130,8 +130,8 @@ namespace Tsavorite.core
             {
                 // We are in varbyte format. We need to check the indicator byte for the key and value length.
                 address += RecordInfo.GetLength();      // Point to indicator byte
-                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3);
-                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask);
+                var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3);
+                var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask);
 
                 requiredBytes = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes; // Include the indicator byte in the calculation
                 if (availableBytes < requiredBytes)
@@ -172,7 +172,7 @@ namespace Tsavorite.core
 
         /// <summary>Version of the variable-length byte encoding for key and value lengths. There is no version info for <see cref="RecordInfo.RecordIsInline"/>
         /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>
-        internal readonly long Version => (*(long*)IndicatorAddress & kVersionBitMask) >> 6;
+        internal readonly long Version => (*(byte*)IndicatorAddress & kVersionBitMask) >> 6;
 
         internal readonly (int length, long dataAddress) KeyInfo
         {
@@ -183,8 +183,8 @@ namespace Tsavorite.core
                 if (Info.RecordIsInline)    // For inline, the key length int starts at the same offset as IndicatorAddress
                     return (*(int*)address, address + LogField.InlineLengthPrefixSize);
 
-                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3) + 1;
-                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask) + 1;
+                var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3) + 1;
+                var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask) + 1;
 
                 byte* ptr = (byte*)++address;  // Move past the indicator byte; the next bytes are key length
                 var keyLength = ReadVarBytes(keyLengthBytes, ref ptr);
@@ -207,8 +207,8 @@ namespace Tsavorite.core
                 }
 
                 var address = IndicatorAddress;
-                var keyLengthBytes = (int)((*(long*)address & kKeyLengthBitMask) >> 3) + 1;     // add 1 due to 0-based
-                var valueLengthBytes = (int)(*(long*)address & kValueLengthBitMask) + 1;        // add 1 due to 0-based
+                var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3) + 1;     // add 1 due to 0-based
+                var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask) + 1;        // add 1 due to 0-based
 
                 byte* ptr = (byte*)IndicatorAddress + 1 + keyLengthBytes;   // Skip over the key length bytes; the value length bytes are immediately after (before the key data)
                 var valueLength = ReadVarBytes(valueLengthBytes, ref ptr);
@@ -393,78 +393,50 @@ namespace Tsavorite.core
 
         #region Serialized Record Creation
         /// <summary>
-        /// Serialize for RUMD operations, called by PendingContext; these also have TInput, TOutput, and TContext, which are handled by PendingContext.
+        /// Serialize for Read or RMW operations, called by PendingContext; these have no Value but have TInput, TOutput, and TContext, which are handled by PendingContext.
         /// </summary>
         /// <param name="key">Record key</param>
-        /// <param name="valueSpan">Record value as a Span, if Upsert</param>
-        /// <param name="valueObject">Record value as an object, if Upsert</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeForPendingRUMD(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool)
-            => SerializeForPendingRUMD(key, valueSpan, valueObject, bufferPool, ref recordBuffer);
+        internal void SerializeForPendingReadOrRMW(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool)
+            => SerializeForPendingReadOrRMW(key, bufferPool, ref recordBuffer);
 
         /// <summary>
-        /// Serialize for RUMD operations, called by PendingContext; these also have TInput, TOutput, and TContext, which are handled by PendingContext.
+        /// Serialize for Read or RMW operations, called by PendingContext; these have no Value but have TInput, TOutput, and TContext, which are handled by PendingContext.
         /// </summary>
         /// <remarks>This overload may be called either directly for a caller who owns the <paramref name="allocatedRecord"/>, or with this.allocatedRecord.</remarks>
         /// <param name="key">Record key</param>
-        /// <param name="valueSpan">Record value as a Span, if Upsert</param>
-        /// <param name="valueObject">Record value as an object, if Upsert</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
         /// <param name="allocatedRecord">The allocated record; may be owned by this instance, or owned by the caller for reuse</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeForPendingRUMD(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
+        internal void SerializeForPendingReadOrRMW(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
             // OptionalSize (ETag and Expiration) is not considered here; those are specified in the Input, which is serialized separately by PendingContext.
 
-            // Because this is for RUMD, we have only two possibilities for value: a Span (which is inline in DiskLogRecord regardless of length) or an object.
             long recordSize;
             byte* ptr;
-            if (!valueSpan.IsEmpty)
-            {
-                // Value is a span so we can use RecordIsInline format, so both key and value are int length.
-                recordSize = RecordInfo.GetLength() + key.TotalSize() + valueSpan.TotalSize();
 
-                allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
-                physicalAddress = (long)allocatedRecord.GetValidPointer();
-                ptr = (byte*)physicalAddress;
+            // Value is a span so we can use RecordIsInline format, so both key and value are int length.
+            recordSize = RecordInfo.GetLength() + key.TotalSize() + LogField.InlineLengthPrefixSize;
 
-                *(RecordInfo*)ptr = default;
-                ptr += RecordInfo.GetLength();
+            allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
+            physicalAddress = (long)allocatedRecord.GetValidPointer();
+            ptr = (byte*)physicalAddress;
 
-                InfoRef.SetKeyIsInline();
-                *(int*)ptr = key.Length;
-                ptr += LogField.InlineLengthPrefixSize;
-                key.CopyTo(new Span<byte>(ptr, key.Length));
-                ptr += key.Length;
+            *(RecordInfo*)ptr = default;
+            ptr += RecordInfo.GetLength();
 
-                InfoRef.SetValueIsInline();
-                *(long*)ptr = valueSpan.Length;
-                ptr += sizeof(long);
-                valueSpan.CopyTo(new Span<byte>(ptr, valueSpan.Length));
+            InfoRef.SetKeyIsInline();
+            *(int*)ptr = key.Length;
+            ptr += LogField.InlineLengthPrefixSize;
+            key.CopyTo(new Span<byte>(ptr, key.Length));
+            ptr += key.Length;
 
-                allocatedRecord.available_bytes = (int)recordSize;
-                return;
-            }
+            InfoRef.SetValueIsInline();
+            *(int*)ptr = 0;
 
-            // Value is an object so we use the varbyte format. For RUMD ops we don't serialize the object; we just carry it through the pending IO sequence.
-            // However since we check for RecordIsInline to read the record fields, we must use the indicator byte. Do so with a 0 value length.
-            var valueLength = 0;
-            var indicatorByte = CreateIndicatorByte(key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
-            Debug.Assert(valueLengthByteCount == 1, $"valueByteCount should be 1 but was {valueLengthByteCount}");
-
-            recordSize = RecordInfo.GetLength()
-                + 1 // indicator byte
-                + keyLengthByteCount + key.Length
-                + valueLengthByteCount; // serialized value length is 0, so one byte
-
-            // This writes the value length, but not value data
-            ptr = SerializeCommonVarByteFields(recordInfo: default, indicatorByte, key, keyLengthByteCount, valueLength, valueLengthByteCount, recordSize, bufferPool, ref allocatedRecord);
             allocatedRecord.available_bytes = (int)recordSize;
-
-            // Set the value
-            this.valueObject = valueObject;
-            InfoRef.SetValueIsObject();
+            return;
         }
 
         /// <summary>

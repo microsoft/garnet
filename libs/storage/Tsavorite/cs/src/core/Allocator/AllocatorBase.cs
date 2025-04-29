@@ -1837,10 +1837,8 @@ namespace Tsavorite.core
 
                         if (ctx.completionEvent is not null)
                             ctx.completionEvent.Set(ref ctx);
-                        else if (ctx.callbackQueue is not null)
-                            ctx.callbackQueue.Enqueue(ctx);
                         else
-                            _ = ctx.asyncOperation.TrySetResult(ctx);
+                            ctx.callbackQueue.Enqueue(ctx);
                     }
                 }
 
@@ -1859,8 +1857,6 @@ namespace Tsavorite.core
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
-                else if (ctx.asyncOperation is not null)
-                    _ = ctx.asyncOperation.TrySetException(e);
                 else
                     throw;
             }

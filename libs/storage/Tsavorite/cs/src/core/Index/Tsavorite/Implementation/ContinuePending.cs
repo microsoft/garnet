@@ -80,7 +80,7 @@ namespace Tsavorite.core
                                 // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress,
                                 // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
                                 // after our just-completed TryFindRecordInMemory.
-                                if (stackCtx.recSrc.LogicalAddress > pendingContext.InitialLatestLogicalAddress
+                                if (stackCtx.recSrc.LogicalAddress > pendingContext.initialLatestLogicalAddress
                                     && (!pendingContext.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingContext.minAddress))
                                 {
                                     OperationStatus internalStatus;
@@ -211,9 +211,9 @@ namespace Tsavorite.core
                     // We didn't find a record for the key in memory, but if recSrc.LogicalAddress (which is the .PreviousAddress of the lowest record
                     // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
                     // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. We must do InternalRMW.
-                    if (stackCtx.recSrc.LogicalAddress > pendingContext.InitialLatestLogicalAddress)
+                    if (stackCtx.recSrc.LogicalAddress > pendingContext.initialLatestLogicalAddress)
                     {
-                        Debug.Assert(pendingContext.InitialLatestLogicalAddress < hlogBase.HeadAddress, "Failed to search all in-memory records");
+                        Debug.Assert(pendingContext.initialLatestLogicalAddress < hlogBase.HeadAddress, "Failed to search all in-memory records");
                         break;
                     }
 
@@ -281,7 +281,7 @@ namespace Tsavorite.core
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
 
             // See if the record was added above the highest address we checked before issuing the IO.
-            var minAddress = pendingContext.InitialLatestLogicalAddress + 1;
+            var minAddress = pendingContext.initialLatestLogicalAddress + 1;
             OperationStatus internalStatus;
             do
             {
@@ -336,7 +336,7 @@ namespace Tsavorite.core
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
             _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, PendingContext<TInput, TOutput, TContext>>(sessionFunctions,
-                pendingContext.scanCursorState, ref pendingContext, currentAddress: request.logicalAddress, minAddress: pendingContext.InitialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
+                pendingContext.scanCursorState, ref pendingContext, currentAddress: request.logicalAddress, minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
             return OperationStatus.SUCCESS;

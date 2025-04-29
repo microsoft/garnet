@@ -39,15 +39,13 @@ namespace Tsavorite.core
             // Some additional information about the previous attempt
             internal long id;
             internal long logicalAddress;
-            internal long InitialLatestLogicalAddress;
+            internal long initialLatestLogicalAddress;
 
             // operationFlags values
             internal ushort operationFlags;
             internal const ushort kNoOpFlags = 0;
             internal const ushort kIsNoKey = 0x0001;
-            internal const ushort kIsAsync = 0x0002;
-            internal const ushort kIsReadAtAddress = 0x0004;
-            internal const ushort kIsObjectRecord = 0x0008; // TODO replace with RecordInfo.ValueIsObject
+            internal const ushort kIsReadAtAddress = 0x0002;
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
 
@@ -61,7 +59,7 @@ namespace Tsavorite.core
             internal long retryNewLogicalAddress;
 
             // Address of the initial entry in the hash chain upon start of Internal(RUMD).
-            internal long InitialEntryAddress;
+            internal long initialEntryAddress;
 
             internal ScanCursorState scanCursorState;
 
@@ -69,18 +67,18 @@ namespace Tsavorite.core
             internal PendingContext(long keyHash) => this.keyHash = keyHash;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool isAsync = false, bool noKey = false)
+            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool noKey = false)
             {
                 // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = (ushort)((noKey ? kIsNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                operationFlags = noKey ? kIsNoKey : kNoOpFlags;
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions readCopyOptions, bool isAsync = false, bool noKey = false)
+            internal PendingContext(ReadCopyOptions readCopyOptions, bool noKey = false)
             {
                 // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = (ushort)((noKey ? kIsNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
+                operationFlags = noKey ? kIsNoKey : kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
             }
 
@@ -89,13 +87,8 @@ namespace Tsavorite.core
 
             internal readonly bool HasMinAddress => minAddress != Constants.kInvalidAddress;
 
-            internal readonly bool IsAsync => (operationFlags & kIsAsync) != 0;
-
             internal readonly bool IsReadAtAddress => (operationFlags & kIsReadAtAddress) != 0;
             internal void SetIsReadAtAddress() => operationFlags |= kIsReadAtAddress;
-
-            // Getter is in ISourceLogRecord region
-            internal void SetIsObjectRecord() => operationFlags |= kIsObjectRecord;
 
             public void Dispose()
             {
@@ -107,24 +100,22 @@ namespace Tsavorite.core
 
             #region Serialized Record Creation
             /// <summary>
-            /// Serialize for RUMD operations
+            /// Serialize for Read and RMW operations; no Value is passed
             /// </summary>
             /// <param name="key">Record key</param>
             /// <param name="input">Input to the operation</param>
-            /// <param name="valueSpan">Record value as a Span, if Upsert</param>
-            /// <param name="valueObject">Record value as an object, if Upsert</param>
             /// <param name="output">Output from the operation</param>
             /// <param name="userContext">User context for the operation</param>
             /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
             /// <param name="bufferPool">Allocator for backing storage</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TOutput output, TContext userContext,
+            internal void SerializeForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 if (diskLogRecord.IsSet)
                     return;
-                diskLogRecord.SerializeForPendingRUMD(key, valueSpan, valueObject, bufferPool);
+                diskLogRecord.SerializeForPendingReadOrRMW(key, bufferPool);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 

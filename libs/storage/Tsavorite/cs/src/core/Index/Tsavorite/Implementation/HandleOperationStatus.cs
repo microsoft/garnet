@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
@@ -32,11 +31,11 @@ namespace Tsavorite.core
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 default:
                     return false;
@@ -53,11 +52,11 @@ namespace Tsavorite.core
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
@@ -66,8 +65,6 @@ namespace Tsavorite.core
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
                     Debug.Assert(!pendingContext.flushEvent.IsDefault(), "flushEvent is required for ALLOCATE_FAILED");
-                    if (pendingContext.IsAsync)
-                        return false;
                     try
                     {
                         epoch.Suspend();
@@ -128,8 +125,8 @@ namespace Tsavorite.core
 
             if (operationStatus == OperationStatus.ALLOCATE_FAILED)
             {
-                Debug.Assert(pendingContext.IsAsync, "Sync ops should have handled ALLOCATE_FAILED before HandleOperationStatus");
                 Debug.Assert(!pendingContext.flushEvent.IsDefault(), "Expected flushEvent for ALLOCATE_FAILED");
+                Debug.Fail("Should have handled ALLOCATE_FAILED before HandleOperationStatus");
                 return new(StatusCode.Pending);
             }
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)
@@ -145,17 +142,14 @@ namespace Tsavorite.core
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;
-                if (pendingContext.IsAsync)
-                    request.asyncOperation = new TaskCompletionSource<AsyncIOContext>(TaskCreationOptions.RunContinuationsAsynchronously);
-                else
-                    request.callbackQueue = sessionCtx.readyResponses;
+                request.callbackQueue = sessionCtx.readyResponses;
 
                 hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, DiskLogRecord.InitialIOSize, request);
                 return new(StatusCode.Pending);
             }
             else
             {
-                Debug.Assert(pendingContext.IsAsync, "Sync ops should never return status.IsFaulted");
+                Debug.Fail($"Unexpected OperationStatus {operationStatus}");
                 return new(StatusCode.Error);
             }
         }
