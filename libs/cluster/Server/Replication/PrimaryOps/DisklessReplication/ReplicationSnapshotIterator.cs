@@ -107,10 +107,10 @@ namespace Garnet.cluster
         public bool StringReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var key = srcLogRecord.Key;
-            var value = srcLogRecord.ValueSpan;
             if (!firstRead)
             {
+                var key = srcLogRecord.Key;
+                var value = srcLogRecord.ValueSpan;
                 logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }
@@ -159,10 +159,10 @@ namespace Garnet.cluster
         public bool ObjectReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var key = srcLogRecord.Key;
-            var value = srcLogRecord.ValueObject;
             if (!firstRead)
             {
+                var key = srcLogRecord.Key;
+                var value = srcLogRecord.ValueObject;
                 logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }

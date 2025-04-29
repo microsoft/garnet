@@ -581,6 +581,9 @@ namespace Garnet.server
             var objectContext = txnManager.ObjectStoreTransactionalContext;
             var oldKey = oldKeySlice;
 
+            // TODO: This needs to be converted to a form of GET that returns all information in the (Disk)LogRecord, perhaps serializing it to the output, and then
+            // inserts with that record.
+
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 try

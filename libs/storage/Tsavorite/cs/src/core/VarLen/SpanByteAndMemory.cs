@@ -70,19 +70,31 @@ namespace Tsavorite.core
         /// <summary>
         /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
         /// </summary>
+        /// <remarks>
+        /// SAFETY: This returns a null pointer in the Span if !<see cref="IsSpanByte"/> and <see cref="Memory"/> is null;
+        /// it is the caller's responsibility to check the length and allocate <see cref="Memory"/> if necessary.
+        /// </remarks>
         public ReadOnlySpan<byte> ReadOnlySpan
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return IsSpanByte ? SpanByte.ReadOnlySpan : MemorySpan.Slice(0, Length); }
+            get => IsSpanByte
+                ? SpanByte.ReadOnlySpan 
+                : (Memory != null ? Memory.Memory.Span.Slice(0, Length) : new(null, 0));
         }
 
         /// <summary>
         /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
         /// </summary>
-        public ReadOnlySpan<byte> Span
+        /// <remarks>
+        /// SAFETY: This returns a null pointer in the Span if !<see cref="IsSpanByte"/> and <see cref="Memory"/> is null;
+        /// it is the caller's responsibility to check the length and allocate <see cref="Memory"/> if necessary.
+        /// </remarks>
+        public Span<byte> Span
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return IsSpanByte ? SpanByte.Span : MemorySpan.Slice(0, Length); }
+            get => IsSpanByte
+                ? SpanByte.Span 
+                : (Memory != null ? MemorySpan.Slice(0, Length) : new(null, 0));
         }
 
         /// <summary>

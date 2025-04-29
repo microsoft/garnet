@@ -170,7 +170,7 @@ namespace Tsavorite.core
                     // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
                     _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
                     if (inputDiskLogRecord.OwnsMemory)
-                        diskLogRecord.Transfer(ref inputDiskLogRecord);
+                        diskLogRecord.TransferFrom(ref inputDiskLogRecord);
                     else
                         diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
                 }

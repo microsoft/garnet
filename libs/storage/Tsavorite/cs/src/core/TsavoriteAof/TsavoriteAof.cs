@@ -885,7 +885,7 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -914,9 +914,9 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();
-            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -942,9 +942,9 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             var offset = headerSize;
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();
-            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -974,11 +974,11 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();
-            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item2.TotalSize();
-            item3.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1032,7 +1032,7 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();
             input.CopyTo(physicalAddress + offset, input.SerializedLength);
             SetHeader(length, physicalAddress);
@@ -1063,9 +1063,9 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();
-            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item2.TotalSize();
             input.CopyTo(physicalAddress + offset, input.SerializedLength);
             SetHeader(length, physicalAddress);
@@ -1094,7 +1094,7 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
             var offset = sizeof(byte);
-            item.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1157,9 +1157,9 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();    
-            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1198,11 +1198,11 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
-            item1.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item1.TotalSize();
-            item2.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             offset += item2.TotalSize();
-            item3.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1238,7 +1238,7 @@ namespace Tsavorite.core
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
             var offset = sizeof(byte);
-            item.CopyTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();

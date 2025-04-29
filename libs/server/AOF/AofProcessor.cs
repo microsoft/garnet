@@ -388,8 +388,7 @@ namespace Garnet.server
 
             SpanByteAndMemory output = default;
             basicContext.Upsert(key.ReadOnlySpan, ref storeInput, value.ReadOnlySpan, ref output);
-            if (!output.IsSpanByte)
-                output.Memory.Dispose();
+            output.Dispose();
         }
 
         static unsafe void StoreRMW(BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
@@ -408,8 +407,7 @@ namespace Garnet.server
 
             if (basicContext.RMW(key.ReadOnlySpan, ref storeInput, ref output).IsPending)
                 basicContext.CompletePending(true);
-            if (!output.IsSpanByte)
-                output.Memory.Dispose();
+            output.Dispose();
         }
 
         static unsafe void StoreDelete(BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)

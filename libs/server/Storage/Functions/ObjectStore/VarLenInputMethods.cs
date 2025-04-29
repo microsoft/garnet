@@ -19,7 +19,7 @@ namespace Garnet.server
                 KeyDataSize = key.Length,
                 ValueDataSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for InitialUpdater.
             };
         }
@@ -33,7 +33,7 @@ namespace Garnet.server
                 KeyDataSize = srcLogRecord.Key.Length,
                 ValueDataSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.CheckWithETagFlag(),
+                HasETag = false, // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag(),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -60,7 +60,7 @@ namespace Garnet.server
                 KeyDataSize = key.Length,
                 ValueDataSize = value.Length,
                 ValueIsObject = false,
-                 HasETag = input.header.CheckWithETagFlag()
+                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -72,7 +72,7 @@ namespace Garnet.server
                 KeyDataSize = key.Length,
                 ValueDataSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -85,7 +85,7 @@ namespace Garnet.server
                 KeyDataSize = key.Length,
                 ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
-                HasETag = input.header.CheckWithETagFlag()
+                HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.
             };
         }

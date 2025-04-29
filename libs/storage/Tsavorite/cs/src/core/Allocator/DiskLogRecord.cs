@@ -806,16 +806,16 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is separate from <see cref="CloneFrom(ref DiskLogRecord, SectorAlignedBufferPool, ref SectorAlignedMemory, bool)"/> to ensure the caller
         /// is prepared to handle the implications of the transfer</remarks>
-        /// <param name="diskLogRecord"></param>
+        /// <param name="inputDiskLogRecord"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Transfer(ref DiskLogRecord diskLogRecord)
+        internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord)
         {
-            Debug.Assert(diskLogRecord.IsSet, "inputDiskLogRecord is not set");
-            Debug.Assert(diskLogRecord.recordBuffer is not null, "inputDiskLogRecord does not own its memory");
+            Debug.Assert(inputDiskLogRecord.IsSet, "inputDiskLogRecord is not set");
+            Debug.Assert(inputDiskLogRecord.recordBuffer is not null, "inputDiskLogRecord does not own its memory");
 
             recordBuffer?.Return();
-            recordBuffer = diskLogRecord.recordBuffer;
-            diskLogRecord.recordBuffer = null;   // Transfers ownership
+            recordBuffer = inputDiskLogRecord.recordBuffer;
+            inputDiskLogRecord.recordBuffer = null;   // Transfers ownership
             physicalAddress = (long)recordBuffer.GetValidPointer();
         }
 

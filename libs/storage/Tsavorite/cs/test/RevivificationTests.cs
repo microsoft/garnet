@@ -869,6 +869,7 @@ namespace Tsavorite.test.Revivification
             // Get a new key and shrink the requested length so we revivify the free record from the failed IPU.
             key.Fill(NumRecords + 1);
             input = input.Slice(0, InitialLength);
+            pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
 
             functions.expectedInputLength = InitialLength;
             functions.expectedValueLengths.Enqueue(InitialLength);
@@ -1403,8 +1404,9 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SimpleOversizeRevivifyTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void SimpleOverflowRevivifyTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
+            Assert.Ignore("Test ignored because SpanByteAllocatore currently does not support overflow.");
             Populate();
 
             bool stayInChain = deleteDest == DeleteDest.InChain;

@@ -50,6 +50,10 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
+        // Must use a non-null object because we are doing Upsert based on Input only, and with no Span or Object value it calls GetFieldInfo for srcLogRecord.
+        const int nullValue = -101;
+        TestObjectValue nullObject = new TestObjectValue { value = nullValue };
+
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectAsInlineStructUpsertTest()
         {
@@ -65,7 +69,7 @@ namespace Tsavorite.test
 
             // Start with an inline value.
             input.wantValueStyle = TestValueStyle.Inline;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Inline));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -76,14 +80,14 @@ namespace Tsavorite.test
             Assert.That(output.value.value, Is.EqualTo(input.value));
 
             input.value = 24;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Inline));
             Assert.That(output.value.value, Is.EqualTo(input.value));
 
             input.value = 25;
             input.wantValueStyle = TestValueStyle.Overflow;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Overflow));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -94,7 +98,7 @@ namespace Tsavorite.test
             Assert.That(output.value.value, Is.EqualTo(input.value));
 
             input.value = 26;
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Overflow));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -103,7 +107,7 @@ namespace Tsavorite.test
 
             input.value = 30;
             input.wantValueStyle = TestValueStyle.Object;   // Overflow -> Object
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Object));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -115,7 +119,7 @@ namespace Tsavorite.test
 
             input.value = 31;
             input.wantValueStyle = TestValueStyle.Overflow;   // Object -> Overflow
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Overflow));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -127,7 +131,7 @@ namespace Tsavorite.test
 
             input.value = 32;
             input.wantValueStyle = TestValueStyle.Object;   // Overflow -> Object again
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Object));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -141,7 +145,7 @@ namespace Tsavorite.test
 
             input.value = 40;
             input.wantValueStyle = TestValueStyle.Inline;   // Object -> Inline
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Inline));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -153,7 +157,7 @@ namespace Tsavorite.test
 
             input.value = 41;
             input.wantValueStyle = TestValueStyle.Object;   // Inline -> Object
-            _ = bContext.Upsert(key, ref input, desiredValue: (IHeapObject)null, ref output);
+            _ = bContext.Upsert(key, ref input, desiredValue: nullObject, ref output);
             Assert.That(output.srcValueStyle, Is.EqualTo(TestValueStyle.None));
             Assert.That(output.destValueStyle, Is.EqualTo(TestValueStyle.Object));
             Assert.That(output.value.value, Is.EqualTo(input.value));
@@ -380,7 +384,7 @@ namespace Tsavorite.test
 
             private bool DoWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output)
             {
-                Assert.That(srcValue, Is.Null, "srcValue should be null for these upsert tests; use Input instead");
+                Assert.That(srcValue is null || srcValue.value == nullValue, "srcValue should be null or nullObject for these upsert tests; use Input instead");
                 output.srcValueStyle = TestValueStyle.None;
                 SetAndVerify(ref input, ref output.destValueStyle, sizeInfo.ValueIsInline, sizeInfo.ValueIsOverflow);
 
@@ -438,6 +442,8 @@ namespace Tsavorite.test
             public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
             public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestObjectInput input)
+                => GetFieldInfo(key, ref input);
+            public override RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);
         }
     }

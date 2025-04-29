@@ -202,7 +202,7 @@ namespace Tsavorite.core
                     {
                         if (currentAddress >= headAddress && store is not null)
                             store.LockForScan(ref stackCtx, logRecord.Key);
-                        diskLogRecord.Serialize(in logRecord, store.hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
+                        diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
                     }
                     finally
                     {
@@ -214,7 +214,7 @@ namespace Tsavorite.core
                 {
                     // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                     diskLogRecord = new(physicalAddress);
-                    _ = diskLogRecord.DeserializeValueObject(store.hlogBase.storeFunctions.CreateValueObjectSerializer());
+                    _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
                     nextAddress = currentAddress + diskLogRecord.GetSerializedLength();
                 }
 
@@ -373,7 +373,7 @@ namespace Tsavorite.core
 
             // Deserialize valueObject in frame (if present)
             var diskLogRecord = new DiskLogRecord(frame.GetPhysicalAddress(result.page, offset: 0));
-            _ = diskLogRecord.DeserializeValueObject(store.hlogBase.storeFunctions.CreateValueObjectSerializer());
+            _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
 
             if (errorCode == 0)
                 _ = result.handle?.Signal();

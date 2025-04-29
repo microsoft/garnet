@@ -4,8 +4,8 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using Microsoft.Extensions.Logging;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -412,10 +412,11 @@ namespace Garnet.server
             }
 
             RespCommand cmd = input.header.cmd;
-            bool hadRecordPreMutation = logRecord.Info.HasETag;
-            bool shouldUpdateEtag = hadRecordPreMutation;
+            bool hadETagPreMutation = logRecord.Info.HasETag;
+            bool shouldUpdateEtag = hadETagPreMutation;
             if (shouldUpdateEtag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
+            bool shouldCheckExpiration = true;
 
             switch (cmd)
             {
@@ -874,6 +875,7 @@ namespace Garnet.server
                             if (!logRecord.TrySetExpiration(expiration))
                                 return false;
                         }
+                        shouldCheckExpiration = false;
 
                         var valueLength = logRecord.ValueSpan.Length;
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
@@ -899,13 +901,13 @@ namespace Garnet.server
                 logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
                 ETagState.ResetState(ref functionsState.etagState);
             }
-            else if (hadRecordPreMutation)
+            else if (hadETagPreMutation)
             {
                 // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }
 
-            sizeInfo.AssertOptionals(logRecord.Info);
+            sizeInfo.AssertOptionals(logRecord.Info, checkExpiration: shouldCheckExpiration);
             return true;
         }
 

@@ -792,26 +792,35 @@ namespace Tsavorite.core
             var newValueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
             var fillerAddress = GetFillerLengthAddress();
 
-            // We expect that the key and value are zero-length inline and there are no optionals, per LogRecord.InitalizeForReuse and LogField.FreeObjectIdAndConvertToInline.
-            Debug.Assert(Info.KeyIsInline && LogField.GetInlineLengthRef(keyAddress) == 0, "Expected Key to be 0-length inline in PrepareForRevivification");
-            Debug.Assert(Info.ValueIsInline && LogField.GetInlineLengthRef(ValueAddress) == 0, "Expected Value to be 0-length inline in PrepareForRevivification");
+            // We expect that the key and value are and there are no optionals, per LogRecord.InitalizeForReuse and LogField.FreeObjectIdAndConvertToInline.
+            Debug.Assert(Info.KeyIsInline, "Expected Key to be inline in PrepareForRevivification");
+            Debug.Assert(Info.ValueIsInline, "Expected Value to be inline in PrepareForRevivification");
             Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Expected no optionals in PrepareForRevivification");
+
+            var keyLength = LogField.GetInlineLengthRef(keyAddress);
+            var valueLength = LogField.GetInlineLengthRef(ValueAddress);
 
             Debug.Assert(newKeySize + newValueSize <= allocatedSize, "Insufficient new record size");   // Should not happen as we passed sizeInfo to BlockAllocate
 
-            // First zero out the filler. Per above assumption, the record before fillerAddress is already zero'd.
+            // First zero out the filler.
             if (Info.HasFiller)
             {
                 *(int*)fillerAddress = 0;
                 InfoRef.ClearHasFiller();
             }
 
-            // We'll always set the key and value to inline, with the specified length. When AllocatorBase.SerializeKey and allocator.InitializeValue run, they will
-            // just write the same lengths (including filler) over the ones we're setting here.
-            InfoRef.SetKeyIsInline();
-            _ = LogField.SetInlineDataLength(keyAddress, newKeySize);
-            InfoRef.SetValueIsInline();
-            _ = LogField.SetInlineDataLength(ValueAddress, 0);  // Must re-get ValueAddress as we've changed Key size (that's why there's no valueAddress local)
+            // The key is already inline. If the new key length will be greater, then zero the value data and length and set the key length to the new size.
+            // Otherwise leave things as they are. When AllocatorBase.SerializeKey and allocator.InitializeValue run, they will just write the same lengths
+            // (including filler) over anything we're setting here.
+            var keyGrowth = sizeInfo.InlineTotalKeySize - (keyLength + LogField.InlineLengthPrefixSize);
+            if (keyGrowth > 0)
+            {
+                // Zero out the old value data. Note: We could minimize this length by seeing how far the key grows (careful of it partially overwriting value length),
+                // what the new value length is, etc.
+                new Span<byte>((byte*)ValueAddress, valueLength).Clear();
+                LogField.GetInlineLengthRef(ValueAddress) = 0;
+                LogField.GetInlineLengthRef(keyAddress) += keyGrowth;
+            }
 
             // Anything remaining is filler.
             SetFillerLength(allocatedSize);

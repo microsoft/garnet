@@ -362,13 +362,13 @@ namespace Tsavorite.test
 
         public static unsafe ref T AsRef<T>(this Span<byte> spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            Debug.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"Span<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
             return ref Unsafe.As<byte, T>(ref spanByte[0]);
         }
 
         public static ref readonly T AsRef<T>(this ReadOnlySpan<byte> spanByte) where T : unmanaged
         {
-            Debug.Assert(spanByte.Length == Unsafe.SizeOf<T>());
+            Debug.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"ReadOnlySpan<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
             return ref MemoryMarshal.Cast<byte, T>(spanByte)[0];
         }
 

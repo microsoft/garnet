@@ -29,7 +29,7 @@ namespace Tsavorite.core
         public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
 
         /// <summary>Returns the inline length of the key (the amount it will take in the record).</summary>
-        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyDataSize : ObjectIdMap.ObjectIdSize;
+        public readonly int InlineTotalKeySize => KeyIsInline ? FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
         public readonly int InlineTotalValueSize => ValueIsInline ? FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
@@ -68,10 +68,12 @@ namespace Tsavorite.core
 
         /// <summary>Called from Upsert or RMW methods with the final record info; ensures consistency between the Get*FieldInfo methods and the actual update methods./// </summary>
         [Conditional("DEBUG")]
-        public void AssertOptionals(RecordInfo recordInfo)
+        public void AssertOptionals(RecordInfo recordInfo, bool checkETag = true, bool checkExpiration = true)
         {
-            Debug.Assert(FieldInfo.HasETag == recordInfo.HasETag, $"Mismatch between expected HasETag {FieldInfo.HasETag} and actual ETag {recordInfo.HasETag}");
-            Debug.Assert(FieldInfo.HasExpiration == recordInfo.HasExpiration, $"Mismatch between expected HasExpiration {FieldInfo.HasExpiration} and actual HasExpiration {recordInfo.HasExpiration}");
+            if (checkETag)
+                Debug.Assert(FieldInfo.HasETag == recordInfo.HasETag, $"Mismatch between expected HasETag {FieldInfo.HasETag} and actual ETag {recordInfo.HasETag}");
+            if (checkExpiration)
+                Debug.Assert(FieldInfo.HasExpiration == recordInfo.HasExpiration, $"Mismatch between expected HasExpiration {FieldInfo.HasExpiration} and actual HasExpiration {recordInfo.HasExpiration}");
         }
 
         /// <inheritdoc/>

@@ -428,9 +428,12 @@ namespace Garnet.server
 
             if (result)
             {
-                // We cannot remove from the PQ so just remove from expirationTimes, let the next call to DeleteExpiredItems() clean it up, and don't adjust PQ sizes.
-                _ = expirationTimes.Remove(key);
-                UpdateExpirationSize(add: false, includePQ: false);
+                if (expirationTimes is not null)
+                {
+                    // We cannot remove from the PQ so just remove from expirationTimes, let the next call to DeleteExpiredItems() clean it up, and don't adjust PQ sizes.
+                    _ = expirationTimes.Remove(key);
+                    UpdateExpirationSize(add: false, includePQ: false);
+                }
                 UpdateSize(key, value, add: false);
             }
             return result;
@@ -561,9 +564,9 @@ namespace Garnet.server
         {
             if (!ContainsKey(key))
                 return -2;
-             if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration))
+            if (expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration))
                 return expiration;
-             return -1;
+            return -1;
         }
 
         private KeyValuePair<byte[], byte[]> ElementAt(int index)
