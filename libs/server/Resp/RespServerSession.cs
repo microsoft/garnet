@@ -1375,6 +1375,21 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WritePushLength(int count)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWritePushLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteSetLength(int count)
         {
             if (respProtocolVersion >= 3)
