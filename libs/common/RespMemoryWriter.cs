@@ -267,6 +267,16 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Writes a push type length
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WritePushLength(int len)
+        {
+            while (!RespWriteUtils.TryWritePushLength(len, ref curr, end))
+                ReallocateOutput();
+        }
+
+        /// <summary>
         /// Writes a set length to memory.
         /// If RESP2, write as Array length. If RESP3, write as Set length.
         /// </summary>
