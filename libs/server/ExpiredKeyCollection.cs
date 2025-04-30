@@ -18,7 +18,6 @@ namespace Garnet.server
             {
                 var scratchBufferManager = new ScratchBufferManager();
                 using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
-                // based on pressure we can increase the aggressiveness of the collection
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
