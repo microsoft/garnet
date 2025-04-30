@@ -12,6 +12,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
+using Azure.Identity;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -40,8 +41,16 @@ namespace Garnet
         public int Port { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("bind", Required = false, HelpText = "IP address to bind server to (default: any)")]
+        [Option("bind", Required = false, HelpText = "Whitespace or comma separated string of IP addresses to bind server to (default: any)")]
         public string Address { get; set; }
+
+        [IntRangeValidation(0, 65535)]
+        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        public int ClusterAnnouncePort { get; set; }
+
+        [IpAddressValidation(false)]
+        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        public string ClusterAnnounceIp { get; set; }
 
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -237,9 +246,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("hcollect-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand.")]
-        public int HashCollectFrequencySecs { get; set; }
+        [Option("expired-object-collection-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.")]
+        public int ExpiredObjectCollectionFrequencySecs { get; set; }
 
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
@@ -369,6 +379,13 @@ namespace Garnet
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
+
+        [HttpsUrlValidation]
+        [Option("storage-service-uri", Required = false, HelpText = "The URI to use when establishing connection to Azure Blobs Storage.")]
+        public string AzureStorageServiceUri { get; set; }
+
+        [Option("storage-managed-identity", Required = false, HelpText = "The managed identity to use when establishing connection to Azure Blobs Storage.")]
+        public string AzureStorageManagedIdentity { get; set; }
 
         [Option("storage-string", Required = false, HelpText = "The connection string to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageConnectionString { get; set; }
@@ -590,6 +607,10 @@ namespace Garnet
         [Option("unixsocketperm", Required = false, HelpText = "Unix socket permissions in octal (Unix platforms only)")]
         public int UnixSocketPermission { get; set; }
 
+        [IntRangeValidation(1, 256, isRequired: true)]
+        [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
+        public int MaxDatabases { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -616,9 +637,6 @@ namespace Garnet
             this.runtimeLogger = logger;
             foreach (var prop in typeof(Options).GetProperties())
             {
-                if (prop.Name.Equals("runtimeLogger"))
-                    continue;
-
                 // Ignore if property is not decorated with the OptionsAttribute or the ValidationAttribute
                 var validationAttr = prop.GetCustomAttributes(typeof(ValidationAttribute)).FirstOrDefault();
                 if (!Attribute.IsDefined(prop, typeof(OptionAttribute)) || validationAttr == null)
@@ -650,25 +668,34 @@ namespace Garnet
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
-            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString))
-                throw new Exception("Cannot enable use-azure-storage without supplying storage-string.");
+            if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
+            {
+                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri");
+            }
+            if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
+            {
+                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri");
+            }
 
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            EndPoint endpoint;
+            if (!Format.TryParseAddressList(Address, Port, out var endpoints, out _) || endpoints.Length == 0)
+                throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
+
+            EndPoint[] clusterAnnounceEndpoint = null;
+            if (ClusterAnnounceIp != null)
+            {
+                ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger).GetAwaiter().GetResult();
+                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint => endpoint.Equals(clusterAnnounceEndpoint[0])))
+                    throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
+            }
+
             if (!string.IsNullOrEmpty(UnixSocketPath))
-            {
-                endpoint = new UnixDomainSocketEndPoint(UnixSocketPath);
-            }
-            else
-            {
-                endpoint = Format.TryCreateEndpoint(Address, Port, useForBind: false).Result;
-                if (endpoint == null)
-                    throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
-            }
+                endpoints = [.. endpoints, new UnixDomainSocketEndPoint(UnixSocketPath)];
 
             // Unix file permission octal to UnixFileMode
             var unixSocketPermissions = (UnixFileMode)Convert.ToInt32(UnixSocketPermission.ToString(), 8);
@@ -720,9 +747,24 @@ namespace Garnet
                 if (SlowLogThreshold < 100)
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
+
+            Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
+            {
+                if (!string.IsNullOrEmpty(AzureStorageConnectionString))
+                {
+                    return new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger);
+                }
+                var credential = new ChainedTokenCredential(
+                    new WorkloadIdentityCredential(),
+                    new ManagedIdentityCredential(clientId: AzureStorageManagedIdentity)
+                );
+                return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, credential, logger);
+            };
+
             return new GarnetServerOptions(logger)
             {
-                EndPoint = endpoint,
+                EndPoints = endpoints,
+                ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
@@ -766,7 +808,7 @@ namespace Garnet
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
-                HashCollectFrequencySecs = HashCollectFrequencySecs,
+                ExpiredObjectCollectionFrequencySecs = ExpiredObjectCollectionFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
@@ -801,7 +843,7 @@ namespace Garnet
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
-                    ? new AzureStorageNamedDeviceFactoryCreator(AzureStorageConnectionString, logger)
+                    ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
@@ -834,7 +876,8 @@ namespace Garnet
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
                 LuaOptions = EnableLua.GetValueOrDefault() ? new LuaOptions(LuaMemoryManagementMode, LuaScriptMemoryLimit, LuaScriptTimeoutMs == 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(LuaScriptTimeoutMs), LuaLoggingMode, LuaAllowedFunctions, logger) : null,
                 UnixSocketPath = UnixSocketPath,
-                UnixSocketPermission = unixSocketPermissions
+                UnixSocketPermission = unixSocketPermissions,
+                MaxDatabases = MaxDatabases,
             };
         }
 
@@ -879,5 +922,10 @@ namespace Garnet
         GarnetConf = 0,
         // Redis.conf file format
         RedisConf = 1,
+    }
+
+    public sealed class InvalidAzureConfiguration : Exception
+    {
+        public InvalidAzureConfiguration(string message) : base(message) { }
     }
 }

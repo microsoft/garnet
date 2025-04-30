@@ -131,6 +131,10 @@ namespace Garnet.server
             => storageSession.SET_Conditional(ref key, ref input, ref context);
 
         /// <inheritdoc />
+        public GarnetStatus DEL_Conditional(ref SpanByte key, ref RawStringInput input)
+            => storageSession.DEL_Conditional(ref key, ref input, ref context);
+
+        /// <inheritdoc />
         public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
             => storageSession.SET_Conditional(ref key, ref input, ref output, ref context);
 

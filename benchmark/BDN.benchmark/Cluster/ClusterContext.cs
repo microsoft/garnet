@@ -35,8 +35,9 @@ namespace BDN.benchmark.Cluster
             {
                 QuietMode = true,
                 EnableCluster = !disableSlotVerification,
-                EndPoint = new IPEndPoint(IPAddress.Loopback, port),
+                EndPoints = [new IPEndPoint(IPAddress.Loopback, port)],
                 CleanClusterConfig = true,
+                ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, port)
             };
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 opt.CheckpointDir = "/tmp";

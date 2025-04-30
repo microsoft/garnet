@@ -224,16 +224,17 @@ namespace Garnet.server
                             return sizeof(int) + newValue.Length + offset + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                         return sizeof(int) + t.Length;
 
-                    case RespCommand.GETDEL:
-                        // No additional allocation needed.
-                        break;
-
                     case RespCommand.GETEX:
                         return sizeof(int) + t.LengthWithoutMetadata + (input.arg1 > 0 ? sizeof(long) : 0);
 
                     case RespCommand.APPEND:
                         var valueLength = input.parseState.GetArgSliceByRef(0).Length;
                         return sizeof(int) + t.Length + valueLength;
+
+                    case RespCommand.GETDEL:
+                    case RespCommand.DELIFGREATER:
+                        // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
+                        return sizeof(int);
 
                     default:
                         if (cmd > RespCommandExtensions.LastValidCommand)

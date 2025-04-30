@@ -114,6 +114,22 @@ namespace Garnet
             if (status != GarnetStatus.OK || newScore != 12345)
                 return false;
 
+            status = api.SortedSetExpire(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], DateTimeOffset.UtcNow.AddMinutes(10), ExpireOption.None, out var expireResults);
+            if (status != GarnetStatus.OK || expireResults.Length != 2 || expireResults[0] != 1 || expireResults[1] != -2)
+                return false;
+
+            status = api.SortedSetTimeToLive(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var expireIn);
+            if (status != GarnetStatus.OK || expireIn.Length != 2 || expireIn[0].TotalMilliseconds <= 0 || expireIn[0].TotalMilliseconds > TimeSpan.FromMinutes(10).TotalMilliseconds || expireIn[1].TotalMilliseconds != 0)
+                return false;
+
+            status = api.SortedSetPersist(ssA, [.. ssItems.Skip(4).Take(1).Select(x => x.member), ArgSlice.FromPinnedSpan(Encoding.UTF8.GetBytes("nonExist"))], out var persistResults);
+            if (status != GarnetStatus.OK || persistResults.Length != 2 || persistResults[0] != 1 || persistResults[1] != -2)
+                return false;
+
+            status = api.SortedSetCollect([ssA]);
+            if (status != GarnetStatus.OK)
+                return false;
+
             // Exercise SortedSetRemoveRangeByScore
             status = api.SortedSetRemoveRangeByScore(ssA, "12345", "12345", out var countRemoved);
             if (status != GarnetStatus.OK || countRemoved != 1)

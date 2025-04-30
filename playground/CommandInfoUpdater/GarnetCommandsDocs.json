@@ -1,5 +1,30 @@
 [
   {
+    "Command": "BGSAVE",
+    "Name": "BGSAVE",
+    "Summary": "Asynchronously saves the database(s) to disk.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SCHEDULE",
+        "DisplayText": "schedule",
+        "Type": "PureToken",
+        "Token": "SCHEDULE",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "CLIENT_KILL",
     "Name": "CLIENT|KILL",
     "Summary": "Terminates open connections.",
@@ -140,7 +165,17 @@
     "Command": "COMMITAOF",
     "Name": "COMMITAOF",
     "Group": "Server",
-    "Summary": "Commit to append-only file."
+    "Summary": "Commit to append-only file.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
   },
   {
     "Command": "COSCAN",
@@ -177,6 +212,28 @@
         "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "DELIFGREATER",
+    "Name": "DELIFGREATER",
+    "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
       }
     ]
   },
@@ -520,6 +577,23 @@
     ]
   },
   {
+    "Command": "LASTSAVE",
+    "Name": "LASTSAVE",
+    "Summary": "Returns the Unix timestamp of the last successful save to disk.",
+    "Group": "Server",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
     "Command": "PURGEBP",
     "Name": "PURGEBP",
     "Group": "Cluster",
@@ -614,6 +688,23 @@
         "Type": "PureToken",
         "ArgumentFlags": "Optional",
         "Token": "WITHETAG"
+      }
+    ]
+  },
+  {
+    "Command": "SAVE",
+    "Name": "SAVE",
+    "Summary": "Synchronously saves the database(s) to disk.",
+    "Group": "Server",
+    "Complexity": "O(N) where N is the total number of keys in all databases",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer",
+        "Token": "DBID",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -863,6 +954,476 @@
         "Summary": "Sent by primary to replica to force to FLUSH its database",
         "Group": "Cluster",
         "Complexity": "O(1)"
+      }
+    ]
+  },
+  {
+    "Command": "ZCOLLECT",
+    "Name": "ZCOLLECT",
+    "Summary": "Manually trigger deletion of expired members from memory for SortedSet",
+    "Group": "Hash"
+  },
+  {
+    "Command": "ZEXPIRE",
+    "Name": "ZEXPIRE",
+    "Summary": "Set expiry for sorted set member using relative time to expire (seconds)",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZEXPIREAT",
+    "Name": "ZEXPIREAT",
+    "Summary": "Set expiry for sorted set member using an absolute Unix timestamp (seconds)",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-SECONDS",
+        "DisplayText": "unix-time-seconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZEXPIRETIME",
+    "Name": "ZEXPIRETIME",
+    "Summary": "Returns the expiration time of a sorted set member as a Unix timestamp, in seconds.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZPERSIST",
+    "Name": "ZPERSIST",
+    "Summary": "Removes the expiration time for each specified sorted set member",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZPEXPIRE",
+    "Name": "ZPEXPIRE",
+    "Summary": "Set expiry for sorted set member using relative time to expire (milliseconds)",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZPEXPIREAT",
+    "Name": "ZPEXPIREAT",
+    "Summary": "Set expiry for sorted set member using an absolute Unix timestamp (milliseconds)",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-MILLISECONDS",
+        "DisplayText": "unix-time-milliseconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZPEXPIRETIME",
+    "Name": "ZPEXPIRETIME",
+    "Summary": "Returns the expiration time of a sorted set member as a Unix timestamp, in msec.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZPTTL",
+    "Name": "ZPTTL",
+    "Summary": "Returns the TTL in milliseconds of a sorted set member.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   }

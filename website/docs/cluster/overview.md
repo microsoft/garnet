@@ -50,6 +50,19 @@ in the cluster.
 
 For more information about the cluster configuration please see the description of *CLUSTER NODES* command.
 
+## Control Plane
+
+It is important to keep in mind that Garnet's cluster mode design is currently _passive_: this means that it does not implement leader election, and simply responds to cluster 
+commands issued by a separate _control plane_. Users have to deploy a control plane (such as an operator in Kubernetes 
+[[example](https://github.com/OT-CONTAINER-KIT/redis-operator)]) to detect failures and request failover. Garnet does not itself yet provide a control plane implementation. 
+All commands necessary for building a robust control plane are included in Garnet, and our partners have built and deployed 
+production-quality control plane implementations for internal use with Garnet.
+
+This separation of concerns allows users the flexibility of deploying Garnet over a variety of fabrics such as [Kubernetes](https://kubernetes.io/), 
+[Virtual Machine Scale Sets](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/overview), and [Service Fabric](https://azure.microsoft.com/en-us/products/service-fabric). 
+This allows users to leverage the production-grade leader election features available in these systems, as well as components such as reliable cloud databases for metadata storage, 
+for managing the Garnet cluster.
+
 ## Creating a Garnet Cluster
 
 Before showing how to create a Garnet cluster, we present below a brief overview of the most important parameters associated

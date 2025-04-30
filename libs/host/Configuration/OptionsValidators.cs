@@ -357,17 +357,18 @@ namespace Garnet
         /// <returns></returns>
         protected override ValidationResult IsValid(object value, ValidationContext validationContext)
         {
-            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddress))
+            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var ipAddresses))
                 return initValidationResult;
 
             var logger = ((Options)validationContext.ObjectInstance).runtimeLogger;
-            if (ipAddress.Equals(Localhost, StringComparison.CurrentCultureIgnoreCase) ||
-                Format.TryCreateEndpoint(ipAddress, 0, useForBind: false, logger: logger).Result != null)
-                return ValidationResult.Success;
+            if (!Format.TryParseAddressList(ipAddresses, 0, out _, out var errorHostnameOrAddress, logger: logger))
+            {
+                var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
+                var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {errorHostnameOrAddress}";
+                return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            }
 
-            var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
-            var errorMessage = $"{baseError} Expected string in IPv4 / IPv6 format (e.g. 127.0.0.1 / 0:0:0:0:0:0:0:1) or 'localhost' or valid hostname. Actual value: {ipAddress}";
-            return new ValidationResult(errorMessage, [validationContext.MemberName]);
+            return ValidationResult.Success;
         }
     }
 
@@ -518,8 +519,8 @@ namespace Garnet
         }
 
         /// <summary>
-        /// Validation logic for Log Directory, valid if UseAzureStorage is specified or if EnableStorageTier is not specified in parent Options object
-        /// If neither applies, reverts to OptionValidationAttribute validation
+        /// Validation logic for Log Directory, valid if <see cref="Options.UseAzureStorage"/> is specified or if <see cref="Options.EnableStorageTier"/> is not specified in parent Options object
+        /// If neither applies, reverts to <see cref="OptionValidationAttribute"/> validation
         /// </summary>
         /// <param name="value">Value of Log Directory</param>
         /// <param name="validationContext">Validation context</param>
@@ -545,13 +546,12 @@ namespace Garnet
         }
 
         /// <summary>
-        /// Validation logic for Checkpoint Directory, valid if UseAzureStorage is specified in parent Options object
-        /// If not, reverts to OptionValidationAttribute validation
+        /// Validation logic for <see cref="Options.CheckpointDir"/>, valid if <see cref="Options.UseAzureStorage"/> is specified in parent Options object
+        /// If not, reverts to <see cref="OptionValidationAttribute"/> validation
         /// </summary>
         /// <param name="value">Value of Log Directory</param>
         /// <param name="validationContext">Validation context</param>
         /// <returns>Validation result</returns>
-        /// <returns></returns>
         protected override ValidationResult IsValid(object value, ValidationContext validationContext)
         {
             var options = (Options)validationContext.ObjectInstance;
@@ -563,7 +563,7 @@ namespace Garnet
     }
 
     /// <summary>
-    /// Validation logic for CertFileName
+    /// Validation logic for <see cref="Options.CertFileName"/>
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
     internal sealed class CertFileValidationAttribute : FilePathValidationAttribute
@@ -580,7 +580,6 @@ namespace Garnet
         /// <param name="value">Value of CertFileName</param>
         /// <param name="validationContext">Validation context</param>
         /// <returns>Validation result</returns>
-        /// <returns></returns>
         protected override ValidationResult IsValid(object value, ValidationContext validationContext)
         {
             var options = (Options)validationContext.ObjectInstance;
@@ -655,6 +654,36 @@ namespace Garnet
             }
 
             return new ValidationResult($"{validationContext.DisplayName} can only bet set on following platforms: {string.Join(',', supportedPlatforms)}");
+        }
+    }
+
+    /// <summary>
+    /// Represents an attribute used for validating HTTPS URLs as options.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    internal sealed class HttpsUrlValidationAttribute : OptionValidationAttribute
+    {
+        internal HttpsUrlValidationAttribute(bool isRequired = false) : base(isRequired)
+        {
+        }
+
+        /// <summary>
+        /// HTTPS URLs validation logic, checks if string is a valid HTTPS URL.
+        /// </summary>
+        /// <param name="value">URL string</param>
+        /// <param name="validationContext">Validation Logic</param>
+        /// <returns>Validation result</returns>
+        protected override ValidationResult IsValid(object value, ValidationContext validationContext)
+        {
+            if (TryInitialValidation<string>(value, validationContext, out var initValidationResult, out var url))
+                return initValidationResult;
+
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+                return ValidationResult.Success;
+
+            var baseError = validationContext.MemberName != null ? base.FormatErrorMessage(validationContext.MemberName) : string.Empty;
+            var errorMessage = $"{baseError} Expected string in URI format. Actual value: {url}";
+            return new ValidationResult(errorMessage, [validationContext.MemberName]);
         }
     }
 }
