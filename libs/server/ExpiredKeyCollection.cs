@@ -49,6 +49,5 @@ namespace Garnet.server
                 logger?.LogCritical(ex, "Unknown exception received for Expired key collection task. Collection task won't be resumed.");
             }
         }
-
     }
 }
