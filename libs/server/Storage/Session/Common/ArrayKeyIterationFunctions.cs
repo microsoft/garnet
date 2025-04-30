@@ -112,8 +112,11 @@ namespace Garnet.server
 
         internal void ScanExpiredKeys(long cursor, out long storeCursor, out List<byte[]> keys, long count, ReadOnlySpan<byte> typeObject = default)
         {
-            keys = new List<byte[]>();
-            // Why have I made this a member variable I dont know but I will come back to this at some point
+            Keys ??= new();
+            Keys.Clear();
+
+            keys = Keys;
+
             mainStoreDbExpiredScanFuncs ??= new();
             mainStoreDbExpiredScanFuncs.Initialize(keys);
 

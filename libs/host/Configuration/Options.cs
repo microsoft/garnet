@@ -611,6 +611,14 @@ namespace Garnet
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("main-store-expired-collection-freq", Required = false, HelpText = "Main store's expired key collection frequency in seconds")]
+        public int MainStoreExpiredKeyCollectionFrequencySecs { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("main-store-expired-key-max-records-per-round", Required = false, HelpText = "Max keys to expire in-memory per round of expired key collection for main store.")]
+        public int MainStoreExpiredKeyMaxRecordsPerRound { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -878,6 +886,8 @@ namespace Garnet
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
+                MainStoreExpiredKeyCollectionFrequencySecs = MainStoreExpiredKeyCollectionFrequencySecs,
+                MainStoreExpiredKeyMaxRecordsPerRound = MainStoreExpiredKeyMaxRecordsPerRound,
             };
         }
 

@@ -766,8 +766,10 @@ namespace Garnet.server
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
 
-            // TODO: make this configurable
-            Task.Run(async () => await CollectExpiredMainStoreKeys(60, 10_000), ctsCommit.Token);
+            if (serverOptions.MainStoreExpiredKeyCollectionFrequencySecs > 0)
+            {
+                Task.Run(async () => await CollectExpiredMainStoreKeys(serverOptions.MainStoreExpiredKeyCollectionFrequencySecs, perRoundMaxRecordsToCollect: 10_000), ctsCommit.Token);
+            }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
