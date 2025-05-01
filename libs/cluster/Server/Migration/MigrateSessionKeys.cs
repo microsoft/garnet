@@ -174,20 +174,25 @@ namespace Garnet.cluster
         /// Method used to migrate keys from main and object stores.
         /// This method is used to process the MIGRATE KEYS transfer option.
         /// </summary>
-        public bool MigrateKeys()
+        public bool MigrateKeys(StoreType storeType = StoreType.All)
         {
             try
             {
                 if (!CheckConnection())
                     return false;
 
-                // Migrate main store keys
-                _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
-                if (!MigrateKeysFromMainStore())
-                    return false;
+                if (storeType is StoreType.All or StoreType.Main)
+                {
+                    // Migrate main store keys
+                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
+                    if (!MigrateKeysFromMainStore())
+                        return false;
+
+                }
+
 
                 // Migrate object store keys
-                if (!clusterProvider.serverOptions.DisableObjects)
+                if (!clusterProvider.serverOptions.DisableObjects && storeType is StoreType.All or StoreType.Object)
                 {
                     _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
                     if (!MigrateKeysFromObjectStore())
