@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -32,7 +33,7 @@ namespace Garnet.cluster
                         break;
 
                     // Safely migrate keys to target node
-                    if (!MigrateKeys())
+                    if (!MigrateKeys(StoreType.Main))
                     {
                         logger?.LogError("IOERR Migrate keys failed.");
                         Status = MigrateState.FAIL;
@@ -72,7 +73,7 @@ namespace Garnet.cluster
                             break;
 
                         // Safely migrate keys to target node
-                        if (!MigrateKeys())
+                        if (!MigrateKeys(StoreType.Object))
                         {
                             logger?.LogError("IOERR Migrate keys failed.");
                             Status = MigrateState.FAIL;
