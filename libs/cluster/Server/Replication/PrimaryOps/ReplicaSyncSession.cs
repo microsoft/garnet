@@ -293,6 +293,9 @@ namespace Garnet.cluster
                     }
                 }
 
+                // Check what happens if we fail after recovery and start AOF stream
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);
+
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
@@ -305,7 +308,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, "acquiredEntry: {cEntryDump}", localEntry.GetCheckpointEntryDump());
                 if (aofSyncTaskInfo != null) _ = clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
-                errorMsg = "ERR " + ex.Message;// this is error sent to remote client
+                errorMsg = ex.Message;// this is error sent to remote client
                 return false;
             }
             finally

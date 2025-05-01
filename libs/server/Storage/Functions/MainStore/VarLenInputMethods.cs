@@ -360,10 +360,6 @@ namespace Garnet.server
                             fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
 
-                    case RespCommand.GETDEL:
-                        // No additional allocation needed.
-                        return fieldInfo;
-
                     case RespCommand.GETEX:
                         fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
 
@@ -380,6 +376,11 @@ namespace Garnet.server
 
                     case RespCommand.APPEND:
                         fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
+                        return fieldInfo;
+
+                    case RespCommand.GETDEL:
+                    case RespCommand.DELIFGREATER:
+                        // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return fieldInfo;
 
                     default:

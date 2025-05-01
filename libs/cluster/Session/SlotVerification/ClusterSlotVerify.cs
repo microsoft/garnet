@@ -32,7 +32,7 @@ namespace Garnet.cluster
                 {
                     // Only if a node IsLocal we might be able to serve a request.
                     // So we check here if the node is recovering
-                    if (clusterProvider.replicationManager.Recovering)
+                    if (clusterProvider.replicationManager.IsRecovering)
                     {
                         return config.LocalNodeRole switch
                         {
@@ -74,7 +74,7 @@ namespace Garnet.cluster
 
                 if (IsLocal)
                 {
-                    if (clusterProvider.replicationManager.Recovering)
+                    if (clusterProvider.replicationManager.IsRecovering)
                     {
                         return config.LocalNodeRole switch
                         {

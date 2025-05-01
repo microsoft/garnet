@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -132,7 +134,7 @@ namespace Garnet.test
 
             // No import path, include command line args
             // Check that all invalid options flagged
-            args = ["--bind", "1.1.1.257", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
+            args = ["--bind", "1.1.1.257 127.0.0.1 -::1", "-m", "12mg", "--port", "-1", "--mutable-percent", "101", "--acl-file", "nx_dir/nx_file.txt", "--tls", "--reviv-fraction", "1.1", "--cert-file-name", "testcert.crt"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
             ClassicAssert.IsFalse(exitGracefully);
@@ -164,7 +166,7 @@ namespace Garnet.test
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
-            ClassicAssert.AreEqual("127.0.0.1", options.Address);
+            ClassicAssert.AreEqual("127.0.0.1 -::1", options.Address);
             ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
             ClassicAssert.AreEqual(6379, options.Port);
             ClassicAssert.AreEqual("20gb", options.MemorySize);
@@ -182,10 +184,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual("placeholder", options.CertPassword);
             ClassicAssert.AreEqual(10000, options.SlowLogThreshold);
             ClassicAssert.AreEqual(128, options.SlowLogMaxEntries);
+            ClassicAssert.AreEqual(32, options.MaxDatabases);
 
             // Import from redis.conf file, include command line args
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
-            args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true"];
+            args = ["--config-import-path", redisConfigPath, "--config-import-format", "RedisConf", "--config-export-path", garnetConfigPath, "-p", "12m", "--tls", "false", "--minthreads", "6", "--client-certificate-required", "true", "--max-databases", "64"];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
@@ -200,6 +203,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("placeholder", options.CertPassword);
             ClassicAssert.AreEqual(10000, options.SlowLogThreshold);
             ClassicAssert.AreEqual(128, options.SlowLogMaxEntries);
+            ClassicAssert.AreEqual(64, options.MaxDatabases);
             ClassicAssert.IsTrue(File.Exists(garnetConfigPath));
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -208,39 +212,94 @@ namespace Garnet.test
         [Test]
         public void ImportExportConfigAzure()
         {
+            if (!TestUtils.IsRunningAzureTests)
+            {
+                Assert.Ignore("Azure tests are disabled.");
+            }
+
             var AzureTestDirectory = $"{TestContext.CurrentContext.Test.MethodName.ToLowerInvariant()}";
             var configPath = $"{AzureTestDirectory}/test1.config";
             var AzureEmulatedStorageString = "UseDevelopmentStorage=true;";
 
-            if (TestUtils.IsRunningAzureTests)
-            {
-                // Delete blob if exists
-                var deviceFactory = TestUtils.AzureStorageNamedDeviceFactoryCreator.Create(AzureTestDirectory);
-                deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+            // Delete blob if exists
+            var deviceFactory = TestUtils.AzureStorageNamedDeviceFactoryCreator.Create(AzureTestDirectory);
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
 
-                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(invalidOptions.Count, 0);
-                ClassicAssert.IsTrue(options.PageSize == "32m");
-                ClassicAssert.IsTrue(options.MemorySize == "16g");
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out var options, out var invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "32m");
+            ClassicAssert.IsTrue(options.MemorySize == "16g");
+            ClassicAssert.IsNull(options.AzureStorageServiceUri);
+            ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
+            ClassicAssert.IsFalse(options.UseAzureStorage);
 
-                var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(invalidOptions.Count, 0);
-                ClassicAssert.IsTrue(options.PageSize == "4m");
-                ClassicAssert.IsTrue(options.MemorySize == "128m");
+            var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo" };
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
+            ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
 
-                args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
-                parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
-                ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual(invalidOptions.Count, 0);
-                ClassicAssert.IsTrue(options.PageSize == "4m");
-                ClassicAssert.IsTrue(options.MemorySize == "128m");
+            args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            ClassicAssert.IsTrue(options.PageSize == "4m");
+            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
+            ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
 
-                // Delete blob
-                deviceFactory.Delete(new FileDescriptor { directoryName = "" });
-            }
+            // Delete blob
+            deviceFactory.Delete(new FileDescriptor { directoryName = "" });
+        }
+
+        [Test]
+        public void AzureStorageConfiguration()
+        {
+            // missing both storage-string and storage-service-uri
+            var args = new string[] { "--use-azure-storage", "true" };
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
+
+            // valid storage-string
+            args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage=true;"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // secure service-uri with managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // secure service-uri with workload-identity and no managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "https://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.DoesNotThrow(() => options.GetServerOptions());
+
+            // insecure service-uri with managed-identity
+            args = ["--use-azure-storage", "--storage-service-uri", "http://demo.blob.core.windows.net", "--storage-managed-identity", "demo"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 1);
+            ClassicAssert.AreEqual(invalidOptions[0], nameof(Options.AzureStorageServiceUri));
+
+            // using both storage-string and managed-identity
+            args = ["--use-azure-storage", "--storage-string", "UseDevelopmentStorage", "--storage-managed-identity", "demo", "--storage-service-uri", "https://demo.blob.core.windows.net"];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(invalidOptions.Count, 0);
+            Assert.Throws<InvalidAzureConfiguration>(() => options.GetServerOptions());
         }
 
         [Test]
@@ -716,6 +775,31 @@ namespace Garnet.test
             string[] args = ["--unixsocketperm", "888"];
             var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, silentMode: true);
             ClassicAssert.IsFalse(parseSuccessful);
+        }
+
+        [Test]
+        public async Task MultiTcpSocketTest()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            var hostname = TestUtils.GetHostName();
+            var addresses = Dns.GetHostAddresses(hostname);
+            addresses = [.. addresses, IPAddress.IPv6Loopback, IPAddress.Loopback];
+
+            var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints);
+            server.Start();
+
+            var clients = endpoints.Select(endpoint => TestUtils.GetGarnetClientSession(endPoint: endpoint)).ToArray();
+            foreach (var client in clients)
+            {
+                client.Connect();
+                var result = await client.ExecuteAsync("PING");
+                ClassicAssert.AreEqual("PONG", result);
+                client.Dispose();
+            }
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
     }
 }

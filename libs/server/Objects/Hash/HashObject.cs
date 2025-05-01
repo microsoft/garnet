@@ -294,13 +294,22 @@ namespace Garnet.server
         private void UpdateExpirationSize(bool add, bool includePQ = true)
         {
             // Account for dictionary entry and priority queue entry
-            var size = IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+            var memorySize = IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
             if (includePQ)
-                size += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
-            this.MemorySize += add ? size : -size;
+                memorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
 
-            // DiskSize only needs to adjust the writing or not of the expiration value
-            this.DiskSize += add ? sizeof(long) : -sizeof(long);
+            if (add)
+            {
+                this.MemorySize += memorySize;
+                this.DiskSize += sizeof(long);  // DiskSize only needs to adjust the writing or not of the expiration value
+            }
+            else
+            {
+                this.MemorySize -= memorySize;
+                this.DiskSize -= sizeof(long);  // DiskSize only needs to adjust the writing or not of the expiration value
+                Debug.Assert(this.MemorySize >= MemoryUtils.DictionaryOverhead);
+                Debug.Assert(this.DiskSize >= sizeof(int));
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -428,7 +437,7 @@ namespace Garnet.server
 
             if (result)
             {
-                if (expirationTimes is not null)
+                if (HasExpirableItems())
                 {
                     // We cannot remove from the PQ so just remove from expirationTimes, let the next call to DeleteExpiredItems() clean it up, and don't adjust PQ sizes.
                     _ = expirationTimes.Remove(key);
@@ -441,7 +450,7 @@ namespace Garnet.server
 
         private int Count()
         {
-            if (expirationTimes is null)
+            if (!HasExpirableItems())
                 return hash.Count;
 
             var expiredKeysCount = 0;
@@ -450,7 +459,6 @@ namespace Garnet.server
                 if (IsExpired(item.Key))
                     expiredKeysCount++;
             }
-
             return hash.Count - expiredKeysCount;
         }
 
@@ -529,11 +537,8 @@ namespace Garnet.server
             }
             else
             {
-                if ((expireOption & ExpireOption.XX) == ExpireOption.XX ||
-                    (expireOption & ExpireOption.GT) == ExpireOption.GT)
-                {
+                if ((expireOption & ExpireOption.XX) == ExpireOption.XX || (expireOption & ExpireOption.GT) == ExpireOption.GT)
                     return (int)ExpireResult.ExpireConditionNotMet;
-                }
 
                 expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);

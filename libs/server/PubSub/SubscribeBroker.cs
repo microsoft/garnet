@@ -320,9 +320,16 @@ namespace Garnet.server
         /// <returns></returns>
         public List<ByteArrayWrapper> GetChannels()
         {
-            if (subscriptions is null || subscriptions.Count == 0)
+            if (subscriptions is null || subscriptions.IsEmpty)
                 return [];
-            return [.. subscriptions.Keys];
+
+            List<ByteArrayWrapper> channels = [];
+            foreach (var entry in subscriptions)
+            {
+                if (entry.Value.Count > 0)
+                    channels.Add(entry.Key);
+            }
+            return channels;
         }
 
         /// <summary>
@@ -332,19 +339,22 @@ namespace Garnet.server
         /// <returns></returns>
         public unsafe List<ByteArrayWrapper> GetChannels(PinnedSpanByte pattern)
         {
-            if (subscriptions is null || subscriptions.Count == 0)
+            if (subscriptions is null || subscriptions.IsEmpty)
                 return [];
 
-            List<ByteArrayWrapper> matches = [];
-            foreach (var key in subscriptions.Keys)
+            List<ByteArrayWrapper> channels = [];
+            foreach (var entry in subscriptions)
             {
-                fixed (byte* keyPtr = key.ReadOnlySpan)
+                if (entry.Value.Count > 0)
                 {
-                    if (Match(PinnedSpanByte.FromPinnedPointer(keyPtr, key.ReadOnlySpan.Length), pattern))
-                        matches.Add(key);
+                    fixed (byte* keyPtr = entry.Key.ReadOnlySpan)
+                    {
+                        if (Match(PinnedSpanByte.FromPinnedPointer(keyPtr, entry.Key.ReadOnlySpan.Length), pattern))
+                            channels.Add(entry.Key);
+                    }
                 }
             }
-            return matches;
+            return channels;
         }
 
         /// <summary>
@@ -352,7 +362,19 @@ namespace Garnet.server
         /// </summary>
         /// <returns>The number of pattern subscriptions.</returns>
         public int NumPatternSubscriptions()
-            => patternSubscriptions?.Count ?? 0;
+        {
+            if (patternSubscriptions is null)
+                return 0;
+
+            var count = 0;
+            var index = 0;
+            while (patternSubscriptions.Iterate(ref index, out var item))
+            {
+                if (item.subscriptions.Count > 0)
+                    count++;
+            }
+            return count;
+        }
 
         /// <summary>
         /// Retrieves the number of subscriptions for a given channel.

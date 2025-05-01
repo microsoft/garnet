@@ -15,10 +15,12 @@
     ./run_bdnperftest.ps1
     ./run_bdnperftest.ps1 BDN.benchmark.Operations.BasicOperations.*
     ./run_bdnperftest.ps1 Operations.BasicOperations    <-- can run this way but this is how specify in ci-bdnbenchmark.yml
+    ./run_bdnperftest.ps1 Operations.BasicOperations net9.0
 #>
 
 param (
-  [string]$currentTest = "BDN.benchmark.Operations.BasicOperations.*"
+  [string]$currentTest = "BDN.benchmark.Operations.BasicOperations.*",
+  [string]$framework = "net8.0"
 )
 
 $OFS = "`r`n"
@@ -46,18 +48,17 @@ function AnalyzeResult {
     }
     else {
         if ($warnonly) {
-            Write-Host "**   << PERF REGRESSION WARNING! >>  The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
+            Write-Host "**   << WARNING! >>  The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%) but will only be a warning and not cause the test to show as a fail."
             Write-Host "** "
             return $true # Since it is warning, don't want to cause a fail
         }
         else {
-            Write-Host "**   << PERF REGRESSION FAIL! >> The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
+            Write-Host "**   << PERF **FAIL!** >> The BDN benchmark found Allocated value ($dblfoundResultValue) is above the acceptable threshold of $UpperBound (Expected value $expectedResultValue + $acceptablePercentRange%)"
             Write-Host "** "
         }
         return $false # the values are too different
     }
   }
- 
 
 ######### ParseValueFromResults ###########
 #
@@ -95,7 +96,6 @@ param ($ResultsLine, $columnNum)
 # Set all the config options
 $configFile = "BDN_Benchmark_Config.json"
 $configuration = "Release"
-$framework = "net8.0"
 $allocatedColumn = "-1"   # last one is allocated, just to ensure in case other column gets added
 $acceptableAllocatedRange = "10"   # percent allowed variance when comparing expected vs actual found value - same for linux and windows.
 
@@ -141,20 +141,22 @@ $testProperties = $json.$currentTest
 
 # create a matrix of expected results for specific test
 $splitTextArray = New-Object 'string[]' 3
-$expectedResultsArray = New-Object 'string[,]' 100, 3
+$expectedResultsArray = New-Object 'string[,]' 100, 4
 
 [int]$currentRow = 0
+$WARN_ON_FAIL = $false
 
 # Iterate through each property for the expected value - getting method, params and value
 foreach ($property in $testProperties.PSObject.Properties) {
 
     # Split the property name into parts
     $splitTextArray = $property.Name -split '_'
-   
+
     # get the expected Method, Parameter and value
     $expectedResultsArray[$currentRow,0] = "| " + $splitTextArray[1]  # Add | at beginning so it is part of summary block and not every other line in the file that matches the Method name
     $expectedResultsArray[$currentRow,1] = $splitTextArray[2]
     $expectedResultsArray[$currentRow,2] = $property.value
+    $expectedResultsArray[$currentRow,3] = $splitTextArray[0]  # meta data to keep track if warn on fail or not
 
     $currentRow += 1
 }
@@ -182,16 +184,16 @@ $resultsFileName = $currentTestStripped + "_" + $CurrentOS + ".results"
 $resultsFile = "$resultsDir/$resultsFileName"
 $BDNbenchmarkErrorFile = "$errorLogDir/$currentTestStripped" + "_StandardError_" +$CurrentOS+".log"
 $filter = $currentTest
+$exporter = "json" 
 
 Write-Output " "
-Write-Output "** Start:  dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json > $resultsFile 2> $BDNbenchmarkErrorFile"
-dotnet run -c $configuration -f $framework --filter $filter --project $BDNbenchmarkPath --exporters json  > $resultsFile 2> $BDNbenchmarkErrorFile
+Write-Output "** Start:  dotnet run -c $configuration -f $framework --project $BDNbenchmarkPath --filter $filter --exporters $exporter -e BDNRUNPARAM=$framework > $resultsFile 2> $BDNbenchmarkErrorFile"
+dotnet run -c $configuration -f $framework --project $BDNbenchmarkPath --filter $filter --exporters $exporter -e BDNRUNPARAM=$framework > $resultsFile 2> $BDNbenchmarkErrorFile
 
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "
 
 Write-Output "**** ANALYZE THE RESULTS FILE $resultsFile ****"
-
 # First check if results file is there and if not, error out gracefully
 if (-not (Test-Path -Path $resultsFile)) {
     Write-Error -Message "The test results file $resultsFile does not exist. Check to make sure the test was ran." -Category ObjectNotFound
@@ -221,7 +223,7 @@ Get-Content $resultsFile | ForEach-Object {
     if (-not $line.StartsWith("|")) {
         return
     }
-    
+
     # Get a value
     for ($currentExpectedProp = 0; $currentExpectedProp -lt $totalExpectedResultValues; $currentExpectedProp++) {
 
@@ -234,9 +236,11 @@ Get-Content $resultsFile | ForEach-Object {
                 # Found Method and Param so know this is one we want, so get value
                 $foundValue = ParseValueFromResults $line $allocatedColumn
 
-                # Check if found value is not equal to expected value
-                Write-Host "** Config: "$expectedResultsArray[$currentExpectedProp, 0].Substring(2) $expectedResultsArray[$currentExpectedProp, 1]
-                $currentResults = AnalyzeResult $foundValue $expectedResultsArray[$currentExpectedProp, 2] $acceptableAllocatedRange $false
+                # Check if the test is a warn only if there or is a fail
+                $WARN_ON_FAIL = $expectedResultsArray[$currentExpectedProp, 3] -like "WARN-ON-FAIL*"
+
+                Write-Host "** Config: " $expectedResultsArray[$currentExpectedProp, 0].Substring(2) $expectedResultsArray[$currentExpectedProp, 1]"   Warn only on fail:"$WARN_ON_FAIL
+                $currentResults = AnalyzeResult $foundValue $expectedResultsArray[$currentExpectedProp, 2] $acceptableAllocatedRange $WARN_ON_FAIL
                 if ($currentResults -eq $false) {
                     $testSuiteResult = $false
                 }
@@ -249,7 +253,7 @@ Write-Output "************************"
 Write-Output "**  Final summary:"
 Write-Output "**"
 if ($testSuiteResult) {
-    Write-Output "**   PASS!  All tests in the suite passed."
+    Write-Output "**   PASS!  No tests failed but that does not rule out warnings for test that were set for WARN-ON-FAIL."
 } else {
     Write-Error -Message "**   BDN Benchmark PERFORMANCE REGRESSION FAIL!  At least one test had benchmark Allocated Memory value outside of expected range. NOTE: Expected results are based on CI machine and may differ from the machine that this was ran on."
 }

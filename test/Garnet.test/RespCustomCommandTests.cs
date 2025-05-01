@@ -1256,7 +1256,7 @@ namespace Garnet.test
                 }
             }
 
-            if (!sync) Task.WhenAll(regCmdTasks);
+            if (!sync) Task.WaitAll(regCmdTasks);
 
             for (var i = 0; i < regCount; i++)
             {

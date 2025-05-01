@@ -27,6 +27,7 @@ const sidebars = {
 		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/storefunctions", "dev/tsavorite/epoch"]},
 		  "dev/transactions",
 		  "dev/custom-commands",
+		  "dev/multi-db",
 		  "dev/collection-broker",
 		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration"]},
 		  "dev/contributing"]},
@@ -40,6 +41,7 @@ const sidebars = {
 		{type: 'category', label: 'Diagnostics', items: ["logger", "metrics"]},
 		"research",
 			*/
+		{type: 'category', label: 'Research', items: ["research/papers"]},
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},
                         {type: 'link', label: 'License', href: 'https://github.com/microsoft/garnet/blob/main/LICENSE'},

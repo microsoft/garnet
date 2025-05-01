@@ -28,6 +28,7 @@ namespace Garnet.server
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
+                case RespCommand.DELIFGREATER:
                     return false;
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
@@ -116,8 +117,8 @@ namespace Garnet.server
                         _ = logRecord.TrySetExpiration(input.arg1);
 
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                    if (sizeInfo.FieldInfo.HasETag)
-                        _ = logRecord.TrySetETag(input.parseState.GetLong(1) + 1);
+                    Debug.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
+                    _ = logRecord.TrySetETag(input.parseState.GetLong(1) + (cmd == RespCommand.SETIFMATCH ? 1 : 0));
                     ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
 
                     // write back array of the format [etag, nil]
@@ -437,9 +438,15 @@ namespace Garnet.server
                     ETagState.ResetState(ref functionsState.etagState);
                     // Nothing is set because being in this block means NX was already violated
                     return true;
+                case RespCommand.DELIFGREATER:
+                    long etagFromClient = input.parseState.GetLong(0);
+                    rmwInfo.Action = etagFromClient > functionsState.etagState.ETag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    long etagFromClient = input.parseState.GetLong(1);
+                    etagFromClient = input.parseState.GetLong(1);
                     // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
                     int comparisonResult = etagFromClient.CompareTo(functionsState.etagState.ETag);
                     int expectedResult = cmd is RespCommand.SETIFMATCH ? 0 : 1;
@@ -471,7 +478,7 @@ namespace Garnet.server
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpan(inputValue, ref sizeInfo))
                         return false;
-                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.ETag + 1) : (etagFromClient + 1);
+                    long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.ETag + 1) : etagFromClient;
                     if (!logRecord.TrySetETag(newEtag))
                         return false;
 
@@ -918,8 +925,22 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFGREATER:
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+                    long etagFromClient = input.parseState.GetLong(0);
+                    if (etagFromClient <= functionsState.etagState.ETag)
+                    {
+                        ETagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+
+                    return true;
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+
                     long etagToCheckWith = input.parseState.GetLong(1);
 
                     // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
@@ -951,7 +972,6 @@ namespace Garnet.server
 
                     ETagState.ResetState(ref functionsState.etagState);
                     return false;
-
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
@@ -1043,31 +1063,35 @@ namespace Garnet.server
 
             switch (cmd)
             {
+                case RespCommand.DELIFGREATER:
+                    // NCU has already checked for making sure the etag is greater than the existing etag by this point
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    ETagState.ResetState(ref functionsState.etagState);
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
                     shouldUpdateEtag = true;
-                    long etagFromClient = input.parseState.GetLong(1);
 
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!dstLogRecord.TrySetValueSpan(inputValue, ref sizeInfo))
                         return false;
 
                     // change the current etag to the the etag sent from client since rest remains same
-                    if (cmd == RespCommand.SETIFGREATER)
-                        functionsState.etagState.ETag = etagFromClient;
-                    long newEtag = functionsState.etagState.ETag + 1;
-                    if (!dstLogRecord.TrySetETag(newEtag))
+                    functionsState.etagState.ETag = input.parseState.GetLong(1);
+                    if (!dstLogRecord.TrySetETag(functionsState.etagState.ETag + (cmd == RespCommand.SETIFMATCH ? 1 : 0)))
                         return false;
 
                     if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1 != 0 ? input.arg1 : srcLogRecord.Expiration))
                         return false;
 
                     // Write Etag and Val back to Client as an array of the format [etag, nil]
+                    long eTagForResponse = cmd == RespCommand.SETIFMATCH ? functionsState.etagState.ETag + 1 : functionsState.etagState.ETag;
                     var nilResp = CmdStrings.RESP_ERRNOTFOUND;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
-                    var numDigitsInEtag = NumUtils.CountDigits(newEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
+                    var numDigitsInEtag = NumUtils.CountDigits(eTagForResponse);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, eTagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
                     shouldUpdateEtag = false;   // since we already updated the ETag
                     break;
                 case RespCommand.SET:

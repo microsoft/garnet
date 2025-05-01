@@ -32,7 +32,7 @@ namespace Garnet.server
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper, SubscribeBroker broker = null, MaxSizeSettings maxSizeSettings = default)
-            : base(storeWrapper.store, broker, recoverStore:false, maxSizeSettings)
+            : base(broker, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
         }

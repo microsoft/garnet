@@ -15,9 +15,14 @@ namespace Garnet.server
     public class ServerOptions
     {
         /// <summary>
-        /// Endpoint to bind server to.
+        /// Endpoints to bind server to.
         /// </summary>
-        public EndPoint EndPoint { get; set; } = new IPEndPoint(IPAddress.Loopback, 6379);
+        public EndPoint[] EndPoints { get; set; } = [new IPEndPoint(IPAddress.Loopback, 6379)];
+
+        /// <summary>
+        /// Cluster announce Endpoint
+        /// </summary>
+        public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
         /// Total log memory used in bytes (rounds down to power of 2).

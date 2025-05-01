@@ -1523,6 +1523,241 @@ Integer reply: the number of members in the resulting sorted set at destination.
 
 ---
 
+### ZEXPIRE
+
+#### Syntax
+
+```bash
+    ZEXPIRE key seconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+```
+
+Sets a timeout on one or more members of a sorted set key. After the timeout has expired, the members will automatically be deleted. The timeout is specified in seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on members that have no existing expiry
+* **XX:** Only set expiry on members that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* 1 if the timeout was set
+* 0 if the member doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### ZEXPIREAT
+
+#### Syntax
+
+```bash
+    ZEXPIREAT key unix-time-seconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+```
+
+Sets an absolute expiration time (Unix timestamp in seconds) for one or more sorted set members. After the timestamp has passed, the members will automatically be deleted.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on members that have no existing expiry
+* **XX:** Only set expiry on members that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* 1 if the timeout was set
+* 0 if the member doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### ZPEXPIRE
+
+#### Syntax
+
+```bash
+    ZPEXPIRE key milliseconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+```
+
+Similar to HEXPIRE but the timeout is specified in milliseconds instead of seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on members that have no existing expiry
+* **XX:** Only set expiry on members that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* 1 if the timeout was set
+* 0 if the member doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### ZPEXPIREAT
+
+#### Syntax
+
+```bash
+    ZPEXPIREAT key unix-time-milliseconds [NX | XX | GT | LT] MEMBERS nummembers member [member ...]
+```
+
+Similar to HEXPIREAT but uses Unix timestamp in milliseconds instead of seconds.
+
+The command supports several options to control when the expiration should be set:
+
+* **NX:** Only set expiry on members that have no existing expiry
+* **XX:** Only set expiry on members that already have an expiry set
+* **GT:** Only set expiry when it's greater than the current expiry
+* **LT:** Only set expiry when it's less than the current expiry
+
+The **NX**, **XX**, **GT**, and **LT** options are mutually exclusive.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* 1 if the timeout was set
+* 0 if the member doesn't exist
+* -1 if timeout was not set due to condition not being met
+
+---
+
+### ZTTL
+
+#### Syntax
+
+```bash
+    ZTTL key MEMBERS nummembers member [member ...]
+```
+
+Returns the remaining time to live in seconds for one or more sorted set members that have a timeout set.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* TTL in seconds if the member exists and has an expiry set
+* -1 if the member exists but has no expiry set
+* -2 if the member does not exist
+
+---
+
+### ZPTTL
+
+#### Syntax
+
+```bash
+    ZPTTL key MEMBERS nummembers member [member ...]
+```
+
+Similar to HTTL but returns the remaining time to live in milliseconds instead of seconds.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* TTL in milliseconds if the member exists and has an expiry set
+* -1 if the member exists but has no expiry set
+* -2 if the member does not exist
+
+---
+
+### ZEXPIRETIME
+
+#### Syntax
+
+```bash
+    ZEXPIRETIME key MEMBERS nummembers member [member ...]
+```
+
+Returns the absolute Unix timestamp (in seconds) at which the specified sorted set members will expire.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* Unix timestamp in seconds when the member will expire
+* -1 if the member exists but has no expiry set
+* -2 if the member does not exist
+
+---
+
+### ZPEXPIRETIME
+
+#### Syntax
+
+```bash
+    ZPEXPIRETIME key MEMBERS nummembers member [member ...]
+```
+
+Similar to HEXPIRETIME but returns the expiry timestamp in milliseconds instead of seconds.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* Unix timestamp in milliseconds when the member will expire
+* -1 if the member exists but has no expiry set
+* -2 if the member does not exist
+
+---
+
+### ZPERSIST
+
+#### Syntax
+
+```bash
+    ZPERSIST key MEMBERS nummembers member [member ...]
+```
+
+Removes the expiration from the specified sorted set members, making them persistent.
+
+#### Resp Reply
+
+Array reply: For each member, returns:
+
+* 1 if the timeout was removed
+* 0 if the member exists but has no timeout
+* -1 if the member does not exist
+
+---
+
+### ZCOLLECT
+
+#### Syntax
+
+```bash
+    ZCOLLECT key [key ...]
+```
+
+Manualy trigger cleanup of expired member from memory for a given Hash set key.
+
+Use `*` as the key to collect it from all sorted set keys.
+
+#### Resp Reply
+
+Simple reply: OK response
+Error reply: ERR ZCOLLECT scan already in progress
+
+---
+
 ## Geospatial indices
 
 ### GEOADD
@@ -1611,12 +1846,142 @@ The command can accept a variable number of arguments so it always returns an ar
 
 ---
 
+### GEORADIUS
+
+#### Syntax
+
+```bash
+GEORADIUS_RO key longitude latitude radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+  [STORE key | STOREDIST key]
+```
+
+Return the members of a sorted set populated with geospatial information using [GEOADD](#geoadd), which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
+
+The common use case for this command is to retrieve geospatial items near a specified point not farther than a given amount of meters (or other units). This allows, for example, to suggest mobile users of an application nearby places.
+
+The radius is specified in one of the following units:
+
+* m for meters.
+* km for kilometers.
+* mi for miles.
+* ft for feet.
+
+The command optionally returns additional information using the following options:
+
+* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit specified as the radius argument of the command.
+* **WITHCOORD:** Also return the longitude and latitude of the matching items.
+* **WITHHASH:** Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
+
+The command default is to return unsorted items. Two different sorting methods can be invoked using the following two options:
+
+* **ASC:** Sort returned items from the nearest to the farthest, relative to the center point.
+* **DESC:** Sort returned items from the farthest to the nearest, relative to the center point.
+
+By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT option. When ANY is provided the command will return as soon as enough matches are found, so the results may not be the ones closest to the specified point, but on the other hand, the effort invested by the server is significantly lower. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
+
+By default the command returns the items to the client. It is possible to store the results with one of these options:
+
+* **STORE:** Store the items in a sorted set populated with their geospatial information.
+* **STOREDIST:** Store the items in a sorted set populated with their distance from the center as a floating point number, in the same unit specified in the radius.
+
+**Reply**
+
+One of the following:
+
+* If STORE or STOREDIST option is specified, the number of elements in the resulting set (Integer).
+* If no WITH* option is specified, an Array reply of matched member names
+* If WITHCOORD, WITHDIST, or WITHHASH options are specified, the command returns an Array reply of arrays, where each sub-array represents a single item:
+   * The distance from the center as a floating point number, in the same unit specified in the radius.
+   * The Geohash integer.
+   * The coordinates as a two items x,y array (longitude,latitude).
+
+---
+
+### GEORADIUS_RO
+
+#### Syntax
+
+```bash
+GEORADIUS_RO key longitude latitude radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+```
+
+Return the members of a sorted set populated with geospatial information using [GEOADD](#geoadd), which are within the borders of the area specified with the center location and the maximum distance from the center (the radius).
+
+The common use case for this command is to retrieve geospatial items near a specified point not farther than a given amount of meters (or other units). This allows, for example, to suggest mobile users of an application nearby places.
+
+The radius is specified in one of the following units:
+
+* m for meters.
+* km for kilometers.
+* mi for miles.
+* ft for feet.
+
+The command optionally returns additional information using the following options:
+
+* **WITHDIST:** Also return the distance of the returned items from the specified center point. The distance is returned in the same unit specified as the radius argument of the command.
+* **WITHCOORD:** Also return the longitude and latitude of the matching items.
+* **WITHHASH:** Also return the raw geohash-encoded sorted set score of the item, in the form of a 52 bit unsigned integer. This is only useful for low level hacks or debugging and is otherwise of little interest for the general user.
+
+The command default is to return unsorted items. Two different sorting methods can be invoked using the following two options:
+
+* **ASC:** Sort returned items from the nearest to the farthest, relative to the center point.
+* **DESC:** Sort returned items from the farthest to the nearest, relative to the center point.
+
+By default all the matching items are returned. It is possible to limit the results to the first N matching items by using the COUNT option. When ANY is provided the command will return as soon as enough matches are found, so the results may not be the ones closest to the specified point, but on the other hand, the effort invested by the server is significantly lower. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
+
+**Reply**
+
+One of the following:
+
+* If no WITH* option is specified, an Array reply of matched member names
+* If WITHCOORD, WITHDIST, or WITHHASH options are specified, the command returns an Array reply of arrays, where each sub-array represents a single item:
+   * The distance from the center as a floating point number, in the same unit specified in the radius.
+   * The Geohash integer.
+   * The coordinates as a two items x,y array (longitude,latitude).
+---
+
+### GEORADIUSBYMEMBER
+
+#### Syntax
+
+```bash
+GEORADIUSBYMEMBER_RO key member radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+  [STORE key | STOREDIST key]
+```
+
+This command is exactly like [GEORADIUS](#georadius) with the sole difference that instead of taking, as the center of the area to query, a longitude and latitude value, it takes the name of a member already existing inside the geospatial index represented by the sorted set.
+
+The position of the specified member is used as the center of the query.
+
+---
+
+### GEORADIUSBYMEMBER_RO
+
+#### Syntax
+
+```bash
+GEORADIUSBYMEMBER_RO key member radius <M | KM | FT | MI>
+  [WITHCOORD] [WITHDIST] [WITHHASH] [COUNT count [ANY]] [ASC | DESC]
+```
+
+This command is exactly like [GEORADIUS_RO](#georadius_ro) with the sole difference that instead of taking, as the center of the area to query, a longitude and latitude value, it takes the name of a member already existing inside the geospatial index represented by the sorted set.
+
+The position of the specified member is used as the center of the query.
+
+---
+
 ### GEOSEARCH
 
 #### Syntax
 
 ```bash
-    GEOSEARCH key <FROMMEMBER member> <BYBOX width height <M|KM|FT|MI>> [ASC|DESC] [WITHCOORD WITHDIST WITHHASH]
+    GEOSEARCH key <FROMMEMBER member | FROMLONLAT longitude latitude>
+  <BYRADIUS radius <M | KM | FT | MI> | BYBOX width height <M | KM |
+  FT | MI>> [ASC | DESC] [COUNT count [ANY]] [WITHCOORD] [WITHDIST]
+  [WITHHASH]
 ```
 
 Return the members of a sorted set populated with geospatial information using [GEOADD](#geoadd), which are within the borders of the area specified by a given shape.
@@ -1624,9 +1989,11 @@ Return the members of a sorted set populated with geospatial information using [
 The query's center point is provided by one of these mandatory options:
 
 * **FROMMEMBER:** Use the position of the given existing *member* in the sorted set.
+* **FROMLONLAT:** Use the given *longitude* and *latitude* position.
 
 The query's shape is provided by this option:
 
+* **BYRADIUS:** Similar to [GEORADIUS](#georadius), search inside circular area according to given *radius*.
 * **BYBOX:** Search inside an axis-aligned rectangle, determined by *height* and *width*.
 
 The command optionally returns additional information using the following options:
@@ -1638,12 +2005,19 @@ The command optionally returns additional information using the following option
 Matching items are returned unsorted by default. To sort them, use one of the following two options:
 
 * **ASC:** Sort returned items from the nearest to the farthest, relative to the center point.
-
 * **DESC:** Sort returned items from the farthest to the nearest, relative to the center point.
+
+All matching items are returned by default. To limit the results to the first N matching items, use the COUNT *count* option. When the ANY option is used, the command returns as soon as enough matches are found. This means that the results returned may not be the ones closest to the specified point, but the effort invested by the server to generate them is significantly less. When ANY is not provided, the command will perform an effort that is proportional to the number of items matching the specified area and sort them, so to query very large areas with a very small COUNT option may be slow even if just a few results are returned.
 
 **Reply**
 
-An Array reply of matched members, where each sub-array represents a single item, (longitude,latitude).
+One of the following:
+
+* If no WITH* option is specified, an Array reply of matched member names
+* If WITHCOORD, WITHDIST, or WITHHASH options are specified, the command returns an Array reply of arrays, where each sub-array represents a single item:
+   * The distance from the center as a floating point number, in the same unit specified in the radius.
+   * The Geohash integer.
+   * The coordinates as a two items x,y array (longitude,latitude).
 
 ---
 
@@ -1659,6 +2033,8 @@ GEOSEARCHSTORE destination source <FROMMEMBER member |
 ```
 
 This command is like [GEOSEARCH](#geosearch), but stores the result in destination key.
+
+When using the STOREDIST option, the command stores the items in a sorted set populated with their distance from the center of the circle or box, as a floating-point number, in the same unit specified for that shape.
 
 **Reply**
 

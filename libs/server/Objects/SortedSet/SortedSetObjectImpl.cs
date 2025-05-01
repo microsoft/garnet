@@ -85,6 +85,8 @@ namespace Garnet.server
 
         private void SortedSetAdd(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            DeleteExpiredItems();
+
             var isMemory = false;
             MemoryHandle ptrHandle = default;
             var ptr = output.SpanByte.ToPointer();
@@ -155,7 +157,10 @@ namespace Garnet.server
 
                         // No need for update
                         if (score == scoreStored)
+                        {
+                            Persist(member);
                             continue;
+                        }
 
                         // Don't update existing member if NX flag is set
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
@@ -167,6 +172,7 @@ namespace Garnet.server
                         var success = sortedSet.Remove((scoreStored, member));
                         Debug.Assert(success);
                         success = sortedSet.Add((score, member));
+                        Persist(member);
                         Debug.Assert(success);
 
                         // If CH flag is set, add changed member to final count
@@ -198,6 +204,8 @@ namespace Garnet.server
 
         private void SortedSetRemove(ref ObjectInput input, byte* output)
         {
+            DeleteExpiredItems();
+
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
@@ -212,6 +220,7 @@ namespace Garnet.server
                 _output->result1++;
                 sortedSetDict.Remove(valueArray);
                 sortedSet.Remove((key, valueArray));
+                TryRemoveExpiration(valueArray);
 
                 this.UpdateSize(value, false);
             }
@@ -221,7 +230,7 @@ namespace Garnet.server
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
-            ((ObjectOutputHeader*)output)->result1 = sortedSetDict.Count;
+            ((ObjectOutputHeader*)output)->result1 = Count();
         }
 
         private void SortedSetScore(ref ObjectInput input, ref SpanByteAndMemory output)
@@ -239,7 +248,7 @@ namespace Garnet.server
             ObjectOutputHeader outputHeader = default;
             try
             {
-                if (!sortedSetDict.TryGetValue(member, out var score))
+                if (!TryGetScore(member, out var score))
                 {
                     while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -294,7 +303,7 @@ namespace Garnet.server
                 {
                     var member = input.parseState.GetArgSliceByRef(i).ToArray();
 
-                    if (!sortedSetDict.TryGetValue(member, out var score))
+                    if (!TryGetScore(member, out var score))
                     {
                         while (!RespWriteUtils.TryWriteNull(ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -349,6 +358,8 @@ namespace Garnet.server
                 {
                     foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
                     {
+                        if (IsExpired(item.Element))
+                            continue;
                         if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue))
                             break;
                         if (minExclusive && item.Item1 == minValue)
@@ -372,6 +383,8 @@ namespace Garnet.server
 
         private void SortedSetIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            DeleteExpiredItems();
+
             // ZINCRBY key increment member
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -521,7 +534,9 @@ namespace Garnet.server
                         WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
-                    {  // byIndex
+                    {
+                        // byIndex
+                        var setCount = Count();
                         int minIndex = (int)minValue, maxIndex = (int)maxValue;
                         if (options.ValidLimit)
                         {
@@ -529,7 +544,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             return;
                         }
-                        else if (minValue > sortedSetDict.Count - 1)
+                        else if (minValue > setCount - 1)
                         {
                             // return empty list
                             while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
@@ -541,15 +556,15 @@ namespace Garnet.server
                             //shift from the end of the set
                             if (minIndex < 0)
                             {
-                                minIndex = sortedSetDict.Count + minIndex;
+                                minIndex = setCount + minIndex;
                             }
                             if (maxIndex < 0)
                             {
-                                maxIndex = sortedSetDict.Count + maxIndex;
+                                maxIndex = setCount + maxIndex;
                             }
-                            else if (maxIndex >= sortedSetDict.Count)
+                            else if (maxIndex >= setCount)
                             {
-                                maxIndex = sortedSetDict.Count - 1;
+                                maxIndex = setCount - 1;
                             }
 
                             // No elements to return if both indexes fall outside the range or min is higher than max
@@ -567,6 +582,12 @@ namespace Garnet.server
                                 // calculate number of elements
                                 var n = maxIndex - minIndex + 1;
                                 var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
+
+                                if (expirationTimes is not null)
+                                {
+                                    iterator = iterator.Where(x => !IsExpired(x.Element));
+                                }
+
                                 iterator = iterator.Skip(minIndex).Take(n);
 
                                 WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -641,6 +662,8 @@ namespace Garnet.server
 
         private void SortedSetRemoveRangeByRank(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            DeleteExpiredItems();
+
             // ZREMRANGEBYRANK key start stop
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -682,6 +705,7 @@ namespace Garnet.server
 
                         this.UpdateSize(item.Item2, false);
                     }
+                    TryRemoveExpiration(item.Item2);
                 }
 
                 // Write the number of elements
@@ -700,6 +724,8 @@ namespace Garnet.server
 
         private void SortedSetRemoveRangeByScore(ref ObjectInput input, ref SpanByteAndMemory output)
         {
+            DeleteExpiredItems();
+
             // ZREMRANGEBYSCORE key min max
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -747,9 +773,10 @@ namespace Garnet.server
             var withScores = (input.arg1 & 1) == 1;
             var includedCount = ((input.arg1 >> 1) & 1) == 1;
             var seed = input.arg2;
+            var sortedSetCount = Count();
 
-            if (count > 0 && count > sortedSet.Count)
-                count = sortedSet.Count;
+            if (count > 0 && count > sortedSetCount)
+                count = sortedSetCount;
 
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -769,11 +796,11 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                var indexes = RandomUtils.PickKRandomIndexes(sortedSetDict.Count, Math.Abs(count), seed, count > 0);
+                var indexes = RandomUtils.PickKRandomIndexes(sortedSetCount, Math.Abs(count), seed, count > 0);
 
                 foreach (var item in indexes)
                 {
-                    var (element, score) = sortedSetDict.ElementAt(item);
+                    var (element, score) = ElementAt(item);
 
                     while (!RespWriteUtils.TryWriteBulkString(element, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -811,7 +838,14 @@ namespace Garnet.server
             var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, op != SortedSetOperation.ZLEXCOUNT, out int errorCode);
+            var isRemove = op == SortedSetOperation.ZREMRANGEBYLEX;
+
+            if (isRemove)
+            {
+                DeleteExpiredItems();
+            }
+
+            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, isRemove, out int errorCode);
 
             _output->result1 = errorCode;
             if (errorCode == 0)
@@ -842,7 +876,7 @@ namespace Garnet.server
             {
                 var member = input.parseState.GetArgSliceByRef(0).ToArray();
 
-                if (!sortedSetDict.TryGetValue(member, out var score))
+                if (!TryGetScore(member, out var score))
                 {
                     while (!RespWriteUtils.TryWriteNull(ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -852,13 +886,18 @@ namespace Garnet.server
                     var rank = 0;
                     foreach (var item in sortedSet)
                     {
+                        if (IsExpired(item.Element))
+                        {
+                            continue;
+                        }
+
                         if (item.Item2.SequenceEqual(member))
                             break;
                         rank++;
                     }
 
                     if (!ascending)
-                        rank = sortedSet.Count - rank - 1;
+                        rank = Count() - rank - 1;
 
                     if (withScore)
                     {
@@ -896,12 +935,15 @@ namespace Garnet.server
         /// <returns>A tuple containing the score and the element as a byte array.</returns>
         public (double Score, byte[] Element) PopMinOrMax(bool popMaxScoreElement = false)
         {
+            DeleteExpiredItems();
+
             if (sortedSet.Count == 0)
                 return default;
 
             var element = popMaxScoreElement ? sortedSet.Max : sortedSet.Min;
             sortedSet.Remove(element);
             sortedSetDict.Remove(element.Element);
+            TryRemoveExpiration(element.Element);
             this.UpdateSize(element.Element, false);
 
             return element;
@@ -915,6 +957,8 @@ namespace Garnet.server
         /// <param name="op"></param>
         private void SortedSetPopMinOrMaxCount(ref ObjectInput input, ref SpanByteAndMemory output, SortedSetOperation op)
         {
+            DeleteExpiredItems();
+
             var count = input.arg1;
             var countDone = 0;
 
@@ -940,6 +984,7 @@ namespace Garnet.server
                     var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
                     sortedSet.Remove(max);
                     sortedSetDict.Remove(max.Element);
+                    TryRemoveExpiration(max.Element);
 
                     this.UpdateSize(max.Element, false);
 
@@ -963,6 +1008,183 @@ namespace Garnet.server
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
             }
+        }
+
+
+        private void SortedSetPersist(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                DeleteExpiredItems();
+
+                var numFields = input.parseState.Count;
+                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in input.parseState.Parameters)
+                {
+                    var result = Persist(item.ToArray());
+                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    _output.result1++;
+                }
+            }
+            finally
+            {
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void SortedSetTimeToLive(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                DeleteExpiredItems();
+
+                var isMilliseconds = input.arg1 == 1;
+                var isTimestamp = input.arg2 == 1;
+                var numFields = input.parseState.Count;
+                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in input.parseState.Parameters)
+                {
+                    var result = GetExpiration(item.ToArray());
+
+                    if (result >= 0)
+                    {
+                        if (isTimestamp && isMilliseconds)
+                        {
+                            result = ConvertUtils.UnixTimeInMillisecondsFromTicks(result);
+                        }
+                        else if (isTimestamp && !isMilliseconds)
+                        {
+                            result = ConvertUtils.UnixTimeInSecondsFromTicks(result);
+                        }
+                        else if (!isTimestamp && isMilliseconds)
+                        {
+                            result = ConvertUtils.MillisecondsFromDiffUtcNowTicks(result);
+                        }
+                        else if (!isTimestamp && !isMilliseconds)
+                        {
+                            result = ConvertUtils.SecondsFromDiffUtcNowTicks(result);
+                        }
+                    }
+
+                    while (!RespWriteUtils.TryWriteInt64(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    _output.result1++;
+                }
+            }
+            finally
+            {
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void SortedSetExpire(ref ObjectInput input, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                DeleteExpiredItems();
+
+                var expireOption = (ExpireOption)input.arg1;
+                var inputFlags = (SortedSetExpireInputFlags)input.arg2;
+                var isInMilliseconds = inputFlags.HasFlag(SortedSetExpireInputFlags.InMilliseconds);
+                var isInTimestamp = inputFlags.HasFlag(SortedSetExpireInputFlags.InTimestamp);
+                var idx = 0;
+                var expiration = input.parseState.GetLong(idx++);
+
+                // Convert to UTC ticks
+                if (isInMilliseconds && isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
+                }
+                else if (isInMilliseconds && !isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiration);
+                }
+                else if (!isInMilliseconds && isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInSecondsToTicks(expiration);
+                }
+                else if (!isInMilliseconds && !isInTimestamp)
+                {
+                    expiration = ConvertUtils.UnixTimestampInSecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiration);
+                }
+
+                if (!inputFlags.HasFlag(SortedSetExpireInputFlags.NoSkip))
+                {
+                    if (expireOption != ExpireOption.None)
+                    {
+                        idx++;
+                    }
+
+                    idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the valudation is done in the caller
+                }
+
+                var numFields = input.parseState.Count - idx;
+                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in input.parseState.Parameters.Slice(idx))
+                {
+                    var result = SetExpiration(item.ToArray(), expiration, expireOption);
+                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    _output.result1++;
+                }
+            }
+            finally
+            {
+                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void SortedSetCollect(ref ObjectInput input, byte* output)
+        {
+            var _output = (ObjectOutputHeader*)output;
+            *_output = default;
+
+            DeleteExpiredItems();
+
+            _output->result1 = 1;
         }
 
         #region CommonMethods
@@ -1011,6 +1233,11 @@ namespace Garnet.server
                 // using ToList method so we avoid the Invalid operation ex. when removing
                 foreach (var item in iterator.ToList())
                 {
+                    if (IsExpired(item.Element))
+                    {
+                        continue;
+                    }
+
                     var inRange = new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(minValueChars);
                     if (inRange < 0 || (inRange == 0 && minValueExclusive))
                         continue;
@@ -1025,6 +1252,7 @@ namespace Garnet.server
                         {
                             sortedSetDict.Remove(item.Item2);
                             sortedSet.Remove((_key, item.Item2));
+                            TryRemoveExpiration(item.Element);
 
                             this.UpdateSize(item.Item2, false);
                         }
@@ -1080,6 +1308,7 @@ namespace Garnet.server
 
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
+                if (IsExpired(item.Element)) continue;
                 if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
                 if (minExclusive && item.Item1 == minValue) continue;
                 scoredElements.Add(item);
@@ -1100,6 +1329,7 @@ namespace Garnet.server
                     {
                         sortedSetDict.Remove(item.Item2);
                         sortedSet.Remove((_key, item.Item2));
+                        TryRemoveExpiration(item.Item2);
 
                         this.UpdateSize(item.Item2, false);
                     }

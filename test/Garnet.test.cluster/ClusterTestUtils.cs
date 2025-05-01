@@ -97,6 +97,8 @@ namespace Garnet.test.cluster
         OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS,
         PRIMARY_SYNC_IN_PROGRESS,
         PRIMARY_FAILOVER_STATE,
+        RECOVER_STATUS,
+        LAST_FAILOVER_STATE,
     }
 
     public enum StoreInfoItem
@@ -1879,10 +1881,10 @@ namespace Garnet.test.cluster
             }
         }
 
-        public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, ILogger logger = null)
+        public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, bool async = false, bool failEx = true, ILogger logger = null)
         {
             var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
-            return ClusterReplicate(replicaNodeIndex, primaryId, logger: logger);
+            return ClusterReplicate(replicaNodeIndex, primaryId, async: async, failEx: failEx, logger: logger);
         }
 
         public string ClusterReplicate(int sourceNodeIndex, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)
@@ -1893,7 +1895,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                List<object> args = async ? ["replicate", primaryNodeId, "async"] : ["replicate", primaryNodeId];
+                List<object> args = async ? ["replicate", primaryNodeId, "async"] : ["replicate", primaryNodeId, "sync"];
                 var result = (string)server.Execute("cluster", args);
                 ClassicAssert.AreEqual("OK", result);
                 return result;
@@ -2657,7 +2659,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        private List<(ReplicationInfoItem, string)> GetReplicationInfo(int nodeIndex, ReplicationInfoItem[] infoItems, ILogger logger = null)
+        public List<(ReplicationInfoItem, string)> GetReplicationInfo(int nodeIndex, ReplicationInfoItem[] infoItems, ILogger logger = null)
             => GetReplicationInfo((IPEndPoint)endpoints[nodeIndex], infoItems, logger);
 
         private List<(ReplicationInfoItem, string)> GetReplicationInfo(IPEndPoint endPoint, ReplicationInfoItem[] infoItems, ILogger logger = null)
@@ -2665,7 +2667,6 @@ namespace Garnet.test.cluster
             var server = redis.GetServer(endPoint);
             try
             {
-                //var result = (string)server.Execute("info", "replication");
                 var result = server.InfoRawAsync("replication").Result;
                 return ProcessReplicationInfo(result, infoItems);
             }
@@ -2728,6 +2729,14 @@ namespace Garnet.test.cluster
                             startsWith = "master_failover_state:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             continue;
+                        case ReplicationInfoItem.RECOVER_STATUS:
+                            startsWith = "recover_status:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            break;
+                        case ReplicationInfoItem.LAST_FAILOVER_STATE:
+                            startsWith = "last_failover_state:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            break;
                         default:
                             Assert.Fail($"type {infoItem} not supported!");
                             return null;
@@ -2777,7 +2786,6 @@ namespace Garnet.test.cluster
 
             return fields;
         }
-
 
         public string GetInfo(int nodeIndex, string section, string segment, ILogger logger = null)
             => GetInfo(endpoints[nodeIndex].ToIPEndPoint(), section, segment, logger);

@@ -772,6 +772,129 @@ namespace Garnet.test
             ex = Assert.Throws<RedisServerException>(() => db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT", "not_a_number"));
         }
 
+        [Test]
+        public void SInterWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("set2",
+            [
+                new RedisValue("one"),
+                new RedisValue("two"),
+                new RedisValue("four")
+            ]);
+
+            var result = db.SetCombine(SetOperation.Intersect, [new RedisKey("nonexistentkey"), new RedisKey("set2")]);
+            ClassicAssert.AreEqual(0, result.Length);
+        }
+
+        [Test]
+        public void SInterStoreWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("set2",
+            [
+                new RedisValue("one"),
+                new RedisValue("two"),
+                new RedisValue("four")
+            ]);
+
+            var result = db.SetCombineAndStore(SetOperation.Intersect, "dest", [new RedisKey("nonexistentkey"), new RedisKey("set2")]);
+            ClassicAssert.AreEqual(0, result);
+
+            var exists = db.KeyExists("dest");
+            ClassicAssert.IsFalse(exists);
+        }
+
+        [Test]
+        public void SDiffWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("set2",
+            [
+                new RedisValue("one"),
+                new RedisValue("two"),
+                new RedisValue("four")
+            ]);
+
+            var diff = db.SetCombine(SetOperation.Difference, [new RedisKey("nonexistentkey"), new RedisKey("set2")]);
+            ClassicAssert.AreEqual(0, diff.Length);
+        }
+
+        [Test]
+        public void SDiffStoreWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("set2",
+            [
+                new RedisValue("one"),
+                new RedisValue("two"),
+                new RedisValue("four")
+            ]);
+            db.SetAdd("dest",
+            [
+                new RedisValue("existing")
+            ]);
+
+            var result = db.SetCombineAndStore(SetOperation.Difference, "dest", [new RedisKey("nonexistentkey"), new RedisKey("set2")]);
+            ClassicAssert.AreEqual(0, result);
+            var exists = db.KeyExists("dest");
+            ClassicAssert.IsFalse(exists);
+        }
+
+        [Test]
+        public void SUnionWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("set2",
+            [
+                new RedisValue("one"),
+                new RedisValue("two"),
+                new RedisValue("four")
+            ]);
+
+            var result = db.SetCombine(SetOperation.Union, [new RedisKey("nonexistentkey"), new RedisKey("set2")]);
+            ClassicAssert.AreEqual(3, result.Length);
+            ClassicAssert.IsTrue(result.Contains("one"));
+            ClassicAssert.IsTrue(result.Contains("two"));
+            ClassicAssert.IsTrue(result.Contains("four"));
+        }
+
+        [Test]
+        public void SUnionStoreWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SetAdd("set2",
+            [
+                new RedisValue("one"),
+                new RedisValue("two"),
+                new RedisValue("four")
+            ]);
+            db.SetAdd("dest",
+            [
+                new RedisValue("existing")
+            ]);
+
+            var result = db.SetCombineAndStore(SetOperation.Union, "dest", [new RedisKey("nonexistentkey"), new RedisKey("set2")]);
+            ClassicAssert.AreEqual(3, result);
+            var members = db.SetMembers("dest");
+            ClassicAssert.AreEqual(3, members.Length);
+            ClassicAssert.IsTrue(members.Contains("one"));
+            ClassicAssert.IsTrue(members.Contains("two"));
+            ClassicAssert.IsTrue(members.Contains("four"));
+        }
+
         #endregion
 
 

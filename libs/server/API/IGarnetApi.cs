@@ -39,6 +39,11 @@ namespace Garnet.server
         GarnetStatus SET_Conditional(PinnedSpanByte key, ref RawStringInput input);
 
         /// <summary>
+        /// DEL Conditional
+        /// </summary>
+        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref RawStringInput input);
+
+        /// <summary>
         /// SET Conditional
         /// </summary>
         GarnetStatus SET_Conditional(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
@@ -128,9 +133,6 @@ namespace Garnet.server
         /// <summary>
         /// RENAME
         /// </summary>
-        /// <param name="oldKey"></param>
-        /// <param name="newKey"></param>
-        /// <param name="storeType"></param>
         /// <returns></returns>
         GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false, StoreType storeType = StoreType.All);
 
@@ -140,6 +142,7 @@ namespace Garnet.server
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
         /// <param name="result">The result of the operation.</param>
+        /// <param name="withEtag"></param>
         /// <param name="storeType">The type of store to perform the operation on.</param>
         /// <returns></returns>
         GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All);
@@ -428,7 +431,7 @@ namespace Garnet.server
         /// <param name="member"></param>
         /// <param name="newScore"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(PinnedSpanByte key, Double increment, PinnedSpanByte member, out double newScore);
+        GarnetStatus SortedSetIncrement(PinnedSpanByte key, double increment, PinnedSpanByte member, out double newScore);
 
         /// <summary>
         /// ZREMRANGEBYRANK: Removes all elements in the sorted set stored at key with rank between start and stop.
@@ -493,10 +496,13 @@ namespace Garnet.server
         /// Geospatial search and store in destination key.
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="opts"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchStore(PinnedSpanByte key, PinnedSpanByte destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
+        GarnetStatus GeoSearchStore(PinnedSpanByte key, PinnedSpanByte destinationKey, ref GeoSearchOptions opts,
+                                    ref ObjectInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Intersects multiple sorted sets and stores the result in the destination key.
@@ -519,6 +525,65 @@ namespace Garnet.server
         /// <param name="aggregateType">The type of aggregation to perform (e.g., Sum, Min, Max).</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
         GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
+
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to set expiration for.</param>
+        /// <param name="expireAt">The expiration time.</param>
+        /// <param name="expireOption">The expiration option to apply.</param>
+        /// <param name="results">The results of the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results);
+
+        /// <summary>
+        /// Persists the specified sorted set member, removing any expiration time set on it.
+        /// </summary>
+        /// <param name="key">The key of the sorted set to persist.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Persists the specified sorted set members, removing any expiration time set on them.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to persist.</param>
+        /// <param name="results">The results of the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, out int[] results);
+
+        /// <summary>
+        /// Deletes already expired members from the sorted set.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted set members to check for expiration.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<PinnedSpanByte> keys, ref ObjectInput input);
+
+        /// <summary>
+        /// Collects expired elements from the sorted set.
+        /// </summary>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect();
+
+        /// <summary>
+        /// Collects expired elements from the sorted set for the specified keys.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted sets to collect expired elements from.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<PinnedSpanByte> keys);
 
         #endregion
 
@@ -977,6 +1042,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">The key of the hash.</param>
         /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
+        /// <param name="isMilliseconds"></param>
         /// <param name="expireOption">The expiration option to apply.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="outputFooter">The output object to store the result.</param>
@@ -1374,6 +1440,24 @@ namespace Garnet.server
         /// <returns>Operation status</returns>
         GarnetStatus SortedSetIntersectLength(ReadOnlySpan<PinnedSpanByte> keys, int? limit, out int count);
 
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to get the time to live for.</param>
+        /// <param name="expireIn">The output array containing the time to live for each member.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(PinnedSpanByte key, ReadOnlySpan<PinnedSpanByte> members, out TimeSpan[] expireIn);
+
         #endregion
 
         #region Geospatial Methods
@@ -1382,13 +1466,26 @@ namespace Garnet.server
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
         /// GEODIST: Returns the distance between two members in the geospatial index represented by the sorted set.
         /// GEOPOS: Returns the positions (longitude,latitude) of all the specified members in the sorted set.
-        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus GeoCommands(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// GEORADIUS (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUS_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEORADIUSBYMEMBER_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="opts"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts, ref ObjectInput input, ref SpanByteAndMemory output);
 
         #endregion
 
@@ -1481,6 +1578,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="members"></param>
+        /// <param name="result"></param>
         /// <returns></returns>
         GarnetStatus SetIsMember(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result);
 
