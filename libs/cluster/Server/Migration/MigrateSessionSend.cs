@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.client;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -10,6 +11,56 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
+        /// <summary>
+        /// Write main store key-value pair directly to client buffer or flush buffer to make space and try again writing.
+        /// </summary>
+        /// <param name="gcs"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <returns>True on success, else false</returns>
+        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, ref SpanByte key, ref SpanByte value)
+        {
+            // Check if we need to initialize cluster migrate command arguments
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+
+            // Try write serialized key value to client buffer
+            while (!gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
+            {
+                // Flush key value pairs in the buffer
+                if (!HandleMigrateTaskResponse(task))
+                    return false;
+
+                // re-initialize cluster migrate command parameters
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Write object store key-value pair directly to client buffer or flush buffer to make space and try again writing.
+        /// </summary>
+        /// <param name="gcs"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="expiration"></param>
+        /// <returns></returns>
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, byte[] key, byte[] value, long expiration)
+        {
+            // Check if we need to initialize cluster migrate command arguments
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
+
+            while (!gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
+            {
+                // Flush key value pairs in the buffer
+                if (!HandleMigrateTaskResponse(task))
+                    return false;
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
+            }
+            return true;
+        }
+
         /// <summary>
         /// Write main store key-value pair directly to client buffer or flush buffer to make space and try again writing.
         /// </summary>
