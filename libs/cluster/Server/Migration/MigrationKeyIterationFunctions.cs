@@ -174,7 +174,6 @@ namespace Garnet.cluster
                     if (!session.AddKey(ref keySlice))
                         throw new GarnetException("Failed to add migrating key to working set!");
 
-
                     // Move buffer ptr and key offset
                     currPtr += keySlice.Length;
                     currentOffset++;
