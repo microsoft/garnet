@@ -96,6 +96,16 @@ namespace Garnet.cluster
         readonly TransferOption transferOption;
 
         /// <summary>
+        /// MigrateSlotsScan for background slot migrate tasks
+        /// </summary>
+        readonly MigrateSlotsScan[] migrateSlotsScan;
+
+        /// <summary>
+        /// LocalServerSessions for background slot migrate tasks
+        /// </summary>
+        readonly LocalServerSession[] localServerSessions;
+
+        /// <summary>
         /// MigrateSession Constructor
         /// </summary>
         /// <param name="clusterSession"></param>
@@ -150,7 +160,22 @@ namespace Garnet.cluster
             Status = MigrateState.PENDING;
 
             // Single key value size + few bytes for command header and arguments
-            _gcs = new(
+            _gcs = GetGarnetClient();
+
+            if (transferOption == TransferOption.SLOTS)
+            {
+                migrateSlotsScan = new MigrateSlotsScan[clusterProvider.serverOptions.ParallelMigrateTasks];
+                localServerSessions = new LocalServerSession[clusterProvider.serverOptions.ParallelMigrateTasks];
+                for (var i = 0; i < migrateSlotsScan.Length; i++)
+                {
+                    migrateSlotsScan[i] = new MigrateSlotsScan(this, logger: logger);
+                    localServerSessions[i] = new LocalServerSession(clusterProvider.storeWrapper);
+                }
+            }
+        }
+
+        public GarnetClientSession GetGarnetClient()
+            => new(
                 new IPEndPoint(IPAddress.Parse(_targetAddress), _targetPort),
                 networkBufferSettings: GetNetworkBufferSettings,
                 networkPool: GetNetworkPool,
@@ -158,7 +183,6 @@ namespace Garnet.cluster
                 authUsername: _username,
                 authPassword: _passwd,
                 logger: logger);
-        }
 
         /// <summary>
         /// Dispose
@@ -170,6 +194,15 @@ namespace Garnet.cluster
             _cts?.Dispose();
             _gcs.Dispose();
             localServerSession?.Dispose();
+
+            if (transferOption == TransferOption.SLOTS)
+            {
+                for (var i = 0; i < migrateSlotsScan.Length; i++)
+                {
+                    migrateSlotsScan[i].Dispose();
+                    localServerSessions[i].Dispose();
+                }
+            }
         }
 
         private bool CheckConnection()
