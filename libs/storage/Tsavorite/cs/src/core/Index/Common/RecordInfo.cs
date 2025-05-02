@@ -1,4 +1,4 @@
-﻿ // Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member

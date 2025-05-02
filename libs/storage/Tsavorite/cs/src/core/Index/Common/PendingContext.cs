@@ -67,18 +67,18 @@ namespace Tsavorite.core
             internal PendingContext(long keyHash) => this.keyHash = keyHash;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool noKey = false)
+            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
                 // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = noKey ? kIsNoKey : kNoOpFlags;
+                operationFlags = kNoOpFlags;
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions readCopyOptions, bool noKey = false)
+            internal PendingContext(ReadCopyOptions readCopyOptions)
             {
                 // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = noKey ? kIsNoKey : kNoOpFlags;
+                operationFlags = kNoOpFlags;
                 this.readCopyOptions = readCopyOptions;
             }
 

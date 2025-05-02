@@ -481,7 +481,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetFillerLengthAddress() => physicalAddress + ActualRecordSize;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetFillerLength() => GetFillerLength(GetFillerLengthAddress());
+        public readonly int GetFillerLength() => GetFillerLength(GetFillerLengthAddress());
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetFillerLength(long fillerLenAddress)

@@ -73,6 +73,5 @@ namespace Tsavorite.core
 
         /// <summary>Dispose an on-disk log record</summary>
         void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason);
-
     }
 }
