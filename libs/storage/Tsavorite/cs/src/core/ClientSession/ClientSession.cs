@@ -466,14 +466,15 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="scanFunctions">Functions receiving pushed records</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <param name="cursor">Cursor to scan from</param>
+        /// <param name="validateCursor">Cursor to scan from</param>
         /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, bool validateCursor = false)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
         {
             if (untilAddress == -1)
                 untilAddress = store.Log.TailAddress;
-            var cursor = 0L;
-            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress);
+            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: validateCursor);
         }
 
         /// <summary>

@@ -141,10 +141,12 @@ namespace Garnet.server
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="validateCursor"></param>
         /// <returns></returns>
-        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, bool validateCursor = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => basicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+            => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -158,10 +160,12 @@ namespace Garnet.server
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="validateCursor"></param>
         /// <returns></returns>
-        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
-            where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, bool validateCursor = false)
+           where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
+            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
