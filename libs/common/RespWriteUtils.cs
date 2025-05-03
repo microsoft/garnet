@@ -718,29 +718,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write an array with len number of null elements
-        /// </summary>
-        public static bool TryWriteArrayWithNullElements(int len, ref byte* curr, byte* end)
-        {
-            var numDigits = NumUtils.CountDigits(len);
-            var totalLen = 1 + numDigits + 2;
-            totalLen += len * 5; // 5 is the length of $-1\r\n
-
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            *curr++ = (byte)'*';
-            NumUtils.WriteInt32(len, numDigits, ref curr);
-            WriteNewline(ref curr);
-            for (var i = 0; i < len; i++)
-            {
-                if (!TryWriteNull(ref curr, end))
-                    return false;
-            }
-            return true;
-        }
-
-        /// <summary>
         /// Writes an array consisting of an ETag followed by a Bulk string value into the buffer.
         /// NOTE: Caller should make sure there is enough space in the buffer for sending the etag, and value array. Otherwise, this will quietly fail.
         /// </summary>

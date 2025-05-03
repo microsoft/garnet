@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
@@ -38,7 +39,7 @@ namespace Garnet.common
         public void WriteAsciiBulkString(string chars)
         {
             while (!RespWriteUtils.TryWriteAsciiBulkString(chars, ref curr, end))
-                ReallocateOutput();
+                ReallocateOutput(chars.Length);
         }
 
         /// <summary>
@@ -48,7 +49,7 @@ namespace Garnet.common
         public void WriteAsciiDirect(ReadOnlySpan<char> span)
         {
             while (!RespWriteUtils.TryWriteAsciiDirect(span, ref curr, end))
-                ReallocateOutput();
+                ReallocateOutput(span.Length);
         }
 
         /// <summary>
@@ -88,7 +89,7 @@ namespace Garnet.common
         public void WriteBulkString(scoped ReadOnlySpan<byte> item)
         {
             while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
-                ReallocateOutput();
+                ReallocateOutput(item.Length);
         }
 
         /// <summary>
@@ -98,6 +99,16 @@ namespace Garnet.common
         public void WriteDirect(scoped ReadOnlySpan<byte> span)
         {
             while (!RespWriteUtils.TryWriteDirect(span, ref curr, end))
+                ReallocateOutput(span.Length);
+        }
+
+        /// <summary>
+        /// Writes struct directly to memory.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteDirect<T>(ref T item) where T : unmanaged
+        {
+            while (!RespWriteUtils.TryWriteDirect(ref item, ref curr, end))
                 ReallocateOutput();
         }
 
@@ -166,7 +177,7 @@ namespace Garnet.common
         public void WriteError(scoped ReadOnlySpan<byte> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
-                ReallocateOutput();
+                ReallocateOutput(errorString.Length);
         }
 
         /// <summary>
@@ -176,7 +187,25 @@ namespace Garnet.common
         public void WriteError(ReadOnlySpan<char> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
-                ReallocateOutput();
+                ReallocateOutput(errorString.Length);
+        }
+
+        /// <summary>
+        /// Write RESP3 false
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void TryWriteFalse()
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteFalse(ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
+                    ReallocateOutput();
+            }
         }
 
         /// <summary>
@@ -236,6 +265,16 @@ namespace Garnet.common
                 while (!RespWriteUtils.TryWriteArrayLength(len * 2, ref curr, end))
                     ReallocateOutput();
             }
+        }
+
+        /// <summary>
+        /// Write new line
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteNewLine()
+        {
+            while (!RespWriteUtils.TryWriteNewLine(ref curr, end))
+                ReallocateOutput();
         }
 
         /// <summary>
@@ -299,28 +338,88 @@ namespace Garnet.common
         /// Write simple string to memory.
         /// </summary>
         /// <param name="simpleString">An ASCII simple string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteSimpleString(ReadOnlySpan<char> simpleString)
         {
             while (!RespWriteUtils.TryWriteSimpleString(simpleString, ref curr, end))
+                ReallocateOutput(simpleString.Length);
+        }
+
+        /// <summary>
+        /// Write RESP3 true
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteTrue()
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteTrue(ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt32(1, ref curr, end))
+                    ReallocateOutput();
+            }
+        }
+
+        /// <summary>
+        /// Wrties the <paramref name="chars"/> as UTF8 bulk string to memory.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteUtf8BulkString(ReadOnlySpan<char> chars)
+        {
+            while (!RespWriteUtils.TryWriteUtf8BulkString(chars, ref curr, end))
                 ReallocateOutput();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReallocateOutput()
+        /// <summary>
+        /// Make sure at least totalLen bytes are allocated.
+        /// </summary>
+        /// <param name="totalLenHint"></param>
+        public void Realloc(int totalLenHint = 0)
         {
-            ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            var len = (int)(end - ptr);
+            if (totalLenHint <= len)
+                return;
+
+            ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end, totalLenHint - len);
         }
 
-        public static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void ReallocateOutput(int extraLenHint = 0)
         {
-            var length = Math.Max(output.Length * 2, 1024);
+            ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end, extraLenHint);
+        }
+
+        private static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end, int extraLenHint = 0)
+        {
+            var length = output.Length;
+
+            if (length < 1024)
+            {
+                length = 512;
+            }
+
+            checked
+            {
+                if (length < extraLenHint)
+                {
+                    length = (int)BitOperations.RoundUpToPowerOf2((uint)extraLenHint + (uint)length); ;
+                }
+                else
+                {
+                    length <<= 1;
+                }
+            }
+
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();
             var newPtr = (byte*)newPtrHandle.Pointer;
             var bytesWritten = (int)(curr - ptr);
-            Buffer.MemoryCopy(ptr, newPtr, length, bytesWritten);
+            if (bytesWritten > 0)
+                Buffer.MemoryCopy(ptr, newPtr, length, bytesWritten);
+
             if (isMemory)
             {
                 ptrHandle.Dispose();
@@ -336,7 +435,7 @@ namespace Garnet.common
             output.Memory = newMem;
             output.Length = length;
             curr = ptr + bytesWritten;
-            end = ptr + output.Length;
+            end = ptr + length;
         }
 
         /// <summary>

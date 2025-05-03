@@ -193,8 +193,11 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     // Write an empty array of count - 1 elements with null values.
-                    while (!RespWriteUtils.TryWriteArrayWithNullElements(parseState.Count - 1, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(parseState.Count - 1, ref dcurr, dend))
                         SendAndReset();
+
+                    for (var i = 0; i < parseState.Count - 1; ++i)
+                        WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
