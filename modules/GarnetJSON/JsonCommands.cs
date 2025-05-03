@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
@@ -29,9 +28,9 @@ namespace GarnetJSON
         /// </summary>
         /// <param name="key">The key of the object.</param>
         /// <param name="input">The input data.</param>
-        /// <param name="output">The output data.</param>
+        /// <param name="writer">The output data.</param>
         /// <returns>Always returns true.</returns>
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
 
         /// <summary>
         /// Updates the JSON object with the specified key and input.
@@ -39,17 +38,17 @@ namespace GarnetJSON
         /// <param name="key">The key of the object.</param>
         /// <param name="input">The input data.</param>
         /// <param name="jsonObject">The JSON object to update.</param>
-        /// <param name="output">The output data.</param>
+        /// <param name="writer">The output data.</param>
         /// <param name="rmwInfo">Additional information for the update.</param>
         /// <returns>True if the update is successful, otherwise false.</returns>
-        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             Debug.Assert(jsonObject is GarnetJsonObject);
 
             var parseState = input.parseState;
             if (parseState.Count is not (2 or 3))
             {
-                return AbortWithWrongNumberOfArguments(ref output, "json.set");
+                return AbortWithWrongNumberOfArguments(ref writer, "json.set");
             }
 
             int offset = 0;
@@ -59,7 +58,7 @@ namespace GarnetJSON
 
             if (parseState.Count is 4 && !input.TryGetExistOption(ref offset, out existOptions))
             {
-                return AbortWithSyntaxError(ref output);
+                return AbortWithSyntaxError(ref writer);
             }
 
             var garnetJsonObject = jsonObject as GarnetJsonObject;
@@ -72,10 +71,10 @@ namespace GarnetJSON
                 case SetResult.Success:
                     return true;
                 case SetResult.ConditionNotMet:
-                    WriteNullBulkString(ref output);
+                    writer.WriteNull();
                     break;
                 default:
-                    AbortWithErrorMessage(ref output, errorMessage);
+                    AbortWithErrorMessage(ref writer, errorMessage);
                     break;
             }
 
@@ -102,10 +101,10 @@ namespace GarnetJSON
         /// <param name="key">The key of the object.</param>
         /// <param name="input">The input data.</param>
         /// <param name="jsonObject">The JSON object to read.</param>
-        /// <param name="output">The output data.</param>
+        /// <param name="writer">The output data.</param>
         /// <param name="readInfo">Additional information for the read operation.</param>
         /// <returns>True if the read is successful, otherwise false.</returns>
-        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
             Debug.Assert(jsonObject is GarnetJsonObject);
             var garnetJsonObject = jsonObject as GarnetJsonObject;
@@ -149,7 +148,7 @@ namespace GarnetJSON
 
                     if (offset > parseState.Count)
                     {
-                        return AbortWithWrongNumberOfArguments(ref output, "json.get");
+                        return AbortWithWrongNumberOfArguments(ref writer, "json.get");
                     }
                     else
                     {
@@ -164,17 +163,18 @@ namespace GarnetJSON
 
             if (!isSuccess)
             {
-                AbortWithErrorMessage(ref output, errorMessage);
+                AbortWithErrorMessage(ref writer, errorMessage);
                 return true;
             }
 
             if (outputArr.Count == 0)
             {
-                WriteNullBulkString(ref output);
+                writer.WriteNull();
             }
             else
             {
-                WriteBulkString(ref output, outputArr);
+                writer.Realloc(outputArr.Select(x => x.Length).Sum());
+                writer.WriteBulkStrings(outputArr);
             }
             return true;
         }

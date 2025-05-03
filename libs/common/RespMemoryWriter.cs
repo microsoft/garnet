@@ -3,7 +3,9 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
@@ -92,6 +94,21 @@ namespace Garnet.common
         {
             while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                 ReallocateOutput(item.Length);
+        }
+
+        /// <summary>
+        /// Write bulk strings to memory.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteBulkStrings(IEnumerable<byte[]> bulkStrings)
+        {
+            var stringLen = bulkStrings.Sum(x => x.Length);
+
+            while (!RespWriteUtils.TryWriteBulkString(bulkStrings, stringLen, ref curr, end))
+            {
+                var len = RespWriteUtils.GetBulkStringLength(stringLen);
+                ReallocateOutput(len);
+            }
         }
 
         /// <summary>
@@ -285,6 +302,12 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteNull()
         {
+            // This is usually emitted by itself, so we can optimize allocation a bit.
+            if (end == curr)
+            {
+                Realloc(8);
+            }
+
             if (resp3)
             {
                 while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
@@ -379,30 +402,33 @@ namespace Garnet.common
         /// Make sure at least totalLen bytes are allocated.
         /// </summary>
         /// <param name="totalLenHint"></param>
-        public void Realloc(int totalLenHint = 0)
+        public void Realloc(int totalLenHint)
         {
             var len = (int)(end - ptr);
             if (totalLenHint <= len)
                 return;
 
-            ReallocateOutput(totalLenHint - len);
+            ReallocateOutput(totalLenHint - len, true);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReallocateOutput(int extraLenHint = 0)
+        private void ReallocateOutput(int extraLenHint = 0, bool lowerMinimum = false)
         {
             var length = output.Length;
 
             if (length < 1024)
             {
-                length = 512;
+                if (!lowerMinimum)
+                    length = 512;
+                else // Internally pool has a minimum of 16, no point allocating less.
+                    length = 8;
             }
 
             checked
             {
                 if (length < extraLenHint)
                 {
-                    length = (int)BitOperations.RoundUpToPowerOf2((uint)extraLenHint + (uint)length); ;
+                    length = (int)BitOperations.RoundUpToPowerOf2((uint)extraLenHint + (uint)length);
                 }
                 else
                 {
