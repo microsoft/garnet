@@ -13,7 +13,7 @@ The `ObjectAllocator` replaces the `GenericAllocator` to provide two important i
     - If the key or value is overflow, it is written inline into the main log record on flush, and addresses are modified.
     - If the value is an object, it is serialized inline.
 
-Garnet uses a two-log scheme:
+Garnet uses a two-allocator scheme:
 - Strings are stored in a version of `TsavoriteKV` that uses a `SpanByteAllocator`.
 - Objects are stored in a version of `TsavoriteKV` that uses an `ObjectAllocator`.
 

@@ -37,7 +37,7 @@ namespace Tsavorite.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal const int kValueSize = 96;     // 100 minus 4-byte length prefix.
+        internal const int kValueDataSize = 96;     // 100 minus 4-byte length prefix.
 
         internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
@@ -72,7 +72,7 @@ namespace Tsavorite.benchmark
                         [
                             new RevivificationBin()
                             {
-                                RecordSize = RecordInfo.GetLength() + KeySpanByte.kTotalKeySize + kValueSize + 8,    // extra to ensure rounding up of value
+                                RecordSize = RecordInfo.GetLength() + KeySpanByte.TotalSize + kValueDataSize + 8,    // extra to ensure rounding up of value
                                 NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                                 BestFitScanLimit = RevivificationBin.UseFirstFit
                             }
@@ -133,9 +133,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Span<byte> value = stackalloc byte[kValueSize];
-            Span<byte> input = stackalloc byte[kValueSize];
-            Span<byte> output = stackalloc byte[kValueSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
+            Span<byte> input = stackalloc byte[kValueDataSize];
+            Span<byte> output = stackalloc byte[kValueDataSize];
 
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
@@ -171,8 +171,9 @@ namespace Tsavorite.benchmark
 
                         unsafe
                         {
-                            var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
-                            var key = keyStruct.AsReadOnlySpan();
+                            // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
+                            var key = txn_keys_[idx].AsReadOnlySpan();
+
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                             if (r < readPercent)
                             {
@@ -228,9 +229,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Span<byte> value = stackalloc byte[kValueSize];
-            Span<byte> input = stackalloc byte[kValueSize];
-            Span<byte> output = stackalloc byte[kValueSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
+            Span<byte> input = stackalloc byte[kValueDataSize];
+            Span<byte> output = stackalloc byte[kValueDataSize];
 
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
@@ -264,8 +265,9 @@ namespace Tsavorite.benchmark
 
                     unsafe
                     {
-                        var keyStruct = txn_keys_[idx];     // The big vectors are not pinned, so copy to the stack
-                        var key = keyStruct.AsReadOnlySpan();
+                        // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
+                        var key = txn_keys_[idx].AsReadOnlySpan();
+
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
@@ -429,11 +431,7 @@ namespace Tsavorite.benchmark
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
-            // The key vectors are not pinned, so copy to the stack
-            KeySpanByte keyStruct = default;
-            var key = keyStruct.AsReadOnlySpan();
-
-            Span<byte> value = stackalloc byte[kValueSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
 
             try
             {
@@ -450,7 +448,8 @@ namespace Tsavorite.benchmark
                                 uContext.CompletePending(false);
                         }
 
-                        keyStruct = init_keys_[idx];
+                        // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
+                        var key = txn_keys_[idx].AsReadOnlySpan();
                         uContext.Upsert(key, value, Empty.Default);
                     }
                 }
@@ -476,11 +475,7 @@ namespace Tsavorite.benchmark
             using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
-            // The key vectors are not pinned, so copy to the stack
-            KeySpanByte keyStruct = default;
-            var _key = keyStruct.AsReadOnlySpan();
-
-            Span<byte> value = stackalloc byte[kValueSize];
+            Span<byte> value = stackalloc byte[kValueDataSize];
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -495,8 +490,9 @@ namespace Tsavorite.benchmark
                             bContext.CompletePending(false);
                     }
 
-                    keyStruct = init_keys_[idx];
-                    bContext.Upsert(keyStruct.AsReadOnlySpan(), value, Empty.Default);
+                    // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
+                    var key = txn_keys_[idx].AsReadOnlySpan();
+                    bContext.Upsert(key, value, Empty.Default);
                 }
             }
 

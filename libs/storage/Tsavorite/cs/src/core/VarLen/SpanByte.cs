@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
@@ -71,6 +72,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void CopyTo(this Span<byte> src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
             => ((ReadOnlySpan<byte>)src).CopyTo(ref dst, memoryPool);
+
+        /// <summary>
+        /// Unchecked Unsafe cast to a different type; for speed, it does not do the checking for "contains references" etc. that 
+        /// <see cref="MemoryMarshal.Cast{TFrom, TTo}(ReadOnlySpan{TFrom})"/> does.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ReadOnlySpan<TTo> UncheckedCast<TTo>(this ReadOnlySpan<byte> src)
+            => MemoryMarshal.CreateReadOnlySpan(ref Unsafe.As<byte, TTo>(ref MemoryMarshal.GetReference(src)), src.Length / Unsafe.SizeOf<TTo>());
 
         /// <summary>
         /// Copy serialized version to specified memory location

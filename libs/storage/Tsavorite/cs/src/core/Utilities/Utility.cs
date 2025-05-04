@@ -185,25 +185,21 @@ namespace Tsavorite.core
         /// <summary>
         /// Get 64-bit hash code for a byte array
         /// </summary>
-        /// <param name="pbString"></param>
-        /// <param name="len"></param>
+        /// <param name="byteSpan"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long HashBytes(byte* pbString, int len)
+        public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
             const long magicno = 40343;
-            char* pwString = (char*)pbString;
-            int cbBuf = len / 2;
-            ulong hashState = (ulong)len;
+            var charSpan = byteSpan.UncheckedCast<char>();
+            ulong hashState = (ulong)byteSpan.Length;
 
-            for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + *pwString;
+            var charLen = charSpan.Length;
+            for (int i = 0; i < charLen; i++)
+                hashState = magicno * hashState + (char)byteSpan[i];
 
-            if ((len & 1) > 0)
-            {
-                byte* pC = (byte*)pwString;
-                hashState = magicno * hashState + *pC;
-            }
+            if ((byteSpan.Length & 1) > 0)
+                hashState = magicno * hashState + byteSpan[0];
 
             return (long)Rotr64(magicno * hashState, 4);
         }

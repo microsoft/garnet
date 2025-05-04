@@ -6,13 +6,21 @@ title: LogRecord
 
 # LogRecord
 
-The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods with a single LogRecord, which may be either `LogRecord<TValue>` for in-memory log records, or `DiskLogRecord<TValue>` for on-disk records. There are a number of additional changes in this design as well, as shown in the following sections.
+The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods (as well as endoding optional `ETag` and `Expirattion` into the Value) with a single LogRecord, which may be either `LogRecord<TValue>` for in-memory log records, or `DiskLogRecord<TValue>` for on-disk records. These LogRecords have properties for `Key` and `Value` as well as making `Etag` and `Expiration` first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.
 
-## All Keys are now `SpanByte`
+## `SpanByte` and `ArgSlice` are now `PinnedSpanByte` or `ReadOnlySpan<byte>`
 
-Originally, Tsavorite was templated on the key type. In this revision, all keys are now `SpanByte`. Any key structure must be converted to a stream of bytes and a SpanByte created over this. This can be a stack variable (which is not subject to GC) or a pinned pointer. 
+To clarify that the element must be a pointer to a pinned span of bytes, the `SpanByte` and `ArgSlice` types have been replaced with `PinnedSpanByte` and `ReadOnlySpan<byte>`. The `PinnedSpanByte` is similar to the earlier `SpanByte`; a struct that wraps a pointer to a pinned span of bytes. Its construction has been changed from direct constructor calls to static `FromPinned*` calls, e.g. `FromLengthPrefixedPinnedPointer`. This is mostly used for cases where `(ReadOnly)Span<byte>` are not possible due to restrictions on their use; further work could reduce these areas.
 
-This has simplified the signature and internal implementation of TsavoriteKV itself, the sessions, allocators, ISessionFunctions, Iterators, and so on. And we now have only two allocators, `SpanByteAllocator` and the new `ObjectAllocator`.
+There are still areas where direct `byte*` are used, such as number parsing. Later work can revisit this to use `(ReadOnly)Span<byte>` instead if there is no performance impact.
+
+The `SpanByte` class now exists only as a static utility class that provides extension functions `(ReadOnly)Span<byte>`.
+
+## All Keys are now `ReadOnlySpan<byte>` at the Tsavorite Level
+
+Originally, Tsavorite was templated on the `TKey` generic type, which was either `SpanByte` for the string store or `byte[]` for the object store. In this revision, all keys at the Tsavorite level are now `ReadOnlySpan<byte>`. At the Garnet processing level, they may be `PinnedSpanByte` at the `GarnetApi` layer and above. Any key structure must be converted to a stream of bytes and a `ReadOnlySpan<byte>` or `PinnedSpanByte` created over this. This can be a stack variable (which is not subject to GC) or a pinned pointer. 
+
+This has simplified the signature and internal implementation of TsavoriteKV itself, the sessions, allocators, ISessionFunctions, Compaction, Iterators, and so on. And we now have only two allocators, `SpanByteAllocator` and the new `ObjectAllocator`.
 
 ## Removal of `BlittableAllocator`
 
@@ -22,9 +30,11 @@ As part of the migration to `SpanByte`-only keys, `BlittableAllocator` has been 
 
 With the move to `SpanByte`-only keys we also created a new `ObjectAllocator` for a store that uses an object value type. `GenericAllocator` is not able to take SpanByte keys, and it also uses a separate object log file. `ObjectAllocator` uses a single log file; see the separate `ObjectAllocator` documentation for more details.
 
+In `ObjectAllocator` we have an `ObjectIdMap` that provides a GC root for objects (and overflows, as discussed next). In the log record itself, there is a 4-byte `ObjectId` that is an index into the `ObjectIdMap`.
+
 ## Overflow Keys and Values
 
-To keep the size of the main log record tractable, we provide an option to have large SpanByte keys and values "overflow"; rather than being stored inline in the log record, they are allocated separately by the `OverflowAllocator`, and a pointer is stored in the log record (with the key or value length being `sizeof(IntPtr)`). This does incur some performance overhead. The initial reason for this was to keep `ObjectAllocator` pages small enough that the page-level object size tracking would be sufficiently granular; if those pages are large enough to support large keys, then it is possible there are a large number of records with small keys and large objects, making it impossible to control object space budgets with sufficient granularity. By providing this for SpanByte values as well, it allows similar control of the number of records per `SpanByteAllocator` page.
+To keep the size of the main log record tractable, we provide an option for `ObjectAllocator` to have large SpanByte keys and values "overflow"; rather than being stored inline in the log record, they are allocated separately as `byte[]`, and a pointer is stored in the log record (with the key or value length being `sizeof(IntPtr)`). This redirection does incur some performance overhead. The initial reason for this was to keep `ObjectAllocator` pages small enough that the page-level object size tracking would be sufficiently granular; if those pages are large enough to support large keys, then it is possible there are a large number of records with small keys and large objects, making it impossible to control object space budgets with sufficient granularity. By providing this for SpanByte values as well, it allows similar control of the number of records per `SpanByteAllocator` page.
 
 ### OverflowAllocator
 
@@ -47,7 +57,7 @@ This is the basic block header for a NativeMemory allocation. It contains inform
 
 ### MultiLevelPageArray
 
-The `MultiLevelPageArray` is the data structure used to manage the pages of the NativePageAllocator, as well as to provide a sturcture for simple stacks such as for free lists.
+The `MultiLevelPageArray` is the data structure used to manage the pages of the NativePageAllocator, as well as to provide a structure for simple stacks such as for free lists.
 
 This `MultiLevelPageArray` is a 3-d array of page vectors. Because `NativePageAllocator` allocates pages for caller use, this can be envisioned as a book, where the first two dimensions are infrastructure, and the third is where the user-visible allocations are created.
   - The first dimension is the "book", which is a collection of "chapters". Think of the book as a spine, which can be reallocated--but when it is reallocated, the individual chapters, and references within them, are not moved, so may be accessed by other threads.

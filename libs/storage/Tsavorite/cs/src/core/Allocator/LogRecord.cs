@@ -60,9 +60,19 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0;
         /// <inheritdoc/>
-        public readonly ref RecordInfo InfoRef => ref GetInfoRef(physicalAddress);
+        public readonly ref RecordInfo InfoRef
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return ref GetInfoRef(physicalAddress); }
+        }
+
         /// <inheritdoc/>
-        public readonly RecordInfo Info => GetInfoRef(physicalAddress);
+        public readonly RecordInfo Info
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return GetInfo(physicalAddress); }
+        }
+
         /// <inheritdoc/>
         public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress, objectIdMap);
 
@@ -172,11 +182,11 @@ namespace Tsavorite.core
 
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref *(RecordInfo*)(physicalAddress);
+        public static ref RecordInfo GetInfoRef(long physicalAddress) => ref *(RecordInfo*)physicalAddress;
 
         /// <summary>Fast access returning a copy of the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)(physicalAddress);
+        public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
 
         /// <summary>The address of the key</summary>
         public readonly long KeyAddress => GetKeyAddress(physicalAddress);

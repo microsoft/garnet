@@ -97,7 +97,7 @@ namespace Garnet.server
 
             keySlices[sliceCount].slice = slice;
             keySlices[sliceCount].type = type;
-            keySlices[sliceCount].hash = Utility.HashBytes(slice.ToPointer(), slice.Length);
+            keySlices[sliceCount].hash = Utility.HashBytes(slice.ReadOnlySpan);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
             watchBufferPtr += key.Length;

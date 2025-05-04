@@ -24,13 +24,7 @@ namespace Tsavorite.core
         /// Get 64-bit hash code
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long StaticGetHashCode64(ReadOnlySpan<byte> key)
-        {
-            fixed (byte* ptr = key) // TODO avoid this pin for perf
-            {
-                return Utility.HashBytes(ptr, key.Length);
-            }
-        }
+        public static unsafe long StaticGetHashCode64(ReadOnlySpan<byte> key) => Utility.HashBytes(key);
 
         /// <inheritdoc />
         public readonly unsafe bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => StaticEquals(k1, k2);
