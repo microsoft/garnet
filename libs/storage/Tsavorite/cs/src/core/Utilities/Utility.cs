@@ -183,23 +183,25 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get 64-bit hash code for a byte array
+        /// Get 64-bit hash code for a byte array. The array does not have to be pinned.
         /// </summary>
-        /// <param name="byteSpan"></param>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
             const long magicno = 40343;
+
+            // Convert to char for faster enumeration (two bytes per iteration)
             var charSpan = byteSpan.UncheckedCast<char>();
-            ulong hashState = (ulong)byteSpan.Length;
+            var hashState = (ulong)byteSpan.Length;
 
-            var charLen = charSpan.Length;
-            for (int i = 0; i < charLen; i++)
-                hashState = magicno * hashState + (char)byteSpan[i];
+            // Explicit enumerator calls are faster than foreach
+            var charEnumerator = charSpan.GetEnumerator();
+            while (charEnumerator.MoveNext())
+                hashState = (magicno * hashState) + charEnumerator.Current;
 
+            // If we had an odd number of bytes, get the last byte
             if ((byteSpan.Length & 1) > 0)
-                hashState = magicno * hashState + byteSpan[0];
+                hashState = magicno * hashState + byteSpan[^1];
 
             return (long)Rotr64(magicno * hashState, 4);
         }
