@@ -175,7 +175,7 @@ namespace Tsavorite.benchmark
 
                         unsafe
                         {
-                            // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
+                            // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
                             var key = txn_keys_[idx].AsReadOnlySpan();
 
                             int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
@@ -269,7 +269,7 @@ namespace Tsavorite.benchmark
 
                     unsafe
                     {
-                        // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
+                        // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
                         var key = txn_keys_[idx].AsReadOnlySpan();
 
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
@@ -452,12 +452,12 @@ namespace Tsavorite.benchmark
                                 uContext.CompletePending(false);
                         }
 
-                        // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionObjectFunctions' ReadOnlySpan<byte> value methods, so no need to worry about that.
-                        var key = txn_keys_[idx].AsReadOnlySpan();
+                        // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
+                        var key = init_keys_[idx].AsReadOnlySpan();
                         if (object_values is null)
                             uContext.Upsert(key, value, Empty.Default);
                         else
-                            uContext.Upsert(key, object_values[idx] = new ObjectValue() { value = txn_keys_[idx].value }, Empty.Default);
+                            uContext.Upsert(key, object_values[idx] = new ObjectValue() { value = init_keys_[idx].value }, Empty.Default);
                     }
                 }
                 uContext.CompletePending(true);
@@ -497,12 +497,12 @@ namespace Tsavorite.benchmark
                             bContext.CompletePending(false);
                     }
 
-                    // The big vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions so no need to worry about that.
-                    var key = txn_keys_[idx].AsReadOnlySpan();
+                    // The key vectors are not pinned, but we use only (ReadOnly)Span<byte> operations in SessionSpanByteFunctions and key compare.
+                    var key = init_keys_[idx].AsReadOnlySpan();
                     if (object_values is null)
                         bContext.Upsert(key, value, Empty.Default);
                     else
-                        bContext.Upsert(key, object_values[idx] = new ObjectValue() { value = txn_keys_[idx].value }, Empty.Default);
+                        bContext.Upsert(key, object_values[idx] = new ObjectValue() { value = init_keys_[idx].value }, Empty.Default);
                 }
             }
 
