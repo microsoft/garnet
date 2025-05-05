@@ -91,7 +91,7 @@ namespace Garnet.cluster
         /// <param name="replaceOption"></param>
         /// <param name="timeout"></param>
         /// <param name="slots"></param>
-        /// <param name="keys"></param>
+        /// <param name="sketch"></param>
         /// <param name="transferOption"></param>
         /// <param name="mSession"></param>
         /// <returns></returns>
@@ -107,7 +107,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            MigratingKeysWorkingSet keys,
+            MigratingKeysSketch sketch,
             TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
                 clusterSession,
@@ -122,7 +122,7 @@ namespace Garnet.cluster
                 replaceOption,
                 timeout,
                 slots,
-                keys,
+                sketch,
                 transferOption,
                 out mSession);
 

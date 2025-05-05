@@ -20,7 +20,7 @@ namespace Garnet.cluster
 
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        internal class MigrateSlotsScan
+        internal class MigrateScan
         {
             public readonly MigratingKeysSketch sketch;
             public readonly List<byte[]> keysToDelete;
@@ -37,11 +37,11 @@ namespace Garnet.cluster
 
             public long Count { get; private set; }
 
-            public MigrateSlotsScan(MigrateSession session, int batchSize = 1 << 18, ILogger logger = null)
+            public MigrateScan(MigrateSession session, MigratingKeysSketch sketch = null, int batchSize = 1 << 18, ILogger logger = null)
             {
                 this.session = session;
                 gcs = session.GetGarnetClient();
-                sketch = new(size: batchSize << 2);
+                this.sketch = sketch ?? new(size: batchSize << 2);
                 this.logger = logger;
                 mss = new MainStoreScan(this);
                 oss = new ObjectStoreScan(this);
@@ -66,6 +66,12 @@ namespace Garnet.cluster
 
             public void SetPhase(MigratePhase phase) => this.phase = phase;
 
+            public bool Probe(ref ArgSlice key, out KeyMigrationStatus status)
+            {
+                var spanByte = key.SpanByte;
+                return Probe(ref spanByte, out status);
+            }
+
             public bool Probe(ref SpanByte key, out KeyMigrationStatus status) => sketch.Probe(ref key, out status);
 
             public void SetKeysStatus(KeyMigrationStatus status) => sketch.SetStatus(status);
@@ -74,14 +80,14 @@ namespace Garnet.cluster
             public bool OnStart(long beginAddress, long endAddress, StoreType storeType)
             {
                 logger?.LogTrace("[{ScanClassName}] {storeType} {phase} {beginAddress} {endAddress}",
-                    nameof(MigrateSlotsScan), storeType, phase, beginAddress, endAddress);
+                    nameof(MigrateScan), storeType, phase, beginAddress, endAddress);
                 return true;
             }
 
             public void OnStop(bool completed, long numberOfRecords, StoreType storeType)
             {
                 logger?.LogTrace("[{ScanClassName}] {storeType} {phase} {numberOfRecords}",
-                    nameof(MigrateSlotsScan), storeType, phase, numberOfRecords);
+                    nameof(MigrateScan), storeType, phase, numberOfRecords);
                 if (phase == MigratePhase.TransmitData)
                 {
                     _ = session.HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer());
@@ -91,15 +97,15 @@ namespace Garnet.cluster
             }
 
             public void OnException(Exception exception, long numberOfRecords)
-                => logger?.LogError("[{ScanClassName}] {ex}", nameof(MigrateSlotsScan), exception.Message);
+                => logger?.LogError("[{ScanClassName}] {ex}", nameof(MigrateScan), exception.Message);
             #endregion
 
             #region mainStoreScan
             internal sealed unsafe class MainStoreScan : IScanIteratorFunctions<SpanByte, SpanByte>
             {
-                readonly MigrateSlotsScan mss;
+                readonly MigrateScan mss;
 
-                internal MainStoreScan(MigrateSlotsScan mss)
+                internal MainStoreScan(MigrateScan mss)
                 {
                     this.mss = mss;
                 }
@@ -154,9 +160,9 @@ namespace Garnet.cluster
             #region objectStoreScan
             internal sealed unsafe class ObjectStoreScan : IScanIteratorFunctions<byte[], IGarnetObject>
             {
-                readonly MigrateSlotsScan mss;
+                readonly MigrateScan mss;
 
-                internal ObjectStoreScan(MigrateSlotsScan mss)
+                internal ObjectStoreScan(MigrateScan mss)
                 {
                     this.mss = mss;
                 }

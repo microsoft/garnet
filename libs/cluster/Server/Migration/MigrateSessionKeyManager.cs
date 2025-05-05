@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Garnet.server;
 
@@ -25,33 +24,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Try to transition all keys handled by this session to the provided state
-        /// Valid state transitions are as follows:
-        ///     PREPARE to MIGRATING
-        ///     MIGRATING to MIGRATED or DELETING
-        /// If state transition is not valid it will result in a no-op and the key state will remain unchanged
-        /// </summary>
-        /// <param name="status"></param>
-        private void TryTransitionState(KeyMigrationStatus status)
-        {
-            foreach (var key in _keys.GetKeys())
-            {
-                var updateStatus = status switch
-                {
-                    // 1. Transition key to MIGRATING from QUEUED
-                    KeyMigrationStatus.MIGRATING when key.Value == KeyMigrationStatus.QUEUED => status,
-                    // 2. Transition key to MIGRATED from MIGRATING
-                    KeyMigrationStatus.MIGRATED when key.Value == KeyMigrationStatus.MIGRATING => status,
-                    // 3. Transition to DELETING from MIGRATING
-                    KeyMigrationStatus.DELETING when key.Value == KeyMigrationStatus.MIGRATING => status,
-                    // 3. Omit state transition
-                    _ => key.Value,
-                };
-                _keys.UpdateStatus(key.Key, updateStatus);
-            }
-        }
-
-        /// <summary>
         /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
         /// </summary>
         /// <param name="key"></param>
@@ -65,10 +37,16 @@ namespace Garnet.cluster
             if (!_sslots.Contains(slot))
                 return true;
 
-            // If key is not queued for migration then
-            if (!_keys.TryGetValue(ref key, out var state))
-                return true;
+            var state = KeyMigrationStatus.QUEUED;
+            foreach (var migrateScan in migrateScan)
+            {
+                if (migrateScan.Probe(ref key, out state))
+                    goto found;
+            }
 
+            return true;
+
+        found:
             // NOTE:
             // Caller responsible for spin-wait
             // Check definition of KeyMigrationStatus for more info
@@ -80,20 +58,5 @@ namespace Garnet.cluster
                 _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
             };
         }
-
-        /// <summary>
-        /// Add key to the migrate dictionary for tracking progress during migration
-        /// </summary>
-        /// <param name="key"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool AddKey(ref ArgSlice key)
-            => _keys.TryAdd(ref key, KeyMigrationStatus.QUEUED);
-
-        /// <summary>
-        /// Clear keys from dictionary
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearKeys()
-            => _keys.ClearKeys();
     }
 }
