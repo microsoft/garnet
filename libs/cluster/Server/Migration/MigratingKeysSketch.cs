@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
 using Garnet.common;
+using Garnet.server;
 using Tsavorite.core;
 
 namespace Garnet.cluster
@@ -11,6 +13,7 @@ namespace Garnet.cluster
         readonly byte[] bitmap;
         readonly int size;
 
+        public List<(ArgSlice, bool)> Keys { private set; get; }
         public KeyMigrationStatus Status { private set; get; }
         public long Count { get; private set; }
 
@@ -21,9 +24,21 @@ namespace Garnet.cluster
             this.size = size;
             bitmap = new byte[size >> 3];
             Status = KeyMigrationStatus.QUEUED;
+            Keys = [];
         }
 
         #region sketchMethods
+
+        /// <summary>
+        /// Hash key to bloomfilter and store it for future use (NOTE: Use only with KEYS option)
+        /// </summary>
+        /// <param name="key"></param>
+        public unsafe void HashAndStore(ref ArgSlice key)
+        {
+            Hash(key.SpanByte.ToPointer(), key.Length);
+            Keys.Add((key, false));
+        }
+
         /// <summary>
         /// Hash key to bloomfilter
         /// </summary>

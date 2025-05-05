@@ -862,7 +862,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(memberPair.Select(x => x.Item2).ToList(), members);
 
             context.logger.LogDebug("2. Loading object keys data done");
-
             var sourceEndPoint = context.clusterTestUtils.GetEndPoint(sourceNodeIndex);
             var targetEndPoint = context.clusterTestUtils.GetEndPoint(targetNodeIndex);
             context.logger.LogDebug("3. Migrating slot {slot} started {sourceEndPoint.Port} to {targetEndPoint.Port} started", slot, sourceEndPoint.Port, targetEndPoint.Port);
