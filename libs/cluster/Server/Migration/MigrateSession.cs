@@ -26,7 +26,6 @@ namespace Garnet.cluster
 
         readonly ClusterSession clusterSession;
         readonly ClusterProvider clusterProvider;
-        readonly LocalServerSession localServerSession;
 
         /// <summary>
         /// Get/Set migration status
@@ -44,7 +43,6 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly MigratingKeysWorkingSet _keys;
         SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
@@ -98,7 +96,7 @@ namespace Garnet.cluster
         /// <summary>
         /// MigrateSlotsScan for background slot migrate tasks
         /// </summary>
-        readonly MigrateSlotsScan[] migrateSlotsScan;
+        readonly MigrateScan[] migrateScan;
 
         /// <summary>
         /// LocalServerSessions for background slot migrate tasks
@@ -120,7 +118,7 @@ namespace Garnet.cluster
         /// <param name="_replaceOption"></param>
         /// <param name="_timeout"></param>
         /// <param name="_slots"></param>
-        /// <param name="keys"></param>
+        /// <param name="sketch"></param>
         /// <param name="transferOption"></param>
         internal MigrateSession(
             ClusterSession clusterSession,
@@ -135,7 +133,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            MigratingKeysWorkingSet keys,
+            MigratingKeysSketch sketch,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
@@ -152,11 +150,8 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys ?? new MigratingKeysWorkingSet();
             this.transferOption = transferOption;
 
-            if (clusterProvider != null)
-                localServerSession = new LocalServerSession(clusterProvider.storeWrapper);
             Status = MigrateState.PENDING;
 
             // Single key value size + few bytes for command header and arguments
@@ -164,13 +159,20 @@ namespace Garnet.cluster
 
             if (transferOption == TransferOption.SLOTS)
             {
-                migrateSlotsScan = new MigrateSlotsScan[clusterProvider.serverOptions.ParallelMigrateTasks];
+                migrateScan = new MigrateScan[clusterProvider.serverOptions.ParallelMigrateTasks];
                 localServerSessions = new LocalServerSession[clusterProvider.serverOptions.ParallelMigrateTasks];
-                for (var i = 0; i < migrateSlotsScan.Length; i++)
+                for (var i = 0; i < migrateScan.Length; i++)
                 {
-                    migrateSlotsScan[i] = new MigrateSlotsScan(this, logger: logger);
+                    migrateScan[i] = new MigrateScan(this, logger: logger);
                     localServerSessions[i] = new LocalServerSession(clusterProvider.storeWrapper);
                 }
+            }
+            else
+            {
+                migrateScan = new MigrateScan[1];
+                migrateScan[0] = new MigrateScan(this, sketch: sketch, logger: logger);
+                localServerSessions = new LocalServerSession[1];
+                localServerSessions[0] = new LocalServerSession(clusterProvider.storeWrapper);
             }
         }
 
@@ -193,15 +195,11 @@ namespace Garnet.cluster
             _cts?.Cancel();
             _cts?.Dispose();
             _gcs.Dispose();
-            localServerSession?.Dispose();
 
-            if (transferOption == TransferOption.SLOTS)
+            for (var i = 0; i < migrateScan.Length; i++)
             {
-                for (var i = 0; i < migrateSlotsScan.Length; i++)
-                {
-                    migrateSlotsScan[i].Dispose();
-                    localServerSessions[i].Dispose();
-                }
+                migrateScan[i].Dispose();
+                localServerSessions[i].Dispose();
             }
         }
 
