@@ -26,7 +26,7 @@ namespace Garnet.server
                 case RespCommand.EXPIREAT:
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
-                case RespCommand.DELIFEXPIREDINMEMORY:
+                case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
                     return false;
@@ -833,7 +833,7 @@ namespace Garnet.server
                     }
 
                     return false;
-                case RespCommand.DELIFEXPIREDINMEMORY:
+                case RespCommand.DELIFEXPIM:
                     // Only if the key has expired, will we delete it.
                     if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
                     {
@@ -921,7 +921,7 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
-                case RespCommand.DELIFEXPIREDINMEMORY:
+                case RespCommand.DELIFEXPIM:
                     return false;
                 case RespCommand.DELIFGREATER:
                     if (rmwInfo.RecordInfo.ETag)

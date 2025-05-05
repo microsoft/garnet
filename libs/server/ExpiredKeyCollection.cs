@@ -26,7 +26,7 @@ namespace Garnet.server
                     // DELIFEXPIREDINMEMORY will be noop for those records since they will early exit at NCU.
                     long safeInMemoryRegionAddrOfMainStore = this.store.Log.SafeReadOnlyAddress;
                     storageSession.ScanExpiredKeys(cursor: safeInMemoryRegionAddrOfMainStore, storeCursor: out long scannedTill, keys: out List<byte[]> keys, count: perRoundMaxRecordsToCollect);
-                    RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIREDINMEMORY);
+                    RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIM);
                     foreach (byte[] key in keys)
                     {
                         unsafe

@@ -117,7 +117,7 @@ namespace Garnet.server
         DECR,
         DECRBY,
         DEL,
-        DELIFEXPIREDINMEMORY,
+        DELIFEXPIM,
         DELIFGREATER,
         EXPIRE,
         EXPIREAT,
