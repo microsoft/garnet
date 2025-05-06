@@ -434,22 +434,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, TInput input, out TOutput output, TContext userContext = default)
-        {
-            output = default;
-            return Read(key, ref input, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Read(ReadOnlySpan<byte> key, TInput input, out TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-        {
-            output = default;
-            return Read(key, ref input, ref output, ref readOptions, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default)
         {
             TInput input = default;
@@ -732,22 +716,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, TInput input, out TOutput output, TContext userContext = default)
-        {
-            output = default;
-            return RMW(key, ref input, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, TInput input, out TOutput output, ref RMWOptions rmwOptions, TContext userContext = default)
-        {
-            output = default;
-            return RMW(key, ref input, ref output, ref rmwOptions, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ReadOnlySpan<byte> key, ref TInput input, TContext userContext = default)
         {
             TOutput output = default;
@@ -757,22 +725,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status RMW(ReadOnlySpan<byte> key, ref TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
-        {
-            TOutput output = default;
-            return RMW(key, ref input, ref output, ref rmwOptions, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, TInput input, TContext userContext = default)
-        {
-            TOutput output = default;
-            return RMW(key, ref input, ref output, userContext);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status RMW(ReadOnlySpan<byte> key, TInput input, ref RMWOptions rmwOptions, TContext userContext = default)
         {
             TOutput output = default;
             return RMW(key, ref input, ref output, ref rmwOptions, userContext);

@@ -5,9 +5,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-
     /// <summary>
-    /// Default simple functions base class with TInput and TOutput both being IGarnetObject; it assume there is never a Span instead of an Object
+    /// Default simple functions base class with TInput and TOutput both being IGarnetObject; it assumes the Value is always an Object, never a Span.
     /// </summary>
     public class SimpleGarnetObjectSessionFunctions : SessionFunctionsBase<IGarnetObject, IGarnetObject, Empty>
     {
@@ -19,7 +18,7 @@ namespace Garnet.server
                 output = (IGarnetObject)srcLogRecord.ValueObject;
                 return true;
             }
-            return false; // TODO create an IGarnetObject from the serialized bytes
+            return false; // TODO: possibly create an IGarnetObject from the serialized bytes
         }
 
         public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref IGarnetObject input, IHeapObject srcValue, ref IGarnetObject output, ref UpsertInfo upsertInfo)

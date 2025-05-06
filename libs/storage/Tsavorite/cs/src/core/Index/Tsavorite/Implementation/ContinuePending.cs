@@ -292,7 +292,7 @@ namespace Tsavorite.core
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
+                        ? PrepareIOForConditionalOperation(ref pendingContext, ref diskRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
                         : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx);
                 }
             }

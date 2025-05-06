@@ -136,7 +136,7 @@ namespace Tsavorite.core
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TSourceLogRecord : ISourceLogRecord
             {
-                Serialize(ref srcLogRecord, sessionFunctions, bufferPool, valueSerializer);
+                Serialize(ref srcLogRecord, bufferPool, valueSerializer);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
@@ -144,27 +144,23 @@ namespace Tsavorite.core
             /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> into the local <see cref="DiskLogRecord"/> for Pending operations
             /// </summary>
             /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
-            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, TSessionFunctionsWrapper sessionFunctions,
-                    SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
-                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            internal void Serialize<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
                 if (srcLogRecord.AsLogRecord(out var logRecord))
                 {
                     diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+                    return;
                 }
+
+                // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
+                _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
+                if (inputDiskLogRecord.OwnsMemory)
+                    diskLogRecord.TransferFrom(ref inputDiskLogRecord);
                 else
-                {
-                    // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
-                    _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
-                    if (inputDiskLogRecord.OwnsMemory)
-                        diskLogRecord.TransferFrom(ref inputDiskLogRecord);
-                    else
-                        diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
-                }
+                    diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
             }
 
             private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions) 

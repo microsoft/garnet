@@ -79,7 +79,7 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx2, minAddress, maxAddress);
+                    return PrepareIOForConditionalOperation(ref pendingContext, ref srcLogRecord, ref stackCtx2, minAddress, maxAddress);
             }
         }
 
@@ -103,17 +103,16 @@ namespace Tsavorite.core
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, minAddress, maxAddress);
+                status = PrepareIOForConditionalOperation(ref pendingContext, ref srcLogRecord, ref stackCtx, minAddress, maxAddress);
             else
                 status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref srcLogRecord, ref stackCtx, maxAddress: maxAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                                        TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord,
+        internal OperationStatus PrepareIOForConditionalOperation<TInput, TOutput, TContext, TSourceLogRecord>(
+                                        ref PendingContext<TInput, TOutput, TContext> pendingContext, ref TSourceLogRecord srcLogRecord,
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, OperationType opType = OperationType.CONDITIONAL_INSERT)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             pendingContext.type = opType;
@@ -124,7 +123,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             if (!pendingContext.IsSet)
-                pendingContext.Serialize(ref srcLogRecord, sessionFunctions, hlogBase.bufferPool, valueSerializer: null);
+                pendingContext.Serialize(ref srcLogRecord, hlogBase.bufferPool, valueSerializer: null);
             return OperationStatus.RECORD_ON_DISK;
         }
     }

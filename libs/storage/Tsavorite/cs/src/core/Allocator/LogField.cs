@@ -9,8 +9,8 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Struct encoding a Log field (Key Span, or Value Span or object) at a certain address. Since (small) Objects can be represented as inline spans,
-    /// this applies to those forms as well as the inline component of the Object, which is the ObjectId. The layout is:
+    /// Static class providing functions to operate on a Log field (Key Span, or Value Span or Object) at a certain address. Since (small) Objects can be represented
+    /// as inline spans, this applies to those forms as well as the inline component of the Object, which is the ObjectId. The layout is:
     /// <list type="bullet">
     ///     <item>Inline: [int Length][data bytes]</item>
     ///     <item>Overflow: an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
@@ -24,7 +24,7 @@ namespace Tsavorite.core
     ///         due to size changes altering whether the Value overflows is handled as part of normal Value-sizechange operations</item>
     /// </list>
     /// </remarks>
-    public unsafe struct LogField
+    public static unsafe class LogField
     {
         /// <summary>This is the size of the length prefix on Span field.</summary>
         public const int InlineLengthPrefixSize = sizeof(int);
