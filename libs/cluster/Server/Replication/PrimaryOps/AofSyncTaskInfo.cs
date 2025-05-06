@@ -10,7 +10,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class AofSyncTaskInfo : IBulkAofEntryConsumer, IDisposable
+    internal sealed class AofSyncTaskInfo : IBulkLogEntryConsumer, IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly AofTaskStore aofTaskStore;
@@ -19,7 +19,7 @@ namespace Garnet.cluster
         readonly ILogger logger;
         public readonly GarnetClientSession garnetClient;
         readonly CancellationTokenSource cts;
-        TsavoriteAofScanSingleIterator iter;
+        TsavoriteLogScanSingleIterator iter;
         readonly long startAddress;
         public long previousAddress;
 

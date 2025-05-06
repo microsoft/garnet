@@ -10,14 +10,14 @@ using System.Text;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Recovery info for Tsavorite Aof
+    /// Recovery info for TsavoriteLog
     /// </summary>
-    public struct TsavoriteAofRecoveryInfo
+    public struct TsavoriteLogRecoveryInfo
     {
         /// <summary>
-        /// TsavoriteAof recovery version
+        /// TsavoriteLog recovery version
         /// </summary>
-        const int TsavoriteAofRecoveryVersion = 1;
+        const int TsavoriteLogRecoveryVersion = 1;
 
         /// <summary>
         /// Begin address
@@ -88,7 +88,7 @@ namespace Tsavorite.core
                 CommitNum = -1;
             }
 
-            if (version < 0 || version > TsavoriteAofRecoveryVersion)
+            if (version < 0 || version > TsavoriteLogRecoveryVersion)
                 throw new TsavoriteException("Invalid version found during commit recovery");
 
             if (BinaryPrimitives.TryReadInt32LittleEndian(input, out var iteratorCount))
@@ -111,7 +111,7 @@ namespace Tsavorite.core
 
             int cookieLength = -1;
             long cookieChecksum = 0;
-            if (version >= TsavoriteAofRecoveryVersion)
+            if (version >= TsavoriteLogRecoveryVersion)
             {
                 if (BinaryPrimitives.TryReadInt32LittleEndian(input, out cookieLength))
                     input = input.Slice(sizeof(int));
@@ -128,7 +128,7 @@ namespace Tsavorite.core
             }
 
             long computedChecksum = BeginAddress ^ UntilAddress;
-            if (version >= TsavoriteAofRecoveryVersion)
+            if (version >= TsavoriteLogRecoveryVersion)
                 computedChecksum ^= CommitNum ^ iteratorCount ^ cookieLength ^ cookieChecksum;
 
             // Handle case where all fields are zero
@@ -155,7 +155,7 @@ namespace Tsavorite.core
             using MemoryStream ms = new();
             using (BinaryWriter writer = new(ms))
             {
-                writer.Write(TsavoriteAofRecoveryVersion); // version
+                writer.Write(TsavoriteLogRecoveryVersion); // version
 
                 int iteratorCount = 0;
                 int cookieLength = -1;

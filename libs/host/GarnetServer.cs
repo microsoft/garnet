@@ -382,7 +382,7 @@ namespace Garnet
 
         }
 
-        private (IDevice, TsavoriteAof) CreateAOF(int dbId)
+        private (IDevice, TsavoriteLog) CreateAOF(int dbId)
         {
             if (!opts.EnableAOF)
             {
@@ -396,7 +396,7 @@ namespace Garnet
 
             opts.GetAofSettings(dbId, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
-            var appendOnlyFile = new TsavoriteAof(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
+            var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
 
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");

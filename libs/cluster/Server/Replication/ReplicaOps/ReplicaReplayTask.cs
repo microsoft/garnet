@@ -9,9 +9,9 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed partial class ReplicationManager : IBulkAofEntryConsumer, IDisposable
+    internal sealed partial class ReplicationManager : IBulkLogEntryConsumer, IDisposable
     {
-        TsavoriteAofScanSingleIterator replayIterator = null;
+        TsavoriteLogScanSingleIterator replayIterator = null;
         CancellationTokenSource replicaReplayTaskCts;
         SingleWriterMultiReaderLock activeReplay;
 
@@ -65,7 +65,7 @@ namespace Garnet.cluster
                     // point when we take a checkpoint at the checkpoint end marker
                     if (isCheckpointStart)
                         ReplicationCheckpointStartOffset = ReplicationOffset;
-                    entryLength += TsavoriteAof.UnsafeAlign(payloadLength);
+                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
                 else if (payloadLength < 0)
                 {
@@ -73,10 +73,10 @@ namespace Garnet.cluster
                     {
                         throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
                     }
-                    TsavoriteAofRecoveryInfo info = new();
+                    TsavoriteLogRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                     storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
-                    entryLength += TsavoriteAof.UnsafeAlign(-payloadLength);
+                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
                 ptr += entryLength;
                 ReplicationOffset += entryLength;

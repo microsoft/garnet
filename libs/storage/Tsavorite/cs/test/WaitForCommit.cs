@@ -12,7 +12,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class WaitForCommitTests
     {
-        static TsavoriteAof aof;
+        static TsavoriteLog log;
         public IDevice device;
         static readonly byte[] entry = new byte[10];
         static readonly AutoResetEvent ev = new(false);
@@ -26,14 +26,14 @@ namespace Tsavorite.test
 
             // Create devices \ log for test
             device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "WaitForCommit"), deleteOnClose: true);
-            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device });
         }
 
         [TearDown]
         public void TearDown()
         {
-            aof?.Dispose();
-            aof = null;
+            log?.Dispose();
+            log = null;
             device?.Dispose();
             device = null;
 
@@ -72,11 +72,11 @@ namespace Tsavorite.test
             }
 
             ev.WaitOne();
-            aof.Commit(true);
+            log.Commit(true);
 
             // Read the log to make sure all entries are put in
             int currentEntry = 0;
-            using (var iter = aof.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, 100_000_000))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -97,11 +97,11 @@ namespace Tsavorite.test
         static void LogWriter()
         {
             // Enter in some entries then wait on this separate thread
-            aof.Enqueue(entry);
-            aof.Enqueue(entry);
-            aof.Enqueue(entry);
+            log.Enqueue(entry);
+            log.Enqueue(entry);
+            log.Enqueue(entry);
             ev.Set();
-            aof.WaitForCommit(aof.TailAddress);
+            log.WaitForCommit(log.TailAddress);
             done.Set();
         }
 
@@ -109,11 +109,11 @@ namespace Tsavorite.test
         {
             // Using "await" here will kick out of the calling thread once the first await is finished
             // Enter in some entries then wait on this separate thread
-            aof.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
-            aof.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
-            aof.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
+            log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
+            log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
+            log.EnqueueAsync(entry).AsTask().GetAwaiter().GetResult();
             ev.Set();
-            aof.WaitForCommitAsync(aof.TailAddress).AsTask().GetAwaiter().GetResult();
+            log.WaitForCommitAsync(log.TailAddress).AsTask().GetAwaiter().GetResult();
             done.Set();
         }
     }

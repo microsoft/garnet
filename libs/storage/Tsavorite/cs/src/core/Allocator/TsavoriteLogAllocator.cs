@@ -6,27 +6,27 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    // This is unused; just allows things to build. TsavoriteAof does not do key comparisons or value operations; it is just a memory allocator
-    using AofStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    // This is unused; just allows things to build. TsavoriteLog does not do key comparisons or value operations; it is just a memory allocator
+    using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
-    /// Struct wrapper (for inlining) around the AofAllocator used by TsavoriteAof.
+    /// Struct wrapper (for inlining) around the TsavoriteLogAllocator used by TsavoriteLog.
     /// </summary>
-    public struct AofAllocator : IAllocator<AofStoreFunctions>
+    public struct TsavoriteLogAllocator : IAllocator<TsavoriteLogStoreFunctions>
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
-        private readonly AofAllocatorImpl _this;
+        private readonly TsavoriteLogAllocatorImpl _this;
 
-        public AofAllocator(object @this)
+        public TsavoriteLogAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
-            _this = (AofAllocatorImpl)@this;
+            _this = (TsavoriteLogAllocatorImpl)@this;
         }
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<AofStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<AofStoreFunctions>
-            => (AllocatorBase<AofStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<TsavoriteLogStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<TsavoriteLogStoreFunctions>
+            => (AllocatorBase<TsavoriteLogStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
         public readonly bool IsFixedLength => true;
@@ -48,47 +48,47 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo _) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo _) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
-              => throw new NotImplementedException("Not implemented for AofAllocator");
+              => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
-            => throw new NotImplementedException("Not implemented for AofAllocator");
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
-            => throw new NotImplementedException("Not implemented for AofAllocator");
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
             where TVariableLengthInput : IVariableLengthInput<TInput>
-            => throw new NotImplementedException("Not implemented for AofAllocator");
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
-            => throw new NotImplementedException("Not implemented for AofAllocator");
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -101,7 +101,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex)
-            => AofAllocatorImpl.PopulatePage(src, required_bytes, destinationPageIndex);
+            => TsavoriteLogAllocatorImpl.PopulatePage(src, required_bytes, destinationPageIndex);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -120,36 +120,30 @@ namespace Tsavorite.core
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
 
         /// <inheritdoc/>
-        public readonly ref ReadOnlySpan<byte> GetContextRecordKey(ref AsyncIOContext ctx) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
-        public readonly ref ReadOnlySpan<byte> GetContextRecordValue(ref AsyncIOContext ctx) => throw new NotImplementedException("Not implemented for AofAllocator");
-
-        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long[] GetSegmentOffsets() => throw new NotImplementedException("Not implemented for AofAllocator");    // TODO remove all the SegmentOffset stuff
+        public readonly long[] GetSegmentOffsets() => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");    // TODO remove all the SegmentOffset stuff
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ReadOnlySpan<byte> key, long physicalAddress, ref LogRecord logRecord) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly void SerializeKey(ReadOnlySpan<byte> key, long physicalAddress, ref LogRecord logRecord) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord CreateLogRecord(long logicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly LogRecord CreateLogRecord(long logicalAddress) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for AofAllocator");
+        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
     }
 }

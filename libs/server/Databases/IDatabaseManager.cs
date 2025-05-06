@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteAof AppendOnlyFile { get; }
+        public TsavoriteLog AppendOnlyFile { get; }
 
         /// <summary>
         /// Last save time (of DB 0)

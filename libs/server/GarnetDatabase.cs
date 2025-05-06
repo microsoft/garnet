@@ -60,7 +60,7 @@ namespace Garnet.server
         /// <summary>
         /// AOF log
         /// </summary>
-        public TsavoriteAof AppendOnlyFile { get; }
+        public TsavoriteLog AppendOnlyFile { get; }
 
         /// <summary>
         /// Version map
@@ -102,7 +102,7 @@ namespace Garnet.server
         public GarnetDatabase(int id, TsavoriteKV<MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             LightEpoch epoch, StateMachineDriver stateMachineDriver,
-            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteAof appendOnlyFile,
+            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
             bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut) : this()
         {
             Id = id;

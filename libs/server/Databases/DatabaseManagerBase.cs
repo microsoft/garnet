@@ -119,7 +119,7 @@ namespace Garnet.server
         public TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
 
         /// <inheritdoc/>
-        public TsavoriteAof AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
+        public TsavoriteLog AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
 
         /// <inheritdoc/>
         public DateTimeOffset LastSaveTime => DefaultDatabase.LastSaveTime;

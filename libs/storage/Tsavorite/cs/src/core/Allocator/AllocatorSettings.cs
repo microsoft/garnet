@@ -23,7 +23,7 @@ namespace Tsavorite.core
         /// <summary>The action to call on page eviction; used only for readcache</summary>
         internal Action<long, long> evictCallback;
 
-        /// <summary>The action to execute on flush completion; used only for <see cref="TsavoriteAof"/></summary>
+        /// <summary>The action to execute on flush completion; used only for <see cref="TsavoriteLog"/></summary>
         internal Action<CommitInfo> flushCallback;
 
         internal AllocatorSettings(LogSettings logSettings, LightEpoch epoch, ILogger logger)

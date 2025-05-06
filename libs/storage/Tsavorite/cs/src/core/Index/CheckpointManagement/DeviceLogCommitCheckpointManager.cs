@@ -14,7 +14,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Log commit manager for a generic IDevice
     /// </summary>
-    public class DeviceLogCommitCheckpointManager : IAofCommitManager, ICheckpointManager
+    public class DeviceLogCommitCheckpointManager : ILogCommitManager, ICheckpointManager
     {
         const byte indexTokenCount = 2;
         const byte logTokenCount = 1;
@@ -66,14 +66,14 @@ namespace Tsavorite.core
             this.removeOutdated = removeOutdated;
             if (removeOutdated)
             {
-                deleteQueue = new WorkQueueFIFO<long>(prior => deviceFactory.Delete(checkpointNamingScheme.TsavoriteAofCommitMetadata(prior)));
+                deleteQueue = new WorkQueueFIFO<long>(prior => deviceFactory.Delete(checkpointNamingScheme.TsavoriteLogCommitMetadata(prior)));
 
                 // We keep two index checkpoints as the latest index might not have a
                 // later log checkpoint to work with
                 indexTokenHistory = new Guid[indexTokenCount];
                 // We only keep the latest log checkpoint
                 logTokenHistory = new Guid[logTokenCount];
-                // // We only keep the latest TsavoriteAof commit
+                // // We only keep the latest TsavoriteLog commit
                 flogCommitHistory = new long[flogCommitCount];
             }
         }
@@ -112,7 +112,7 @@ namespace Tsavorite.core
         {
             if (!forceWriteMetadata && fastCommitThrottleFreq > 0 && (commitCount++ % fastCommitThrottleFreq != 0)) return;
 
-            using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteAofCommitMetadata(commitNum));
+            using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
@@ -129,7 +129,7 @@ namespace Tsavorite.core
                 flogCommitHistoryOffset = (byte)((flogCommitHistoryOffset + 1) % flogCommitCount);
                 if (prior != default)
                 {
-                    // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.TsavoriteAofCommitMetadata(prior)));
+                    // System.Threading.Tasks.Task.Run(() => deviceFactory.Delete(checkpointNamingScheme.TsavoriteLogCommitMetadata(prior)));
                     deleteQueue.EnqueueAndTryWork(prior, true);
                 }
             }
@@ -144,13 +144,13 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<long> ListCommits()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteAofCommitBasePath).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
+            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
         }
 
         /// <inheritdoc />
         public void RemoveCommit(long commitNum)
         {
-            deviceFactory.Delete(checkpointNamingScheme.TsavoriteAofCommitMetadata(commitNum));
+            deviceFactory.Delete(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
         }
 
         /// <inheritdoc />
@@ -163,7 +163,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public byte[] GetCommitMetadata(long commitNum)
         {
-            using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteAofCommitMetadata(commitNum));
+            using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             int size = BitConverter.ToInt32(writePad, 0);

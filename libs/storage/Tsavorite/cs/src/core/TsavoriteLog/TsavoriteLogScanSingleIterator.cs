@@ -8,17 +8,17 @@ using Microsoft.Extensions.Logging;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Scan iterator for TsavoriteAof's hybrid log - only a single scan is supported per instance
+    /// Scan iterator for TsavoriteLog's hybrid log - only a single scan is supported per instance
     /// This modification allows us to use a SingleWaiterAutoResetEvent per iterator
     /// so we can avoid TCS allocations per tail bump.
     /// </summary>
-    public sealed class TsavoriteAofScanSingleIterator : TsavoriteAofScanIterator
+    public sealed class TsavoriteLogScanSingleIterator : TsavoriteLogIterator
     {
         readonly SingleWaiterAutoResetEvent onEnqueue;
 
-        internal TsavoriteAofScanSingleIterator(TsavoriteAof tsavoriteAof, AofAllocatorImpl hlog, long beginAddress, long endAddress,
+        internal TsavoriteLogScanSingleIterator(TsavoriteLog TsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
-            : base(tsavoriteAof, hlog, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger)
+            : base(TsavoriteLog, hlog, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger)
         {
             onEnqueue = new()
             {
@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
         public override void Dispose()
         {
-            tsavoriteAof.RemoveIterator(this);
+            tsavoriteLog.RemoveIterator(this);
             base.Dispose();
             // Any awaiting iterator should be woken up during dispose
             onEnqueue.Signal();
@@ -45,7 +45,7 @@ namespace Tsavorite.core
                     return false;
                 if (this.Ended) return false;
 
-                if (this.NextAddress < this.tsavoriteAof.SafeTailAddress)
+                if (this.NextAddress < this.tsavoriteLog.SafeTailAddress)
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled

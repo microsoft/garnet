@@ -56,9 +56,9 @@ namespace Tsavorite.core
         FileDescriptor DeltaLog(Guid token);
 
         /// <summary>
-        /// TsavoriteAof commit metadata
+        /// TsavoriteLog commit metadata
         /// </summary>
-        FileDescriptor TsavoriteAofCommitMetadata(long commitNumber);
+        FileDescriptor TsavoriteLogCommitMetadata(long commitNumber);
 
         /// <summary>
         /// Token associated with given file descriptor
@@ -82,6 +82,6 @@ namespace Tsavorite.core
 
         /// <summary>
         /// </summary>
-        string TsavoriteAofCommitBasePath { get; }
+        string TsavoriteLogCommitBasePath { get; }
     }
 }

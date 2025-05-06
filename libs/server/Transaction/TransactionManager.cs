@@ -66,7 +66,7 @@ namespace Garnet.server
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
         internal readonly ScratchBufferManager scratchBufferManager;
-        private readonly TsavoriteAof appendOnlyFile;
+        private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
         internal int txnStartHead;

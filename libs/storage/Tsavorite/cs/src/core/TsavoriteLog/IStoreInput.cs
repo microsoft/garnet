@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Represents a store input that can be serialized into / deserialized from TsavoriteAof
+    /// Represents a store input that can be serialized into / deserialized from TsavoriteLog
     /// </summary>
     public interface IStoreInput
     {

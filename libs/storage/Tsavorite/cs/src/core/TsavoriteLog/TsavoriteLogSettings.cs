@@ -14,9 +14,9 @@ namespace Tsavorite.core
     public delegate byte[] GetMemory(int minLength);
 
     /// <summary>
-    /// Type of checksum to add to aof
+    /// Type of checksum to add to TsavoriteLog
     /// </summary>
-    public enum AofChecksumType
+    public enum LogChecksumType
     {
         /// <summary>
         /// No checksums
@@ -29,9 +29,9 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Tsavorite Aof LogSettings
+    /// Tsavorite Log LogSettings
     /// </summary>
-    public class TsavoriteAofLogSettings : IDisposable
+    public class TsavoriteLogSettings : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -76,9 +76,9 @@ namespace Tsavorite.core
         public int SegmentSizeBits { set { SegmentSize = 1L << value; } }
 
         /// <summary>
-        /// Aof log commit manager - if you want to override the default implementation of commit.
+        /// TsavoriteLog commit manager - if you want to override the default implementation of commit.
         /// </summary>
-        public IAofCommitManager LogCommitManager = null;
+        public ILogCommitManager LogCommitManager = null;
 
         /// <summary>
         /// Use specified directory (path) as base for storing and retrieving log commits. By default,
@@ -93,9 +93,9 @@ namespace Tsavorite.core
         public GetMemory GetMemory = null;
 
         /// <summary>
-        /// Type of checksum to add to Aof
+        /// Type of checksum to add to TsavoriteLog
         /// </summary>
-        public AofChecksumType LogChecksum = AofChecksumType.None;
+        public LogChecksumType LogChecksum = LogChecksumType.None;
 
         /// <summary>
         /// Fraction of log marked as mutable (uncommitted)
@@ -103,12 +103,12 @@ namespace Tsavorite.core
         public double MutableFraction = 0;
 
         /// <summary>
-        /// Use TsavoriteAof as read-only iterator/viewer of log being committed by another instance
+        /// Use TsavoriteLog as read-only iterator/viewer of log being committed by another instance
         /// </summary>
         public bool ReadOnlyMode = false;
 
         /// <summary>
-        /// When FastCommitMode is enabled, TsavoriteAof will reduce commit critical path latency, but may result in slower
+        /// When FastCommitMode is enabled, TsavoriteLog will reduce commit critical path latency, but may result in slower
         /// recovery to a commit on restart. Additionally, FastCommitMode is only possible when log checksum is turned
         /// on.
         /// </summary>
@@ -121,9 +121,9 @@ namespace Tsavorite.core
         public bool RemoveOutdatedCommits = true;
 
         /// <summary>
-        /// Aof commit policy that influences the behavior of Commit() calls.
+        /// TsavoriteLog commit policy that influences the behavior of Commit() calls.
         /// </summary>
-        public AofCommitPolicy AofCommitPolicy = AofCommitPolicy.Default();
+        public LogCommitPolicy LogCommitPolicy = LogCommitPolicy.Default();
 
         /// <summary>
         /// Try to recover from latest commit, if available
@@ -141,11 +141,11 @@ namespace Tsavorite.core
         public bool AutoCommit = false;
 
         /// <summary>
-        /// Create default configuration settings for TsavoriteAof. You need to create and specify LogDevice 
+        /// Create default configuration settings for TsavoriteLog. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
         /// </summary>
-        public TsavoriteAofLogSettings() { }
+        public TsavoriteLogSettings() { }
 
         /// <summary>
         /// Create default configuration backed by local storage at given base directory.
@@ -154,12 +154,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
-        public TsavoriteAofLogSettings(string baseDir, bool deleteDirOnDispose = false)
+        public TsavoriteLogSettings(string baseDir, bool deleteDirOnDispose = false)
         {
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
-            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/tsavoriteaof.log", deleteOnClose: deleteDirOnDispose);
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/TsavoriteLog.log", deleteOnClose: deleteDirOnDispose);
             LogCommitDir = baseDir;
         }
 
@@ -188,9 +188,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// TsavoriteAof throws CommitFailureException on non-zero IDevice error codes. If TolerateDeviceFailure, TsavoriteAof
+        /// TsavoriteLog throws CommitFailureException on non-zero IDevice error codes. If TolerateDeviceFailure, TsavoriteLog
         /// will permit operations and commits to proceed as normal after the exception is thrown, even if committed
-        /// data may be lost as a result of the error. Otherwise, TsavoriteAof enters a permanently errored state and
+        /// data may be lost as a result of the error. Otherwise, TsavoriteLog enters a permanently errored state and
         /// prevents future operations until restarted (on a repaired IDevice).
         ///
         /// WARNING: TOLERATING DEVICE FAILURE CAN LEAD TO DATA LOSS OR CORRUPTION AND IS FOR ADVANCED USERS ONLY

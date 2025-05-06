@@ -12,7 +12,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class DeltaLogStandAloneTests
     {
-        private TsavoriteAof aof;
+        private TsavoriteLog log;
         private IDevice device;
 
         [SetUp]
@@ -25,8 +25,8 @@ namespace Tsavorite.test
         [TearDown]
         public void TearDown()
         {
-            aof?.Dispose();
-            aof = null;
+            log?.Dispose();
+            log = null;
             device?.Dispose();
             device = null;
 

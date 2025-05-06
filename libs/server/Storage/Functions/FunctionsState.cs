@@ -16,7 +16,7 @@ namespace Garnet.server
     {
         private readonly CustomCommandManager customCommandManager;
 
-        public readonly TsavoriteAof appendOnlyFile;
+        public readonly TsavoriteLog appendOnlyFile;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
@@ -25,7 +25,7 @@ namespace Garnet.server
         public readonly ILogger logger;
         public bool StoredProcMode;
 
-        public FunctionsState(TsavoriteAof appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
+        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer, ILogger logger)
         {
             this.appendOnlyFile = appendOnlyFile;

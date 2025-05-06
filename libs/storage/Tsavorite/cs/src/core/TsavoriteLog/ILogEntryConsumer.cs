@@ -4,9 +4,9 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Consumes a TsavoriteAof entry without copying 
+    /// Consumes a TsavoriteLog entry without copying 
     /// </summary>
-    public interface IAofEntryConsumer
+    public interface ILogEntryConsumer
     {
         /// <summary>
         /// Consumes the given entry.
@@ -20,9 +20,9 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Consumes TsavoriteAof entries in bulk (raw data) without copying 
+    /// Consumes TsavoriteLog entries in bulk (raw data) without copying 
     /// </summary>
-    public interface IBulkAofEntryConsumer
+    public interface IBulkLogEntryConsumer
     {
         /// <summary>
         /// Consumes the given bulk entries (raw data) under epoch protection - do not block.

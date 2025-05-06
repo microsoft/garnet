@@ -16,13 +16,13 @@ namespace Garnet.server
     /// <summary>
     /// Broker used for pub/sub
     /// </summary>
-    public sealed class SubscribeBroker : IDisposable, IAofEntryConsumer
+    public sealed class SubscribeBroker : IDisposable, ILogEntryConsumer
     {
         int sid = 0;
         bool initialized = false;
         ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
         ReadOptimizedConcurrentSet<PatternSubscriptionEntry> patternSubscriptions;
-        readonly TsavoriteAof aof;
+        readonly TsavoriteLog aof;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
@@ -42,7 +42,7 @@ namespace Garnet.server
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            aof = new TsavoriteAof(new TsavoriteAofLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
+            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
             pageSizeBits = aof.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 aof.TruncateUntil(aof.CommittedUntilAddress);
