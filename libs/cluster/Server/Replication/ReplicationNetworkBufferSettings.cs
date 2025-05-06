@@ -38,7 +38,7 @@ namespace Garnet.cluster
         /// NetworkBufferSettings for the AOF sync task clients
         /// NOTE: double buffer size for send page to ensure payload (command header + page size) always fits into client buffer.
         /// </summary>
-        int aofSyncSendBufferSize => 1 << clusterProvider.storeWrapper.serverOptions.AofPageSizeBits() << 1;
+        int aofSyncSendBufferSize => 2 << clusterProvider.storeWrapper.serverOptions.AofPageSizeBits();
         const int aofSyncInitialReceiveBufferSize = 1 << 17;
         public NetworkBufferSettings GetAofSyncNetworkBufferSettings => new(aofSyncSendBufferSize, aofSyncInitialReceiveBufferSize);
 

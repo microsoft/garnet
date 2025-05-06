@@ -330,11 +330,9 @@ namespace Garnet.client
 
             var curr = offset;
             var arraySize = 7;
-            var flushed = false;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -342,7 +340,6 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -350,7 +347,6 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -358,7 +354,6 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -366,7 +361,6 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -374,7 +368,6 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -382,7 +375,6 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
@@ -393,14 +385,10 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
-                flushed = true;
                 Flush();
                 curr = offset;
             }
             offset = curr;
-
-            if (flushed)
-                logger?.LogWarning("Flushed under epoch protection due to payload being too large {payloadLength}", payloadLength);
         }
 
         /// <summary>
