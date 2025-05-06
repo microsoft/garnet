@@ -12,9 +12,7 @@ namespace Garnet.cluster
         /// <summary>
         /// NetworkBufferSettings for the buffer pool maintained by the ReplicationManager
         /// </summary>
-        const int defaultSendBufferSize = 1 << 22;
-        const int defaultInitialReceiveBufferSize = 1 << 12;
-        readonly NetworkBufferSettings networkBufferSettings = new(defaultSendBufferSize, defaultInitialReceiveBufferSize);
+        NetworkBufferSettings networkBufferSettings => NetworkBufferSettings.GetInclusive([GetRSSNetworkBufferSettings, GetIRSNetworkBufferSettings, GetAofSyncNetworkBufferSettings]);
 
         /// <summary>
         /// Network pool maintained by the ReplicationManager
@@ -38,10 +36,11 @@ namespace Garnet.cluster
 
         /// <summary>
         /// NetworkBufferSettings for the AOF sync task clients
+        /// NOTE: double buffer size for send page to ensure payload (command header + page size) always fits into client buffer.
         /// </summary>
-        const int aofSyncSendBufferSize = 1 << 22;
+        int aofSyncSendBufferSize => 2 << clusterProvider.storeWrapper.serverOptions.AofPageSizeBits();
         const int aofSyncInitialReceiveBufferSize = 1 << 17;
-        public NetworkBufferSettings GetAofSyncNetworkBufferSettings { get; } = new(aofSyncSendBufferSize, aofSyncInitialReceiveBufferSize);
+        public NetworkBufferSettings GetAofSyncNetworkBufferSettings => new(aofSyncSendBufferSize, aofSyncInitialReceiveBufferSize);
 
         void ValidateNetworkBufferSettings()
         {
