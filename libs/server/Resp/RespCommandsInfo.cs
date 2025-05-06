@@ -362,66 +362,66 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public void ToRespFormat(ref RespMemoryWriter output)
+        public void ToRespFormat(ref RespMemoryWriter writer)
         {
             if (string.IsNullOrWhiteSpace(Name))
             {
-                output.WriteNull();
+                writer.WriteNull();
             }
             else
             {
-                output.WriteArrayLength(10);
+                writer.WriteArrayLength(10);
                 // 1) Name
-                output.WriteAsciiBulkString(Name);
+                writer.WriteAsciiBulkString(Name);
                 // 2) Arity
-                output.WriteInt32(Arity);
+                writer.WriteInt32(Arity);
                 // 3) Flags
-                output.WriteSetLength(respFormatFlags?.Length ?? 0);
+                writer.WriteSetLength(respFormatFlags?.Length ?? 0);
                 if (respFormatFlags != null && respFormatFlags.Length > 0)
                 {
                     foreach (var flag in respFormatFlags)
-                        output.WriteSimpleString(flag);
+                        writer.WriteSimpleString(flag);
                 }
 
                 // 4) First key
-                output.WriteInt32(FirstKey);
+                writer.WriteInt32(FirstKey);
                 // 5) Last key
-                output.WriteInt32(LastKey);
+                writer.WriteInt32(LastKey);
                 // 6) Step
-                output.WriteInt32(Step);
+                writer.WriteInt32(Step);
                 // 7) ACL categories
-                output.WriteSetLength(respFormatAclCategories?.Length ?? 0);
+                writer.WriteSetLength(respFormatAclCategories?.Length ?? 0);
                 if (respFormatAclCategories != null && respFormatAclCategories.Length > 0)
                 {
                     foreach (var aclCat in respFormatAclCategories)
-                        output.WriteSimpleString('@' + aclCat);
+                        writer.WriteSimpleString('@' + aclCat);
                 }
 
                 // 8) Tips
                 var tipCount = Tips?.Length ?? 0;
-                output.WriteSetLength(tipCount);
+                writer.WriteSetLength(tipCount);
                 if (Tips != null && tipCount > 0)
                 {
                     foreach (var tip in Tips)
-                        output.WriteAsciiBulkString(tip);
+                        writer.WriteAsciiBulkString(tip);
                 }
 
                 // 9) Key specifications
                 var ksCount = KeySpecifications?.Length ?? 0;
-                output.WriteSetLength(ksCount);
+                writer.WriteSetLength(ksCount);
                 if (KeySpecifications != null && ksCount > 0)
                 {
                     foreach (var ks in KeySpecifications)
-                        ks.ToRespFormat(ref output);
+                        ks.ToRespFormat(ref writer);
                 }
 
                 // 10) SubCommands
                 var subCommandCount = SubCommands?.Length ?? 0;
-                output.WriteArrayLength(subCommandCount);
+                writer.WriteArrayLength(subCommandCount);
                 if (SubCommands != null && subCommandCount > 0)
                 {
                     foreach (var subCommand in SubCommands)
-                        subCommand.ToRespFormat(ref output);
+                        subCommand.ToRespFormat(ref writer);
                 }
             }
         }

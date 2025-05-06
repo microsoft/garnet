@@ -14,6 +14,6 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value in RESP format</returns>
-        void ToRespFormat(ref RespMemoryWriter output);
+        void ToRespFormat(ref RespMemoryWriter writer);
     }
 }

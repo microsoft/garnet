@@ -74,7 +74,7 @@ namespace Garnet.server
         {
         }
 
-        protected void ToByteRespFormat(ref RespMemoryWriter output, bool increment)
+        protected void ToByteRespFormat(ref RespMemoryWriter writer, bool increment)
         {
             var ArgCount = 2; // name, type
 
@@ -103,48 +103,48 @@ namespace Garnet.server
                 ArgCount++;
             }
 
-            output.WriteMapLength(ArgCount);
+            writer.WriteMapLength(ArgCount);
 
-            output.WriteBulkString("name"u8);
-            output.WriteAsciiBulkString(Name);
+            writer.WriteBulkString("name"u8);
+            writer.WriteAsciiBulkString(Name);
 
-            output.WriteBulkString("type"u8);
+            writer.WriteBulkString("type"u8);
             var respType = EnumUtils.GetEnumDescriptions(Type)[0];
-            output.WriteAsciiBulkString(respType);
+            writer.WriteAsciiBulkString(respType);
 
             if (DisplayText != null)
             {
-                output.WriteBulkString("display_text"u8);
-                output.WriteAsciiBulkString(DisplayText);
+                writer.WriteBulkString("display_text"u8);
+                writer.WriteAsciiBulkString(DisplayText);
             }
 
             if (Token != null)
             {
-                output.WriteBulkString("token"u8);
-                output.WriteAsciiBulkString(Token);
+                writer.WriteBulkString("token"u8);
+                writer.WriteAsciiBulkString(Token);
             }
 
             if (Summary != null)
             {
-                output.WriteBulkString("summary"u8);
-                output.WriteAsciiBulkString(Summary);
+                writer.WriteBulkString("summary"u8);
+                writer.WriteAsciiBulkString(Summary);
             }
 
             if (ArgumentFlags != RespCommandArgumentFlags.None)
             {
-                output.WriteBulkString("flags"u8);
-                output.WriteSetLength(respFormatArgFlags.Length);
+                writer.WriteBulkString("flags"u8);
+                writer.WriteSetLength(respFormatArgFlags.Length);
                 foreach (var respArgFlag in respFormatArgFlags)
                 {
-                    output.WriteSimpleString(respArgFlag);
+                    writer.WriteSimpleString(respArgFlag);
                 }
             }
         }
 
         /// <inheritdoc />
-        public virtual void ToRespFormat(ref RespMemoryWriter output)
+        public virtual void ToRespFormat(ref RespMemoryWriter writer)
         {
-            ToByteRespFormat(ref output, false);
+            ToByteRespFormat(ref writer, false);
         }
     }
 
@@ -179,12 +179,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            ToByteRespFormat(ref output, true);
+            ToByteRespFormat(ref writer, true);
 
-            output.WriteBulkString("key_spec_index"u8);
-            output.WriteInt32(KeySpecIndex);
+            writer.WriteBulkString("key_spec_index"u8);
+            writer.WriteInt32(KeySpecIndex);
         }
     }
 
@@ -208,18 +208,18 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
             if (Value != null)
             {
-                ToByteRespFormat(ref output, true);
+                ToByteRespFormat(ref writer, true);
 
-                output.WriteBulkString("value"u8);
-                output.WriteAsciiBulkString(Value);
+                writer.WriteBulkString("value"u8);
+                writer.WriteAsciiBulkString(Value);
             }
             else
             {
-                ToByteRespFormat(ref output, false);
+                ToByteRespFormat(ref writer, false);
             }
         }
     }
@@ -267,22 +267,22 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
             if (Arguments != null)
             {
-                ToByteRespFormat(ref output, true);
+                ToByteRespFormat(ref writer, true);
 
-                output.WriteBulkString("arguments"u8);
-                output.WriteArrayLength(Arguments.Length);
+                writer.WriteBulkString("arguments"u8);
+                writer.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    argument.ToRespFormat(ref output);
+                    argument.ToRespFormat(ref writer);
                 }
             }
             else
             {
-                ToByteRespFormat(ref output, false);
+                ToByteRespFormat(ref writer, false);
             }
         }
     }

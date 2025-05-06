@@ -20,12 +20,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus GeoAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-          => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+          => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
@@ -35,12 +35,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoCommands<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus GeoCommands<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Geospatial search and return result..
