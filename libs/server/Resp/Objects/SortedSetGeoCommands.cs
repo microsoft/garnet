@@ -85,9 +85,9 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
             var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref outputFooter);
+            var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref output);
 
             switch (status)
             {
@@ -96,7 +96,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutput(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -166,14 +166,14 @@ namespace Garnet.server
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.GeoCommands(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutput(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     switch (op)

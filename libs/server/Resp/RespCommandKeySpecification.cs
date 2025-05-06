@@ -55,7 +55,7 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public void ToRespFormat(ref RespMemoryWriter output)
+        public void ToRespFormat(ref RespMemoryWriter writer)
         {
             var elemCount = 0;
 
@@ -79,31 +79,31 @@ namespace Garnet.server
                 elemCount++;
             }
 
-            output.WriteMapLength(elemCount);
+            writer.WriteMapLength(elemCount);
 
             if (Notes != null)
             {
-                output.WriteBulkString("notes"u8);
-                output.WriteAsciiBulkString(Notes);
+                writer.WriteBulkString("notes"u8);
+                writer.WriteAsciiBulkString(Notes);
             }
 
             if (Flags != KeySpecificationFlags.None)
             {
-                output.WriteBulkString("flags"u8);
-                output.WriteSetLength(respFormatFlags.Length);
+                writer.WriteBulkString("flags"u8);
+                writer.WriteSetLength(respFormatFlags.Length);
 
-                foreach (var flag in this.respFormatFlags)
-                    output.WriteSimpleString(flag);
+                foreach (var flag in respFormatFlags)
+                    writer.WriteSimpleString(flag);
             }
 
             if (BeginSearch != null)
             {
-                BeginSearch.ToRespFormat(ref output);
+                BeginSearch.ToRespFormat(ref writer);
             }
 
             if (FindKeys != null)
             {
-                FindKeys.ToRespFormat(ref output);
+                FindKeys.ToRespFormat(ref writer);
             }
         }
     }
@@ -156,7 +156,7 @@ namespace Garnet.server
         public abstract string MethodName { get; }
 
         /// <inheritdoc />
-        public abstract void ToRespFormat(ref RespMemoryWriter output);
+        public abstract void ToRespFormat(ref RespMemoryWriter writer);
     }
 
     /// <summary>
@@ -190,16 +190,16 @@ namespace Garnet.server
         public int Index { get; init; }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteBulkString("type"u8);
-            output.WriteBulkString("index"u8);
-            output.WriteBulkString("spec"u8);
-            output.WriteMapLength(1);
-            output.WriteBulkString("index"u8);
-            output.WriteInt32(Index);
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("index"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(1);
+            writer.WriteBulkString("index"u8);
+            writer.WriteInt32(Index);
         }
 
         /// <inheritdoc />
@@ -244,18 +244,18 @@ namespace Garnet.server
         public int StartFrom { get; init; }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteBulkString("type"u8);
-            output.WriteBulkString("keyword"u8);
-            output.WriteBulkString("spec"u8);
-            output.WriteMapLength(2);
-            output.WriteBulkString("keyword"u8);
-            output.WriteAsciiBulkString(Keyword);
-            output.WriteBulkString("startfrom"u8);
-            output.WriteInt32(StartFrom);
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("keyword"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("keyword"u8);
+            writer.WriteAsciiBulkString(Keyword);
+            writer.WriteBulkString("startfrom"u8);
+            writer.WriteInt32(StartFrom);
         }
 
         /// <inheritdoc />
@@ -302,14 +302,14 @@ namespace Garnet.server
     public class BeginSearchUnknown : BeginSearchKeySpecMethodBase
     {
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteBulkString("type"u8);
-            output.WriteBulkString("unknown"u8);
-            output.WriteBulkString("spec"u8);
-            output.WriteEmptyArray();
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("unknown"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteEmptyArray();
         }
 
         /// <inheritdoc />
@@ -361,20 +361,20 @@ namespace Garnet.server
         public int Limit { get; init; }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteBulkString("type"u8);
-            output.WriteBulkString("range"u8);
-            output.WriteBulkString("spec"u8);
-            output.WriteMapLength(3);
-            output.WriteBulkString("lastkey"u8);
-            output.WriteInt32(LastKey);
-            output.WriteBulkString("keystep"u8);
-            output.WriteInt32(KeyStep);
-            output.WriteBulkString("limit"u8);
-            output.WriteInt32(Limit);
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("range"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(3);
+            writer.WriteBulkString("lastkey"u8);
+            writer.WriteInt32(LastKey);
+            writer.WriteBulkString("keystep"u8);
+            writer.WriteInt32(KeyStep);
+            writer.WriteBulkString("limit"u8);
+            writer.WriteInt32(Limit);
         }
 
         /// <inheritdoc />
@@ -441,20 +441,20 @@ namespace Garnet.server
         public int KeyStep { get; init; }
 
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteBulkString("type"u8);
-            output.WriteBulkString("keynum"u8);
-            output.WriteBulkString("spec"u8);
-            output.WriteMapLength(3);
-            output.WriteBulkString("keynumidx"u8);
-            output.WriteInt32(KeyNumIdx);
-            output.WriteBulkString("firstkey"u8);
-            output.WriteInt32(FirstKey);
-            output.WriteBulkString("keystep"u8);
-            output.WriteInt32(KeyStep);
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("keynum"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(3);
+            writer.WriteBulkString("keynumidx"u8);
+            writer.WriteInt32(KeyNumIdx);
+            writer.WriteBulkString("firstkey"u8);
+            writer.WriteInt32(FirstKey);
+            writer.WriteBulkString("keystep"u8);
+            writer.WriteInt32(KeyStep);
         }
 
         /// <inheritdoc />
@@ -515,14 +515,14 @@ namespace Garnet.server
     public class FindKeysUnknown : FindKeysKeySpecMethodBase
     {
         /// <inheritdoc />
-        public override void ToRespFormat(ref RespMemoryWriter output)
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            output.WriteAsciiBulkString(MethodName);
-            output.WriteMapLength(2);
-            output.WriteBulkString("type"u8);
-            output.WriteBulkString("unknown"u8);
-            output.WriteBulkString("spec"u8);
-            output.WriteEmptyArray();
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("unknown"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteEmptyArray();
         }
 
         /// <inheritdoc />

@@ -27,7 +27,7 @@ namespace Garnet.server
             public (double Latitude, double Longitude) Coordinates;
         }
 
-        private void GeoAdd(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void GeoAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -37,7 +37,7 @@ namespace Garnet.server
             var count = input.parseState.Count;
             var currTokenIdx = 0;
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             // Read the members
             var elementsAdded = 0;
@@ -78,14 +78,14 @@ namespace Garnet.server
                 }
             }
 
-            output.WriteInt32((options & GeoAddOptions.CH) == 0 ? elementsAdded : elementsChanged);
+            writer.WriteInt32((options & GeoAddOptions.CH) == 0 ? elementsAdded : elementsChanged);
         }
 
-        private void GeoHash(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void GeoHash(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            output.WriteArrayLength(input.parseState.Count);
+            writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -95,16 +95,16 @@ namespace Garnet.server
                 if (sortedSetDict.TryGetValue(member, out var value52Int))
                 {
                     var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
-                    output.WriteAsciiBulkString(geoHash);
+                    writer.WriteAsciiBulkString(geoHash);
                 }
                 else
                 {
-                    output.WriteNull();
+                    writer.WriteNull();
                 }
             }
         }
 
-        private void GeoDistance(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void GeoDistance(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             // Read 1st member
             var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
@@ -121,7 +121,7 @@ namespace Garnet.server
                 Debug.Assert(validUnit);
             }
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
             {
@@ -132,19 +132,19 @@ namespace Garnet.server
 
                 var distanceValue = server.GeoHash.ConvertMetersToUnits(distance, units);
 
-                output.WriteDoubleBulkString(distanceValue);
+                writer.WriteDoubleBulkString(distanceValue);
             }
             else
             {
-                output.WriteNull();
+                writer.WriteNull();
             }
         }
 
-        private void GeoPosition(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void GeoPosition(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            output.WriteArrayLength(input.parseState.Count);
+            writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -156,33 +156,33 @@ namespace Garnet.server
                     var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
 
                     // write array of 2 values
-                    output.WriteArrayLength(2);
-                    output.WriteDoubleNumeric(lon);
-                    output.WriteDoubleNumeric(lat);
+                    writer.WriteArrayLength(2);
+                    writer.WriteDoubleNumeric(lon);
+                    writer.WriteDoubleNumeric(lat);
                 }
                 else
                 {
-                    output.WriteNullArray();
+                    writer.WriteNullArray();
                 }
             }
         }
 
         internal void GeoSearch(ref ObjectInput input,
-                                ref SpanByteAndMemory outputFooter,
+                                ref SpanByteAndMemory spam,
                                 byte respProtocolVersion,
                                 ref GeoSearchOptions opts,
                                 bool readOnly)
         {
             Debug.Assert(opts.searchType != default);
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputFooter);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
 
             // FROMMEMBER
             if (opts.origin == GeoOriginType.FromMember)
             {
                 if (!sortedSetDict.TryGetValue(opts.fromMember, out var centerPointScore))
                 {
-                    output.WriteError(CmdStrings.RESP_ERR_ZSET_MEMBER);
+                    writer.WriteError(CmdStrings.RESP_ERR_ZSET_MEMBER);
                     return;
                 }
 
@@ -236,7 +236,7 @@ namespace Garnet.server
 
             if (responseData.Count == 0)
             {
-                output.WriteEmptyArray();
+                writer.WriteEmptyArray();
             }
             else
             {
@@ -273,21 +273,21 @@ namespace Garnet.server
                 if (opts.countValue > 0 && opts.countValue < responseData.Count)
                 {
                     q = q.Take(opts.countValue);
-                    output.WriteArrayLength(opts.countValue);
+                    writer.WriteArrayLength(opts.countValue);
                 }
                 else
                 {
-                    output.WriteArrayLength(responseData.Count);
+                    writer.WriteArrayLength(responseData.Count);
                 }
 
                 foreach (var item in q)
                 {
                     if (innerArrayLength > 1)
                     {
-                        output.WriteArrayLength(innerArrayLength);
+                        writer.WriteArrayLength(innerArrayLength);
                     }
 
-                    output.WriteBulkString(item.Member);
+                    writer.WriteBulkString(item.Member);
 
                     if (opts.withDist)
                     {
@@ -299,27 +299,27 @@ namespace Garnet.server
                             _ => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
                         };
 
-                        output.WriteDoubleBulkString(distanceValue);
+                        writer.WriteDoubleBulkString(distanceValue);
                     }
 
                     if (opts.withHash)
                     {
                         if (readOnly)
                         {
-                            output.WriteInt64(item.GeoHash);
+                            writer.WriteInt64(item.GeoHash);
                         }
                         else
                         {
-                            output.WriteArrayItem(item.GeoHash);
+                            writer.WriteArrayItem(item.GeoHash);
                         }
                     }
 
                     if (opts.withCoord)
                     {
                         // Write array of 2 values
-                        output.WriteArrayLength(2);
-                        output.WriteDoubleNumeric(item.Coordinates.Longitude);
-                        output.WriteDoubleNumeric(item.Coordinates.Latitude);
+                        writer.WriteArrayLength(2);
+                        writer.WriteDoubleNumeric(item.Coordinates.Longitude);
+                        writer.WriteDoubleNumeric(item.Coordinates.Latitude);
                     }
                 }
             }

@@ -209,7 +209,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void ToRespFormat(ref RespMemoryWriter output)
+        public void ToRespFormat(ref RespMemoryWriter writer)
         {
             var argCount = 1; // group
 
@@ -243,58 +243,58 @@ namespace Garnet.server
                 argCount++;
             }
 
-            output.WriteAsciiBulkString(Name);
-            output.WriteMapLength(argCount);
+            writer.WriteAsciiBulkString(Name);
+            writer.WriteMapLength(argCount);
 
             if (Summary != null)
             {
-                output.WriteBulkString("summary"u8);
-                output.WriteAsciiBulkString(Summary);
+                writer.WriteBulkString("summary"u8);
+                writer.WriteAsciiBulkString(Summary);
             }
 
-            output.WriteBulkString("group"u8);
+            writer.WriteBulkString("group"u8);
             var respType = EnumUtils.GetEnumDescriptions(Group)[0];
-            output.WriteAsciiBulkString(respType);
+            writer.WriteAsciiBulkString(respType);
 
             if (Complexity != null)
             {
-                output.WriteBulkString("complexity"u8);
-                output.WriteAsciiBulkString(Complexity);
+                writer.WriteBulkString("complexity"u8);
+                writer.WriteAsciiBulkString(Complexity);
             }
 
             if (DocFlags != RespCommandDocFlags.None)
             {
-                output.WriteBulkString("doc_flags"u8);
-                output.WriteSetLength(respFormatDocFlags.Length);
+                writer.WriteBulkString("doc_flags"u8);
+                writer.WriteSetLength(respFormatDocFlags.Length);
                 foreach (var respDocFlag in respFormatDocFlags)
                 {
-                    output.WriteSimpleString(respDocFlag);
+                    writer.WriteSimpleString(respDocFlag);
                 }
             }
 
             if (ReplacedBy != null)
             {
-                output.WriteBulkString("replaced_by"u8);
-                output.WriteAsciiBulkString(ReplacedBy);
+                writer.WriteBulkString("replaced_by"u8);
+                writer.WriteAsciiBulkString(ReplacedBy);
             }
 
             if (Arguments != null)
             {
-                output.WriteBulkString("arguments"u8);
-                output.WriteArrayLength(Arguments.Length);
+                writer.WriteBulkString("arguments"u8);
+                writer.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    argument.ToRespFormat(ref output);
+                    argument.ToRespFormat(ref writer);
                 }
             }
 
             if (SubCommands != null)
             {
-                output.WriteBulkString("subcommands"u8);
-                output.WriteMapLength(SubCommands.Length);
+                writer.WriteBulkString("subcommands"u8);
+                writer.WriteMapLength(SubCommands.Length);
                 foreach (var subCommand in SubCommands)
                 {
-                    subCommand.ToRespFormat(ref output);
+                    subCommand.ToRespFormat(ref writer);
                 }
             }
         }

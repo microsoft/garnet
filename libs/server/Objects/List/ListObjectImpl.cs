@@ -107,33 +107,33 @@ namespace Garnet.server
             }
         }
 
-        private void ListIndex(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void ListIndex(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             var index = input.arg1;
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
-            outputStore.Header.result1 = -1;
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            output.Header.result1 = -1;
 
             index = index < 0 ? list.Count + index : index;
             var item = list.ElementAtOrDefault(index);
             if (item != default)
             {
-                output.WriteBulkString(item);
-                outputStore.Header.result1 = 1;
+                writer.WriteBulkString(item);
+                output.Header.result1 = 1;
             }
         }
 
-        private void ListRange(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void ListRange(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             var start = input.arg1;
             var stop = input.arg2;
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (0 == list.Count)
             {
                 // write empty list
-                output.WriteEmptyArray();
+                writer.WriteEmptyArray();
             }
             else
             {
@@ -146,12 +146,12 @@ namespace Garnet.server
 
                 if (start > stop || 0 == list.Count)
                 {
-                    output.WriteEmptyArray();
+                    writer.WriteEmptyArray();
                 }
                 else
                 {
                     var count = stop - start + 1;
-                    output.WriteArrayLength(count);
+                    writer.WriteArrayLength(count);
 
                     var i = -1;
                     foreach (var bytes in list)
@@ -161,10 +161,10 @@ namespace Garnet.server
                             continue;
                         if (i > stop)
                             break;
-                        output.WriteBulkString(bytes);
+                        writer.WriteBulkString(bytes);
                     }
 
-                    outputStore.Header.result1 = count;
+                    output.Header.result1 = count;
                 }
             }
         }
@@ -242,23 +242,23 @@ namespace Garnet.server
             output.Header.result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion, bool fDelAtHead)
+        private void ListPop(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, bool fDelAtHead)
         {
             var count = input.arg1;
 
             if (list.Count < count)
                 count = list.Count;
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (list.Count == 0)
             {
-                output.WriteNull();
+                writer.WriteNull();
                 count = 0;
             }
             else if (count > 1)
             {
-                output.WriteArrayLength(count);
+                writer.WriteArrayLength(count);
             }
 
             while (count > 0 && list.Any())
@@ -276,27 +276,27 @@ namespace Garnet.server
                 }
 
                 UpdateSize(node.Value, false);
-                output.WriteBulkString(node.Value);
+                writer.WriteBulkString(node.Value);
 
                 count--;
-                outputStore.Header.result1++;
+                output.Header.result1++;
             }
         }
 
-        private void ListSet(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void ListSet(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (list.Count == 0)
             {
-                output.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY);
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY);
                 return;
             }
 
             // index
             if (!input.parseState.TryGetInt(0, out var index))
             {
-                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return;
             }
 
@@ -304,7 +304,7 @@ namespace Garnet.server
 
             if (index > list.Count - 1 || index < 0)
             {
-                output.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE);
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE);
                 return;
             }
 
@@ -319,40 +319,40 @@ namespace Garnet.server
             targetNode.Value = element;
             UpdateSize(targetNode.Value);
 
-            output.WriteDirect(CmdStrings.RESP_OK);
-            outputStore.Header.result1 = 1;
+            writer.WriteDirect(CmdStrings.RESP_OK);
+            output.Header.result1 = 1;
         }
 
-        private void ListPosition(ref ObjectInput input, ref GarnetObjectStoreOutput outputStore, byte respProtocolVersion)
+        private void ListPosition(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             var count = 0;
             var isDefaultCount = true;
 
-            using var output = new RespMemoryWriter(respProtocolVersion, ref outputStore.SpanByteAndMemory);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (!ReadListPositionInput(ref input, out var rank, out count, out isDefaultCount, out var maxlen, out var error))
             {
-                output.WriteError(error);
+                writer.WriteError(error);
                 return;
             }
 
             if (count < 0)
             {
-                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return;
             }
 
             if (maxlen < 0)
             {
-                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return;
             }
 
             if (rank == 0)
             {
-                output.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return;
             }
 
@@ -362,7 +362,7 @@ namespace Garnet.server
 
             if (!isDefaultCount)
             {
-                output.WriteArrayLength(count, out _, out totalArrayHeaderLen);
+                writer.WriteArrayLength(count, out _, out totalArrayHeaderLen);
             }
 
             var noOfFoundItem = 0;
@@ -379,7 +379,7 @@ namespace Garnet.server
                         if (rank == 1)
                         {
                             lastFoundItemIndex = currentIndex;
-                            output.WriteInt32(currentIndex);
+                            writer.WriteInt32(currentIndex);
 
                             noOfFoundItem++;
                             if (noOfFoundItem == count)
@@ -410,7 +410,7 @@ namespace Garnet.server
                         if (rank == -1)
                         {
                             lastFoundItemIndex = currentIndex;
-                            output.WriteInt32(currentIndex);
+                            writer.WriteInt32(currentIndex);
 
                             noOfFoundItem++;
                             if (noOfFoundItem == count)
@@ -431,20 +431,20 @@ namespace Garnet.server
 
             if (isDefaultCount && noOfFoundItem == 0)
             {
-                output.ResetPosition();
-                output.WriteNull();
+                writer.ResetPosition();
+                writer.WriteNull();
             }
             else if (!isDefaultCount && noOfFoundItem == 0)
             {
-                output.ResetPosition();
-                output.WriteEmptyArray();
+                writer.ResetPosition();
+                writer.WriteEmptyArray();
             }
             else if (!isDefaultCount && noOfFoundItem != count)
             {
-                output.DecreaseArrayLength(noOfFoundItem, totalArrayHeaderLen);
+                writer.DecreaseArrayLength(noOfFoundItem, totalArrayHeaderLen);
             }
 
-            outputStore.Header.result1 = noOfFoundItem;
+            output.Header.result1 = noOfFoundItem;
         }
 
         private static bool ReadListPositionInput(ref ObjectInput input, out int rank, out int count, out bool isDefaultCount, out int maxlen, out ReadOnlySpan<byte> error)

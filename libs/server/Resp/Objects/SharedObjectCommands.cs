@@ -67,16 +67,16 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.ObjectScan(keyBytes, ref input, ref outputFooter);
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var status = storageApi.ObjectScan(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    ProcessOutput(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (outputFooter.Header.result1 == int.MinValue)
+                    if (output.Header.result1 == int.MinValue)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
