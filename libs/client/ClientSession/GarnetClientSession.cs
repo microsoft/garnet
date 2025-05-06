@@ -328,11 +328,12 @@ namespace Garnet.client
         {
             Debug.Assert(nodeId != null);
 
-            byte* curr = offset;
-            int arraySize = 7;
+            var curr = offset;
+            var arraySize = 7;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
+                logger?.LogWarning("1. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -340,6 +341,7 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
+                logger?.LogWarning("2. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -347,6 +349,7 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
+                logger?.LogWarning("3. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -354,6 +357,7 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
+                logger?.LogWarning("4. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -361,6 +365,7 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
+                logger?.LogWarning("5. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -368,6 +373,7 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
+                logger?.LogWarning("6. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -375,6 +381,7 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
+                logger?.LogWarning("7. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
@@ -385,11 +392,11 @@ namespace Garnet.client
 
             while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
+                logger?.LogWarning("8. Flushing Log under epoch protection");
                 Flush();
                 curr = offset;
             }
             offset = curr;
-            Flush();
         }
 
         /// <summary>
