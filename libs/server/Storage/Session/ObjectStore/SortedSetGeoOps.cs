@@ -132,7 +132,7 @@ namespace Garnet.server
             }
             var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
 
-            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
             try
             {
@@ -222,8 +222,6 @@ namespace Garnet.server
             {
                 if (createTransaction)
                     txnManager.Commit(true);
-
-                writer.Dispose();
             }
         }
     }
