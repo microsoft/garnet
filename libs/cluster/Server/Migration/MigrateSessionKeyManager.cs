@@ -4,7 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -59,14 +59,14 @@ namespace Garnet.cluster
         /// <param name="readOnly"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
+        public bool CanAccessKey(ref PinnedSpanByte key, int slot, bool readOnly)
         {
             // Skip operation check since this session is not responsible for migrating the associated slot
             if (!_sslots.Contains(slot))
                 return true;
 
             // If key is not queued for migration then
-            if (!_keys.TryGetValue(ref key, out var state))
+            if (!_keys.TryGetValue(key, out var state))
                 return true;
 
             // NOTE:
@@ -86,8 +86,8 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="key"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool AddKey(ref ArgSlice key)
-            => _keys.TryAdd(ref key, KeyMigrationStatus.QUEUED);
+        public bool AddKey(PinnedSpanByte key)
+            => _keys.TryAdd(key, KeyMigrationStatus.QUEUED);
 
         /// <summary>
         /// Clear keys from dictionary

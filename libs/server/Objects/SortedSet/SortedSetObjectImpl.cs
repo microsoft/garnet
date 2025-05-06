@@ -243,7 +243,7 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var member = input.parseState.GetArgSliceByRef(0).ToArray();
 
             ObjectOutputHeader outputHeader = default;
             try
@@ -301,7 +301,7 @@ namespace Garnet.server
 
                 for (var i = 0; i < count; i++)
                 {
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ToArray();
 
                     if (!TryGetScore(member, out var score))
                     {
@@ -358,9 +358,12 @@ namespace Garnet.server
                 {
                     foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
                     {
-                        if (IsExpired(item.Element)) continue;
-                        if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
-                        if (minExclusive && item.Item1 == minValue) continue;
+                        if (IsExpired(item.Element))
+                            continue;
+                        if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue))
+                            break;
+                        if (minExclusive && item.Item1 == minValue)
+                            continue;
                         count++;
                     }
                 }
@@ -403,7 +406,7 @@ namespace Garnet.server
                 }
 
                 // Read member
-                var member = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(1).ToArray();
 
                 if (sortedSetDict.TryGetValue(member, out var score))
                 {
@@ -871,7 +874,7 @@ namespace Garnet.server
             ObjectOutputHeader outputHeader = default;
             try
             {
-                var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(0).ToArray();
 
                 if (!TryGetScore(member, out var score))
                 {

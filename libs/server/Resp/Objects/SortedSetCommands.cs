@@ -23,20 +23,17 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 3)
-            {
                 return AbortWithWrongNumberOfArguments("ZADD");
-            }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetAdd(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetAdd(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -68,13 +65,12 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.SortedSetRemove(keyBytes, ref input, out var rmwOutput);
+            var status = storageApi.SortedSetRemove(key, ref input, out var rmwOutput);
 
             switch (status)
             {
@@ -109,13 +105,12 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCARD };
             var input = new ObjectInput(header);
 
-            var status = storageApi.SortedSetLength(keyBytes, ref input, out var output);
+            var status = storageApi.SortedSetLength(key, ref input, out var output);
 
             switch (status)
             {
@@ -155,8 +150,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGE));
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var rangeOpts = SortedSetRangeOpts.None;
 
@@ -187,9 +181,9 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetRange(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetRange(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -258,17 +252,16 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZSCORE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetScore(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetScore(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -305,17 +298,16 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZMSCORE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetScores(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetScores(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -352,8 +344,7 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var popCount = 1;
 
@@ -382,9 +373,9 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetPop(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetPop(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -534,17 +525,16 @@ namespace Garnet.server
             }
 
             // Get the key for the Sorted Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetCount(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetCount(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -584,8 +574,7 @@ namespace Garnet.server
             }
 
             // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var op =
                 command switch
@@ -600,8 +589,8 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
-                storageApi.SortedSetRemoveRangeByLex(keyBytes, ref input, out var output) :
-                storageApi.SortedSetLengthByValue(keyBytes, ref input, out output);
+                storageApi.SortedSetRemoveRangeByLex(key, ref input, out var output) :
+                storageApi.SortedSetLengthByValue(key, ref input, out output);
 
             switch (status)
             {
@@ -649,17 +638,16 @@ namespace Garnet.server
             }
 
             // Get the key for the Sorted Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetIncrement(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetIncrement(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -693,8 +681,7 @@ namespace Garnet.server
             }
 
             // Get the key for SortedSet
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
             var includeWithScore = false;
 
             // Read WITHSCORE
@@ -726,9 +713,9 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetRank(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetRank(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -766,8 +753,7 @@ namespace Garnet.server
             }
 
             // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var op =
                 command switch
@@ -782,9 +768,9 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SortedSetRemoveRange(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SortedSetRemoveRange(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -818,8 +804,7 @@ namespace Garnet.server
             }
 
             // Get the key for the Sorted Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
             var paramCount = 1;
             var includeWithScores = false;
             var includedCount = false;
@@ -869,8 +854,8 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare GarnetObjectStore output
-                outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                status = storageApi.SortedSetRandomMember(keyBytes, ref input, ref outputFooter);
+                outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+                status = storageApi.SortedSetRandomMember(key, ref input, ref outputFooter);
             }
 
             switch (status)
@@ -935,7 +920,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var keys = new ArgSlice[nKeys];
+            var keys = new PinnedSpanByte[nKeys];
 
             for (var i = 1; i < nKeys + 1; i++)
             {
@@ -1558,9 +1543,7 @@ namespace Garnet.server
             var keysBytes = new byte[parseState.Count - 1][];
 
             for (var i = 0; i < keysBytes.Length; i++)
-            {
-                keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-            }
+                keysBytes[i] = parseState.GetArgSliceByRef(i).ToArray();
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
@@ -1626,11 +1609,9 @@ namespace Garnet.server
 
             var keysBytes = new byte[numKeys][];
             for (var i = 0; i < keysBytes.Length; i++)
-            {
-                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).SpanByte.ToByteArray();
-            }
+                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).ToArray();
 
-            var cmdArgs = new ArgSlice[2];
+            var cmdArgs = new PinnedSpanByte[2];
 
             var orderArg = parseState.GetArgSliceByRef(currTokenId++);
             var orderSpan = orderArg.ReadOnlySpan;
@@ -1645,7 +1626,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
-            cmdArgs[0] = new ArgSlice((byte*)&lowScoresFirst, 1);
+            cmdArgs[0] = PinnedSpanByte.FromPinnedPointer((byte*)&lowScoresFirst, 1);
 
             var popCount = 1;
 
@@ -1664,7 +1645,7 @@ namespace Garnet.server
                 }
             }
 
-            cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
+            cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs).Result;
 
@@ -1773,7 +1754,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetExpire(key, ref input, ref outputFooter);
 
@@ -1866,7 +1847,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
             var input = new ObjectInput(header, ref membersParseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref outputFooter);
 
@@ -1935,7 +1916,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
             var input = new ObjectInput(header, ref membersParseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetPersist(key, ref input, ref outputFooter);
 

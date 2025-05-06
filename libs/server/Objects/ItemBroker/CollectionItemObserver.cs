@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -23,7 +24,7 @@ namespace Garnet.server
         /// <summary>
         /// Additional arguments for the command
         /// </summary>
-        internal ArgSlice[] CommandArgs { get; }
+        internal PinnedSpanByte[] CommandArgs { get; }
 
         /// <summary>
         /// Status of the observer
@@ -50,7 +51,7 @@ namespace Garnet.server
         /// </summary>
         internal CancellationTokenSource CancellationTokenSource { get; } = new();
 
-        internal CollectionItemObserver(RespServerSession session, RespCommand command, ArgSlice[] commandArgs = null)
+        internal CollectionItemObserver(RespServerSession session, RespCommand command, PinnedSpanByte[] commandArgs = null)
         {
             Session = session;
             Command = command;

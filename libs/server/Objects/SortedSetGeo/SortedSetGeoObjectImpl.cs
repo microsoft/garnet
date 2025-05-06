@@ -119,7 +119,7 @@ namespace Garnet.server
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
                     // Read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ToArray();
 
                     if (sortedSetDict.TryGetValue(member, out var value52Int))
                     {
@@ -157,10 +157,10 @@ namespace Garnet.server
             try
             {
                 // Read 1st member
-                var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                var member1 = input.parseState.GetArgSliceByRef(0).ToArray();
 
                 // Read 2nd member
-                var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+                var member2 = input.parseState.GetArgSliceByRef(1).ToArray();
 
                 // Read units
                 var units = GeoDistanceUnitType.M;
@@ -217,7 +217,7 @@ namespace Garnet.server
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
                     // read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                    var member = input.parseState.GetArgSliceByRef(i).ToArray();
 
                     if (sortedSetDict.TryGetValue(member, out var scoreMember1))
                     {

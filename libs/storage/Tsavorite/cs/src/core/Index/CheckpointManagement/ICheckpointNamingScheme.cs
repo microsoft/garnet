@@ -81,7 +81,6 @@ namespace Tsavorite.core
         string LogCheckpointBasePath { get; }
 
         /// <summary>
-        /// Get base path holding TsavoriteLog commits
         /// </summary>
         string TsavoriteLogCommitBasePath { get; }
     }

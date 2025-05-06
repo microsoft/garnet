@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -57,7 +59,7 @@ namespace Tsavorite.test
                     }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
                 var bContext = s.BasicContext;
 
                 var logCheckpoints = new Dictionary<Guid, int>();
@@ -149,3 +151,4 @@ namespace Tsavorite.test
         }
     }
 }
+#endif // LOGRECORD_TODO

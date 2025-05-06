@@ -31,14 +31,13 @@ namespace Garnet.server
             }
 
             // Get the key for the Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.SetAdd(keyBytes, ref input, out var output);
+            var status = storageApi.SetAdd(key, ref input, out var output);
 
             switch (status)
             {
@@ -72,7 +71,7 @@ namespace Garnet.server
             }
 
             // Read all keys
-            var keys = new ArgSlice[parseState.Count];
+            var keys = new PinnedSpanByte[parseState.Count];
             for (var i = 0; i < keys.Length; i++)
             {
                 keys[i] = parseState.GetArgSliceByRef(i);
@@ -128,15 +127,15 @@ namespace Garnet.server
             }
 
             // Get the key
-            var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
-            var keys = new ArgSlice[parseState.Count - 1];
+            var keys = new PinnedSpanByte[parseState.Count - 1];
             for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetIntersectStore(keyBytes, keys, out var output);
+            var status = storageApi.SetIntersectStore(key, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -234,7 +233,7 @@ namespace Garnet.server
             }
 
             // Read all the keys
-            var keys = new ArgSlice[parseState.Count];
+            var keys = new PinnedSpanByte[parseState.Count];
 
             for (var i = 0; i < keys.Length; i++)
             {
@@ -281,15 +280,15 @@ namespace Garnet.server
             }
 
             // Get the key
-            var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
-            var keys = new ArgSlice[parseState.Count - 1];
+            var keys = new PinnedSpanByte[parseState.Count - 1];
             for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetUnionStore(keyBytes, keys, out var output);
+            var status = storageApi.SetUnionStore(key, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -322,14 +321,13 @@ namespace Garnet.server
             }
 
             // Get the key 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.SetRemove(keyBytes, ref input, out var output);
+            var status = storageApi.SetRemove(key, ref input, out var output);
 
             switch (status)
             {
@@ -366,14 +364,13 @@ namespace Garnet.server
             }
 
             // Get the key for the Set
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
             var input = new ObjectInput(header);
 
-            var status = storageApi.SetLength(keyBytes, ref input, out var output);
+            var status = storageApi.SetLength(key, ref input, out var output);
 
             switch (status)
             {
@@ -410,17 +407,16 @@ namespace Garnet.server
             }
 
             // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetMembers(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetMembers(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -463,17 +459,16 @@ namespace Garnet.server
             }
 
             // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetIsMember(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetIsMember(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -524,9 +519,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SPOP");
             }
 
-            // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var countParameter = int.MinValue;
             if (parseState.Count == 2)
@@ -554,9 +547,9 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetPop(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetPop(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -640,9 +633,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SRANDMEMBER");
             }
 
-            // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var countParameter = int.MinValue;
             if (parseState.Count == 2)
@@ -673,9 +664,9 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var status = storageApi.SetRandomMember(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetRandomMember(key, ref input, ref outputFooter);
 
             switch (status)
             {
@@ -718,7 +709,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SDIFF");
             }
 
-            var keys = new ArgSlice[parseState.Count];
+            var keys = new PinnedSpanByte[parseState.Count];
             for (var i = 0; i < parseState.Count; i++)
             {
                 keys[i] = parseState.GetArgSliceByRef(i);
@@ -779,15 +770,15 @@ namespace Garnet.server
             }
 
             // Get the key
-            var keyBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
-            var keys = new ArgSlice[parseState.Count - 1];
+            var keys = new PinnedSpanByte[parseState.Count - 1];
             for (var i = 1; i < parseState.Count; i++)
             {
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetDiffStore(keyBytes, keys, out var output);
+            var status = storageApi.SetDiffStore(key, keys, out var output);
             switch (status)
             {
                 case GarnetStatus.OK:

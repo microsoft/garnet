@@ -26,8 +26,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var lop =
                 command switch
@@ -44,8 +43,8 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
-                ? storageApi.ListLeftPush(keyBytes, ref input, out var output)
-                : storageApi.ListRightPush(keyBytes, ref input, out output);
+                ? storageApi.ListLeftPush(key, ref input, out var output)
+                : storageApi.ListRightPush(key, ref input, out output);
 
             if (status == GarnetStatus.WRONGTYPE)
             {
@@ -77,8 +76,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var popCount = 1;
 
@@ -106,17 +104,17 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
             var statusOp = command == RespCommand.LPOP
-                ? storageApi.ListLeftPop(keyBytes, ref input, ref outputFooter)
-                : storageApi.ListRightPop(keyBytes, ref input, ref outputFooter);
+                ? storageApi.ListLeftPop(key, ref input, ref outputFooter)
+                : storageApi.ListRightPop(key, ref input, ref outputFooter);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -147,23 +145,22 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var element = parseState.GetArgSliceByRef(1).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);  // TODO: unused
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LPOS };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var statusOp = storageApi.ListPosition(keyBytes, ref input, ref outputFooter);
+            var statusOp = storageApi.ListPosition(key, ref input, ref outputFooter);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -206,7 +203,7 @@ namespace Garnet.server
             }
 
             // Get the keys for Lists
-            var keys = new ArgSlice[numKeys];
+            var keys = new PinnedSpanByte[numKeys];
 
             for (var i = 0; i < keys.Length; i++)
             {
@@ -289,7 +286,7 @@ namespace Garnet.server
 
             for (var i = 0; i < keysBytes.Length; i++)
             {
-                keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                keysBytes[i] = parseState.GetArgSliceByRef(i).ToArray();
             }
 
             if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
@@ -366,8 +363,8 @@ namespace Garnet.server
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-            var rightOption = ArgSlice.FromPinnedSpan(CmdStrings.RIGHT);
-            var leftOption = ArgSlice.FromPinnedSpan(CmdStrings.LEFT);
+            var rightOption = PinnedSpanByte.FromPinnedSpan(CmdStrings.RIGHT);
+            var leftOption = PinnedSpanByte.FromPinnedSpan(CmdStrings.LEFT);
 
             if (!parseState.TryGetDouble(2, out var timeout))
             {
@@ -379,9 +376,9 @@ namespace Garnet.server
             return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
         }
 
-        private bool ListBlockingMove(ArgSlice srcKey, ArgSlice dstKey, ArgSlice srcDir, ArgSlice dstDir, double timeout)
+        private bool ListBlockingMove(PinnedSpanByte srcKey, PinnedSpanByte dstKey, PinnedSpanByte srcDir, PinnedSpanByte dstDir, double timeout)
         {
-            var cmdArgs = new ArgSlice[] { default, default, default };
+            var cmdArgs = new PinnedSpanByte[] { default, default, default };
 
             // Read destination key
             cmdArgs[0] = dstKey;
@@ -396,8 +393,8 @@ namespace Garnet.server
 
             var pSrcDir = (byte*)&sourceDirection;
             var pDstDir = (byte*)&destinationDirection;
-            cmdArgs[1] = new ArgSlice(pSrcDir, 1);
-            cmdArgs[2] = new ArgSlice(pDstDir, 1);
+            cmdArgs[1] = PinnedSpanByte.FromPinnedPointer(pSrcDir, 1);
+            cmdArgs[2] = PinnedSpanByte.FromPinnedPointer(pDstDir, 1);
 
             if (storeWrapper.itemBroker == null)
                 throw new GarnetException("Object store is disabled");
@@ -433,14 +430,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("LLEN");
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
             var input = new ObjectInput(header);
 
-            var status = storageApi.ListLength(keyBytes, ref input, out var output);
+            var status = storageApi.ListLength(key, ref input, out var output);
 
             switch (status)
             {
@@ -478,8 +474,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Read the parameters(start and stop) from LTRIM
             if (!parseState.TryGetInt(1, out var start) ||
@@ -494,7 +489,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
             var input = new ObjectInput(header, start, stop);
 
-            var status = storageApi.ListTrim(keyBytes, ref input);
+            var status = storageApi.ListTrim(key, ref input);
 
             switch (status)
             {
@@ -529,8 +524,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Read count start and end params for LRANGE
             if (!parseState.TryGetInt(1, out var start) ||
@@ -546,15 +540,15 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var statusOp = storageApi.ListRange(keyBytes, ref input, ref outputFooter);
+            var statusOp = storageApi.ListRange(key, ref input, ref outputFooter);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -584,8 +578,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Read index param
             if (!parseState.TryGetInt(1, out var index))
@@ -600,9 +593,9 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var statusOp = storageApi.ListIndex(keyBytes, ref input, ref outputFooter);
+            var statusOp = storageApi.ListIndex(key, ref input, ref outputFooter);
 
             ReadOnlySpan<byte> error = default;
 
@@ -648,14 +641,13 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINSERT };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var statusOp = storageApi.ListInsert(keyBytes, ref input, out var output);
+            var statusOp = storageApi.ListInsert(key, ref input, out var output);
 
             switch (statusOp)
             {
@@ -696,8 +688,7 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Get count parameter
             if (!parseState.TryGetInt(1, out var nCount))
@@ -711,7 +702,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LREM };
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: nCount);
 
-            var statusOp = storageApi.ListRemove(keyBytes, ref input, out var output);
+            var statusOp = storageApi.ListRemove(key, ref input, out var output);
 
             switch (statusOp)
             {
@@ -846,7 +837,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="garnetStatus"></param>
         /// <returns></returns>
-        private bool ListMove<TGarnetApi>(ArgSlice sourceKey, ArgSlice destinationKey,
+        private bool ListMove<TGarnetApi>(PinnedSpanByte sourceKey, PinnedSpanByte destinationKey,
             OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] node,
             ref TGarnetApi storageApi, out GarnetStatus garnetStatus)
             where TGarnetApi : IGarnetApi
@@ -854,8 +845,7 @@ namespace Garnet.server
             garnetStatus = GarnetStatus.OK;
             node = null;
 
-            garnetStatus =
-                storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
+            garnetStatus = storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
             return true;
         }
 
@@ -875,17 +865,16 @@ namespace Garnet.server
             }
 
             // Get the key for List
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LSET };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
 
-            var statusOp = storageApi.ListSet(keyBytes, ref input, ref outputFooter);
+            var statusOp = storageApi.ListSet(key, ref input, ref outputFooter);
 
             switch (statusOp)
             {
@@ -940,21 +929,18 @@ namespace Garnet.server
             // Get the keys for Lists
             var keysBytes = new byte[numKeys][];
             for (var i = 0; i < keysBytes.Length; i++)
-            {
-                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).SpanByte.ToByteArray();
-            }
+                keysBytes[i] = parseState.GetArgSliceByRef(currTokenId++).ToArray();
 
-            var cmdArgs = new ArgSlice[2];
+            var cmdArgs = new PinnedSpanByte[2];
 
             // Get the direction
             var dir = parseState.GetArgSliceByRef(currTokenId++);
             var popDirection = GetOperationDirection(dir);
 
             if (popDirection == OperationDirection.Unknown)
-            {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
-            cmdArgs[0] = new ArgSlice((byte*)&popDirection, 1);
+
+            cmdArgs[0] = PinnedSpanByte.FromPinnedPointer((byte*)&popDirection, 1);
 
             var popCount = 1;
 
@@ -976,7 +962,7 @@ namespace Garnet.server
                 }
             }
 
-            cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
+            cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
             if (storeWrapper.itemBroker == null)
                 throw new GarnetException("Object store is disabled");

@@ -1,13 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    // Allocator for SpanByte Keys and Values.
-    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<SpanByte, SpanByte, TStoreFunctions>
-        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
+    // Allocator for ReadOnlySpan<byte> Keys and Span<byte> Values.
+    public struct SpanByteAllocator<TStoreFunctions> : IAllocator<TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions
     {
         /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
         private readonly SpanByteAllocatorImpl<TStoreFunctions> _this;
@@ -18,16 +19,16 @@ namespace Tsavorite.core
             _this = new(settings, storeFunctions, @this => new SpanByteAllocator<TStoreFunctions>(@this));
         }
 
-        public SpanByteAllocator(object @this)
+        internal SpanByteAllocator(object @this)
         {
             // Called by AllocatorBase via primary ctor wrapperCreator
             _this = (SpanByteAllocatorImpl<TStoreFunctions>)@this;
         }
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<SpanByte, SpanByte, TStoreFunctions>
-            => (AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<TStoreFunctions>
+            => (AllocatorBase<TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
         public readonly bool IsFixedLength => false;
@@ -49,74 +50,45 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref RecordInfo GetInfo(long physicalAddress)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfo(physicalAddress);
+        public readonly void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo) => _this.InitializeValue(physicalAddress, ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetInfoFromBytePointer(ptr);
+        public readonly RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+             => _this.GetRMWCopyRecordSize(ref srcLogRecord, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetKey(long physicalAddress)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetKey(physicalAddress);
+        public readonly RecordSizeInfo GetRMWInitialRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => _this.GetRMWInitialRecordSize(key, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetValue(long physicalAddress) => ref _this.GetValue(physicalAddress);
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetAndInitializeValue(long physicalAddress, long endPhysicalAddress) => ref _this.GetAndInitializeValue(physicalAddress, endPhysicalAddress);
+        public readonly RecordSizeInfo GetUpsertRecordSize<TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress) => _this.GetRecordSize(physicalAddress);
+        public readonly RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+            where TSourceLogRecord : ISourceLogRecord
+            where TVariableLengthInput : IVariableLengthInput<TInput>
+            => _this.GetUpsertRecordSize(key, ref inputLogRecord, ref input, varlenInput);
+
+        /// <summary>Get record size required for a new tombstone record</summary>
+        public readonly RecordSizeInfo GetDeleteRecordSize(ReadOnlySpan<byte> key) => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref SpanByte key, ref TInput input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
-            where TVariableLengthInput : IVariableLengthInput<SpanByte, TInput>
-             => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => _this.GetRequiredRecordSize(physicalAddress, availableBytes);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetAverageRecordSize() => _this.GetAverageRecordSize();
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetFixedRecordSize() => _this.GetFixedRecordSize();
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
-            => _this.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetUpsertRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref SpanByte value, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : IVariableLengthInput<SpanByte, TInput>
-            => _this.GetUpsertRecordSize(ref key, ref value, ref input, sessionFunctions);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref SpanByte key, ref SpanByte value) => _this.GetRecordSize(ref key, ref value);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int GetValueLength(ref SpanByte value)
-            => SpanByteAllocatorImpl<TStoreFunctions>.GetValueLength(ref value);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx)
-            => SpanByteAllocatorImpl<TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
+        public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => _this.PopulateRecordSizeInfo(ref sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -148,23 +120,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetContextRecordKey(ref AsyncIOContext<SpanByte, SpanByte> ctx)
-            => ref SpanByteAllocatorImpl<TStoreFunctions>.GetContextRecordKey(ref ctx);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ref SpanByte GetContextRecordValue(ref AsyncIOContext<SpanByte, SpanByte> ctx) => ref _this.GetContextRecordValue(ref ctx);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetKeyContainer(ref SpanByte key) => _this.GetKeyContainer(ref key);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly IHeapContainer<SpanByte> GetValueContainer(ref SpanByte value) => _this.GetValueContainer(ref value);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long[] GetSegmentOffsets()
             => SpanByteAllocatorImpl<TStoreFunctions>.GetSegmentOffsets();
 
@@ -173,7 +128,22 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ref SpanByte key, long physicalAddress)
-            => SpanByteAllocatorImpl<TStoreFunctions>.SerializeKey(ref key, physicalAddress);
+        public readonly void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly LogRecord CreateLogRecord(long logicalAddress) => _this.CreateLogRecord(logicalAddress);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
     }
 }

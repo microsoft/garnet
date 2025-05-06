@@ -75,8 +75,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Previous power of 2
         /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
         internal static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
@@ -86,6 +84,21 @@ namespace Tsavorite.core
             v |= v >> 16;
             v |= v >> 32;
             return v - (v >> 1);
+        }
+
+        /// <summary>
+        /// Next power of 2
+        /// </summary>
+        internal static long NextPowerOf2(long v)
+        {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v + 1;
         }
 
         /// <summary>
@@ -170,27 +183,25 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get 64-bit hash code for a byte array
+        /// Get 64-bit hash code for a byte array. The array does not have to be pinned.
         /// </summary>
-        /// <param name="pbString"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long HashBytes(byte* pbString, int len)
+        public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
             const long magicno = 40343;
-            char* pwString = (char*)pbString;
-            int cbBuf = len / 2;
-            ulong hashState = (ulong)len;
 
-            for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + *pwString;
+            // Convert to char for faster enumeration (two bytes per iteration)
+            var charSpan = byteSpan.UncheckedCast<char>();
+            var hashState = (ulong)byteSpan.Length;
 
-            if ((len & 1) > 0)
-            {
-                byte* pC = (byte*)pwString;
-                hashState = magicno * hashState + *pC;
-            }
+            // Explicit enumerator calls are faster than foreach
+            var charEnumerator = charSpan.GetEnumerator();
+            while (charEnumerator.MoveNext())
+                hashState = (magicno * hashState) + charEnumerator.Current;
+
+            // If we had an odd number of bytes, get the last byte
+            if ((byteSpan.Length & 1) > 0)
+                hashState = magicno * hashState + byteSpan[^1];
 
             return (long)Rotr64(magicno * hashState, 4);
         }
@@ -361,5 +372,11 @@ namespace Tsavorite.core
         }
 
         internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
+
+        /// <summary>
+        /// Should only be called in Debug.Assert or other DEBUG-conditional code
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static string GetCurrentMethodName() => new StackTrace().GetFrame(1).GetMethod().Name;
     }
 }
