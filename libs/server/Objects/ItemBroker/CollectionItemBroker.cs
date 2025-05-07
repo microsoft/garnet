@@ -625,7 +625,18 @@ namespace Garnet.server
                     }
                 }
             }
-            done.Wait();
+
+            var mainLoopStatus = mainLoopTaskStarted;
+            while (Interlocked.CompareExchange(ref mainLoopTaskStarted, 2, mainLoopStatus) != mainLoopStatus)
+            {
+                mainLoopStatus = mainLoopTaskStarted;
+            }
+
+            if (mainLoopStatus == 1)
+            {
+                done.Wait();
+            }
+            keysToObserversLock.Dispose();
         }
     }
 }
