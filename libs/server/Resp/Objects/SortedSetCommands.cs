@@ -1545,9 +1545,6 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            if (storeWrapper.itemBroker == null)
-                throw new GarnetException("Blocking operations are disabled");
-
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -1596,9 +1593,6 @@ namespace Garnet.server
         {
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
-
-            if (storeWrapper.itemBroker == null)
-                throw new GarnetException("Blocking operations are disabled");
 
             if (parseState.Count < 4)
             {

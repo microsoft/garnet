@@ -259,8 +259,7 @@ namespace Garnet.test
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
             TextWriter logTo = null,
-            bool enableCluster = false,
-            bool enableBlockingOperations = false)
+            bool enableCluster = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -345,7 +344,6 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
-                EnableBlockingOperations = enableBlockingOperations,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -456,8 +454,7 @@ namespace Garnet.test
             int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            EndPoint clusterAnnounceEndpoint = null,
-            bool enableBlockingOperations = false)
+            EndPoint clusterAnnounceEndpoint = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -504,8 +501,7 @@ namespace Garnet.test
                     replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
-                    clusterAnnounceEndpoint: clusterAnnounceEndpoint,
-                    enableBlockingOperations: enableBlockingOperations);
+                    clusterAnnounceEndpoint: clusterAnnounceEndpoint);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -567,8 +563,7 @@ namespace Garnet.test
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
-            EndPoint clusterAnnounceEndpoint = null,
-            bool enableBlockingOperations = false)
+            EndPoint clusterAnnounceEndpoint = null)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -676,7 +671,6 @@ namespace Garnet.test
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
-                EnableBlockingOperations = enableBlockingOperations,
             };
 
             if (lowMemory)

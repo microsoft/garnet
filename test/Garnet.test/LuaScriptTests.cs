@@ -131,8 +131,7 @@ namespace Garnet.test
                     luaTimeout: timeout,
                     useAcl: true,
                     aclFile: aclFile,
-                    logTo: loggerOutput,
-                    enableBlockingOperations: true
+                    logTo: loggerOutput
                 );
 
             _ = server.Register.NewProcedure(

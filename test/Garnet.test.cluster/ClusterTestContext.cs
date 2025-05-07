@@ -148,8 +148,7 @@ namespace Garnet.test.cluster
             int replicaDisklessSyncDelay = 1,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            bool useHostname = false,
-            bool enableBlockingOperations = false)
+            bool useHostname = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -189,8 +188,7 @@ namespace Garnet.test.cluster
                 enableDisklessSync: enableDisklessSync,
                 replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                 luaMemoryMode: luaMemoryMode,
-                luaMemoryLimit: luaMemoryLimit,
-                enableBlockingOperations: enableBlockingOperations);
+                luaMemoryLimit: luaMemoryLimit);
 
             foreach (var node in nodes)
                 node.Start();

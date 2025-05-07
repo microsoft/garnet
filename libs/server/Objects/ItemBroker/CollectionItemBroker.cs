@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -45,14 +46,16 @@ namespace Garnet.server
         bool disposed = false;
 
         // Task for the main loop, we keep field for diagnostic purposes
-        readonly Task mainLoopTask;
+        Task mainLoopTask = null;
+
+        // Flag to indicate if the main loop task has started
+        int mainLoopTaskStarted = 0;
 
         /// <summary>
         /// Constructor for CollectionItemBroker
         /// </summary>
         public CollectionItemBroker()
         {
-            mainLoopTask = Task.Run(Start);
         }
 
         /// <summary>
@@ -99,11 +102,23 @@ namespace Garnet.server
             return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void StartMainLoop()
+        {
+            if (mainLoopTaskStarted == 0 && Interlocked.CompareExchange(ref mainLoopTaskStarted, 1, 0) == 0)
+            {
+                mainLoopTask = Task.Run(Start);
+            }
+        }
+
         private async Task<CollectionItemResult> GetCollectionItemAsync(CollectionItemObserver observer, byte[][] keys,
             double timeoutInSeconds)
         {
             // Add the session ID to observer mapping
             sessionIdToObserver.TryAdd(observer.Session.ObjectStoreSessionID, observer);
+
+            // Start the main loop task if it hasn't been started yet
+            StartMainLoop();
 
             // Add a new observer event to the event queue
             brokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
@@ -138,10 +153,16 @@ namespace Garnet.server
         /// Notify broker that an item was added to a collection object in specified key
         /// </summary>
         /// <param name="key">Key of the updated collection object</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void HandleCollectionUpdate(byte[] key)
         {
-            if (keysToObservers == null) return;
+            if (keysToObservers is null)
+                return;
+            HandleCollectionUpdateWorker(key);
+        }
 
+        void HandleCollectionUpdateWorker(byte[] key)
+        {
             keysToObserversLock.EnterReadLock();
             try
             {

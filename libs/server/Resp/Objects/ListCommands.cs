@@ -302,9 +302,6 @@ namespace Garnet.server
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
-            if (storeWrapper.itemBroker == null)
-                throw new GarnetException("Blocking operations are disabled");
-
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
             if (result.IsForceUnblocked)
@@ -404,9 +401,6 @@ namespace Garnet.server
 
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
-
-            if (storeWrapper.itemBroker == null)
-                throw new GarnetException("Blocking operations are disabled");
 
             var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
@@ -986,9 +980,6 @@ namespace Garnet.server
 
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
-
-            if (storeWrapper.itemBroker == null)
-                throw new GarnetException("Blocking operations are disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
 
