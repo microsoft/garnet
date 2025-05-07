@@ -138,16 +138,30 @@ namespace Tsavorite.core
                     }
 
                     // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater.
-                    if (sessionFunctions.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
-                        || (rmwInfo.Action == RMWAction.ExpireAndStop))
+                    if (sessionFunctions.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
-                        // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                        // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         // status has been set by InPlaceUpdater
+                        goto LatchRelease;
+                    }
+
+                    if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                    {
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
+                        // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
+
+                        // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
+                        // Otherwise an earlier record for this key could be reachable again.
+                        if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo))
+                        {
+                            HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                                sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
+                        }
+
                         goto LatchRelease;
                     }
 
