@@ -162,6 +162,8 @@ namespace Tsavorite.core
                                 sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
                         }
 
+                        pendingContext.recordInfo = srcRecordInfo;
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
                     }
 
