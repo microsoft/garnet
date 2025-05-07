@@ -25,7 +25,10 @@ namespace Garnet.server
             if (objectStoreContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
-            var objStoreOutput = new GarnetObjectStoreOutput();
+            var objStoreOutput = new GarnetObjectStoreOutput
+            {
+                SpanByteAndMemory = new(null)
+            };
 
             // Perform RMW on object store
             var status = objectStoreContext.RMW(ref key, ref input, ref objStoreOutput);
@@ -204,7 +207,7 @@ namespace Garnet.server
                     break;
             }
 
-            var output = new GarnetObjectStoreOutput();
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref output);
 
             scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
@@ -577,7 +580,7 @@ namespace Garnet.server
 
             ref var _input = ref Unsafe.AsRef<ObjectInput>(input.ptr);
 
-            var _output = new GarnetObjectStoreOutput();
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null) };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref _output);
@@ -611,7 +614,7 @@ namespace Garnet.server
             if (objectStoreContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
-            var _output = new GarnetObjectStoreOutput();
+            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(null) };
 
             // Perform Read on object store
             var status = objectStoreContext.Read(ref key, ref input, ref _output);

@@ -65,16 +65,6 @@ namespace Garnet.server
         /// </summary>
         public bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
 
-        public GarnetObjectStoreOutput()
-        {
-            SpanByteAndMemory = new(null);
-        }
-
-        public GarnetObjectStoreOutput(SpanByteAndMemory spam)
-        {
-            SpanByteAndMemory = spam;
-        }
-
         public void ConvertToHeap()
         {
             // Does not convert to heap when going pending, because we immediately complete pending operations for object store.
