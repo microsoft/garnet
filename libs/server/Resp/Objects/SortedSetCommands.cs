@@ -34,7 +34,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetAdd(keyBytes, ref input, ref output);
 
@@ -187,7 +187,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetRange(keyBytes, ref input, ref output);
 
@@ -266,7 +266,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetScore(keyBytes, ref input, ref output);
 
@@ -312,7 +312,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetScores(keyBytes, ref input, ref output);
 
@@ -382,7 +382,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare output
-            var output = new GarnetObjectStoreOutput(new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
 
             var status = storageApi.SortedSetPop(keyBytes, ref input, ref output);
 
@@ -542,7 +542,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare output
-            var output = new GarnetObjectStoreOutput(new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
 
             var status = storageApi.SortedSetCount(keyBytes, ref input, ref output);
 
@@ -657,7 +657,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetIncrement(keyBytes, ref input, ref output);
 
@@ -723,7 +723,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetRank(keyBytes, ref input, ref output);
 
@@ -778,7 +778,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetRemoveRange(keyBytes, ref input, ref output);
 
@@ -862,7 +862,7 @@ namespace Garnet.server
             if (paramCount != 0)
             {
                 // Prepare GarnetObjectStore output
-                output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+                output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
                 status = storageApi.SortedSetRandomMember(keyBytes, ref input, ref output);
             }
 
@@ -1773,7 +1773,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetExpire(key, ref input, ref output);
 
@@ -1866,7 +1866,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
             var input = new ObjectInput(header, ref membersParseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref output);
 
@@ -1935,7 +1935,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
             var input = new ObjectInput(header, ref membersParseState);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
             var status = storageApi.SortedSetPersist(key, ref input, ref output);
 
