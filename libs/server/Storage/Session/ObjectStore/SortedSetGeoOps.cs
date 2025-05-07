@@ -206,7 +206,7 @@ namespace Garnet.server
                         SortedSetOp = SortedSetOperation.ZADD,
                     }, ref parseState);
 
-                    var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+                    var zAddOutput = new GarnetObjectStoreOutput();
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
 
                     writer.WriteInt32(foundItems);

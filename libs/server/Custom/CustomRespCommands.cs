@@ -141,7 +141,7 @@ namespace Garnet.server
             var header = new RespInputHeader(objType) { SubId = subid };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput();
 
             GarnetStatus status;
 
@@ -296,7 +296,7 @@ namespace Garnet.server
             customCommandParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref customCommandParseState);
 
-            var _output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var _output = new GarnetObjectStoreOutput();
             GarnetStatus status;
             if (customObjCommand.type == CommandType.ReadModifyWrite)
             {

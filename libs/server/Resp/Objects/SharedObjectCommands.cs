@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -67,7 +66,7 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
             var status = storageApi.ObjectScan(keyBytes, ref input, ref output);
 
             switch (status)

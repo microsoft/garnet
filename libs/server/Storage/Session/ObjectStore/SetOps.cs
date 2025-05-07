@@ -18,7 +18,7 @@ namespace Garnet.server
     {
         /// <summary>
         ///  Adds the specified member to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -47,7 +47,7 @@ namespace Garnet.server
 
         /// <summary>
         ///  Adds the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -111,7 +111,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified members from the set.
-        /// Specified members that are not a member of the set are ignored. 
+        /// Specified members that are not a member of the set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -187,7 +187,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
             var input = new ObjectInput(header);
 
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput();
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref output);
 
@@ -237,7 +237,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
             var input = new ObjectInput(header, count);
 
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput();
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref output);
 
@@ -657,7 +657,7 @@ namespace Garnet.server
 
         /// <summary>
         ///  Adds the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -672,7 +672,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified members from the set.
-        /// Specified members that are not a member of this set are ignored. 
+        /// Specified members that are not a member of this set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -749,7 +749,7 @@ namespace Garnet.server
                 SetOp = SetOperation.SMISMEMBER,
             }, ref parseState);
 
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput();
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
@@ -773,9 +773,9 @@ namespace Garnet.server
 
         /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
-        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// If the provided count argument is positive, return an array of distinct elements.
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
-        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times.
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -954,7 +954,7 @@ namespace Garnet.server
         /// Returns the cardinality of the intersection of all the given sets.
         /// </summary>
         /// <param name="keys"></param>
-        /// <param name="limit">Optional limit for stopping early when reaching this size</param> 
+        /// <param name="limit">Optional limit for stopping early when reaching this size</param>
         /// <param name="count"></param>
         /// <returns></returns>
         public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)

@@ -265,7 +265,7 @@ namespace Garnet.server
                 var objInput = new ObjectInput(header);
 
                 var keyBA = key.ToByteArray();
-                var objO = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
+                var objO = new GarnetObjectStoreOutput(output);
                 var status = objectContext.Read(ref keyBA, ref objInput, ref objO);
 
                 if (status.IsPending)
@@ -319,7 +319,7 @@ namespace Garnet.server
                 var input = new ObjectInput(header);
 
                 var keyBA = key.ToByteArray();
-                var objO = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
+                var objO = new GarnetObjectStoreOutput(output);
                 var status = objectContext.Read(ref keyBA, ref input, ref objO);
 
                 if (status.IsPending)
@@ -950,7 +950,7 @@ namespace Garnet.server
                 var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
-                var objOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
+                var objOutput = new GarnetObjectStoreOutput(output);
                 var keyBytes = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
 
@@ -1072,7 +1072,7 @@ namespace Garnet.server
                 var objInput = new ObjectInput(header, ref parseState, arg1: (byte)expireOption, arg2: expiryAt ? 1 : 0);
 
                 // Retry on object store
-                var objOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = output };
+                var objOutput = new GarnetObjectStoreOutput(output);
                 var keyBytes = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBytes, ref objInput, ref objOutput);
 
@@ -1121,7 +1121,7 @@ namespace Garnet.server
                 var header = new RespInputHeader(GarnetObjectType.Persist);
                 var objInput = new ObjectInput(header);
 
-                var objO = new GarnetObjectStoreOutput { SpanByteAndMemory = o };
+                var objO = new GarnetObjectStoreOutput(o);
                 var _key = key.ToArray();
                 var _status = objectStoreContext.RMW(ref _key, ref objInput, ref objO);
 

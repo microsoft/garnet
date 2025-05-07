@@ -4,7 +4,6 @@
 using System;
 using System.Text;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -106,7 +105,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(keyBytes, ref input, ref output)
@@ -154,7 +153,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var statusOp = storageApi.ListPosition(keyBytes, ref input, ref output);
 
@@ -561,7 +560,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var statusOp = storageApi.ListRange(keyBytes, ref input, ref output);
 
@@ -615,7 +614,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var statusOp = storageApi.ListIndex(keyBytes, ref input, ref output);
 
@@ -890,7 +889,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var statusOp = storageApi.ListSet(keyBytes, ref input, ref output);
 
