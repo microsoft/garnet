@@ -460,6 +460,9 @@ namespace Tsavorite.test.Revivification
             internal int expectedSingleFullValueLength = -1;
             internal int expectedInputLength = InitialLength;
 
+            // used to configurably change RMW behavior to test tombstoning via RMW route.
+            internal bool deleteViaRmw = false;
+
             // This is a queue rather than a single value because there may be calls to, for example, ConcurrentWriter with one length
             // followed by SingleWriter with another.
             internal Queue<int> expectedUsedValueLengths = new();

@@ -911,14 +911,16 @@ namespace Garnet.server
                 case RespCommand.DELIFGREATER:
                     if (rmwInfo.RecordInfo.ETag)
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);
+
                     long etagFromClient = input.parseState.GetLong(0);
-                    if (etagFromClient <= functionsState.etagState.etag)
+                    if (etagFromClient > functionsState.etagState.etag)
                     {
-                        EtagState.ResetState(ref functionsState.etagState);
-                        return false;
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
                     }
 
-                    return true;
+                    EtagState.ResetState(ref functionsState.etagState);
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     if (rmwInfo.RecordInfo.ETag)
@@ -1046,13 +1048,6 @@ namespace Garnet.server
 
             switch (cmd)
             {
-                case RespCommand.DELIFGREATER:
-                    // NCU has already checked for making sure the etag is greater than the existing etag by this point
-                    long etagFromClient = input.parseState.GetLong(0);
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
-                    EtagState.ResetState(ref functionsState.etagState);
-                    return false;
-
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
@@ -1074,7 +1069,7 @@ namespace Garnet.server
                     Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
                     src.CopyTo(dest);
 
-                    etagFromClient = input.parseState.GetLong(1);
+                    long etagFromClient = input.parseState.GetLong(1);
 
                     functionsState.etagState.etag = etagFromClient;
 

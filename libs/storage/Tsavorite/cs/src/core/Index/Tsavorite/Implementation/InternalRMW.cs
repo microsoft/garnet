@@ -151,6 +151,8 @@ namespace Tsavorite.core
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        // HK TODO: Ask @TedHart if record should be marked dirty and modified here? By now it is already tombstoned
+
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
 
@@ -404,7 +406,26 @@ namespace Tsavorite.core
                         forExpiration = true;
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                    {
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+
+                        // Handle potential record revivification for records in in-memory region. Handle readonly region and potentially Mutable region undergoing CPR. 
+                        if (stackCtx.recSrc.HasMainLogSrc)
+                        {
+                            // HK TODO: Ask @TedHart if record should be marked dirty and modified here?
+                            srcRecordInfo.SetTombstone();
+                            // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
+                            // Otherwise an earlier record for this key could be reachable again.
+                            if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo))
+                            {
+                                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref value, ref srcRecordInfo);
+                                HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                                    sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
+                            }
+                        }
+
                         return OperationStatus.NOTFOUND;
+                    }
                     else
                         return OperationStatus.SUCCESS;
                 }
@@ -489,7 +510,7 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
-                    newRecordInfo.SetTombstone();
+                    // tombstone setting and potential revivification handling is done after CAS
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -540,6 +561,15 @@ namespace Tsavorite.core
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
                             newRecordInfo.SetTombstone();
+                            // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
+                            // Otherwise an earlier record for this key could be reachable again.
+                            if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref newRecordInfo))
+                            {
+                                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = GetRecordLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo);
+                                HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                                    sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
+                            }
+
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                         else
