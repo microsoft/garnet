@@ -396,6 +396,7 @@ namespace Garnet.test
         #endregion
 
         #region ETAG DEL Happy Paths
+
         [Test]
         public void DelIfGreaterOnAnAlreadyExistingKeyWithEtagWorks()
         {
@@ -590,6 +591,60 @@ namespace Garnet.test
         #endregion
 
         #region Edgecases
+
+        [Test]
+        [TestCase("m", "mo", null)] // RCU with no existing exp on noetag key
+        [TestCase("mexicanmochawithdoubleespresso", "c", null)] // IPU with no existing exp on noetag key
+        [TestCase("m", "mo", 30)] // RCU with existing exp on noetag key
+        [TestCase("mexicanmochawithdoubleespresso", "c", 30)] // IPU with existing exp on noetag key
+        public void SetIfGreaterWhenExpIsSentForExistingNonEtagKey(string initialValue, string newValue, double? exp)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+            var key = "meow-key";
+
+            if (exp != null)
+                db.StringSet(key, initialValue, TimeSpan.FromSeconds(exp.Value));
+            else
+                db.StringSet(key, initialValue);
+
+            RedisResult[] arrRes = (RedisResult[])db.Execute("SETIFGREATER", key, newValue, 5, "EX", 90);
+
+            ClassicAssert.AreEqual(5, (long)arrRes[0]);
+            ClassicAssert.IsTrue(arrRes[1].IsNull);
+
+            var res = db.StringGetWithExpiry(key);
+            ClassicAssert.AreEqual(newValue, res.Value.ToString());
+            ClassicAssert.IsTrue(res.Expiry.HasValue);
+        }
+
+        [Test]
+        [TestCase("m", "mo", null)] // RCU with no existing exp on noetag key
+        [TestCase("mexicanmochawithdoubleespresso", "c", null)] // IPU with no existing exp on noetag key
+        [TestCase("m", "mo", 30)] // RCU with existing exp on noetag key
+        [TestCase("mexicanmochawithdoubleespresso", "c", 30)] // IPU with existing exp on noetag key
+        public void SetIfMatchWhenExpIsSentForExistingNonEtagKey(string initialValue, string newValue, int? exp)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+            var key = "meow-key";
+
+            if (exp != null)
+                db.StringSet(key, initialValue, TimeSpan.FromSeconds(exp.Value));
+            else
+                db.StringSet(key, initialValue);
+
+            RedisResult[] arrRes = (RedisResult[])db.Execute("SETIFMATCH", key, newValue, 0, "EX", 90);
+
+            ClassicAssert.AreEqual(1, (long)arrRes[0]);
+            ClassicAssert.IsTrue(arrRes[1].IsNull);
+
+            var res = db.StringGetWithExpiry(key);
+            ClassicAssert.AreEqual(newValue, res.Value.ToString());
+            ClassicAssert.IsTrue(res.Expiry.HasValue);
+        }
+
+
         [Test]
         public void SetIfMatchSetsKeyValueOnNonExistingKey()
         {

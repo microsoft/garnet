@@ -335,8 +335,8 @@ namespace Garnet.client
         {
             Debug.Assert(nodeId != null);
 
-            byte* curr = offset;
-            int arraySize = 7;
+            var curr = offset;
+            var arraySize = 7;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -396,7 +396,6 @@ namespace Garnet.client
                 curr = offset;
             }
             offset = curr;
-            Flush();
         }
 
         /// <summary>

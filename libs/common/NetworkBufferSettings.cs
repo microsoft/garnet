@@ -48,6 +48,25 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Return inclusive size for array of settings
+        /// </summary>
+        /// <param name="settings"></param>
+        /// <returns></returns>
+        public static NetworkBufferSettings GetInclusive(NetworkBufferSettings[] settings)
+        {
+            var maxSendBufferSize = 1 << 17;
+            var minInitialReceiveBufferSize = 1 << 17;
+            var maxReceiveBufferSize = 1 << 20;
+            foreach (var setting in settings)
+            {
+                maxSendBufferSize = Math.Max(maxSendBufferSize, setting.sendBufferSize);
+                minInitialReceiveBufferSize = Math.Min(minInitialReceiveBufferSize, setting.initialReceiveBufferSize);
+                maxReceiveBufferSize = Math.Min(maxReceiveBufferSize, setting.maxReceiveBufferSize);
+            }
+            return new NetworkBufferSettings(maxSendBufferSize, minInitialReceiveBufferSize, maxReceiveBufferSize);
+        }
+
+        /// <summary>
         /// Allocate network buffer pool
         /// </summary>
         /// <param name="maxEntriesPerLevel"></param>
@@ -63,5 +82,8 @@ namespace Garnet.common
             levels = Math.Max(4, levels);
             return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger);
         }
+
+        public void Log(ILogger logger, string category)
+            => logger?.LogInformation("[{category}] network settings: {sendBufferSize}, {initialReceiveBufferSize}, {maxReceiveBufferSize}", category, sendBufferSize, initialReceiveBufferSize, maxReceiveBufferSize);
     }
 }

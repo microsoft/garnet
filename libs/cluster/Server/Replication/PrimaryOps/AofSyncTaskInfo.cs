@@ -87,6 +87,8 @@ namespace Garnet.cluster
 
         public void Throttle()
         {
+            // Trigger flush while we are out of epoch protection
+            garnetClient.CompletePending(false);
             garnetClient.Throttle();
         }
 

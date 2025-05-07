@@ -1058,7 +1058,6 @@ namespace Garnet.server
                     // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
                     shouldUpdateEtag = true;
                     // Copy input to value
-                    Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
                     ReadOnlySpan<byte> src = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
                     // retain metadata unless metadata sent
@@ -1066,13 +1065,14 @@ namespace Garnet.server
 
                     Debug.Assert(src.Length + EtagConstants.EtagSize + metadataSize == newValue.Length);
 
-                    src.CopyTo(dest);
-
                     newValue.ExtraMetadata = oldValue.ExtraMetadata;
                     if (input.arg1 != 0)
                     {
                         newValue.ExtraMetadata = input.arg1;
                     }
+
+                    Span<byte> dest = newValue.AsSpan(EtagConstants.EtagSize);
+                    src.CopyTo(dest);
 
                     etagFromClient = input.parseState.GetLong(1);
 
