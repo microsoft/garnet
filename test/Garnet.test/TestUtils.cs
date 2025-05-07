@@ -259,7 +259,8 @@ namespace Garnet.test
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
             TextWriter logTo = null,
-            bool enableCluster = false)
+            bool enableCluster = false,
+            bool enableBlockingOperations = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -343,7 +344,8 @@ namespace Garnet.test
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
-                SlowLogThreshold = slowLogThreshold
+                SlowLogThreshold = slowLogThreshold,
+                EnableBlockingOperations = enableBlockingOperations,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))

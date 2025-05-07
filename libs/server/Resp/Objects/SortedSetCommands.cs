@@ -1542,8 +1542,11 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingPop(RespCommand command)
         {
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Blocking operations are disabled");
 
             if (parseState.Count < 2)
             {
@@ -1591,8 +1594,11 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingMPop()
         {
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Blocking operations are disabled");
 
             if (parseState.Count < 4)
             {
@@ -1711,7 +1717,7 @@ namespace Garnet.server
         private unsafe bool SortedSetExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
             if (parseState.Count <= 4)
@@ -1815,7 +1821,7 @@ namespace Garnet.server
         private unsafe bool SortedSetTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
             if (parseState.Count <= 3)
@@ -1904,7 +1910,7 @@ namespace Garnet.server
         private unsafe bool SortedSetPersist<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
             if (parseState.Count <= 3)

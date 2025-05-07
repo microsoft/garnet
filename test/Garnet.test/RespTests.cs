@@ -31,7 +31,7 @@ namespace Garnet.test
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, enableBlockingOperations: true);
             server.Start();
         }
 

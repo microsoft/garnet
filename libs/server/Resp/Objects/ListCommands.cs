@@ -299,8 +299,11 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Blocking operations are disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
@@ -399,8 +402,11 @@ namespace Garnet.server
             cmdArgs[1] = new ArgSlice(pSrcDir, 1);
             cmdArgs[2] = new ArgSlice(pDstDir, 1);
 
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Blocking operations are disabled");
 
             var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
@@ -978,8 +984,11 @@ namespace Garnet.server
 
             cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
 
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
+
+            if (storeWrapper.itemBroker == null)
+                throw new GarnetException("Blocking operations are disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
 

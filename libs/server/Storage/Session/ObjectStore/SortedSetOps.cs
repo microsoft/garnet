@@ -47,7 +47,7 @@ namespace Garnet.server
 
             var keyBytes = key.ToArray();
             var status = RMWObjectStoreOperationWithOutput(keyBytes, ref input, ref objectStoreContext, ref outputFooter);
-            itemBroker.HandleCollectionUpdate(keyBytes);
+            itemBroker?.HandleCollectionUpdate(keyBytes);
 
             if (status == GarnetStatus.OK)
             {
@@ -90,7 +90,7 @@ namespace Garnet.server
 
             var keyBytes = key.ToArray();
             var status = RMWObjectStoreOperationWithOutput(keyBytes, ref input, ref objectStoreContext, ref outputFooter);
-            itemBroker.HandleCollectionUpdate(keyBytes);
+            itemBroker?.HandleCollectionUpdate(keyBytes);
 
             if (status == GarnetStatus.OK)
             {
@@ -605,7 +605,7 @@ namespace Garnet.server
 
                     var destinationKeyBytes = destinationKey.ToArray();
                     _ = SET(destinationKeyBytes, newSetObject, ref objectContext);
-                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
+                    itemBroker?.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
@@ -681,7 +681,7 @@ namespace Garnet.server
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var status = RMWObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
-            itemBroker.HandleCollectionUpdate(key);
+            itemBroker?.HandleCollectionUpdate(key);
             return status;
         }
 
@@ -775,7 +775,7 @@ namespace Garnet.server
 
                         var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
                         RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
-                        itemBroker.HandleCollectionUpdate(destinationKey);
+                        itemBroker?.HandleCollectionUpdate(destinationKey);
                     }
                 }
                 finally
@@ -1098,7 +1098,7 @@ namespace Garnet.server
 
                     var destinationKeyBytes = destinationKey.ToArray();
                     _ = SET(destinationKeyBytes, newSortedSetObject, ref objectContext);
-                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
+                    itemBroker?.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {
@@ -1367,7 +1367,7 @@ namespace Garnet.server
 
                     var destinationKeyBytes = destinationKey.ToArray();
                     _ = SET(destinationKeyBytes, newSortedSetObject, ref objectContext);
-                    itemBroker.HandleCollectionUpdate(destinationKeyBytes);
+                    itemBroker?.HandleCollectionUpdate(destinationKeyBytes);
                 }
                 else
                 {

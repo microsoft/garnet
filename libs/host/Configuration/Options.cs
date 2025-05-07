@@ -611,6 +611,9 @@ namespace Garnet
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
 
+        [Option("enable-blocking-ops", Required = false, HelpText = "Enable blocking operations such as BLPOP")]
+        public bool? EnableBlockingOperations { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -878,6 +881,7 @@ namespace Garnet
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
+                EnableBlockingOperations = EnableBlockingOperations.GetValueOrDefault(),
             };
         }
 

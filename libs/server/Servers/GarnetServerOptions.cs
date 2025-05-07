@@ -457,6 +457,11 @@ namespace Garnet.server
         public bool AllowMultiDb => !EnableCluster && MaxDatabases > 1;
 
         /// <summary>
+        /// Enable blocking operations such as BLPOP
+        /// </summary>
+        public bool EnableBlockingOperations = false;
+
+        /// <summary>
         /// Gets the base directory for storing checkpoints
         /// </summary>
         public string CheckpointBaseDirectory => (CheckpointDir ?? LogDir) ?? string.Empty;

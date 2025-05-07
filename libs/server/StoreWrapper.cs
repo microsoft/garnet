@@ -186,7 +186,7 @@ namespace Garnet.server
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
-            if (!serverOptions.DisableObjects)
+            if (!serverOptions.DisableObjects && serverOptions.EnableBlockingOperations)
                 this.itemBroker = new CollectionItemBroker();
 
             // Initialize store scripting cache
