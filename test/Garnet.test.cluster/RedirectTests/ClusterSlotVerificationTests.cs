@@ -211,7 +211,7 @@ namespace Garnet.test.cluster
             context = new ClusterTestContext();
             context.Setup([]);
 
-            context.CreateInstances(3, enableLua: true);
+            context.CreateInstances(3, enableLua: true, enableBlockingOperations: true);
 
             context.RegisterCustomTxn(
                 "CLUSTERGETPROC",
