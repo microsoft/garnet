@@ -89,7 +89,7 @@ jobs:
           summary-always: true
           gh-pages-branch: 'continuousbenchmark'
           benchmark-data-dir-path: 'website/static/charts'
-          max-items-in-chart: 50
+          max-items-in-chart: 25
           alert-threshold: '110%'
           comment-always: true
           fail-on-alert: false
