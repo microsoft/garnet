@@ -414,7 +414,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var status = storageApi.SetMembers(keyBytes, ref input, ref output);
 
@@ -466,7 +466,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var status = storageApi.SetIsMember(keyBytes, ref input, ref output);
 
@@ -546,7 +546,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var status = storageApi.SetPop(keyBytes, ref input, ref output);
 
@@ -661,7 +661,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
             var status = storageApi.SetRandomMember(keyBytes, ref input, ref output);
 
