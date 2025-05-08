@@ -208,7 +208,7 @@ namespace Garnet.server
             element = default;
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
 
-            if (itemBroker == null)
+            if (objectLockableContext.Session is null)
                 ThrowObjectStoreUninitializedException();
 
             // If source and destination are the same, the operation is equivalent to removing the last element from the list

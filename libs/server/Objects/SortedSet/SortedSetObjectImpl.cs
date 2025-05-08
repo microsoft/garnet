@@ -158,7 +158,7 @@ namespace Garnet.server
                         // No need for update
                         if (score == scoreStored)
                         {
-                            Persist(member);
+                            _ = TryRemoveExpiration(member);
                             continue;
                         }
 
@@ -172,7 +172,7 @@ namespace Garnet.server
                         var success = sortedSet.Remove((scoreStored, member));
                         Debug.Assert(success);
                         success = sortedSet.Add((score, member));
-                        Persist(member);
+                        _ = TryRemoveExpiration(member);
                         Debug.Assert(success);
 
                         // If CH flag is set, add changed member to final count
@@ -220,7 +220,7 @@ namespace Garnet.server
                 _output->result1++;
                 sortedSetDict.Remove(valueArray);
                 sortedSet.Remove((key, valueArray));
-                TryRemoveExpiration(valueArray);
+                _ = TryRemoveExpiration(valueArray);
 
                 this.UpdateSize(value, false);
             }

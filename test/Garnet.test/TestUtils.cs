@@ -343,7 +343,7 @@ namespace Garnet.test
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
-                SlowLogThreshold = slowLogThreshold
+                SlowLogThreshold = slowLogThreshold,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
