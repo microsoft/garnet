@@ -505,7 +505,7 @@ namespace Garnet.cluster
             }
 
             // Flush all keys
-            clusterProvider.storeWrapper.ExecuteFlushDb(RespCommand.FLUSHALL, false, 0);
+            clusterProvider.storeWrapper.FlushAllDatabases(unsafeTruncateLog: false);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();

@@ -5603,6 +5603,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task DelIfGreaterACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "DELIFGREATER",
+               [DoDelIfGreaterAsync]
+           );
+
+            static async Task DoDelIfGreaterAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("DELIFGREATER", ["foo", "1"]);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
         public async Task GetIfNotMatchACLsAsync()
         {
             await CheckCommandsAsync(
@@ -7289,6 +7304,32 @@ namespace Garnet.test.Resp.ACL
                     ]);
 
                 ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task SwapDbACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SWAPDB",
+                [DoSwapDbAsync]
+            );
+
+            static async Task DoSwapDbAsync(GarnetClient client)
+            {
+                try
+                {
+                    // Currently SWAPDB does not support calling the command when multiple clients are connected to the server.
+                    await client.ExecuteForStringResultAsync("SWAPDB", ["0", "1"]);
+                    Assert.Fail("Shouldn't reach here, calling SWAPDB should fail.");
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message == Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOAUTH))
+                        throw;
+
+                    ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED), ex.Message);
+                }
             }
         }
 

@@ -117,22 +117,53 @@ namespace Garnet.server
             // Watch not allowed during TXN
             bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS;
 
-            if (invalidNumArgs || isWatch)
+            // todo: Remove once this is supported by enabling transactions across databases
+            // SELECT / SWAPDB currently not allowed during TXN
+            var isMultiDbCommand =
+                commandInfo.Command == RespCommand.SELECT || commandInfo.Command == RespCommand.SWAPDB;
+
+            if (invalidNumArgs || isWatch || isMultiDbCommand)
             {
                 if (isWatch)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI, ref dcurr, dend))
                         SendAndReset();
+                    return true;
                 }
-                else
+
+                if (invalidNumArgs)
                 {
-                    string err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.Name);
+                    var err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.Name);
                     while (!RespWriteUtils.TryWriteError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();
+                    return true;
                 }
 
-                return true;
+                var errMsg = ReadOnlySpan<byte>.Empty;
+                var abort = false;
+                switch (commandInfo.Command)
+                {
+                    case RespCommand.SWAPDB:
+                        errMsg = CmdStrings.RESP_ERR_SWAPDB_IN_TXN_UNSUPPORTED;
+                        abort = true;
+                        break;
+                    case RespCommand.SELECT:
+                        if (parseState.TryGetInt(0, out var index) && index != activeDbId)
+                        {
+                            errMsg = CmdStrings.RESP_ERR_SELECT_IN_TXN_UNSUPPORTED;
+                            abort = true;
+                        }
+                        break;
+                }
+
+                if (abort)
+                {
+                    while (!RespWriteUtils.TryWriteError(errMsg, ref dcurr, dend))
+                        SendAndReset();
+                    txnManager.Abort();
+                    return true;
+                }
             }
 
             // Get and add keys to txn key list

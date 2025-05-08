@@ -77,6 +77,41 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// DELIFGREATER key etag
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool NetworkDELIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFGREATER));
+
+            SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
+            if (!parseState.TryGetLong(1, out long givenEtag) || givenEtag < 0)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_ETAG, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // Conditional delete is not natively supported for records in the stable region.
+            // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
+
+            RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
+            input.header.SetWithEtagFlag();
+
+            GarnetStatus status = storageApi.DEL_Conditional(ref key, ref input);
+
+            int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
+
+            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
 
         /// <summary>
         /// SETIFMATCH key val etag [EX|PX] [expiry] [NOGET]
@@ -88,9 +123,7 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkSETIFMATCH<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
-        {
-            return NetworkSetETagConditional(RespCommand.SETIFMATCH, ref storageApi);
-        }
+            => NetworkSetETagConditional(RespCommand.SETIFMATCH, ref storageApi);
 
 
         /// <summary>
@@ -103,9 +136,7 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkSETIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
-        {
-            return NetworkSetETagConditional(RespCommand.SETIFGREATER, ref storageApi);
-        }
+            => NetworkSetETagConditional(RespCommand.SETIFGREATER, ref storageApi);
 
         private bool NetworkSetETagConditional<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -115,7 +146,7 @@ namespace Garnet.server
 
             if (parseState.Count < 3 || parseState.Count > 6)
             {
-                return AbortWithWrongNumberOfArguments(nameof(cmd));
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
             }
 
             int expiry = 0;
@@ -172,8 +203,9 @@ namespace Garnet.server
                 break;
             }
 
+            int lowestAllowedSentEtag = 0;
             bool etagRead = parseState.TryGetLong(2, out long etag);
-            if (!etagRead || etag < 0)
+            if (!etagRead || etag < lowestAllowedSentEtag)
             {
                 errorMessage = CmdStrings.RESP_ERR_INVALID_ETAG;
             }

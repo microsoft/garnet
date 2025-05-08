@@ -682,11 +682,16 @@ namespace Garnet.server
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void DeleteExpiredItems()
         {
             if (expirationTimes is null)
                 return;
+            DeleteExpiredItemsWorker();
+        }
 
+        private void DeleteExpiredItemsWorker()
+        {
             while (expirationQueue.TryPeek(out var key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks)
             {
                 if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
@@ -769,7 +774,14 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryRemoveExpiration(byte[] key)
         {
-            if (expirationTimes is null || !expirationTimes.TryGetValue(key, out _))
+            if (expirationTimes is null)
+                return false;
+            return TryRemoveExpirationWorker(key);
+        }
+
+        private bool TryRemoveExpirationWorker(byte[] key)
+        {
+            if (!expirationTimes.TryGetValue(key, out _))
             {
                 return false;
             }

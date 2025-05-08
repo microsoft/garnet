@@ -21,7 +21,7 @@ namespace Garnet.server
     internal sealed class GarnetServerMonitor
     {
         public readonly Dictionary<InfoMetricsType, bool>
-            resetEventFlags = GarnetInfoMetrics.defaultInfo.ToDictionary(x => x, y => false);
+            resetEventFlags = GarnetInfoMetrics.DefaultInfo.ToDictionary(x => x, y => false);
 
         public readonly Dictionary<LatencyMetricsType, bool>
             resetLatencyMetrics = GarnetLatencyMetrics.defaultLatencyTypes.ToDictionary(x => x, y => false);
@@ -198,8 +198,7 @@ namespace Garnet.server
 
                 storeWrapper.clusterProvider?.ResetGossipStats();
 
-                storeWrapper.store.ResetRevivificationStats();
-                storeWrapper.objectStore?.ResetRevivificationStats();
+                storeWrapper.ResetRevivificationStats();
 
                 resetEventFlags[InfoMetricsType.STATS] = false;
             }

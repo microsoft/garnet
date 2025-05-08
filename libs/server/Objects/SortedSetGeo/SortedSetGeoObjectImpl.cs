@@ -37,9 +37,10 @@ namespace Garnet.server
             var curr = ptr;
             var end = curr + output.Length;
 
-            // By default, add new elements but do not update the ones already in the set
-            var nx = true;
-            var ch = false;
+            DeleteExpiredItems();
+
+            // By default, add new elements and update the ones already in the set
+            var options = (GeoAddOptions)input.arg1;
 
             var count = input.parseState.Count;
             var currTokenIdx = 0;
@@ -47,35 +48,15 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                // Read the options
-                var optsCount = count % 3;
-                if (optsCount > 0 && optsCount <= 2)
-                {
-                    // Is NX or XX, if not nx then use XX
-                    var byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
-                    if (optsCount == 2)
-                    {
-                        // Read CH option
-                        byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                        ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
-                    }
-                }
-
+                // Read the members
                 var elementsAdded = 0;
                 var elementsChanged = 0;
 
                 while (currTokenIdx < count)
                 {
-                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var longitude) ||
-                        !input.parseState.TryGetDouble(currTokenIdx++, out var latitude))
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                                ref end);
-                        return;
-                    }
-
+                    var res = input.parseState.TryGetGeoLonLat(currTokenIdx, out var longitude, out var latitude, out _);
+                    Debug.Assert(res);
+                    currTokenIdx += 2;
                     var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
@@ -84,17 +65,17 @@ namespace Garnet.server
                         var memberByteArray = member.ToArray();
                         if (!sortedSetDict.TryGetValue(memberByteArray, out var scoreStored))
                         {
-                            if (nx)
+                            if ((options & GeoAddOptions.XX) == 0)
                             {
                                 sortedSetDict.Add(memberByteArray, score);
                                 sortedSet.Add((score, memberByteArray));
                                 elementsAdded++;
 
-                                this.UpdateSize(member);
+                                UpdateSize(member);
                                 elementsChanged++;
                             }
                         }
-                        else if (!nx && scoreStored != score)
+                        else if (((options & GeoAddOptions.NX) == 0) && scoreStored != score)
                         {
                             sortedSetDict[memberByteArray] = score;
                             var success = sortedSet.Remove((scoreStored, memberByteArray));
@@ -106,7 +87,8 @@ namespace Garnet.server
                     }
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(ch ? elementsChanged : elementsAdded, ref curr, end))
+                while (!RespWriteUtils.TryWriteInt32((options & GeoAddOptions.CH) == 0 ?
+                                                      elementsAdded : elementsChanged, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
             }
             finally
@@ -186,7 +168,7 @@ namespace Garnet.server
                 if (input.parseState.Count > 2)
                 {
                     var validUnit = input.parseState.TryGetGeoDistanceUnit(2, out units);
-                    //Debug.Assert(validUnit);
+                    Debug.Assert(validUnit);
                 }
 
                 if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))

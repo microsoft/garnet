@@ -267,7 +267,7 @@ namespace Garnet.server
             if (c > 1)
             {
                 // Update metrics (the first GET is accounted for by the caller)
-                if (latencyMetrics != null) opCount += c - 1;
+                if (LatencyMetrics != null) opCount += c - 1;
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed += (ulong)(c - 1);
@@ -1676,13 +1676,26 @@ namespace Garnet.server
             }
 
             if (async)
-                Task.Run(() => storeWrapper.ExecuteFlushDb(cmd, unsafeTruncateLog, 0)).ConfigureAwait(false);
+                Task.Run(() => ExecuteFlushDb(cmd, unsafeTruncateLog)).ConfigureAwait(false);
             else
-                storeWrapper.ExecuteFlushDb(cmd, unsafeTruncateLog, 0);
+                ExecuteFlushDb(cmd, unsafeTruncateLog);
 
             logger?.LogInformation($"Running {nameof(cmd)} {{async}} {{mode}}", async ? "async" : "sync", unsafeTruncateLog ? " with unsafetruncatelog." : string.Empty);
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+        }
+
+        void ExecuteFlushDb(RespCommand cmd, bool unsafeTruncateLog)
+        {
+            switch (cmd)
+            {
+                case RespCommand.FLUSHDB:
+                    storeWrapper.FlushDatabase(unsafeTruncateLog, activeDbId);
+                    break;
+                case RespCommand.FLUSHALL:
+                    storeWrapper.FlushAllDatabases(unsafeTruncateLog);
+                    break;
+            }
         }
 
         /// <summary>
@@ -1698,6 +1711,7 @@ namespace Garnet.server
             var localEndpoint = targetSession.networkSender.LocalEndpointName;
             var clientName = targetSession.clientName;
             var user = targetSession._userHandle.User;
+            var db = targetSession.activeDbId;
             var resp = targetSession.respProtocolVersion;
             var nodeId = targetSession?.clusterSession?.RemoteNodeId;
 
@@ -1741,6 +1755,7 @@ namespace Garnet.server
                 }
             }
 
+            into.Append($" db={db}");
             into.Append($" resp={resp}");
             into.Append($" lib-name={targetSession.clientLibName}");
             into.Append($" lib-ver={targetSession.clientLibVersion}");

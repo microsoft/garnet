@@ -76,7 +76,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SETNAME](client.md#client-setname) | ➕ |  |
 |  | TRACKING | ➖ |  |
 |  | TRACKINGINFO | ➖ |  |
-|  | [UNBLOCK](client.md#client-unblock) | ➖ |  |
+|  | [UNBLOCK](client.md#client-unblock) | ➕ |  |
 |  | UNPAUSE | ➖ |  |
 | <span id="cluster">**CLUSTER**</span> | [ADDSLOTS](cluster.md#cluster-addslots) | ➕ |  |
 |  | [ADDSLOTSRANGE](cluster.md#cluster-addslotsrange) | ➕ |  |
@@ -111,8 +111,8 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="command">**COMMAND**</span> | [COMMAND](server.md#command) | ➕ |  |
 |  | [COUNT](server.md#command-count) | ➕ |  |
 |  | [DOCS](server.md#command-docs) | ➕ |  |
-|  | [GETKEYS](server.md#command-getkeys) | ➖ |  |
-|  | [GETKEYSANDFLAGS](server.md#command-getkeysandflags) | ➖ |  | 
+|  | [GETKEYS](server.md#command-getkeys) | ➕ |  |
+|  | [GETKEYSANDFLAGS](server.md#command-getkeysandflags) | ➕ |  |
 |  | HELP | ➖ |  | 
 |  | [INFO](server.md#command-info) | ➕ |  | 
 |  | LIST | ➖ |  | 
@@ -291,7 +291,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SAVE](checkpoint.md#save) | ➕ |  |
 |  | SHUTDOWN | ➖ |  |
 |  | [SLAVEOF](server.md#slaveof) | ➕ | (Deprecated) |
-|  | SWAPDB | ➖ |  |
+|  | [SWAPDB](server.md#swapdb) | ➕ |  |
 |  | SYNC | ➖ |  |
 |  | [TIME](server.md#time) | ➕ |  |
 | <span id="set">**SET**</span> | [SADD](data-structures.md#sadd) | ➕ |  |

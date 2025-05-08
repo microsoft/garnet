@@ -1196,6 +1196,30 @@
     ]
   },
   {
+    "Command": "DELIFGREATER",
+    "Name": "DELIFGREATER",
+    "Arity": 2,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RM, Delete"
+      }
+    ]
+  },
+  {
     "Command": "DISCARD",
     "Name": "DISCARD",
     "Arity": 1,
@@ -2723,7 +2747,7 @@
   {
     "Command": "LASTSAVE",
     "Name": "LASTSAVE",
-    "Arity": 1,
+    "Arity": -1,
     "Flags": "Fast, Loading, Stale",
     "AclCategories": "Admin, Dangerous, Fast",
     "Tips": [
@@ -3925,7 +3949,7 @@
   {
     "Command": "SAVE",
     "Name": "SAVE",
-    "Arity": 1,
+    "Arity": -1,
     "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript",
     "AclCategories": "Admin, Dangerous, Slow"
   },
@@ -4802,6 +4826,13 @@
         "Flags": "RO, Access"
       }
     ]
+  },
+  {
+    "Command": "SWAPDB",
+    "Name": "SWAPDB",
+    "Arity": 3,
+    "Flags": "Fast, Write",
+    "AclCategories": "Dangerous, Fast, KeySpace, Write"
   },
   {
     "Command": "TIME",

@@ -67,9 +67,15 @@ namespace Garnet.test.cluster
             loggerFactory?.Dispose();
             var timeoutSeconds = 5;
             if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
+            {
                 logger?.LogError("Timed out waiting for DisposeCluster");
+                Assert.Fail("Timed out waiting for DisposeCluster");
+            }
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
-                logger?.LogError("Timed out waiting for DisposeCluster");
+            {
+                logger?.LogError("Timed out DeleteDirectory");
+                Assert.Fail("Timed out DeleteDirectory");
+            }
         }
 
         public void RegisterCustomTxn(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)
@@ -240,6 +246,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
         {
@@ -272,7 +279,8 @@ namespace Garnet.test.cluster
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
-                certificates: certificates);
+                certificates: certificates,
+                clusterAnnounceEndpoint: clusterAnnounceEndpoint);
 
             return new GarnetServer(opts, loggerFactory);
         }
