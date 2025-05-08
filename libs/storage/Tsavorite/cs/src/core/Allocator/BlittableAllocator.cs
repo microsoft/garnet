@@ -86,7 +86,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int actualSize, int allocatedSize, int keySize) GetTombtoneRecordSize(ref TKey key)
+        public (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key)
             => BlittableAllocatorImpl<TKey, TValue, TStoreFunctions>.GetTombstoneRecordSize(ref key);
 
         /// <inheritdoc/>

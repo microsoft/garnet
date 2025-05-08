@@ -919,6 +919,9 @@ namespace Garnet.server
                     }
 
                     EtagState.ResetState(ref functionsState.etagState);
+                    // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
+                    // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
+                    // If we want to delete the object setting the Action to ExpireAndStop will add the tombstone in hybrid log for us.
                     return false;
 
                 case RespCommand.SETIFGREATER:

@@ -380,7 +380,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             bool forExpiration = false;
-            bool skipNCUtombstoning = true;
+            bool skipTombstoneAddition = true;
 
         RetryNow:
 
@@ -413,9 +413,9 @@ namespace Tsavorite.core
                         // Handle potential record revivification for records in in-memory region. Handle readonly region and potentially Mutable region undergoing CPR. 
                         if (!stackCtx.recSrc.HasMainLogSrc)
                         {
-                            // add a tombstone to hlog 
-                            // action is already expire and stop, by simply changing the allocation based on this, we can let record splicing, elision, and potential revivification continue
-                            skipNCUtombstoning = false;
+                            // since past record is in stable region, we need to explicitly add a new tombstone record
+                            // action is already set to expire and stop, by simply changing the allocation based on this, we can let record splicing, elision, and potential revivification continue
+                            skipTombstoneAddition = false;
                         }
                         else
                         {
@@ -446,7 +446,7 @@ namespace Tsavorite.core
 
             // Allocate and initialize the new record
             int actualSize; int allocatedSize; int keySize;
-            if (skipNCUtombstoning)
+            if (skipTombstoneAddition)
             {
                 (actualSize, allocatedSize, keySize) = doingCU ?
                     stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
@@ -454,7 +454,7 @@ namespace Tsavorite.core
             }
             else
             {
-                (actualSize, allocatedSize, keySize) = stackCtx.recSrc.AllocatorBase._wrapper.GetTombtoneRecordSize(ref key);
+                (actualSize, allocatedSize, keySize) = stackCtx.recSrc.AllocatorBase._wrapper.GetTombstoneRecordSize(ref key);
             }
 
             AllocateOptions allocOptions = new()
@@ -495,7 +495,7 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
                 }
             }
-            else if (skipNCUtombstoning)
+            else if (skipTombstoneAddition)
             {
                 if (srcRecordInfo.ETag)
                     newRecordInfo.SetHasETag();
@@ -525,6 +525,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
                     // tombstone setting and potential revivification handling is done after CAS
+                    skipTombstoneAddition = false;
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -552,8 +553,13 @@ namespace Tsavorite.core
                 else
                     return OperationStatus.SUCCESS | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS);
             }
+            else
+            {
+                Debug.Assert(!skipTombstoneAddition, "if this was not a CU operation, then it must be CU operation, and since we know all CU operations that are not adding tombstone via NCU are above this has to be a tombstoning path by NCU");
+               status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
+            }
 
-        DoCAS:
+            DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
@@ -569,8 +575,8 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Either if NCU hasn't tombstoned and if it was a CopyUpdater so call PCU
-                    if (!skipNCUtombstoning || !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
+                    // Either if there is explicit asked for tombstone (via NCU or CU) or if it was a CopyUpdater and call PCU returns false
+                    if (!skipTombstoneAddition || !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -581,10 +587,12 @@ namespace Tsavorite.core
                             {
                                 (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = GetRecordLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo);
                                 HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                                    sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
+                                    sessionFunctions, ref stackCtx, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
                             }
-
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                            
+                            // retain status set by NCU or CU if tombstone addition was requested, else override it what should have been after PCU
+                            if (skipTombstoneAddition)
+                                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                         else
                         {
