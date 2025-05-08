@@ -12,24 +12,23 @@ namespace Garnet.server
     public unsafe partial class BitmapManager
     {
         /// <summary>
-        /// BitOp main driver.
+        /// Performs a bitwise operation across one or more source buffers and writes the result to the destination buffer.
         /// </summary>
-        /// <param name="op">Type of the operation being executed</param>
-        /// <param name="srcKeyCount">Number of source keys</param>
-        /// <param name="srcKeyPtrs">Array of pointers to source key buffers. The array length must be greater than or equal to <paramref name="srcKeyCount"/></param>
-        /// <param name="srcKeyEndPtrs">Array of the buffer lengths of the keys specified in <paramref name="srcKeyPtrs"/>. The array length must be greater than or equal to <paramref name="srcKeyCount"/></param>
-        /// <param name="minLength">Minimum length of source key buffers</param>
-        /// <param name="dstPtr">Output buffer to write the result</param>
-        /// <param name="dstLength">Output buffer length</param>
-        /// <returns></returns>
-        public static void BitOpMainUnsafeMultiKey(BitmapOperation op, int srcKeyCount, byte** srcKeyPtrs, byte** srcKeyEndPtrs, byte* dstPtr, int dstLength, int minLength)
+        /// <param name="op">The bitwise operation to perform.</param>
+        /// <param name="srcCount">Number of source buffers</param>
+        /// <param name="srcPtrs">Array of pointers to source buffers. The array length must be greater than or equal to <paramref name="srcCount"/></param>
+        /// <param name="srcEndPtrs">Array of the buffer lengths specified in <paramref name="srcPtrs"/>. The array length must be greater than or equal to <paramref name="srcCount"/></param>
+        /// <param name="dstPtr">Destination buffer to write the result.</param>
+        /// <param name="dstLength">Destination buffer length</param>
+        /// <param name="shortestSrcLength">The length of shorted source buffer</param>
+        public static void InvokeBitOperationUnsafe(BitmapOperation op, int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
         {
-            Debug.Assert(srcKeyCount > 0);
+            Debug.Assert(srcCount > 0);
             Debug.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR);
 
-            if (srcKeyCount == 1)
+            if (srcCount == 1)
             {
-                var srcKey = new ReadOnlySpan<byte>(srcKeyPtrs[0], checked((int)(srcKeyEndPtrs[0] - srcKeyPtrs[0])));
+                var srcKey = new ReadOnlySpan<byte>(srcPtrs[0], checked((int)(srcEndPtrs[0] - srcPtrs[0])));
                 var dst = new Span<byte>(dstPtr, dstLength);
 
                 if (op == BitmapOperation.NOT)
@@ -40,23 +39,35 @@ namespace Garnet.server
                 {
                     srcKey.CopyTo(dst);
                 }
-            }
-            else if (srcKeyCount == 2)
-            {
-                var firstSrcKey = new ReadOnlySpan<byte>(srcKeyPtrs[0], checked((int)(srcKeyEndPtrs[0] - srcKeyPtrs[0])));
-                var secondSrcKey = new ReadOnlySpan<byte>(srcKeyPtrs[1], checked((int)(srcKeyEndPtrs[1] - srcKeyPtrs[1])));
-                var dst = new Span<byte>(dstPtr, dstLength);
 
-                if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrcKey, secondSrcKey, dst);
-                else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrcKey, secondSrcKey, dst);
-                else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrcKey, secondSrcKey, dst);
+                return;
             }
-            else
+            else if (srcCount == 2)
             {
-                if (op == BitmapOperation.AND) InvokeMultiKeyBitwise<BitwiseAndOperator>(srcKeyCount, srcKeyPtrs, srcKeyEndPtrs, dstPtr, dstLength, minLength);
-                else if (op == BitmapOperation.OR) InvokeMultiKeyBitwise<BitwiseOrOperator>(srcKeyCount, srcKeyPtrs, srcKeyEndPtrs, dstPtr, dstLength, minLength);
-                else if (op == BitmapOperation.XOR) InvokeMultiKeyBitwise<BitwiseXorOperator>(srcKeyCount, srcKeyPtrs, srcKeyEndPtrs, dstPtr, dstLength, minLength);
+                var firstSrcLength = checked((int)(srcEndPtrs[0] - srcPtrs[0]));
+                var secondSrcLength = checked((int)(srcEndPtrs[1] - srcPtrs[1]));
+
+                // Use fast-path for two-equal-length inputs
+                if (firstSrcLength == secondSrcLength)
+                {
+                    var firstSrcKey = new ReadOnlySpan<byte>(srcPtrs[0], firstSrcLength);
+                    var secondSrcKey = new ReadOnlySpan<byte>(srcPtrs[1], secondSrcLength);
+                    var dst = new Span<byte>(dstPtr, dstLength);
+
+                    if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrcKey, secondSrcKey, dst);
+                    else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrcKey, secondSrcKey, dst);
+                    else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrcKey, secondSrcKey, dst);
+
+                    return;
+                }
+
+                // If the keys are not the same length, fallback to the multi-key path for the tail handling
             }
+
+            // Fallback for multi-key and tail handling
+            if (op == BitmapOperation.AND) InvokeMultiKeyBitwise<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            else if (op == BitmapOperation.OR) InvokeMultiKeyBitwise<BitwiseOrOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            else if (op == BitmapOperation.XOR) InvokeMultiKeyBitwise<BitwiseXorOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
         }
 
         /// <summary>

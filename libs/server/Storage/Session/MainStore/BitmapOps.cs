@@ -155,7 +155,7 @@ namespace Garnet.server
                 // Check if at least one key is found and execute bitop
                 if (keysFound > 0)
                 {
-                    BitmapManager.BitOpMainUnsafeMultiKey(bitOp, keysFound, srcKeyPtrs, srcKeyEndPtrs, dstBitmapPtr, maxBitmapLen, minBitmapLen);
+                    BitmapManager.InvokeBitOperationUnsafe(bitOp, keysFound, srcKeyPtrs, srcKeyEndPtrs, dstBitmapPtr, maxBitmapLen, minBitmapLen);
 
                     if (maxBitmapLen > 0)
                     {
