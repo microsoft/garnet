@@ -556,10 +556,10 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(!skipTombstoneAddition, "if this was not a CU operation, then it must be CU operation, and since we know all CU operations that are not adding tombstone via NCU are above this has to be a tombstoning path by NCU");
-               status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 
-            DoCAS:
+        DoCAS:
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
@@ -589,7 +589,7 @@ namespace Tsavorite.core
                                 HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                                     sessionFunctions, ref stackCtx, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
                             }
-                            
+
                             // retain status set by NCU or CU if tombstone addition was requested, else override it what should have been after PCU
                             if (skipTombstoneAddition)
                                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
