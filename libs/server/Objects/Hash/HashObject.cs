@@ -363,11 +363,16 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsExpired(byte[] key) => expirationTimes is not null && expirationTimes.TryGetValue(key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void DeleteExpiredItems()
         {
             if (expirationTimes is null)
                 return;
+            DeleteExpiredItemsWorker();
+        }
 
+        private void DeleteExpiredItemsWorker()
+        {
             while (expirationQueue.TryPeek(out var key, out var expiration) && expiration < DateTimeOffset.UtcNow.Ticks)
             {
                 // expirationTimes and expirationQueue will be out of sync when user is updating the expire time of key which already has some TTL.
@@ -393,6 +398,7 @@ namespace Garnet.server
             CleanupExpirationStructures();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryGetValue(byte[] key, out byte[] value)
         {
             value = default;
