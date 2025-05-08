@@ -13,6 +13,7 @@ namespace Garnet.common
     /// <summary>
     /// RESP output to SpanByteAndMemory.
     /// </summary>
+    [SkipLocalsInit]
     public unsafe ref struct RespMemoryWriter : IDisposable
     {
         byte* curr;
@@ -26,7 +27,9 @@ namespace Garnet.common
         public unsafe RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
         {
             this.output = ref output;
+            isMemory = false;
             resp3 = respVersion >= 3;
+
             ptr = output.SpanByte.ToPointer();
             curr = ptr;
             end = curr + output.Length;
@@ -468,7 +471,7 @@ namespace Garnet.common
         /// Get position
         /// </summary>
         /// <returns></returns>
-        public readonly long GetPosition() => curr - ptr;
+        public readonly int GetPosition() => (int)(curr - ptr);
 
         /// <summary>
         /// Reset position to starting position
