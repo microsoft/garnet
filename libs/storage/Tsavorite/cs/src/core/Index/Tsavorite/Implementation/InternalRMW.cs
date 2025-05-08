@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
@@ -380,6 +381,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             bool forExpiration = false;
+            bool skipNCUtombstoning = true;
 
         RetryNow:
 
@@ -410,7 +412,13 @@ namespace Tsavorite.core
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // Handle potential record revivification for records in in-memory region. Handle readonly region and potentially Mutable region undergoing CPR. 
-                        if (stackCtx.recSrc.HasMainLogSrc)
+                        if (!stackCtx.recSrc.HasMainLogSrc)
+                        {
+                            // add a tombstone to hlog 
+                            // action is already expire and stop, by simply changing the allocation based on this, we can let record splicing, elision, and potential revivification continue
+                            skipNCUtombstoning = false;
+                        }
+                        else
                         {
                             // HK TODO: Ask @TedHart if record should be marked dirty and modified here?
                             srcRecordInfo.SetTombstone();
@@ -422,9 +430,8 @@ namespace Tsavorite.core
                                 HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                                     sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
                             }
+                            return OperationStatus.NOTFOUND;
                         }
-
-                        return OperationStatus.NOTFOUND;
                     }
                     else
                         return OperationStatus.SUCCESS;
@@ -439,9 +446,17 @@ namespace Tsavorite.core
             }
 
             // Allocate and initialize the new record
-            var (actualSize, allocatedSize, keySize) = doingCU ?
-                stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
-                hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
+            int actualSize; int allocatedSize; int keySize;
+            if (skipNCUtombstoning)
+            {
+                (actualSize, allocatedSize, keySize) = doingCU ?
+                    stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
+                    hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
+            }
+            else
+            {
+                (actualSize, allocatedSize, keySize) = stackCtx.recSrc.AllocatorBase._wrapper.GetTombtoneRecordSize(ref key);
+            }
 
             AllocateOptions allocOptions = new()
             {
@@ -481,7 +496,7 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
                 }
             }
-            else
+            else if (skipNCUtombstoning)
             {
                 if (srcRecordInfo.ETag)
                     newRecordInfo.SetHasETag();
@@ -555,8 +570,8 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Else it was a CopyUpdater so call PCU
-                    if (!sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
+                    // Either if NCU hasn't tombstoned and if it was a CopyUpdater so call PCU
+                    if (!skipNCUtombstoning || !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
