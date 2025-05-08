@@ -1091,7 +1091,6 @@ namespace Garnet.server
                     if (RespCommandDocs.TryGetRespCommandsDocs(out var cmdsDocs, true, logger))
                     {
                         // Typical command docs output is larger than the default network buffer (1 << 17).
-                        // Sizing in advance skips copying bytes later.
                         writer.Realloc(1 << 18);
 
                         var customCmds = customCommandManagerSession.GetAllCustomCommandsDocs();
