@@ -201,7 +201,6 @@ namespace Tsavorite.core
 
                 // No record exists - drop through to create new record.
                 Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
-
             CreateNewRecord:
                 {
                     TValue tempValue = default;
@@ -537,7 +536,7 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(!skipTombstoneAddition, "if this was not a CU operation, then it must be CU operation, and since we know all CU operations that are not adding tombstone via NCU are above this has to be a tombstoning path by NCU");
-                newRecordInfo.SetTombstone();
+                newRecordInfo.SetTombstone(); // HK TODO: Is there any point in SetTombstone + ExtraValueLength here? Ask @Ted 
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 

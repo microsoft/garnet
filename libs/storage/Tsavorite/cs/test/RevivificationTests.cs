@@ -464,6 +464,7 @@ namespace Tsavorite.test.Revivification
             internal bool deleteInIpu = false;
             internal bool deleteInNCU = false;
             internal bool deleteInCU = false;
+            internal bool forceSkipIpu = false;
 
             // This is a queue rather than a single value because there may be calls to, for example, ConcurrentWriter with one length
             // followed by SingleWriter with another.
@@ -585,6 +586,9 @@ namespace Tsavorite.test.Revivification
             public override bool InPlaceUpdater(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
                 AssertInfoValid(ref rmwInfo);
+
+                if (forceSkipIpu)
+                    return false;
 
                 if (deleteInIpu)
                 {
@@ -931,19 +935,13 @@ namespace Tsavorite.test.Revivification
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
-           /*
-            *  Create a record and tombstone it at RCU or NCU layer
-            * */
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SpanByteDeletionViaRMWRevivifiesOriginalRecordAfterTombstoning(
+        public void SpanByteDeletionViaRMWRCURevivifiesOriginalRecordAfterTombstoning(
             [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values(DeletionRoutes.RMW_NCU, DeletionRoutes.RMW_CU)] DeletionRoutes deletionRoute)
         {
-
-            // To make the old record revivifiable via the RCU route. I need to be able to do an RMW where a mutable region record goes down CPR route.
             Populate();
-
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
             byte fillByte = 42;
@@ -952,8 +950,9 @@ namespace Tsavorite.test.Revivification
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-            // TODO: do some fuckery to force RMW to go via RCU via CPR route
+            functions.forceSkipIpu = true;
             var status = PerformDeletion(deletionRoute, ref key, fillByte);
+            functions.forceSkipIpu = false;
 
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
@@ -974,6 +973,12 @@ namespace Tsavorite.test.Revivification
             functions.expectedConcurrentDestLength = InitialLength;
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
+
+            // brand new value so we try to use a record out of free list
+            keyVec = stackalloc byte[KeyLength];
+            fillByte = 255;
+            keyVec.Fill(fillByte);
+            key = SpanByte.FromPinnedSpan(keyVec);
 
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(ref key, ref input, ref input, ref output) : bContext.RMW(ref key, ref input);
 
