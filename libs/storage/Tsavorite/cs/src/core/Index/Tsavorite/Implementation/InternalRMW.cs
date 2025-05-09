@@ -415,6 +415,7 @@ namespace Tsavorite.core
                     {
                         if (allocOptions.ElideSourceRecord)
                         {
+                            srcRecordInfo.SetTombstone();
                             var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
