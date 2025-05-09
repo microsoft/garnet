@@ -409,7 +409,6 @@ namespace Tsavorite.core
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
                         // add a tombstone in hlog since original record is immutable
-                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         skipTombstoneAddition = false;
                     }
                     else
@@ -505,6 +504,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
                     skipTombstoneAddition = false;
+                    newRecordInfo.SetDirtyAndModified();
                     newRecordInfo.SetTombstone();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
@@ -536,7 +536,8 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(!skipTombstoneAddition, "if this was not a !CU operation, then it must be CU operation that is the tombstoning path by NCU");
-                newRecordInfo.SetTombstone(); // HK TODO: Is there any point in SetTombstone + ExtraValueLength here? Ask @Ted 
+                newRecordInfo.SetDirtyAndModified();
+                newRecordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 
