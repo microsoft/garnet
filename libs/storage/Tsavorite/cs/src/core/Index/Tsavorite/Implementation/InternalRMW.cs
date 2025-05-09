@@ -393,6 +393,12 @@ namespace Tsavorite.core
                 IsFromPending = pendingContext.type != OperationType.NONE,
             };
 
+            AllocateOptions allocOptions = new()
+            {
+                Recycle = true,
+                ElideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo)
+            };
+
             // Perform Need*
             if (doingCU)
             {
@@ -408,7 +414,18 @@ namespace Tsavorite.core
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        // add a tombstone in hlog since original record is immutable
+                        if (allocOptions.ElideSourceRecord)
+                        {
+                            // Is there an issue in doing this? I only want to do this so HandleRecordElision does not trip on the Debug Assert
+                            srcRecordInfo.SetTombstone(); 
+                            var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
+                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
+                            HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                                sessionFunctions, ref stackCtx, ref srcRecordInfo, oldRecordLengths.usedValueLength, oldRecordLengths.fullValueLength, oldRecordLengths.fullRecordLength);
+                            // no new record created and hash entry is empty now
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.Expired);
+                        }
+                        // otherwise we shall continue down the tombstoning path
                         skipTombstoneAddition = false;
                     }
                     else
@@ -431,16 +448,12 @@ namespace Tsavorite.core
                     stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
                     hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
             }
-            else
+            else 
             {
+                Debug.Assert(!allocOptions.ElideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
+                    "This block only handles NCU requested deletion for unelidable src records.");
                 (actualSize, allocatedSize, keySize) = stackCtx.recSrc.AllocatorBase._wrapper.GetTombstoneRecordSize(ref key);
             }
-
-            AllocateOptions allocOptions = new()
-            {
-                Recycle = true,
-                ElideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo)
-            };
 
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, allocOptions,
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
@@ -503,6 +516,8 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
+                    Debug.Assert(skipTombstoneAddition, "Should not have gone down RCU if NCU had already requested tombstoning." +
+                        "This block should only handle expiration/tombstoning via RCU.");
                     skipTombstoneAddition = false;
                     newRecordInfo.SetDirtyAndModified();
                     newRecordInfo.SetTombstone();
@@ -535,13 +550,17 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(!skipTombstoneAddition, "if this was not a !CU operation, then it must be CU operation that is the tombstoning path by NCU");
+                Debug.Assert(!skipTombstoneAddition, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
                 newRecordInfo.SetDirtyAndModified();
                 newRecordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 
         DoCAS:
+            // HK TODO: How come new record info is not unlinked with previous record here?
+ 
+            // The record being cas'd below is going to be the tombstone record in the case of RCU requested tombstone, and NCU tombstoning.
+            // For all other cases this is the new computed record after an RMW.
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
             if (success)
