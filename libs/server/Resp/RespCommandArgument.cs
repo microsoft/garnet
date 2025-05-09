@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
@@ -41,8 +40,6 @@ namespace Garnet.server
         /// </summary>
         public string Summary { get; init; }
 
-        protected int ArgCount { get; set; }
-
         /// <summary>
         /// Argument flags
         /// </summary>
@@ -56,14 +53,7 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
 
-        private string respFormat;
         private readonly RespCommandArgumentFlags argFlags;
         private readonly string[] respFormatArgFlags;
 
@@ -82,63 +72,69 @@ namespace Garnet.server
         /// </summary>
         protected RespCommandArgumentBase()
         {
-            ArgCount = 0;
+        }
+
+        protected void ToByteRespFormat(ref RespMemoryWriter writer, bool increment)
+        {
+            var ArgCount = 2; // name, type
+
+            if (DisplayText != null)
+                ArgCount++;
+
+            if (Token != null)
+                ArgCount++;
+
+            if (Summary != null)
+                ArgCount++;
+
+            if (ArgumentFlags != RespCommandArgumentFlags.None)
+                ArgCount++;
+
+            if (increment)
+                ArgCount++;
+
+            writer.WriteMapLength(ArgCount);
+
+            writer.WriteBulkString("name"u8);
+            writer.WriteAsciiBulkString(Name);
+
+            writer.WriteBulkString("type"u8);
+            var respType = EnumUtils.GetEnumDescriptions(Type)[0];
+            writer.WriteAsciiBulkString(respType);
+
+            if (DisplayText != null)
+            {
+                writer.WriteBulkString("display_text"u8);
+                writer.WriteAsciiBulkString(DisplayText);
+            }
+
+            if (Token != null)
+            {
+                writer.WriteBulkString("token"u8);
+                writer.WriteAsciiBulkString(Token);
+            }
+
+            if (Summary != null)
+            {
+                writer.WriteBulkString("summary"u8);
+                writer.WriteAsciiBulkString(Summary);
+            }
+
+            if (ArgumentFlags != RespCommandArgumentFlags.None)
+            {
+                writer.WriteBulkString("flags"u8);
+                writer.WriteSetLength(respFormatArgFlags.Length);
+                foreach (var respArgFlag in respFormatArgFlags)
+                {
+                    writer.WriteSimpleString(respArgFlag);
+                }
+            }
         }
 
         /// <inheritdoc />
-        public virtual string ToRespFormat()
+        public virtual void ToRespFormat(ref RespMemoryWriter writer)
         {
-            var sb = new StringBuilder();
-
-            var key = "name";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            sb.Append($"${this.Name.Length}\r\n{this.Name}\r\n");
-            ArgCount += 2;
-
-            key = "type";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            var respType = EnumUtils.GetEnumDescriptions(this.Type)[0];
-            sb.Append($"${respType.Length}\r\n{respType}\r\n");
-            ArgCount += 2;
-
-            if (this.DisplayText != null)
-            {
-                key = "display_text";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.DisplayText.Length}\r\n{this.DisplayText}\r\n");
-                ArgCount += 2;
-            }
-
-            if (this.Token != null)
-            {
-                key = "token";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Token.Length}\r\n{this.Token}\r\n");
-                ArgCount += 2;
-            }
-
-            if (this.Summary != null)
-            {
-                key = "summary";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Summary.Length}\r\n{this.Summary}\r\n");
-                ArgCount += 2;
-            }
-
-            if (this.ArgumentFlags != RespCommandArgumentFlags.None)
-            {
-                key = "flags";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{respFormatArgFlags.Length}\r\n");
-                foreach (var respArgFlag in respFormatArgFlags)
-                {
-                    sb.Append($"+{respArgFlag}\r\n");
-                }
-
-                ArgCount += 2;
-            }
-
-            return sb.ToString();
+            ToByteRespFormat(ref writer, false);
         }
     }
 
@@ -173,17 +169,12 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override string ToRespFormat()
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            var baseRespFormat = base.ToRespFormat();
-            var sb = new StringBuilder();
-            sb.Append(baseRespFormat);
-            var key = "key_spec_index";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            sb.Append($":{KeySpecIndex}\r\n");
-            ArgCount += 2;
-            sb.Insert(0, $"*{ArgCount}\r\n");
-            return sb.ToString();
+            ToByteRespFormat(ref writer, true);
+
+            writer.WriteBulkString("key_spec_index"u8);
+            writer.WriteInt32(KeySpecIndex);
         }
     }
 
@@ -207,18 +198,19 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override string ToRespFormat()
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            var baseRespFormat = base.ToRespFormat();
-            if (Value == null) return baseRespFormat;
+            if (Value != null)
+            {
+                ToByteRespFormat(ref writer, true);
 
-            var sb = new StringBuilder();
-            sb.Append(baseRespFormat);
-            var key = "value";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            sb.Append($"${Value.Length}\r\n{Value}\r\n");
-            ArgCount += 2;
-            return sb.ToString();
+                writer.WriteBulkString("value"u8);
+                writer.WriteAsciiBulkString(Value);
+            }
+            else
+            {
+                ToByteRespFormat(ref writer, false);
+            }
         }
     }
 
@@ -238,16 +230,6 @@ namespace Garnet.server
         public RespCommandBasicArgument()
         {
 
-        }
-
-        /// <inheritdoc />
-        public override string ToRespFormat()
-        {
-            var baseRespFormat = base.ToRespFormat();
-            var sb = new StringBuilder();
-            sb.Append($"*{ArgCount}\r\n");
-            sb.Append(baseRespFormat);
-            return sb.ToString();
         }
     }
 
@@ -275,26 +257,23 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override string ToRespFormat()
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            var baseRespFormat = base.ToRespFormat();
-            var sb = new StringBuilder();
-            sb.Append(baseRespFormat);
             if (Arguments != null)
             {
-                var key = "arguments";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{Arguments.Length}\r\n");
+                ToByteRespFormat(ref writer, true);
+
+                writer.WriteBulkString("arguments"u8);
+                writer.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    sb.Append(argument.RespFormat);
+                    argument.ToRespFormat(ref writer);
                 }
-
-                ArgCount += 2;
             }
-
-            sb.Insert(0, $"*{ArgCount}\r\n");
-            return sb.ToString();
+            else
+            {
+                ToByteRespFormat(ref writer, false);
+            }
         }
     }
 
