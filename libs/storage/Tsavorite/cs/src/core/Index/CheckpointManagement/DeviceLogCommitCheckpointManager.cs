@@ -31,6 +31,8 @@ namespace Tsavorite.core
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
 
+        protected Func<byte[]> createCookieDelegate;
+
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
 
@@ -45,6 +47,11 @@ namespace Tsavorite.core
         readonly WorkQueueFIFO<long> deleteQueue;
         readonly int fastCommitThrottleFreq;
         int commitCount;
+
+        /// <summary>
+        /// Any additional (user specified) metadata to write out with commit
+        /// </summary>
+        protected byte[] CommitCookie { get; private set; }
 
         /// <summary>
         /// Create new instance of log commit manager
@@ -90,19 +97,6 @@ namespace Tsavorite.core
             // Try both because we do not know which type the guid denotes
             deviceFactory.Delete(checkpointNamingScheme.LogCheckpointBase(token));
             deviceFactory.Delete(checkpointNamingScheme.IndexCheckpointBase(token));
-        }
-
-        /// <summary>
-        /// Create new instance of log commit manager
-        /// </summary>
-        /// <param name="deviceFactoryCreator">Creator of factory for getting devices</param>
-        /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
-        /// <param name="removeOutdated">Remote older Tsavorite log commits</param>
-        /// <param name="logger">Remote older Tsavorite log commits</param>
-        public DeviceLogCommitCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, string baseName, bool removeOutdated = false, ILogger logger = null)
-            : this(deviceFactoryCreator, new DefaultCheckpointNamingScheme(baseName), removeOutdated)
-        {
-            this.logger = logger;
         }
 
         #region ILogCommitManager
@@ -181,6 +175,12 @@ namespace Tsavorite.core
         #region ICheckpointManager
 
         /// <inheritdoc />
+        public void AddCookieDelegate(Func<byte[]> createCookieAction) => this.createCookieDelegate = createCookieAction;
+
+        /// <inheritdoc />
+        public byte[] GetCookie() => createCookieDelegate == null ? null : createCookieDelegate();
+
+        /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             var device = NextIndexCheckpointDevice(indexToken);
@@ -232,7 +232,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
+        public unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 
@@ -247,7 +247,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CleanupLogCheckpoint(Guid logToken)
+        public unsafe void CleanupLogCheckpoint(Guid logToken)
         {
             if (removeOutdated)
             {
@@ -260,9 +260,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
+        public virtual unsafe void CommitLogIncrementalCheckpoint(Guid logToken, byte[] commitMetadata, DeltaLog deltaLog)
         {
-            deltaLog.Allocate(out int length, out long physicalAddress);
+            deltaLog.Allocate(out var length, out var physicalAddress);
             if (length < commitMetadata.Length)
             {
                 deltaLog.Seal(0, DeltaLogEntryType.CHECKPOINT_METADATA);
@@ -293,7 +293,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
+        public virtual byte[] GetLogCheckpointMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta = false, long recoverTo = -1)
         {
             byte[] metadata = null;
             if (deltaLog != null && scanDelta)
@@ -314,12 +314,13 @@ namespace Tsavorite.core
                                 fixed (byte* m = metadata)
                                     Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
-                            HybridLogRecoveryInfo recoveryInfo = new();
+
+                            var hlri = new HybridLogRecoveryInfo();
                             using (StreamReader s = new(new MemoryStream(metadata)))
                             {
-                                recoveryInfo.Initialize(s);
+                                hlri.Initialize(s);
                                 // Finish recovery if only specific versions are requested
-                                if (recoveryInfo.version == recoverTo || recoveryInfo.version < recoverTo && recoveryInfo.nextVersion > recoverTo) goto LoopEnd;
+                                if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo) goto LoopEnd;
                             }
                             continue;
                         default:
@@ -329,13 +330,12 @@ namespace Tsavorite.core
                     break;
                 }
                 if (metadata != null) return metadata;
-
             }
 
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
-            int size = BitConverter.ToInt32(writePad, 0);
+            var size = BitConverter.ToInt32(writePad, 0);
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
@@ -343,6 +343,7 @@ namespace Tsavorite.core
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
             device.Dispose();
+
             return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
 
