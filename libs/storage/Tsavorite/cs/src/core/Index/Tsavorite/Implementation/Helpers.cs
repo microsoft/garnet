@@ -280,7 +280,9 @@ namespace Tsavorite.core
                 srcRecordInfo.SealAndInvalidate();
 
                 bool isElided = false, isAdded = false;
-                Debug.Assert(srcRecordInfo.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcRecordInfo.ToString()}");
+
+                Debug.Assert(stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress || srcRecordInfo.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcRecordInfo.ToString()}");
+
                 (isElided, isAdded) = TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo,
                                         (usedValueLength, fullValueLength, fullRecordLength));
 

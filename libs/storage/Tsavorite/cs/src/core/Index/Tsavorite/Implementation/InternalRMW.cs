@@ -151,7 +151,6 @@ namespace Tsavorite.core
                     if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
-                        // HK TODO: Ask @TedHart if record should be marked dirty and modified here? By now it is already tombstoned
                         srcRecordInfo.SetDirtyAndModified();
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
@@ -416,8 +415,6 @@ namespace Tsavorite.core
                     {
                         if (allocOptions.ElideSourceRecord)
                         {
-                            // Is there an issue in doing this? I only want to do this so HandleRecordElision does not trip on the Debug Assert
-                            srcRecordInfo.SetTombstone();
                             var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
@@ -557,8 +554,6 @@ namespace Tsavorite.core
             }
 
         DoCAS:
-            // HK TODO: How come new record info is not unlinked with previous record here?
-
             // The record being cas'd below is going to be the tombstone record in the case of RCU requested tombstone, and NCU tombstoning.
             // For all other cases this is the new computed record after an RMW.
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
