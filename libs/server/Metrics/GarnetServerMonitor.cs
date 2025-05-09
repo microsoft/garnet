@@ -169,7 +169,7 @@ namespace Garnet.server
 
         }
 
-        private void ResetStats()
+        private void CleanupGlobalStats()
         {
             if (resetEventFlags[InfoMetricsType.STATS])
             {
@@ -204,7 +204,7 @@ namespace Garnet.server
             }
         }
 
-        private void ResetLatencyMetrics()
+        private void CleanupGlobalLatencyMetrics()
         {
             if (opts.LatencyMonitor)
             {
@@ -237,19 +237,6 @@ namespace Garnet.server
             }
         }
 
-        private void ResetLatencySessionMetrics()
-        {
-            if (opts.LatencyMonitor)
-            {
-                foreach (var server in servers)
-                {
-                    var sessions = ((GarnetServerBase)server).ActiveConsumers();
-                    foreach (var entry in sessions)
-                        ((RespServerSession)entry).ResetAllLatencyMetrics();
-                }
-            }
-        }
-
         private async void MainMonitorTask(CancellationToken token)
         {
             startTimestamp = Stopwatch.GetTimestamp();
@@ -262,6 +249,19 @@ namespace Garnet.server
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.
                     ResetLatencySessionMetrics();
+
+                    void ResetLatencySessionMetrics()
+                    {
+                        if (opts.LatencyMonitor)
+                        {
+                            foreach (var server in servers)
+                            {
+                                var sessions = ((GarnetServerBase)server).ActiveConsumers();
+                                foreach (var entry in sessions)
+                                    ((RespServerSession)entry).ResetAllLatencyMetrics();
+                            }
+                        }
+                    }
 
                     monitor_iterations++;
 
@@ -277,9 +277,9 @@ namespace Garnet.server
                         UpdateAllMetrics(server);
                     }
 
-                    //Reset & Cleanup
-                    ResetStats();
-                    ResetLatencyMetrics();
+                    // Cleanup if INFO RESET has been issued
+                    CleanupGlobalStats();
+                    CleanupGlobalLatencyMetrics();
                 }
             }
             catch (Exception ex)
