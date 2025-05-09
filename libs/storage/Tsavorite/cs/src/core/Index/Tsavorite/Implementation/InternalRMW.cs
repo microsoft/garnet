@@ -535,7 +535,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(!skipTombstoneAddition, "if this was not a CU operation, then it must be CU operation, and since we know all CU operations that are not adding tombstone via NCU are above this has to be a tombstoning path by NCU");
+                Debug.Assert(!skipTombstoneAddition, "if this was not a !CU operation, then it must be CU operation that is the tombstoning path by NCU");
                 newRecordInfo.SetTombstone(); // HK TODO: Is there any point in SetTombstone + ExtraValueLength here? Ask @Ted 
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
@@ -556,7 +556,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
+                    // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
                     if (skipTombstoneAddition && !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
