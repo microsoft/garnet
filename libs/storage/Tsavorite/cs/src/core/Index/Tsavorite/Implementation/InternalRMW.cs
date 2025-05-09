@@ -409,9 +409,8 @@ namespace Tsavorite.core
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
+                        // add a tombstone in hlog since original record is immutable
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
-                        // since past record is in stable region, we need to explicitly add a new tombstone record
-                        // action is already set to expire and stop, by simply changing the allocation based on this, we can let record splicing, elision, and potential revivification continue
                         skipTombstoneAddition = false;
                     }
                     else
