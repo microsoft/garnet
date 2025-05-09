@@ -417,7 +417,7 @@ namespace Tsavorite.core
                         if (allocOptions.ElideSourceRecord)
                         {
                             // Is there an issue in doing this? I only want to do this so HandleRecordElision does not trip on the Debug Assert
-                            srcRecordInfo.SetTombstone(); 
+                            srcRecordInfo.SetTombstone();
                             var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
@@ -448,7 +448,7 @@ namespace Tsavorite.core
                     stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
                     hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
             }
-            else 
+            else
             {
                 Debug.Assert(!allocOptions.ElideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
                     "This block only handles NCU requested deletion for unelidable src records.");
@@ -558,7 +558,7 @@ namespace Tsavorite.core
 
         DoCAS:
             // HK TODO: How come new record info is not unlinked with previous record here?
- 
+
             // The record being cas'd below is going to be the tombstone record in the case of RCU requested tombstone, and NCU tombstoning.
             // For all other cases this is the new computed record after an RMW.
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
