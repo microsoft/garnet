@@ -152,6 +152,7 @@ namespace Tsavorite.core
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         // HK TODO: Ask @TedHart if record should be marked dirty and modified here? By now it is already tombstoned
+                        srcRecordInfo.SetDirtyAndModified();
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
@@ -409,28 +410,9 @@ namespace Tsavorite.core
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
-
-                        // Handle potential record revivification for records in in-memory region. Handle readonly region and potentially Mutable region undergoing CPR. 
-                        if (!stackCtx.recSrc.HasMainLogSrc)
-                        {
-                            // since past record is in stable region, we need to explicitly add a new tombstone record
-                            // action is already set to expire and stop, by simply changing the allocation based on this, we can let record splicing, elision, and potential revivification continue
-                            skipTombstoneAddition = false;
-                        }
-                        else
-                        {
-                            // HK TODO: Ask @TedHart if record should be marked dirty and modified here?
-                            srcRecordInfo.SetTombstone();
-                            // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
-                            // Otherwise an earlier record for this key could be reachable again.
-                            if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo))
-                            {
-                                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref value, ref srcRecordInfo);
-                                HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                                    sessionFunctions, ref stackCtx, ref srcRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
-                            }
-                            return OperationStatus.NOTFOUND;
-                        }
+                        // since past record is in stable region, we need to explicitly add a new tombstone record
+                        // action is already set to expire and stop, by simply changing the allocation based on this, we can let record splicing, elision, and potential revivification continue
+                        skipTombstoneAddition = false;
                     }
                     else
                         return OperationStatus.SUCCESS;
@@ -524,8 +506,8 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
-                    // tombstone setting and potential revivification handling is done after CAS
                     skipTombstoneAddition = false;
+                    newRecordInfo.SetTombstone();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -556,6 +538,7 @@ namespace Tsavorite.core
             else
             {
                 Debug.Assert(!skipTombstoneAddition, "if this was not a CU operation, then it must be CU operation, and since we know all CU operations that are not adding tombstone via NCU are above this has to be a tombstoning path by NCU");
+                newRecordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
             }
 
@@ -575,24 +558,13 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Either if there is explicit asked for tombstone (via NCU or CU) or if it was a CopyUpdater and call PCU returns false
-                    if (!skipTombstoneAddition || !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
+                    // else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
+                    if (skipTombstoneAddition && !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
                             newRecordInfo.SetTombstone();
-                            // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
-                            // Otherwise an earlier record for this key could be reachable again.
-                            if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref newRecordInfo))
-                            {
-                                (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = GetRecordLengths(newPhysicalAddress, ref newRecordValue, ref newRecordInfo);
-                                HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
-                                    sessionFunctions, ref stackCtx, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength);
-                            }
-
-                            // retain status set by NCU or CU if tombstone addition was requested, else override it what should have been after PCU
-                            if (skipTombstoneAddition)
-                                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                         else
                         {
