@@ -19,8 +19,8 @@ namespace Garnet.server
         /// <param name="srcPtrs">Array of pointers to source buffers. The array length must be greater than or equal to <paramref name="srcCount"/></param>
         /// <param name="srcEndPtrs">Array of the buffer lengths specified in <paramref name="srcPtrs"/>. The array length must be greater than or equal to <paramref name="srcCount"/></param>
         /// <param name="dstPtr">Destination buffer to write the result.</param>
-        /// <param name="dstLength">Destination buffer length</param>
-        /// <param name="shortestSrcLength">The length of shorted source buffer</param>
+        /// <param name="dstLength">Destination buffer length.</param>
+        /// <param name="shortestSrcLength">The length of shortest source buffer.</param>
         public static void InvokeBitOperationUnsafe(BitmapOperation op, int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
         {
             Debug.Assert(srcCount > 0);
@@ -28,16 +28,16 @@ namespace Garnet.server
 
             if (srcCount == 1)
             {
-                var srcKey = new ReadOnlySpan<byte>(srcPtrs[0], checked((int)(srcEndPtrs[0] - srcPtrs[0])));
+                var src = new ReadOnlySpan<byte>(srcPtrs[0], checked((int)(srcEndPtrs[0] - srcPtrs[0])));
                 var dst = new Span<byte>(dstPtr, dstLength);
 
                 if (op == BitmapOperation.NOT)
                 {
-                    TensorPrimitives.OnesComplement(srcKey, dst);
+                    TensorPrimitives.OnesComplement(src, dst);
                 }
                 else
                 {
-                    srcKey.CopyTo(dst);
+                    src.CopyTo(dst);
                 }
 
                 return;
@@ -50,46 +50,46 @@ namespace Garnet.server
                 // Use fast-path for two-equal-length inputs
                 if (firstSrcLength == secondSrcLength)
                 {
-                    var firstSrcKey = new ReadOnlySpan<byte>(srcPtrs[0], firstSrcLength);
-                    var secondSrcKey = new ReadOnlySpan<byte>(srcPtrs[1], secondSrcLength);
+                    var firstSrc = new ReadOnlySpan<byte>(srcPtrs[0], firstSrcLength);
+                    var secondSrc = new ReadOnlySpan<byte>(srcPtrs[1], secondSrcLength);
                     var dst = new Span<byte>(dstPtr, dstLength);
 
-                    if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrcKey, secondSrcKey, dst);
-                    else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrcKey, secondSrcKey, dst);
-                    else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrcKey, secondSrcKey, dst);
+                    if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrc, secondSrc, dst);
+                    else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrc, secondSrc, dst);
+                    else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrc, secondSrc, dst);
 
                     return;
                 }
 
-                // If the keys are not the same length, fallback to the multi-key path for the tail handling
+                // If the inputs are not the same length, fallback to the n-ary path for the tail handling
             }
 
-            // Fallback for multi-key and tail handling
-            if (op == BitmapOperation.AND) InvokeMultiKeyBitwise<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
-            else if (op == BitmapOperation.OR) InvokeMultiKeyBitwise<BitwiseOrOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
-            else if (op == BitmapOperation.XOR) InvokeMultiKeyBitwise<BitwiseXorOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            // Fallback for n-ary input, for some n ≥ 2
+            if (op == BitmapOperation.AND) InvokeNaryBitwiseOperation<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            else if (op == BitmapOperation.OR) InvokeNaryBitwiseOperation<BitwiseOrOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            else if (op == BitmapOperation.XOR) InvokeNaryBitwiseOperation<BitwiseXorOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
         }
 
         /// <summary>
-        /// Invokes bitwise binary operation for multiple keys.
+        /// Invokes bitwise binary operation for n-ary bitm.
         /// </summary>
         /// <typeparam name="TBinaryOperator">The binary operator type to compute bitwise</typeparam>
-        /// <param name="dstPtr">Output buffer to write BitOp result</param>
-        /// <param name="dstLength">Output buffer length.</param>
-        /// <param name="srcKeyPtrs">Array of pointers to source key buffers.</param>
-        /// <param name="srcKeyEndPtrs">Array of the of pointers pointing to the end of the respective the keys specified in <paramref name="srcKeyPtrs"/>.</param>
-        /// <param name="srcKeyCount">Number of source keys.</param>
-        /// <param name="minLength">Minimum length of source bitmaps.</param>
-        private static void InvokeMultiKeyBitwise<TBinaryOperator>(int srcKeyCount, byte** srcKeyPtrs, byte** srcKeyEndPtrs, byte* dstPtr, int dstLength, int minLength)
+        /// <param name="srcCount">Number of source bitmaps.</param>
+        /// <param name="srcPtrs">Array of pointers to source bitmap buffers.</param>
+        /// <param name="srcEndPtrs">Array of the of pointers pointing to the end of the respective the bitmaps specified in <paramref name="srcPtrs"/>.</param>
+        /// <param name="dstPtr">Destination buffer to write the result.</param>
+        /// <param name="dstLength">Destination buffer length.</param>
+        /// <param name="shortestSrcLength">The length of shortest source buffer.</param>
+        private static void InvokeNaryBitwiseOperation<TBinaryOperator>(int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
             where TBinaryOperator : struct, IBinaryOperator
         {
             var dstEndPtr = dstPtr + dstLength;
 
-            long remainingLength = minLength;
-            long batchRemainder = minLength;
+            var remainingLength = shortestSrcLength;
+            var batchRemainder = shortestSrcLength;
             byte* dstBatchEndPtr;
 
-            ref var firstKeyPtr = ref srcKeyPtrs[0];
+            ref var firstSrcPtr = ref srcPtrs[0];
 
             if (Vector256.IsHardwareAccelerated && Vector256<byte>.IsSupported)
             {
@@ -98,7 +98,7 @@ namespace Garnet.server
                 dstBatchEndPtr = dstPtr + (remainingLength - batchRemainder);
                 remainingLength = batchRemainder;
 
-                Vectorized256(ref firstKeyPtr, srcKeyPtrs, srcKeyCount, ref dstPtr, dstBatchEndPtr);
+                Vectorized256(ref firstSrcPtr, srcCount, srcPtrs, ref dstPtr, dstBatchEndPtr);
             }
             else if (Vector128.IsHardwareAccelerated && Vector128<byte>.IsSupported)
             {
@@ -107,7 +107,7 @@ namespace Garnet.server
                 dstBatchEndPtr = dstPtr + (remainingLength - batchRemainder);
                 remainingLength = batchRemainder;
 
-                Vectorized128(ref firstKeyPtr, srcKeyPtrs, srcKeyCount, ref dstPtr, dstBatchEndPtr);
+                Vectorized128(ref firstSrcPtr, srcCount, srcPtrs, ref dstPtr, dstBatchEndPtr);
             }
 
             // Scalar: 8 bytes x 4
@@ -117,23 +117,23 @@ namespace Garnet.server
 
             while (dstPtr < dstBatchEndPtr)
             {
-                var d00 = *(ulong*)(firstKeyPtr + (sizeof(ulong) * 0));
-                var d01 = *(ulong*)(firstKeyPtr + (sizeof(ulong) * 1));
-                var d02 = *(ulong*)(firstKeyPtr + (sizeof(ulong) * 2));
-                var d03 = *(ulong*)(firstKeyPtr + (sizeof(ulong) * 3));
+                var d00 = *(ulong*)(firstSrcPtr + (sizeof(ulong) * 0));
+                var d01 = *(ulong*)(firstSrcPtr + (sizeof(ulong) * 1));
+                var d02 = *(ulong*)(firstSrcPtr + (sizeof(ulong) * 2));
+                var d03 = *(ulong*)(firstSrcPtr + (sizeof(ulong) * 3));
 
-                firstKeyPtr += sizeof(ulong) * 4;
+                firstSrcPtr += sizeof(ulong) * 4;
 
-                for (var i = 1; i < srcKeyCount; i++)
+                for (var i = 1; i < srcCount; i++)
                 {
-                    ref var keyStartPtr = ref srcKeyPtrs[i];
+                    ref var startPtr = ref srcPtrs[i];
 
-                    d00 = TBinaryOperator.Invoke(d00, *(ulong*)(keyStartPtr + (sizeof(ulong) * 0)));
-                    d01 = TBinaryOperator.Invoke(d01, *(ulong*)(keyStartPtr + (sizeof(ulong) * 1)));
-                    d02 = TBinaryOperator.Invoke(d02, *(ulong*)(keyStartPtr + (sizeof(ulong) * 2)));
-                    d03 = TBinaryOperator.Invoke(d03, *(ulong*)(keyStartPtr + (sizeof(ulong) * 3)));
+                    d00 = TBinaryOperator.Invoke(d00, *(ulong*)(startPtr + (sizeof(ulong) * 0)));
+                    d01 = TBinaryOperator.Invoke(d01, *(ulong*)(startPtr + (sizeof(ulong) * 1)));
+                    d02 = TBinaryOperator.Invoke(d02, *(ulong*)(startPtr + (sizeof(ulong) * 2)));
+                    d03 = TBinaryOperator.Invoke(d03, *(ulong*)(startPtr + (sizeof(ulong) * 3)));
 
-                    srcKeyPtrs[i] += sizeof(ulong) * 4;
+                    srcPtrs[i] += sizeof(ulong) * 4;
                 }
 
                 *(ulong*)(dstPtr + (sizeof(ulong) * 0)) = d00;
@@ -149,18 +149,18 @@ namespace Garnet.server
             {
                 byte d00 = 0;
 
-                if (firstKeyPtr < srcKeyEndPtrs[0])
+                if (firstSrcPtr < srcEndPtrs[0])
                 {
-                    d00 = *firstKeyPtr;
-                    firstKeyPtr++;
+                    d00 = *firstSrcPtr;
+                    firstSrcPtr++;
                 }
 
-                for (var i = 1; i < srcKeyCount; i++)
+                for (var i = 1; i < srcCount; i++)
                 {
-                    if (srcKeyPtrs[i] < srcKeyEndPtrs[i])
+                    if (srcPtrs[i] < srcEndPtrs[i])
                     {
-                        d00 = TBinaryOperator.Invoke(d00, *srcKeyPtrs[i]);
-                        srcKeyPtrs[i]++;
+                        d00 = TBinaryOperator.Invoke(d00, *srcPtrs[i]);
+                        srcPtrs[i]++;
                     }
                     else if (typeof(TBinaryOperator) == typeof(BitwiseAndOperator))
                     {
@@ -171,33 +171,33 @@ namespace Garnet.server
                 *dstPtr++ = d00;
             }
 
-            static void Vectorized256(ref byte* firstKeyPtr, byte** srcStartPtrs, int srcKeyCount, ref byte* dstPtr, byte* dstBatchEndPtr)
+            static void Vectorized256(ref byte* firstPtr, int srcCount, byte** srcStartPtrs, ref byte* dstPtr, byte* dstBatchEndPtr)
             {
                 while (dstPtr < dstBatchEndPtr)
                 {
-                    var d00 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 0));
-                    var d01 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 1));
-                    var d02 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 2));
-                    var d03 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 3));
-                    var d04 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 4));
-                    var d05 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 5));
-                    var d06 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 6));
-                    var d07 = Vector256.Load(firstKeyPtr + (Vector256<byte>.Count * 7));
+                    var d00 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 0));
+                    var d01 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 1));
+                    var d02 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 2));
+                    var d03 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 3));
+                    var d04 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 4));
+                    var d05 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 5));
+                    var d06 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 6));
+                    var d07 = Vector256.Load(firstPtr + (Vector256<byte>.Count * 7));
 
-                    firstKeyPtr += Vector256<byte>.Count * 8;
+                    firstPtr += Vector256<byte>.Count * 8;
 
-                    for (var i = 1; i < srcKeyCount; i++)
+                    for (var i = 1; i < srcCount; i++)
                     {
-                        ref var keyStartPtr = ref srcStartPtrs[i];
+                        ref var startPtr = ref srcStartPtrs[i];
 
-                        var s00 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 0));
-                        var s01 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 1));
-                        var s02 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 2));
-                        var s03 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 3));
-                        var s04 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 4));
-                        var s05 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 5));
-                        var s06 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 6));
-                        var s07 = Vector256.Load(keyStartPtr + (Vector256<byte>.Count * 7));
+                        var s00 = Vector256.Load(startPtr + (Vector256<byte>.Count * 0));
+                        var s01 = Vector256.Load(startPtr + (Vector256<byte>.Count * 1));
+                        var s02 = Vector256.Load(startPtr + (Vector256<byte>.Count * 2));
+                        var s03 = Vector256.Load(startPtr + (Vector256<byte>.Count * 3));
+                        var s04 = Vector256.Load(startPtr + (Vector256<byte>.Count * 4));
+                        var s05 = Vector256.Load(startPtr + (Vector256<byte>.Count * 5));
+                        var s06 = Vector256.Load(startPtr + (Vector256<byte>.Count * 6));
+                        var s07 = Vector256.Load(startPtr + (Vector256<byte>.Count * 7));
 
                         d00 = TBinaryOperator.Invoke(d00, s00);
                         d01 = TBinaryOperator.Invoke(d01, s01);
@@ -208,7 +208,7 @@ namespace Garnet.server
                         d06 = TBinaryOperator.Invoke(d06, s06);
                         d07 = TBinaryOperator.Invoke(d07, s07);
 
-                        keyStartPtr += Vector256<byte>.Count * 8;
+                        startPtr += Vector256<byte>.Count * 8;
                     }
 
                     Vector256.Store(d00, dstPtr + (Vector256<byte>.Count * 0));
@@ -224,33 +224,33 @@ namespace Garnet.server
                 }
             }
 
-            static void Vectorized128(ref byte* firstKeyPtr, byte** srcStartPtrs, int srcKeyCount, ref byte* dstPtr, byte* dstBatchEndPtr)
+            static void Vectorized128(ref byte* firstPtr, int srcCount, byte** srcStartPtrs, ref byte* dstPtr, byte* dstBatchEndPtr)
             {
                 while (dstPtr < dstBatchEndPtr)
                 {
-                    var d00 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 0));
-                    var d01 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 1));
-                    var d02 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 2));
-                    var d03 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 3));
-                    var d04 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 4));
-                    var d05 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 5));
-                    var d06 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 6));
-                    var d07 = Vector128.Load(firstKeyPtr + (Vector128<byte>.Count * 7));
+                    var d00 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 0));
+                    var d01 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 1));
+                    var d02 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 2));
+                    var d03 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 3));
+                    var d04 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 4));
+                    var d05 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 5));
+                    var d06 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 6));
+                    var d07 = Vector128.Load(firstPtr + (Vector128<byte>.Count * 7));
 
-                    firstKeyPtr += Vector128<byte>.Count * 8;
+                    firstPtr += Vector128<byte>.Count * 8;
 
-                    for (var i = 1; i < srcKeyCount; i++)
+                    for (var i = 1; i < srcCount; i++)
                     {
-                        ref var keyStartPtr = ref srcStartPtrs[i];
+                        ref var startPtr = ref srcStartPtrs[i];
 
-                        var s00 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 0));
-                        var s01 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 1));
-                        var s02 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 2));
-                        var s03 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 3));
-                        var s04 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 4));
-                        var s05 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 5));
-                        var s06 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 6));
-                        var s07 = Vector128.Load(keyStartPtr + (Vector128<byte>.Count * 7));
+                        var s00 = Vector128.Load(startPtr + (Vector128<byte>.Count * 0));
+                        var s01 = Vector128.Load(startPtr + (Vector128<byte>.Count * 1));
+                        var s02 = Vector128.Load(startPtr + (Vector128<byte>.Count * 2));
+                        var s03 = Vector128.Load(startPtr + (Vector128<byte>.Count * 3));
+                        var s04 = Vector128.Load(startPtr + (Vector128<byte>.Count * 4));
+                        var s05 = Vector128.Load(startPtr + (Vector128<byte>.Count * 5));
+                        var s06 = Vector128.Load(startPtr + (Vector128<byte>.Count * 6));
+                        var s07 = Vector128.Load(startPtr + (Vector128<byte>.Count * 7));
 
                         d00 = TBinaryOperator.Invoke(d00, s00);
                         d01 = TBinaryOperator.Invoke(d01, s01);
@@ -261,7 +261,7 @@ namespace Garnet.server
                         d06 = TBinaryOperator.Invoke(d06, s06);
                         d07 = TBinaryOperator.Invoke(d07, s07);
 
-                        keyStartPtr += Vector128<byte>.Count * 8;
+                        startPtr += Vector128<byte>.Count * 8;
                     }
 
                     Vector128.Store(d00, dstPtr + (Vector128<byte>.Count * 0));
