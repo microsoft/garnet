@@ -232,8 +232,6 @@ namespace Garnet.server
                 {
                     await Task.Delay(monitorSamplingFrequency, token);
 
-                    monitor_iterations++;
-
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.
                     ResetLatencySessionMetrics();
@@ -249,6 +247,9 @@ namespace Garnet.server
                             }
                         }
                     }
+
+                    // NOTE: Do not move this because we make use of it for resetting the previous version in latency metrics
+                    monitor_iterations++;
 
                     var total_connections_received = 0L;
                     var total_connections_disposed = 0L;
