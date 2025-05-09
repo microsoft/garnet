@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -16,7 +15,7 @@ namespace Garnet.server
     {
         /// <summary>
         ///  Add the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -86,9 +85,7 @@ namespace Garnet.server
                     var resultCount = 0;
                     if (result != null)
                     {
-                        resultCount = result.Count;
-                        while (!RespWriteUtils.TryWriteArrayLength(resultCount, ref dcurr, dend))
-                            SendAndReset();
+                        WriteSetLength(result.Count);
 
                         foreach (var item in result)
                         {
@@ -246,9 +243,7 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     // write the size of result
-                    var resultCount = result.Count;
-                    while (!RespWriteUtils.TryWriteArrayLength(resultCount, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSetLength(result.Count);
 
                     foreach (var item in result)
                     {
@@ -307,7 +302,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Remove the specified members from the set.
-        /// Specified members that are not a member of this set are ignored. 
+        /// Specified members that are not a member of this set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -321,7 +316,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SREM");
             }
 
-            // Get the key 
+            // Get the key
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
             var keyBytes = sbKey.ToByteArray();
 
@@ -418,19 +413,18 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.SetMembers(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetMembers(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteEmptySet();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -471,15 +465,15 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.SetIsMember(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetIsMember(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     if (isSingle)
@@ -534,10 +528,7 @@ namespace Garnet.server
                 // Prepare response
                 if (!parseState.TryGetInt(1, out countParameter) || countParameter < 0)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 if (countParameter == 0)
@@ -554,19 +545,18 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.SetPop(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetPop(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -593,7 +583,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SMOVE");
             }
 
-            // Get the source key 
+            // Get the source key
             var sourceKey = parseState.GetArgSliceByRef(0);
 
             // Get the destination key
@@ -624,9 +614,9 @@ namespace Garnet.server
 
         /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
-        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// If the provided count argument is positive, return an array of distinct elements.
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
-        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times.
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -650,10 +640,7 @@ namespace Garnet.server
                 // Prepare response
                 if (!parseState.TryGetInt(1, out countParameter))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 if (countParameter == 0)
@@ -673,15 +660,15 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.SetRandomMember(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.SetRandomMember(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     if (parseState.Count == 2)
@@ -691,9 +678,7 @@ namespace Garnet.server
                         break;
                     }
 
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -730,29 +715,11 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     if (output == null || output.Count == 0)
                     {
-                        if (respProtocolVersion == 3)
-                        {
-                            while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        WriteEmptySet();
                     }
                     else
                     {
-                        if (respProtocolVersion == 3)
-                        {
-                            while (!RespWriteUtils.TryWriteSetLength(output.Count, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.TryWriteArrayLength(output.Count, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        WriteSetLength(output.Count);
 
                         foreach (var item in output)
                         {

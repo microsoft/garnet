@@ -7,7 +7,6 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Numerics;
-using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
 using Garnet.server.Resp;
@@ -92,20 +91,11 @@ namespace Garnet.server
         /// <inheritdoc />
         public RespCommandsInfo[] SubCommands { get; init; }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
-
         /// <inheritdoc />
         [JsonIgnore]
         public RespCommandsInfo Parent { get; set; }
 
         private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
-
-        private string respFormat;
 
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
@@ -372,67 +362,68 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public string ToRespFormat()
+        public void ToRespFormat(ref RespMemoryWriter writer)
         {
-            if (string.IsNullOrWhiteSpace(this.Name))
-                return "$-1\r\n";
-
-            var sb = new StringBuilder();
-            sb.Append("*10\r\n");
-            // 1) Name
-            sb.Append($"${this.Name.Length}\r\n{this.Name}\r\n");
-            // 2) Arity
-            sb.Append($":{this.Arity}\r\n");
-            // 3) Flags
-            sb.Append($"*{this.respFormatFlags?.Length ?? 0}\r\n");
-            if (this.respFormatFlags != null && this.respFormatFlags.Length > 0)
+            if (string.IsNullOrWhiteSpace(Name))
             {
-                foreach (var flag in this.respFormatFlags)
-                    sb.Append($"+{flag}\r\n");
+                writer.WriteNull();
             }
-
-            // 4) First key
-            sb.Append($":{this.FirstKey}\r\n");
-            // 5) Last key
-            sb.Append($":{this.LastKey}\r\n");
-            // 6) Step
-            sb.Append($":{this.Step}\r\n");
-            // 7) ACL categories
-            sb.Append($"*{this.respFormatAclCategories?.Length ?? 0}\r\n");
-            if (this.respFormatAclCategories != null && this.respFormatAclCategories.Length > 0)
+            else
             {
-                foreach (var aclCat in this.respFormatAclCategories)
-                    sb.Append($"+@{aclCat}\r\n");
-            }
+                writer.WriteArrayLength(10);
+                // 1) Name
+                writer.WriteAsciiBulkString(Name);
+                // 2) Arity
+                writer.WriteInt32(Arity);
+                // 3) Flags
+                writer.WriteSetLength(respFormatFlags?.Length ?? 0);
+                if (respFormatFlags != null && respFormatFlags.Length > 0)
+                {
+                    foreach (var flag in respFormatFlags)
+                        writer.WriteSimpleString(flag);
+                }
 
-            // 8) Tips
-            var tipCount = this.Tips?.Length ?? 0;
-            sb.Append($"*{tipCount}\r\n");
-            if (this.Tips != null && tipCount > 0)
-            {
-                foreach (var tip in this.Tips)
-                    sb.Append($"${tip.Length}\r\n{tip}\r\n");
-            }
+                // 4) First key
+                writer.WriteInt32(FirstKey);
+                // 5) Last key
+                writer.WriteInt32(LastKey);
+                // 6) Step
+                writer.WriteInt32(Step);
+                // 7) ACL categories
+                writer.WriteSetLength(respFormatAclCategories?.Length ?? 0);
+                if (respFormatAclCategories != null && respFormatAclCategories.Length > 0)
+                {
+                    foreach (var aclCat in respFormatAclCategories)
+                        writer.WriteSimpleString('@' + aclCat);
+                }
 
-            // 9) Key specifications
-            var ksCount = this.KeySpecifications?.Length ?? 0;
-            sb.Append($"*{ksCount}\r\n");
-            if (this.KeySpecifications != null && ksCount > 0)
-            {
-                foreach (var ks in this.KeySpecifications)
-                    sb.Append(ks.RespFormat);
-            }
+                // 8) Tips
+                var tipCount = Tips?.Length ?? 0;
+                writer.WriteSetLength(tipCount);
+                if (Tips != null && tipCount > 0)
+                {
+                    foreach (var tip in Tips)
+                        writer.WriteAsciiBulkString(tip);
+                }
 
-            // 10) SubCommands
-            var subCommandCount = this.SubCommands?.Length ?? 0;
-            sb.Append($"*{subCommandCount}\r\n");
-            if (this.SubCommands != null && subCommandCount > 0)
-            {
-                foreach (var subCommand in SubCommands)
-                    sb.Append(subCommand.RespFormat);
-            }
+                // 9) Key specifications
+                var ksCount = KeySpecifications?.Length ?? 0;
+                writer.WriteSetLength(ksCount);
+                if (KeySpecifications != null && ksCount > 0)
+                {
+                    foreach (var ks in KeySpecifications)
+                        ks.ToRespFormat(ref writer);
+                }
 
-            return sb.ToString();
+                // 10) SubCommands
+                var subCommandCount = SubCommands?.Length ?? 0;
+                writer.WriteArrayLength(subCommandCount);
+                if (SubCommands != null && subCommandCount > 0)
+                {
+                    foreach (var subCommand in SubCommands)
+                        subCommand.ToRespFormat(ref writer);
+                }
+            }
         }
     }
 }
