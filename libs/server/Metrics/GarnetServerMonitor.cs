@@ -265,6 +265,7 @@ namespace Garnet.server
                         accSessionMetrics.Add(globalMetrics.historySessionMetrics);
                     }
 
+                    // Iterate through active server sessions to acquire the updated stats
                     foreach (var server in servers)
                     {
                         var garnetServer = (GarnetServerBase)server;
