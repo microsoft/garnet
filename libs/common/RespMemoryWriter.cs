@@ -21,13 +21,12 @@ namespace Garnet.common
         byte* ptr;
         MemoryHandle ptrHandle;
         ref SpanByteAndMemory output;
-        bool isMemory;
         public readonly bool resp3;
 
         public unsafe RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
         {
             this.output = ref output;
-            isMemory = false;
+            ptrHandle = default;
             resp3 = respVersion >= 3;
 
             ptr = output.SpanByte.ToPointer();
@@ -386,16 +385,11 @@ namespace Garnet.common
             if (totalLenHint <= len)
                 return;
 
-            ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end, totalLenHint - len);
+            ReallocateOutput(totalLenHint - len);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void ReallocateOutput(int extraLenHint = 0)
-        {
-            ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end, extraLenHint);
-        }
-
-        private static unsafe void ReallocateOutput(ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end, int extraLenHint = 0)
         {
             var length = output.Length;
 
@@ -423,16 +417,16 @@ namespace Garnet.common
             if (bytesWritten > 0)
                 Buffer.MemoryCopy(ptr, newPtr, length, bytesWritten);
 
-            if (isMemory)
+            if (ptrHandle.Pointer != default)
             {
                 ptrHandle.Dispose();
                 output.Memory.Dispose();
             }
             else
             {
-                isMemory = true;
                 output.ConvertToHeap();
             }
+
             ptrHandle = newPtrHandle;
             ptr = newPtr;
             output.Memory = newMem;
@@ -484,7 +478,7 @@ namespace Garnet.common
         /// <inheritdoc />
         public void Dispose()
         {
-            if (isMemory) ptrHandle.Dispose();
+            if (ptrHandle.Pointer != default) ptrHandle.Dispose();
             output.Length = (int)(curr - ptr);
         }
     }
