@@ -235,18 +235,6 @@ namespace Garnet.server
                     // Reset the session level latency metrics for the prior version, as we are
                     // about to make that the current version.
                     ResetLatencySessionMetrics();
-                    void ResetLatencySessionMetrics()
-                    {
-                        if (opts.LatencyMonitor)
-                        {
-                            foreach (var server in servers)
-                            {
-                                var sessions = ((GarnetServerBase)server).ActiveConsumers();
-                                foreach (var entry in sessions)
-                                    ((RespServerSession)entry).ResetAllLatencyMetrics();
-                            }
-                        }
-                    }
 
                     // NOTE: Do not move this because we make use of it for resetting the previous version in latency metrics
                     monitor_iterations++;
@@ -257,13 +245,6 @@ namespace Garnet.server
 
                     // Reset stats accumulator in preparation for scanning and accumulating current iteration stas
                     ResetAndAddGlobalHistory();
-                    void ResetAndAddGlobalHistory()
-                    {
-                        // Reset session metrics accumulator
-                        accSessionMetrics.Reset();
-                        // Add session metrics history in accumulator
-                        accSessionMetrics.Add(globalMetrics.historySessionMetrics);
-                    }
 
                     // Iterate through active server sessions to acquire the updated stats
                     foreach (var server in servers)
@@ -294,6 +275,27 @@ namespace Garnet.server
             finally
             {
                 done.Set();
+            }
+
+            void ResetAndAddGlobalHistory()
+            {
+                // Reset session metrics accumulator
+                accSessionMetrics.Reset();
+                // Add session metrics history in accumulator
+                accSessionMetrics.Add(globalMetrics.historySessionMetrics);
+            }
+
+            void ResetLatencySessionMetrics()
+            {
+                if (opts.LatencyMonitor)
+                {
+                    foreach (var server in servers)
+                    {
+                        var sessions = ((GarnetServerBase)server).ActiveConsumers();
+                        foreach (var entry in sessions)
+                            ((RespServerSession)entry).ResetAllLatencyMetrics();
+                    }
+                }
             }
         }
     }
