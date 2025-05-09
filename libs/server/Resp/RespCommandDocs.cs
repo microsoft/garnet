@@ -214,34 +214,22 @@ namespace Garnet.server
             var argCount = 1; // group
 
             if (Summary != null)
-            {
                 argCount++;
-            }
 
             if (Complexity != null)
-            {
                 argCount++;
-            }
 
             if (DocFlags != RespCommandDocFlags.None)
-            {
                 argCount++;
-            }
 
             if (ReplacedBy != null)
-            {
                 argCount++;
-            }
 
             if (Arguments != null)
-            {
                 argCount++;
-            }
 
             if (SubCommands != null)
-            {
                 argCount++;
-            }
 
             writer.WriteAsciiBulkString(Name);
             writer.WriteMapLength(argCount);

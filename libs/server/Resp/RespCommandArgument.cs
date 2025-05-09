@@ -79,29 +79,19 @@ namespace Garnet.server
             var ArgCount = 2; // name, type
 
             if (DisplayText != null)
-            {
                 ArgCount++;
-            }
 
             if (Token != null)
-            {
                 ArgCount++;
-            }
 
             if (Summary != null)
-            {
                 ArgCount++;
-            }
 
             if (ArgumentFlags != RespCommandArgumentFlags.None)
-            {
                 ArgCount++;
-            }
 
             if (increment)
-            {
                 ArgCount++;
-            }
 
             writer.WriteMapLength(ArgCount);
 

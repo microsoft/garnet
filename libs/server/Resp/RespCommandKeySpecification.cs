@@ -60,24 +60,16 @@ namespace Garnet.server
             var elemCount = 0;
 
             if (Notes != null)
-            {
                 elemCount++;
-            }
 
             if (Flags != KeySpecificationFlags.None)
-            {
                 elemCount++;
-            }
 
             if (BeginSearch != null)
-            {
                 elemCount++;
-            }
 
             if (FindKeys != null)
-            {
                 elemCount++;
-            }
 
             writer.WriteMapLength(elemCount);
 
