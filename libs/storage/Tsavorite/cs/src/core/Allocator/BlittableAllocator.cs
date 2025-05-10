@@ -86,6 +86,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key)
+            => BlittableAllocatorImpl<TKey, TValue, TStoreFunctions>.GetTombstoneRecordSize(ref key);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => GetAverageRecordSize();
 
         /// <inheritdoc/>

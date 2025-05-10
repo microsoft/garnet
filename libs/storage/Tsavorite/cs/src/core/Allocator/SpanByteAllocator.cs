@@ -81,6 +81,9 @@ namespace Tsavorite.core
              => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
 
         /// <inheritdoc/>
+        public (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref SpanByte key) => _this.GetTombstoneRecordSize(ref key);
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => _this.GetRequiredRecordSize(physicalAddress, availableBytes);
 

@@ -214,6 +214,8 @@ namespace Tsavorite.core
         /// </summary>
         public int FullValueLength { get; internal set; }
 
+        public int FullRecordLength { get; internal set; }
+
         /// <summary>
         /// If set true by CopyUpdater, the source record for the RCU will not be elided from the tag chain even if this is otherwise possible.
         /// </summary>

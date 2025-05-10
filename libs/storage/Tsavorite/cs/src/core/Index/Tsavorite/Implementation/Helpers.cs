@@ -253,5 +253,57 @@ namespace Tsavorite.core
             stackCtx.SetRecordSourceToHashEntry(hlogBase);
             return true;
         }
+
+
+        // Note: We do not currently consider this reuse for mid-chain records (records past the HashBucket), because TracebackForKeyMatch would need
+        //  to return the next-higher record whose .PreviousAddress points to this one, *and* we'd need to make sure that record was not revivified out.
+        //  Also, we do not consider this in-chain reuse for records with different keys, because we don't get here if the keys don't match.
+        private void HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, int usedValueLength, int fullValueLength, int fullRecordLength)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            if (!RevivificationManager.IsEnabled)
+            {
+                // We are not doing revivification, so we just want to remove the record from the tag chain so we don't potentially do an IO later for key 
+                // traceback. If we succeed, we need to SealAndInvalidate. It's fine if we don't succeed here; this is just tidying up the HashBucket. 
+                if (stackCtx.hei.TryElide())
+                    srcRecordInfo.SealAndInvalidate();
+            }
+            else if (RevivificationManager.UseFreeRecordPool)
+            {
+                // For non-FreeRecordPool revivification, we leave the record in as a normal tombstone so we can revivify it in the chain for the same key.
+                // For FreeRecord Pool we must first Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
+                // We invalidate it also for checkpoint/recovery consistency (this removes Sealed bit so Scan would enumerate records that are not in any
+                // tag chain--they would be in the freelist if the freelist survived Recovery), but we restore the Valid bit if it is returned to the chain,
+                // which due to epoch protection is guaranteed to be done before the record can be written to disk and violate the "No Invalid records in
+                // tag chain" invariant.
+                srcRecordInfo.SealAndInvalidate();
+
+                bool isElided = false, isAdded = false;
+
+                Debug.Assert(stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress || srcRecordInfo.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcRecordInfo.ToString()}");
+
+                (isElided, isAdded) = TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo,
+                                        (usedValueLength, fullValueLength, fullRecordLength));
+
+                if (!isElided)
+                {
+                    // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
+                    srcRecordInfo.UnsealAndValidate();
+                }
+                else if (!isAdded && RevivificationManager.restoreDeletedRecordsIfBinIsFull)
+                {
+                    // The record was not added to the freelist, but was elided. See if we can put it back in as a normal Tombstone. Since we just
+                    // elided it and the elision criteria is that it is the only above-BeginAddress record in the chain, and elision sets the
+                    // HashBucketEntry.word to 0, it means we do not expect any records for this key's tag to exist after the elision. Therefore,
+                    // we can re-insert the record iff the HashBucketEntry's address is <= kTempInvalidAddress.
+                    stackCtx.hei = new(stackCtx.hei.hash);
+                    FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
+
+                    if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
+                        srcRecordInfo.UnsealAndValidate();
+                }
+            }
+        }
     }
 }
