@@ -46,4 +46,4 @@ VOLUME /data
 # For inter-container communication.
 EXPOSE 6379
 
-ENTRYPOINT ["/app/GarnetServer"]
+ENTRYPOINT ["/app/GarnetServer", "--protected-mode no"]

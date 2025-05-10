@@ -22,4 +22,4 @@ COPY --from=build /app .
 # For inter-container communication.
 EXPOSE 6379
 
-ENTRYPOINT ["/app/GarnetServer.exe"]
+ENTRYPOINT ["/app/GarnetServer.exe", "--protected-mode no"]

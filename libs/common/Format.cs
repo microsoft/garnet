@@ -46,16 +46,18 @@ namespace Garnet.common
         /// <param name="port">Endpoint Port</param>
         /// <param name="endpoints">List of endpoints generated from the input IPs</param>
         /// <param name="errorHostnameOrAddress">Output error if any</param>
+        /// <param name="protectedMode">Is protected mode enabled?</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if parse and address validation was successful, otherwise false</returns>
-        public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress, ILogger logger = null)
+        public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress,
+                                               bool protectedMode = false, ILogger logger = null)
         {
             endpoints = null;
             errorHostnameOrAddress = null;
             // Check if input null or empty
             if (string.IsNullOrEmpty(addressList) || string.IsNullOrWhiteSpace(addressList))
             {
-                endpoints = defaultBindAny(port);
+                endpoints = protectedMode ? defaultBindLoopBack(port) : defaultBindAny(port);
                 return true;
             }
 
