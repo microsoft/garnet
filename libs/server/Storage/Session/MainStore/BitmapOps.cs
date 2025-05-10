@@ -127,7 +127,7 @@ namespace Garnet.server
                         continue;
 
                     var outputBitmapPtr = outputBitmap.SpanByte.ToPointer();
-                    var localBitmapPtr = (byte*)(IntPtr)(*(long*)outputBitmapPtr);
+                    var localBitmapPtr = (byte*)(nuint)(*(ulong*)outputBitmapPtr);
                     var localBitmapLength = *(int*)(outputBitmapPtr + 8);
 
                     // Keep track of pointers returned from ISessionFunctions

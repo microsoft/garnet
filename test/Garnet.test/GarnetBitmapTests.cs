@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics.Tensors;
-using System.Runtime.Intrinsics.X86;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -33,6 +32,21 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        private GarnetServerTestProcess CreateServerWithEnvironmentVariables(string environment)
+        {
+            if (environment.Split('=', StringSplitOptions.RemoveEmptyEntries) is [string key, string value])
+            {
+                Dictionary<string, string> envVars = [];
+                envVars.Add(key, value);
+
+                return new GarnetServerTestProcess(envVars);
+            }
+            else
+            {
+                return new GarnetServerTestProcess();
+            }
         }
 
         private long LongRandom() => r.NextInt64(long.MinValue, long.MaxValue);
@@ -257,60 +271,29 @@ namespace Garnet.test
 
         [Test, Order(6)]
         [Category("BITCOUNT")]
-        [TestCase(0, TestName = "BitmapSimpleBitCountTest(Hardware accelerated)")]
-        [TestCase(1, TestName = "BitmapSimpleBitCountTest(Avx2 disabled)")]
-        [TestCase(2, TestName = "BitmapSimpleBitCountTest(Software fallback)")]
-        public void BitmapSimpleBitCountTest(int acceleration)
+        [TestCase("DOTNET_EnableAVX2=0")]
+        [TestCase("DOTNET_EnableHWIntrinsic=1")]
+        [TestCase("DOTNET_EnableHWIntrinsic=0")]
+        public void BitmapSimpleBitCountTest(string environment)
         {
-            var configOptions = TestUtils.GetConfig();
+            using var server = CreateServerWithEnvironmentVariables(environment);
+            using var redis = ConnectionMultiplexer.Connect(server.Options);
 
-            if (acceleration == 0)
+            var db = redis.GetDatabase(0);
+            var maxBitmapLen = 1 << 12;
+            var iter = 1024;
+            var expectedCount = 0;
+            var key = "SimpleBitCountTest";
+
+            for (var i = 0; i < iter; i++)
             {
-                SimpleBitCountTest();
-            }
-            else
-            {
-                Dictionary<string, string> env = [];
-
-                if (acceleration == 1)
-                {
-                    if (!Avx2.IsSupported && Ssse3.IsSupported)
-                        Assert.Ignore("Already tested by main path");
-
-                    env.Add("DOTNET_EnableAVX2", "0");
-                }
-                else
-                {
-                    if (!Avx2.IsSupported && !Ssse3.IsSupported)
-                        Assert.Ignore("Already tested by main path");
-
-                    env.Add("DOTNET_EnableHWIntrinsic", "0");
-                }
-
-                using var p = new GarnetServerTestProcess(out configOptions, env);
-
-                SimpleBitCountTest();
+                var offset = r.Next(1, maxBitmapLen);
+                var set = !db.StringSetBit(key, offset, true);
+                expectedCount += set ? 1 : 0;
             }
 
-            void SimpleBitCountTest()
-            {
-                using var redis = ConnectionMultiplexer.Connect(configOptions);
-                var db = redis.GetDatabase(0);
-                var maxBitmapLen = 1 << 12;
-                var iter = 1024;
-                var expectedCount = 0;
-                var key = "SimpleBitCountTest";
-
-                for (var i = 0; i < iter; i++)
-                {
-                    var offset = r.Next(1, maxBitmapLen);
-                    var set = !db.StringSetBit(key, offset, true);
-                    expectedCount += set ? 1 : 0;
-                }
-
-                var count = db.StringBitCount(key);
-                ClassicAssert.AreEqual(expectedCount, count);
-            }
+            var count = db.StringBitCount(key);
+            ClassicAssert.AreEqual(expectedCount, count);
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
@@ -843,12 +826,33 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedBitmap, actualBitmap);
         }
 
-        [Test, Order(20)]
+        [Test]
+        [Category("BITOP")]
+        public void BitOp_Binary_SameSize(
+            [Values("DOTNET_EnableHWIntrinsic=1", "DOTNET_PreferredVectorBitWidth=128", "DOTNET_EnableHWIntrinsic=0")] string environment,
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor)] Bitwise op,
+            [Values(512 + 32 + 3)] int bitmapSize,
+            [Values(2, 3, 4)] int keys)
+        {
+            using var server = CreateServerWithEnvironmentVariables(environment);
+            BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+        }
+
+        [Test]
         [Category("BITOP")]
         public void BitOp_Binary_SameSize(
             [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor)] Bitwise op,
             [Values(1, 2, 16, 32 + 3, 128 + 32 + 3, 256 + 32 + 3, 512 + 32 + 3, 4096, 4096 + 32, 4096 + 32 + 3)] int bitmapSize,
             [Values(2, 3, 4)] int keys)
+        {
+            BitOp_Binary_SameSize(TestUtils.GetConfig(), op, bitmapSize, keys);
+        }
+
+        private void BitOp_Binary_SameSize(
+            ConfigurationOptions configOptions,
+            Bitwise op,
+            int bitmapSize,
+            int keys)
         {
             Func<byte, byte, byte> opFunc = op switch
             {
@@ -859,7 +863,7 @@ namespace Garnet.test
                 _ => throw new NotSupportedException()
             };
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(configOptions);
             var db = redis.GetDatabase(0);
 
             var srcKeys = new RedisKey[keys];
@@ -889,6 +893,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedBitmap.Length, actualBitmap.Length);
             ClassicAssert.AreEqual(expectedBitmap, actualBitmap);
         }
+
 
         [Test, Order(20)]
         [Category("BITOP")]

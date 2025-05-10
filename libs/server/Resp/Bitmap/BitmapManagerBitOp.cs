@@ -28,16 +28,16 @@ namespace Garnet.server
 
             if (srcCount == 1)
             {
-                var src = new ReadOnlySpan<byte>(srcPtrs[0], checked((int)(srcEndPtrs[0] - srcPtrs[0])));
-                var dst = new Span<byte>(dstPtr, dstLength);
+                var srcBitmap = new ReadOnlySpan<byte>(srcPtrs[0], checked((int)(srcEndPtrs[0] - srcPtrs[0])));
+                var dstBitmap = new Span<byte>(dstPtr, dstLength);
 
                 if (op == BitmapOperation.NOT)
                 {
-                    TensorPrimitives.OnesComplement(src, dst);
+                    TensorPrimitives.OnesComplement(srcBitmap, dstBitmap);
                 }
                 else
                 {
-                    src.CopyTo(dst);
+                    srcBitmap.CopyTo(dstBitmap);
                 }
 
                 return;
@@ -50,13 +50,13 @@ namespace Garnet.server
                 // Use fast-path for two-equal-length inputs
                 if (firstSrcLength == secondSrcLength)
                 {
-                    var firstSrc = new ReadOnlySpan<byte>(srcPtrs[0], firstSrcLength);
-                    var secondSrc = new ReadOnlySpan<byte>(srcPtrs[1], secondSrcLength);
-                    var dst = new Span<byte>(dstPtr, dstLength);
+                    var firstSrcBitmap = new ReadOnlySpan<byte>(srcPtrs[0], firstSrcLength);
+                    var secondSrcBitmap = new ReadOnlySpan<byte>(srcPtrs[1], secondSrcLength);
+                    var dstBitmap = new Span<byte>(dstPtr, dstLength);
 
-                    if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrc, secondSrc, dst);
-                    else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrc, secondSrc, dst);
-                    else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrc, secondSrc, dst);
+                    if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrcBitmap, secondSrcBitmap, dstBitmap);
+                    else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrcBitmap, secondSrcBitmap, dstBitmap);
+                    else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrcBitmap, secondSrcBitmap, dstBitmap);
 
                     return;
                 }
