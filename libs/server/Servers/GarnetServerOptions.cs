@@ -34,7 +34,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of each object store page in bytes (rounds down to power of 2).
         /// </summary>
-        public string ObjectStorePageSize = "1m";
+        public string ObjectStorePageSize = "4k";
 
         /// <summary>
         /// Size of each object store log segment in bytes on disk (rounds down to power of 2).
