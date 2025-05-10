@@ -379,7 +379,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             bool forExpiration = false;
-            bool skipTombstoneAddition = true;
+            bool addTombstone = false;
 
         RetryNow:
 
@@ -416,6 +416,7 @@ namespace Tsavorite.core
                         if (allocOptions.ElideSourceRecord)
                         {
                             srcRecordInfo.SetTombstone();
+                            srcRecordInfo.SetDirtyAndModified();
                             var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
@@ -424,7 +425,7 @@ namespace Tsavorite.core
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.Expired);
                         }
                         // otherwise we shall continue down the tombstoning path
-                        skipTombstoneAddition = false;
+                        addTombstone = true;
                     }
                     else
                         return OperationStatus.SUCCESS;
@@ -440,7 +441,7 @@ namespace Tsavorite.core
 
             // Allocate and initialize the new record
             int actualSize; int allocatedSize; int keySize;
-            if (skipTombstoneAddition)
+            if (!addTombstone)
             {
                 (actualSize, allocatedSize, keySize) = doingCU ?
                     stackCtx.recSrc.AllocatorBase._wrapper.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
@@ -485,7 +486,7 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
                 }
             }
-            else if (skipTombstoneAddition)
+            else if (!addTombstone)
             {
                 if (srcRecordInfo.ETag)
                     newRecordInfo.SetHasETag();
@@ -514,9 +515,9 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
-                    Debug.Assert(skipTombstoneAddition, "Should not have gone down RCU if NCU had already requested tombstoning." +
+                    Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
                         "This block should only handle expiration/tombstoning via RCU.");
-                    skipTombstoneAddition = false;
+                    addTombstone = true;
                     newRecordInfo.SetDirtyAndModified();
                     newRecordInfo.SetTombstone();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
@@ -548,7 +549,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(!skipTombstoneAddition, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
+                Debug.Assert(!addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
                 newRecordInfo.SetDirtyAndModified();
                 newRecordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
@@ -573,7 +574,7 @@ namespace Tsavorite.core
                 else
                 {
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
-                    if (skipTombstoneAddition && !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
+                    if (!addTombstone && !sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
