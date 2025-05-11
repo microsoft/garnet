@@ -99,10 +99,6 @@ namespace Garnet.server
         /// </summary>
         public bool SkipRDBRestoreChecksumValidation = false;
 
-        public string StreamPageSize = "4m";
-
-        public string StreamMemorySize = "1g";
-
         /// <summary>
         /// Logger
         /// </summary>
@@ -152,32 +148,6 @@ namespace Garnet.server
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower pub/sub page size than specified (power of 2)");
-            return adjustedSize;
-        }
-
-        /// <summary>
-        /// Get stream page size
-        /// </summary>
-        /// <returns></returns>
-        public long StreamPageSizeBytes()
-        {
-            long size = ParseSize(StreamPageSize);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
-            return adjustedSize;
-        }
-
-        /// <summary>
-        /// Get stream memory size
-        /// </summary>
-        /// <returns></returns>
-        public long StreamMemorySizeBytes()
-        {
-            long size = ParseSize(StreamMemorySize);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
             return adjustedSize;
         }
 

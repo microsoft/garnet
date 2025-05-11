@@ -457,6 +457,16 @@ namespace Garnet.server
         public StateMachineDriver StateMachineDriver;
 
         /// <summary>
+        /// Page size for BTree index for STREAM
+        /// </summary>
+        public string StreamPageSize = "4m";
+
+        /// <summary>
+        /// Memory for STREAM
+        /// </summary>
+        public string StreamMemorySize = "1g";
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public GarnetServerOptions(ILogger logger = null) : base(logger)
@@ -615,6 +625,32 @@ namespace Garnet.server
             }
 
             return kvSettings;
+        }
+
+        /// <summary>
+        /// Get stream page size
+        /// </summary>
+        /// <returns></returns>
+        public long StreamPageSizeBytes()
+        {
+            long size = ParseSize(StreamPageSize);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
+            return adjustedSize;
+        }
+
+        /// <summary>
+        /// Get stream memory size
+        /// </summary>
+        /// <returns></returns>
+        public long StreamMemorySizeBytes()
+        {
+            long size = ParseSize(StreamMemorySize);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
+            return adjustedSize;
         }
 
         /// <summary>

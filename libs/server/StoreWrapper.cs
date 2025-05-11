@@ -216,8 +216,7 @@ namespace Garnet.server
             run_id = Generator.CreateHexId();
 
             // initialize stream manager
-            // serverOptions.SubscriberRefreshFrequencyMs
-            this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0 );
+            this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
         }
 
         /// <summary>

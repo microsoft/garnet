@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Garnet.server
 {
-    internal struct SessionStreamCache
+    internal class SessionStreamCache
     {
         const int DefaultCacheSize = 16;
         readonly Dictionary<byte[], StreamObject> streamCache = new Dictionary<byte[], StreamObject>(DefaultCacheSize, ByteArrayComparer.Instance);
