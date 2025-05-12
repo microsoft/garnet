@@ -18,7 +18,7 @@ namespace Garnet.server
     {
         /// <summary>
         ///  Adds the specified member to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -47,7 +47,7 @@ namespace Garnet.server
 
         /// <summary>
         ///  Adds the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -111,7 +111,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified members from the set.
-        /// Specified members that are not a member of the set are ignored. 
+        /// Specified members that are not a member of the set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -187,12 +187,12 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
             var input = new ObjectInput(header);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref output);
 
             if (status == GarnetStatus.OK)
-                members = ProcessRespArrayOutput(outputFooter, out _);
+                members = ProcessRespArrayOutput(output, out _);
 
             return status;
         }
@@ -237,15 +237,15 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
             var input = new ObjectInput(header, count);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new GarnetObjectStoreOutput();
 
-            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref outputFooter);
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref output);
 
             if (status != GarnetStatus.OK)
                 return status;
 
             //process output
-            elements = ProcessRespArrayOutput(outputFooter, out _);
+            elements = ProcessRespArrayOutput(output, out _);
 
             return GarnetStatus.OK;
         }
@@ -657,7 +657,7 @@ namespace Garnet.server
 
         /// <summary>
         ///  Adds the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -672,7 +672,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified members from the set.
-        /// Specified members that are not a member of this set are ignored. 
+        /// Specified members that are not a member of this set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -704,12 +704,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetMembers<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus SetMembers<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns if member is a member of the set stored at key.
@@ -717,12 +717,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns whether each member is a member of the set stored at key.
@@ -749,11 +749,11 @@ namespace Garnet.server
                 SetOp = SetOperation.SMISMEMBER,
             }, ref parseState);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref outputFooter);
+            var output = new GarnetObjectStoreOutput();
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
 
             if (status == GarnetStatus.OK)
-                result = ProcessRespIntegerArrayOutput(outputFooter, out _);
+                result = ProcessRespIntegerArrayOutput(output, out _);
 
             return status;
         }
@@ -764,29 +764,29 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetPop<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus SetPop<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+            => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
-        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// If the provided count argument is positive, return an array of distinct elements.
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
-        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times.
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
@@ -954,7 +954,7 @@ namespace Garnet.server
         /// Returns the cardinality of the intersection of all the given sets.
         /// </summary>
         /// <param name="keys"></param>
-        /// <param name="limit">Optional limit for stopping early when reaching this size</param> 
+        /// <param name="limit">Optional limit for stopping early when reaching this size</param>
         /// <param name="count"></param>
         /// <returns></returns>
         public GarnetStatus SetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count)

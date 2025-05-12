@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
+
 namespace Garnet.server
 {
     /// <summary>
@@ -12,6 +14,6 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value in RESP format</returns>
-        string ToRespFormat();
+        void ToRespFormat(ref RespMemoryWriter writer);
     }
 }

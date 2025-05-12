@@ -69,8 +69,7 @@ namespace Garnet.server
             // Generate response for matching parameters
             if (parameters.Count > 0)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(parameters.Count * 2, ref dcurr, dend))
-                    SendAndReset();
+                WriteMapLength(parameters.Count);
 
                 foreach (var parameter in parameters)
                 {

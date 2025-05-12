@@ -34,7 +34,7 @@ namespace Garnet.server
                     if (input.header.CheckWithEtagFlag())
                     {
                         // XX when unsuccesful will write back NIL
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        CopyDefaultResp(functionsState.nilResp, ref output);
                     }
                     return false;
                 case RespCommand.SETIFGREATER:
@@ -113,7 +113,7 @@ namespace Garnet.server
                     EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
 
                     // write back array of the format [etag, nil]
-                    var nilResponse = CmdStrings.RESP_ERRNOTFOUND;
+                    var nilResponse = functionsState.nilResp;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     WriteValAndEtagToDst(
                         4 + 1 + NumUtils.CountDigits(functionsState.etagState.etag) + 2 + nilResponse.Length,
@@ -193,7 +193,7 @@ namespace Garnet.server
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        CopyDefaultResp(functionsState.nilResp, ref output);
                     break;
 
                 case RespCommand.BITFIELD_RO:
@@ -349,7 +349,7 @@ namespace Garnet.server
                     {
                         // when called withetag all output needs to be placed on the buffer
                         // EXX when unsuccesful will write back NIL
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        CopyDefaultResp(functionsState.nilResp, ref output);
                     }
 
                     // reset etag state after done using
@@ -378,7 +378,7 @@ namespace Garnet.server
                         else
                         {
                             // write back array of the format [etag, nil]
-                            var nilResponse = CmdStrings.RESP_ERRNOTFOUND;
+                            var nilResponse = functionsState.nilResp;
                             // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                             WriteValAndEtagToDst(
                                 4 + 1 + NumUtils.CountDigits(functionsState.etagState.etag) + 2 + nilResponse.Length,
@@ -428,7 +428,7 @@ namespace Garnet.server
                     inputValue.ReadOnlySpan.CopyTo(value.AsSpan(EtagConstants.EtagSize));
 
                     // write back array of the format [etag, nil]
-                    var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                    var nilResp = functionsState.nilResp;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.CountDigits(newEtag);
                     WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
@@ -702,7 +702,7 @@ namespace Garnet.server
 
                     if (overflow)
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        CopyDefaultResp(functionsState.nilResp, ref output);
                         // reset etag state that may have been initialized earlier
                         EtagState.ResetState(ref functionsState.etagState);
                         // etag not updated
@@ -943,7 +943,7 @@ namespace Garnet.server
                     else
                     {
                         // write back array of the format [etag, nil]
-                        var nilResponse = CmdStrings.RESP_ERRNOTFOUND;
+                        var nilResponse = functionsState.nilResp;
                         // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                         WriteValAndEtagToDst(
                             4 + 1 + NumUtils.CountDigits(functionsState.etagState.etag) + 2 + nilResponse.Length,
@@ -979,7 +979,7 @@ namespace Garnet.server
                     else if (input.header.CheckWithEtagFlag())
                     {
                         // EXX when unsuccesful will write back NIL
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        CopyDefaultResp(functionsState.nilResp, ref output);
                     }
 
                     // reset etag state that may have been initialized earlier
@@ -1084,7 +1084,7 @@ namespace Garnet.server
 
                     // Write Etag and Val back to Client
                     // write back array of the format [etag, nil]
-                    var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                    var nilResp = functionsState.nilResp;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.CountDigits(etagForResponse);
                     WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, etagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
@@ -1281,7 +1281,7 @@ namespace Garnet.server
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref output);
+                        CopyDefaultResp(functionsState.nilResp, ref output);
                     break;
 
                 case RespCommand.BITFIELD_RO:
