@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,7 +36,6 @@ namespace Garnet.server
         private ulong instant_input_net_bytes;
         private ulong instant_output_net_bytes;
         private ulong instant_commands_processed;
-        private long startTimestamp;
 
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(false);
@@ -60,7 +58,6 @@ namespace Garnet.server
             instant_input_net_bytes = 0;
             instant_output_net_bytes = 0;
             instant_commands_processed = 0;
-            startTimestamp = 0;
             globalMetrics = new(true, opts.LatencyMonitor, this);
 
             accSessionMetrics = new GarnetSessionMetrics();
@@ -111,7 +108,6 @@ namespace Garnet.server
 
         private void UpdateInstantaneousMetrics()
         {
-            var currTimestamp = Stopwatch.GetTimestamp();
             var elapsedSec = monitorSamplingFrequency.TotalSeconds;
             globalMetrics.instantaneous_net_input_tpt = (globalMetrics.globalSessionMetrics.get_total_net_input_bytes() - instant_input_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
             globalMetrics.instantaneous_net_output_tpt = (globalMetrics.globalSessionMetrics.get_total_net_output_bytes() - instant_output_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
@@ -121,29 +117,20 @@ namespace Garnet.server
             globalMetrics.instantaneous_net_output_tpt = Math.Round(globalMetrics.instantaneous_net_output_tpt, 2);
             globalMetrics.instantaneous_cmd_per_sec = Math.Round(globalMetrics.instantaneous_cmd_per_sec);
 
-            startTimestamp = currTimestamp;
             instant_input_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_input_bytes();
             instant_output_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_output_bytes();
             instant_commands_processed = globalMetrics.globalSessionMetrics.get_total_commands_processed();
         }
 
-        private void UpdateAllMetricsHistory()
+        private void AddCurrentServerStats(IGarnetServer server)
         {
-            //Reset session metrics accumulator
-            accSessionMetrics.Reset();
-            //Add session metrics history in accumulator
-            accSessionMetrics.Add(globalMetrics.historySessionMetrics);
-        }
-
-        private void UpdateAllMetrics(IGarnetServer server)
-        {
-            //Accumulate metrics from all active sessions
+            // Accumulate metrics from all active sessions
             var sessions = ((GarnetServerBase)server).ActiveConsumers();
             foreach (var s in sessions)
             {
                 var session = (RespServerSession)s;
 
-                //Accumulate session metrics
+                // Accumulate session metrics
                 accSessionMetrics.Add(session.GetSessionMetrics);
 
                 // Accumulate latency metrics if latency monitor is enabled
@@ -169,7 +156,7 @@ namespace Garnet.server
 
         }
 
-        private void ResetStats()
+        private void CleanupGlobalStats()
         {
             if (resetEventFlags[InfoMetricsType.STATS])
             {
@@ -204,7 +191,7 @@ namespace Garnet.server
             }
         }
 
-        private void ResetLatencyMetrics()
+        private void CleanupGlobalLatencyMetrics()
         {
             if (opts.LatencyMonitor)
             {
@@ -237,22 +224,8 @@ namespace Garnet.server
             }
         }
 
-        private void ResetLatencySessionMetrics()
-        {
-            if (opts.LatencyMonitor)
-            {
-                foreach (var server in servers)
-                {
-                    var sessions = ((GarnetServerBase)server).ActiveConsumers();
-                    foreach (var entry in sessions)
-                        ((RespServerSession)entry).ResetAllLatencyMetrics();
-                }
-            }
-        }
-
         private async void MainMonitorTask(CancellationToken token)
         {
-            startTimestamp = Stopwatch.GetTimestamp();
             try
             {
                 while (true)
@@ -263,23 +236,36 @@ namespace Garnet.server
                     // about to make that the current version.
                     ResetLatencySessionMetrics();
 
+                    // NOTE: Do not move this because we make use of it for resetting the previous version in latency metrics
                     monitor_iterations++;
 
+                    var total_connections_received = 0L;
+                    var total_connections_disposed = 0L;
+                    var total_connections_active = 0L;
+
+                    // Reset stats accumulator in preparation for scanning and accumulating current iteration stas
+                    ResetAndAddGlobalHistory();
+
+                    // Iterate through active server sessions to acquire the updated stats
                     foreach (var server in servers)
                     {
-                        var garnetServer = ((GarnetServerBase)server);
-                        globalMetrics.total_connections_received = garnetServer.TotalConnectionsReceived;
-                        globalMetrics.total_connections_disposed = garnetServer.TotalConnectionsDisposed;
-                        globalMetrics.total_connections_active = garnetServer.get_conn_active();
+                        var garnetServer = (GarnetServerBase)server;
+                        total_connections_received += garnetServer.TotalConnectionsReceived;
+                        total_connections_disposed += garnetServer.TotalConnectionsDisposed;
+                        total_connections_active += garnetServer.get_conn_active();
 
-                        UpdateInstantaneousMetrics();
-                        UpdateAllMetricsHistory();
-                        UpdateAllMetrics(server);
+                        // Accumulate stats for the specified for this iteration
+                        AddCurrentServerStats(server);
                     }
+                    // Update stats now that we have accumulated everything
+                    UpdateInstantaneousMetrics();
+                    globalMetrics.total_connections_received = total_connections_received;
+                    globalMetrics.total_connections_disposed = total_connections_disposed;
+                    globalMetrics.total_connections_active = total_connections_active;
 
-                    //Reset & Cleanup
-                    ResetStats();
-                    ResetLatencyMetrics();
+                    // Cleanup if INFO RESET has been issued
+                    CleanupGlobalStats();
+                    CleanupGlobalLatencyMetrics();
                 }
             }
             catch (Exception ex)
@@ -289,6 +275,27 @@ namespace Garnet.server
             finally
             {
                 done.Set();
+            }
+
+            void ResetAndAddGlobalHistory()
+            {
+                // Reset session metrics accumulator
+                accSessionMetrics.Reset();
+                // Add session metrics history in accumulator
+                accSessionMetrics.Add(globalMetrics.historySessionMetrics);
+            }
+
+            void ResetLatencySessionMetrics()
+            {
+                if (opts.LatencyMonitor)
+                {
+                    foreach (var server in servers)
+                    {
+                        var sessions = ((GarnetServerBase)server).ActiveConsumers();
+                        foreach (var entry in sessions)
+                            ((RespServerSession)entry).ResetAllLatencyMetrics();
+                    }
+                }
             }
         }
     }
