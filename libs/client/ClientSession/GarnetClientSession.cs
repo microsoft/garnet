@@ -64,6 +64,11 @@ namespace Garnet.client
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
 
         /// <summary>
+        /// Get raw results from tcs completion
+        /// </summary>
+        public bool RawResult = false;
+
+        /// <summary>
         /// Username to authenticate the session on the server.
         /// </summary>
         readonly string authUsername = null;
@@ -107,6 +112,7 @@ namespace Garnet.client
             string authUsername = null,
             string authPassword = null,
             int networkSendThrottleMax = 8,
+            bool rawResult = false,
             ILogger logger = null)
         {
             EndPoint = endpoint;
@@ -122,6 +128,7 @@ namespace Garnet.client
             this.disposed = 0;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
+            this.RawResult = rawResult;
         }
 
         /// <summary>
@@ -328,8 +335,8 @@ namespace Garnet.client
         {
             Debug.Assert(nodeId != null);
 
-            byte* curr = offset;
-            int arraySize = 7;
+            var curr = offset;
+            var arraySize = 7;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -389,7 +396,6 @@ namespace Garnet.client
                 curr = offset;
             }
             offset = curr;
-            Flush();
         }
 
         /// <summary>
@@ -460,36 +466,51 @@ namespace Garnet.client
 
             while (readHead < bytesRead)
             {
-                switch (*ptr)
+                if (RawResult)
                 {
-                    case (byte)'+':
-                        if (!RespReadResponseUtils.TryReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
-                            success = false;
-                        break;
-                    case (byte)':':
-                        if (!RespReadResponseUtils.TryReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
-                            success = false;
-                        break;
+                    if (RespReadUtils.TryReadString(out var tmp, ref ptr, recvBufferPtr + bytesRead))
+                    {
+                        result += tmp;
+                        result += "\r\n";
+                    }
+                    else
+                    {
+                        success = false;
+                    }
+                }
+                else
+                {
+                    switch (*ptr)
+                    {
+                        case (byte)'+':
+                            if (!RespReadResponseUtils.TryReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
+                                success = false;
+                            break;
+                        case (byte)':':
+                            if (!RespReadResponseUtils.TryReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                                success = false;
+                            break;
 
-                    case (byte)'-':
-                        error = true;
-                        if (!RespReadResponseUtils.TryReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
-                            success = false;
-                        break;
+                        case (byte)'-':
+                            error = true;
+                            if (!RespReadResponseUtils.TryReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                                success = false;
+                            break;
 
-                    case (byte)'$':
-                        if (!RespReadResponseUtils.TryReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
-                            success = false;
-                        break;
+                        case (byte)'$':
+                            if (!RespReadResponseUtils.TryReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
+                                success = false;
+                            break;
 
-                    case (byte)'*':
-                        isArray = true;
-                        if (!RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
-                            success = false;
-                        break;
+                        case (byte)'*':
+                            isArray = true;
+                            if (!RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
+                                success = false;
+                            break;
 
-                    default:
-                        throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "") + "]");
+                        default:
+                            throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "") + "]");
+                    }
                 }
 
                 if (!success) return readHead;
@@ -501,13 +522,21 @@ namespace Garnet.client
                     var tcs = tcsArrayQueue.Dequeue();
                     tcs?.SetResult(resultArray);
                 }
-                else
+                else if (!RawResult)
                 {
                     var tcs = tcsQueue.Dequeue();
                     if (error) tcs?.SetException(new Exception(result));
                     else tcs?.SetResult(result);
                 }
             }
+
+            if (RawResult)
+            {
+                var tcs = tcsQueue.Dequeue();
+                if (error) tcs?.SetException(new Exception(result));
+                else tcs?.SetResult(result);
+            }
+
             return readHead;
         }
 

@@ -50,7 +50,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, out _);
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                 _ = logRecord.TrySetValueObject(value, ref sizeInfo);
                 return true;
             }
@@ -148,7 +148,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, out sizeChange);
+                        var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
                         if (output.HasWrongType)
                             return true;
                         if (output.HasRemoveKey)
@@ -261,7 +261,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output, out _);
+                        value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                         if (output.HasWrongType)
                             return true;
                         if (output.HasRemoveKey)

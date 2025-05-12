@@ -446,7 +446,7 @@ namespace Garnet.server
             // input
             // TODOMigrate: _ = objectStoreInput.DeserializeFrom(curr); // TODO - need to serialize this as well
 
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(outputPtr, outputLength) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(outputPtr, outputLength);
             basicContext.Upsert(key.ReadOnlySpan, valB);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
@@ -465,7 +465,7 @@ namespace Garnet.server
             _ = objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(outputPtr, outputLength) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(outputPtr, outputLength);
             if (basicContext.RMW(key.ReadOnlySpan, ref objectStoreInput, ref output).IsPending)
                 basicContext.CompletePending(true);
 

@@ -76,7 +76,7 @@ namespace Garnet.server
         byte* recvBufferPtr;
 
         /// <summary>
-        /// Current readHead. On successful parsing, this is left at the start of 
+        /// Current readHead. On successful parsing, this is left at the start of
         /// the command payload for use by legacy operators.
         /// </summary>
         int readHead;
@@ -124,7 +124,7 @@ namespace Garnet.server
 
         /// <summary>
         /// If set, commands can use this to enumerate details about the server or other sessions.
-        /// 
+        ///
         /// It is not guaranteed to be set.
         /// </summary>
         public IGarnetServer Server { get; set; }
@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        internal byte respProtocolVersion = 2;
+        public byte respProtocolVersion { get; private set; } = ServerOptions.DEFAULT_RESP_VERSION;
 
         /// <summary>
         /// Client name for the session
@@ -315,6 +315,16 @@ namespace Garnet.server
         {
             this._userHandle = userHandle;
             clusterSession?.SetUserHandle(userHandle);
+        }
+
+        /// <summary>
+        /// Update RESP protocol version used by session
+        /// </summary>
+        /// <param name="_respProtocolVersion"></param>
+        public void UpdateRespProtocolVersion(byte _respProtocolVersion)
+        {
+            this.respProtocolVersion = _respProtocolVersion;
+            this.storageSession.UpdateRespProtocolVersion(respProtocolVersion);
         }
 
         public override void Dispose()
@@ -604,7 +614,7 @@ namespace Garnet.server
             //  *.\r\n$8\r\n........\r\n  = 18 bytes
             //
             // Where . is <= 95
-            // 
+            //
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
@@ -1163,9 +1173,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Attempt to kill this session.
-        /// 
+        ///
         /// Returns true if this call actually kills the underlying network connection.
-        /// 
+        ///
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
@@ -1281,7 +1291,7 @@ namespace Garnet.server
                 // Compute space left on output buffer
                 int destSpace = (int)(dend - dcurr);
 
-                // Fast path if there is enough space 
+                // Fast path if there is enough space
                 if (src.Length <= destSpace)
                 {
                     src.CopyTo(new Span<byte>(dcurr, src.Length));
@@ -1303,9 +1313,54 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteNull()
+        private void WriteDoubleNumeric(double value)
         {
-            if (respProtocolVersion == 3)
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteDoubleNumeric(value, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteEmptySet()
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteMapLength(int count)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteMapLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count * 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteNull()
+        {
+            if (respProtocolVersion >= 3)
             {
                 while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
                     SendAndReset();
@@ -1313,6 +1368,36 @@ namespace Garnet.server
             else
             {
                 while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WritePushLength(int count)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWritePushLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteSetLength(int count)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteSetLength(count, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
                     SendAndReset();
             }
         }
@@ -1376,29 +1461,17 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets the output object from the SpanByteAndMemory object
+        /// Writes current output object
         /// </summary>
         /// <param name="output"></param>
         /// <returns></returns>
-        private unsafe ObjectOutputHeader ProcessOutputWithHeader(SpanByteAndMemory output)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private unsafe void ProcessOutput(SpanByteAndMemory output)
         {
-            ObjectOutputHeader header;
-
-            if (output.IsSpanByte)
-            {
-                header = *(ObjectOutputHeader*)(output.SpanByte.ToPointer() + output.Length - sizeof(ObjectOutputHeader));
-
-                // Only increment dcurr if the operation was completed
-                dcurr += output.Length - sizeof(ObjectOutputHeader);
-            }
+            if (!output.IsSpanByte)
+                SendAndReset(output.Memory, output.Length);
             else
-            {
-                fixed (byte* p = output.MemorySpan)
-                    header = *(ObjectOutputHeader*)(p + output.Length - sizeof(ObjectOutputHeader));
-                SendAndReset(output.Memory, output.Length - sizeof(ObjectOutputHeader));
-            }
-
-            return header;
+                dcurr += output.Length;
         }
 
         /// <summary>
@@ -1435,7 +1508,7 @@ namespace Garnet.server
                 return true;
 
             // Try to get or set the database sessions
-            // Note that the dbIdForSessionCreation is set to the other DB ID - 
+            // Note that the dbIdForSessionCreation is set to the other DB ID -
             // That is because the databases have been swapped prior to the session swap
             var dbSession1 = TryGetOrSetDatabaseSession(dbId1, out var success, dbId2);
             if (!success)
@@ -1520,7 +1593,7 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession, dbStorageSession.transactionalContext, dbStorageSession.objectStoreTransactionalContext);
 
@@ -1542,6 +1615,8 @@ namespace Garnet.server
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.transactionalGarnetApi = dbSession.TransactionalGarnetApi;
+
+            this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
     }
 }

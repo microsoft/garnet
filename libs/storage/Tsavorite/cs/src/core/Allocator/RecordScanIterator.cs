@@ -71,15 +71,24 @@ namespace Tsavorite.core
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
             Debug.Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
 
-            if (!InitializeGetNext(out var headAddress, out var currentPage))
+            if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                 return false;
-            epoch?.Suspend();
+            try
+            {
+                if (!LoadPageIfNeeded(out var headAddress, out var currentPage, stopAddress))
+                    return false;
+                beginAddress = nextAddress = SnapToLogicalAddressBoundary(ref cursor, headAddress, currentPage);
+            }
+            catch
+            {
+                epoch?.Suspend();
+                throw;
+            }
 
-            beginAddress = nextAddress = SnapToLogicalAddressBoundary(ref cursor, headAddress, currentPage);
             return true;
         }
 
-        private bool InitializeGetNext(out long headAddress, out long currentPage)
+        private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
             if (diskLogRecord.IsSet)
             {
@@ -88,14 +97,17 @@ namespace Tsavorite.core
             }
             diskLogRecord = default;
             currentAddress = nextAddress;
-            var stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
+            stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
             if (currentAddress >= stopAddress)
-            {
-                headAddress = currentPage = 0;
                 return false;
-            }
 
+            // Success; acquire the epoch. Caller will suspend the epoch as needed.
             epoch?.Resume();
+            return true;
+        }
+
+        private bool LoadPageIfNeeded(out long headAddress, out long currentPage, long stopAddress)
+        {
             headAddress = hlogBase.HeadAddress;
 
             if (currentAddress < hlogBase.BeginAddress && !assumeInMemory)
@@ -104,7 +116,7 @@ namespace Tsavorite.core
             // If currentAddress < headAddress and we're not buffering and not guaranteeing the records are in memory, fail.
             if (frameSize == 0 && currentAddress < headAddress && !assumeInMemory)
             {
-                epoch?.Suspend();
+                // Caller will suspend the epoch.
                 throw new TsavoriteException("Iterator address is less than log HeadAddress in memory-scan mode");
             }
 
@@ -162,64 +174,69 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                if (!InitializeGetNext(out var headAddress, out var currentPage))
+                if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                     return false;
 
-                var offset = currentAddress & hlogBase.PageSizeMask;
-                var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset, out long allocatedSize);
-
-                // If record did not fit on the page its recordInfo will be Null; skip to the next page if so.
-                var recordInfo = LogRecord.GetInfo(physicalAddress);
-
-                if (recordInfo.IsNull)
+                try
                 {
-                    nextAddress = (1 + (currentAddress >> hlogBase.LogPageSizeBits)) << hlogBase.LogPageSizeBits;
-                    epoch?.Suspend();
-                    continue;
-                }
+                    if (!LoadPageIfNeeded(out var headAddress, out var currentPage, stopAddress))
+                        return false;
 
-                nextAddress = currentAddress + allocatedSize;
+                    var offset = currentAddress & hlogBase.PageSizeMask;
+                    var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset, out long allocatedSize);
 
-                var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull)
-                {
-                    epoch?.Suspend();
-                    continue;
-                }
+                    // If record did not fit on the page its recordInfo will be Null; skip to the next page if so.
+                    var recordInfo = LogRecord.GetInfo(physicalAddress);
 
-                if (currentAddress >= headAddress || assumeInMemory)
-                {
-                    // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
-                    // So create a disk log record from the in-memory record.
-                    var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
-                    nextAddress = currentAddress + logRecord.GetInlineRecordSizes().allocatedSize;
-
-                    // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
-                    // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
-                    // Lock to ensure no value tearing while copying to temp storage.
-                    OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
-                    try
+                    if (recordInfo.IsNull)
                     {
-                        if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, logRecord.Key);
-                        diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
+                        nextAddress = (1 + (currentAddress >> hlogBase.LogPageSizeBits)) << hlogBase.LogPageSizeBits;
+                        continue;
                     }
-                    finally
+
+                    nextAddress = currentAddress + allocatedSize;
+
+                    var skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                    if (skipOnScan || recordInfo.IsNull)
+                        continue;
+
+                    if (currentAddress >= headAddress || assumeInMemory)
                     {
-                        if (stackCtx.recSrc.HasLock)
-                            store.UnlockForScan(ref stackCtx);
+                        // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
+                        // So create a disk log record from the in-memory record.
+                        var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
+                        nextAddress = currentAddress + logRecord.GetInlineRecordSizes().allocatedSize;
+
+                        // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
+                        // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
+                        // Lock to ensure no value tearing while copying to temp storage.
+                        OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
+                        try
+                        {
+                            if (currentAddress >= headAddress && store is not null)
+                                store.LockForScan(ref stackCtx, logRecord.Key);
+                            diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
+                        }
+                        finally
+                        {
+                            if (stackCtx.recSrc.HasLock)
+                                store.UnlockForScan(ref stackCtx);
+                        }
+                    }
+                    else
+                    {
+                        // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
+                        diskLogRecord = new(physicalAddress);
+                        _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
+                        nextAddress = currentAddress + diskLogRecord.GetSerializedLength();
                     }
                 }
-                else
+                finally
                 {
-                    // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                    diskLogRecord = new(physicalAddress);
-                    _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
-                    nextAddress = currentAddress + diskLogRecord.GetSerializedLength();
+                    // Success
+                    epoch?.Suspend();
                 }
 
-                // Success
-                epoch?.Suspend();
                 return true;
             }
         }

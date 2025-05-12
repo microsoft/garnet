@@ -491,12 +491,12 @@ namespace Garnet.server
         /// <param name="dbId">Database ID</param>
         /// <returns>Functions state</returns>
         /// <exception cref="GarnetException"></exception>
-        internal FunctionsState CreateFunctionsState(int dbId = 0)
+        internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.CreateFunctionsState)} with DB ID: {dbId}");
 
-            return databaseManager.CreateFunctionsState(dbId);
+            return databaseManager.CreateFunctionsState(dbId, respProtocolVersion);
         }
 
         /// <summary>

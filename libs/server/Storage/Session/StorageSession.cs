@@ -60,7 +60,8 @@ namespace Garnet.server
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             ILogger logger = null,
-            int dbId = 0)
+            int dbId = 0,
+            byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
@@ -69,7 +70,7 @@ namespace Garnet.server
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();
 
-            functionsState = storeWrapper.CreateFunctionsState(dbId);
+            functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
 
             var functions = new MainSessionFunctions(functionsState);
 
@@ -92,6 +93,11 @@ namespace Garnet.server
 
             HeadAddress = db.MainStore.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
+        }
+
+        public void UpdateRespProtocolVersion(byte respProtocolVersion)
+        {
+            functionsState.respProtocolVersion = respProtocolVersion;
         }
 
         public void Dispose()

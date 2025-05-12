@@ -402,8 +402,8 @@ namespace Garnet.server
         #region Common Methods
 
         /// <inheritdoc />
-        public GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-         => storageSession.ObjectScan(key.ReadOnlySpan, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+         => storageSession.ObjectScan(key.ReadOnlySpan, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public int GetScratchBufferOffset()

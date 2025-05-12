@@ -141,38 +141,38 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRandomMember(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRandomMember(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRandomMember(key, ref input, ref outputFooter);
+            return garnetApi.SortedSetRandomMember(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRange(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRange(key, ref input, ref outputFooter);
+            return garnetApi.SortedSetRange(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScore(key, ref input, ref outputFooter);
+            return garnetApi.SortedSetScore(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScores(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetScores(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetScores(key, ref input, ref outputFooter);
+            return garnetApi.SortedSetScores(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetRank(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRank(key, ref input, ref outputFooter);
+            return garnetApi.SortedSetRank(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -210,10 +210,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus GeoCommands(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus GeoCommands(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.GeoCommands(key, ref input, ref outputFooter);
+            return garnetApi.GeoCommands(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -252,10 +252,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SortedSetTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetTimeToLive(key, ref input, ref outputFooter);
+            return garnetApi.SortedSetTimeToLive(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -284,17 +284,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListRange(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListRange(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListRange(key, ref input, ref outputFooter);
+            return garnetApi.ListRange(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListIndex(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ListIndex(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListIndex(key, ref input, ref outputFooter);
+            return garnetApi.ListIndex(key, ref input, ref output);
         }
 
         #endregion
@@ -323,10 +323,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetIsMember(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetIsMember(key, ref input, ref outputFooter);
+            return garnetApi.SetIsMember(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -337,10 +337,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus SetMembers(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetMembers(key, ref input, ref outputFooter);
+            return garnetApi.SetMembers(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -442,29 +442,29 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashRandomField(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashRandomField(key, ref input, ref outputFooter);
+            return garnetApi.HashRandomField(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGet(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, ref input, ref outputFooter);
+            return garnetApi.HashGet(key, ref input, ref output);
         }
 
-        public GarnetStatus HashGetAll(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetAll(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetAll(key, ref input, ref outputFooter);
+            return garnetApi.HashGetAll(key, ref input, ref output);
         }
 
-        public GarnetStatus HashGetMultiple(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashGetMultiple(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGetMultiple(key, ref input, ref outputFooter);
+            return garnetApi.HashGetMultiple(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -482,17 +482,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashKeys(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashKeys(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashKeys(key, ref input, ref outputFooter);
+            return garnetApi.HashKeys(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashVals(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashVals(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashVals(key, ref input, ref outputFooter);
+            return garnetApi.HashVals(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -510,10 +510,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter);
+            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
         }
 
         #endregion
@@ -632,10 +632,10 @@ namespace Garnet.server
 
         #region Common Methods
 
-        public GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             garnetApi.WATCH(key, StoreType.All);
-            return garnetApi.ObjectScan(key, ref input, ref outputFooter);
+            return garnetApi.ObjectScan(key, ref input, ref output);
         }
 
         /// <inheritdoc />

@@ -104,21 +104,20 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = command == RespCommand.LPOP
-                ? storageApi.ListLeftPop(key, ref input, ref outputFooter)
-                : storageApi.ListRightPop(key, ref input, ref outputFooter);
+                ? storageApi.ListLeftPop(key, ref input, ref output)
+                : storageApi.ListRightPop(key, ref input, ref output);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -146,25 +145,41 @@ namespace Garnet.server
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
-            var element = parseState.GetArgSliceByRef(1);  // TODO: unused
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LPOS };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var statusOp = storageApi.ListPosition(key, ref input, ref outputFooter);
+            var statusOp = storageApi.ListPosition(key, ref input, ref output);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
-                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                    var count = false;
+                    for (var i = 2; i < parseState.Count; ++i)
+                    {
+                        if (parseState.GetArgSliceByRef(i).Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                        {
+                            count = true;
+                            break;
+                        }
+                    }
+
+                    if (count)
+                    {
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        WriteNull();
+                    }
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -296,7 +311,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
@@ -396,7 +411,7 @@ namespace Garnet.server
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer(pSrcDir, 1);
             cmdArgs[2] = PinnedSpanByte.FromPinnedPointer(pDstDir, 1);
 
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
@@ -540,15 +555,15 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var statusOp = storageApi.ListRange(key, ref input, ref outputFooter);
+            var statusOp = storageApi.ListRange(key, ref input, ref output);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    _ = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -593,33 +608,25 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var statusOp = storageApi.ListIndex(key, ref input, ref outputFooter);
-
-            ReadOnlySpan<byte> error = default;
+            var statusOp = storageApi.ListIndex(key, ref input, ref output);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
-                    if (objOutputHeader.result1 == -1)
-                        error = CmdStrings.RESP_ERRNOTFOUND;
+                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.Header.result1 == -1)
+                        WriteNull();
                     break;
                 case GarnetStatus.NOTFOUND:
-                    error = CmdStrings.RESP_ERRNOTFOUND;
+                    WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
-            }
-
-            if (!error.IsEmpty)
-            {
-                while (!RespWriteUtils.TryWriteDirect(error, ref dcurr, dend))
-                    SendAndReset();
             }
 
             return true;
@@ -842,9 +849,6 @@ namespace Garnet.server
             ref TGarnetApi storageApi, out GarnetStatus garnetStatus)
             where TGarnetApi : IGarnetApi
         {
-            garnetStatus = GarnetStatus.OK;
-            node = null;
-
             garnetStatus = storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
             return true;
         }
@@ -872,15 +876,15 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr)) };
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var statusOp = storageApi.ListSet(key, ref input, ref outputFooter);
+            var statusOp = storageApi.ListSet(key, ref input, ref output);
 
             switch (statusOp)
             {
                 case GarnetStatus.OK:
                     //process output
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
@@ -964,7 +968,7 @@ namespace Garnet.server
 
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
-            if (storeWrapper.itemBroker == null)
+            if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;

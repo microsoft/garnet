@@ -23,10 +23,14 @@ namespace Garnet.server
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public ETagState etagState;
         public readonly ILogger logger;
+        public byte respProtocolVersion;
         public bool StoredProcMode;
 
+        internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
+
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
-            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer, ILogger logger)
+            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer, ILogger logger,
+            byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
@@ -36,6 +40,7 @@ namespace Garnet.server
             this.garnetObjectSerializer = garnetObjectSerializer;
             this.etagState = new ETagState();
             this.logger = logger;
+            this.respProtocolVersion = respProtocolVersion;
         }
 
         internal void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)
