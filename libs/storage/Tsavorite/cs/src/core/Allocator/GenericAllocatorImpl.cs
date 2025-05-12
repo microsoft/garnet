@@ -142,6 +142,9 @@ namespace Tsavorite.core
         internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             => (RecordSize, RecordSize, KeySize);
 
+        internal (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key)
+            => (RecordSize, RecordSize, KeySize);
+
         internal int GetAverageRecordSize() => RecordSize;
 
         internal int GetFixedRecordSize() => RecordSize;
