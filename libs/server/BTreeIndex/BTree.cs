@@ -47,7 +47,7 @@ namespace Garnet.server.BTreeIndex
         {
             if (node == null)
                 return;
-            
+
             // If this is an internal node, free all its children first
             if (node->info->type == BTreeNodeType.Internal)
             {
@@ -76,7 +76,7 @@ namespace Garnet.server.BTreeIndex
         {
             if (node == null)
                 return;
-            
+
             // If this is an internal node, free all its children first
             if (node->info->type == BTreeNodeType.Internal)
             {

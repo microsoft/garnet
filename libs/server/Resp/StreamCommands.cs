@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -13,7 +12,6 @@ namespace Garnet.server
         /// <summary>
         /// STREAMADD
         /// </summary>
-        /// <param name="ptr"></param>
         /// <returns></returns> 
         private unsafe bool StreamAdd()
         {
@@ -85,7 +83,6 @@ namespace Garnet.server
         /// <summary>
         ///  STREAMRANGE
         /// </summary>
-        /// <param name="ptr"></param>
         /// <returns></returns>
         public unsafe bool StreamRange()
         {
@@ -132,11 +129,12 @@ namespace Garnet.server
             {
                 _ = ProcessOutputWithHeader(_output);
             }
-            else{
-                 //return empty array
-                    while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+            else
+            {
+                //return empty array
+                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             // _ = ProcessOutputWithHeader(_output);

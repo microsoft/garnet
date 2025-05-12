@@ -17,7 +17,6 @@ class Program
         var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
         ulong N = 400000;
         bool verbose = true;
-        bool sanity = false;
         if (args.Length > 0)
         {
             for (int i = 0; i < args.Length; i++)
@@ -25,10 +24,6 @@ class Program
                 if (args[i] == "--verb")
                 {
                     verbose = true;
-                }
-                else if (args[i] == "-s")
-                {
-                    sanity = true;
                 }
                 else if (args[i] == "-N")
                 {
@@ -148,7 +143,7 @@ class Program
 
         // do a range query to check again 
         tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), out Value startVal1, out Value endVal1, out List<Value> tombstones);
-        Debug.Assert(tombstones.Count == 4);    
+        Debug.Assert(tombstones.Count == 4);
         Console.WriteLine("Delete check passed ");
 
         // print all times collected in a csv format 

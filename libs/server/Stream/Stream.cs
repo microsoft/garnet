@@ -20,7 +20,6 @@ namespace Garnet.server
         StreamID lastId;
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
-        private bool _disposed;
 
         /// <summary>
         /// Constructor
@@ -30,7 +29,7 @@ namespace Garnet.server
         public StreamObject(string logDir, long pageSize, long memorySize, int safeTailRefreshFreqMs)
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice("streamLogs/" + logDir + "/streamLog", preallocateFile: false);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize, SafeTailRefreshFrequencyMs = safeTailRefreshFreqMs});
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = memorySize, SafeTailRefreshFrequencyMs = safeTailRefreshFreqMs });
             index = new BTree(device.SectorSize);
             totalEntriesAdded = 0;
             lastId = default;
@@ -64,7 +63,7 @@ namespace Garnet.server
 
             incrementedID.setMS(newMs);
             incrementedID.setSeq(newSeq);
-            
+
         }
 
         /// <summary>
@@ -104,9 +103,9 @@ namespace Garnet.server
 
             // parse user-defined ID
             // can be of following formats: 
-                // 1. ts (seq = 0)
-                // 2. ts-* (auto-generate seq number)
-                // 3. ts-seq
+            // 1. ts (seq = 0)
+            // 2. ts-* (auto-generate seq number)
+            // 3. ts-seq
 
             // last character is a *
             if (*(idSlice.ptr + idSlice.length - 1) == '*')
@@ -124,7 +123,7 @@ namespace Garnet.server
                 {
                     return false;
                 }
-                
+
                 // check if timestamp is greater than last added entry's decoded ts
                 if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                 {
@@ -358,13 +357,13 @@ namespace Garnet.server
             }
             if (!idString.Contains('-'))
             {
-                
+
                 if (!ulong.TryParse(idString, out ulong ms))
                 {
                     return false;
                 }
                 id.setMS(ms);
-                id.setSeq(0);   
+                id.setSeq(0);
                 return true;
             }
             return ParseCompleteStreamIDFromString(idString, out id);
