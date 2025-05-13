@@ -87,6 +87,10 @@ namespace Tsavorite.core
             => (RecordSize, RecordSize, KeySize);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key)
+            => (RecordSize, RecordSize, KeySize);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
             => (RecordSize, RecordSize, KeySize);
 
