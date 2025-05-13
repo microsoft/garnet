@@ -79,6 +79,11 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<TValue, TInput>
              => _this.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref recordInfo, varlenInput);
 
+        /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key)
+            => _this.GetTombstoneRecordSize(ref key);
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly int GetRequiredRecordSize(long physicalAddress, int availableBytes) => GetAverageRecordSize();
