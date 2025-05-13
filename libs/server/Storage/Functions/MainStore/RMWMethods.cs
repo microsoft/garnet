@@ -929,13 +929,15 @@ namespace Garnet.server
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
                     long etagFromClient = input.parseState.GetLong(0);
-                    if (etagFromClient <= functionsState.etagState.ETag)
-                    {
-                        ETagState.ResetState(ref functionsState.etagState);
-                        return false;
-                    }
+                    if (etagFromClient > functionsState.etagState.etag)
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
 
-                    return true;
+                    EtagState.ResetState(ref functionsState.etagState);
+                    // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
+                    // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
+                    // If we want to delete the object setting the Action to ExpireAndStop will add the tombstone in hybrid log for us.
+                    return false;
+
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     if (srcLogRecord.Info.HasETag)
@@ -1063,12 +1065,6 @@ namespace Garnet.server
 
             switch (cmd)
             {
-                case RespCommand.DELIFGREATER:
-                    // NCU has already checked for making sure the etag is greater than the existing etag by this point
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
-                    ETagState.ResetState(ref functionsState.etagState);
-                    return false;
-
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
@@ -1088,10 +1084,9 @@ namespace Garnet.server
 
                     // Write Etag and Val back to Client as an array of the format [etag, nil]
                     long eTagForResponse = cmd == RespCommand.SETIFMATCH ? functionsState.etagState.ETag + 1 : functionsState.etagState.ETag;
-                    var nilResp = functionsState.nilResp;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.CountDigits(eTagForResponse);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, eTagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + functionsState.nilResp.Length, functionsState.nilResp, eTagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
                     shouldUpdateEtag = false;   // since we already updated the ETag
                     break;
                 case RespCommand.SET:

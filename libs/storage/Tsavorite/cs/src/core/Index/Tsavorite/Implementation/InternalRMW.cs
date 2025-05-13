@@ -134,15 +134,32 @@ namespace Tsavorite.core
                     }
 
                     var sizeInfo = hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions);
-                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo, out status)
-                        || (rmwInfo.Action == RMWAction.ExpireAndStop))
+                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo, out status))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
+                        // status has been set by InPlaceUpdater
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        goto LatchRelease;
+                    }
+
+                    if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                    {
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
+                        // Tombstone has been set by SessionFunctionsWrapper.InPlaceUpdater
+                        srcLogRecord.InfoRef.SetDirtyAndModified();
+
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
+
+                        // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
+                        // Otherwise an earlier record for this key could be reachable again.
+                        if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
+                            HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
+                        else
+                            DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
+
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        // status has been set by InPlaceUpdater
                         goto LatchRelease;
                     }
 
@@ -320,6 +337,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             var forExpiration = false;
+            var addTombstone = false;
 
         RetryNow:
 
@@ -331,6 +349,12 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
+            AllocateOptions allocOptions = new()
+            {
+                recycle = true,
+                elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
+            };
+
             // Perform Need*
             if (doingCU)
             {
@@ -338,12 +362,29 @@ namespace Tsavorite.core
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
-                    if (rmwInfo.Action != RMWAction.ExpireAndResume)
-                        return rmwInfo.Action == RMWAction.ExpireAndStop ? OperationStatus.NOTFOUND : OperationStatus.SUCCESS;
-                    
-                    // Drop through to RCU with ExpireAndResume
-                    doingCU = false;
-                    forExpiration = true;
+                    else if (rmwInfo.Action == RMWAction.ExpireAndResume)
+                    {
+                        doingCU = false;
+                        forExpiration = true;
+                    }
+                    else if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                    {
+                        if (allocOptions.elideSourceRecord)
+                        {
+                            srcLogRecord.InfoRef.SetTombstone();
+                            srcLogRecord.InfoRef.SetDirtyAndModified();
+
+                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
+                            _ = srcLogRecord.AsLogRecord(out var inMemoryLogRecord);
+                            HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                            // no new record created and hash entry is empty now
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.Expired);
+                        }
+                        // otherwise we shall continue down the tombstoning path
+                        addTombstone = true;
+                    }
+                    else
+                        return OperationStatus.SUCCESS;
                 }
             }
 
@@ -353,16 +394,20 @@ namespace Tsavorite.core
                     return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
             }
 
-            // Allocate and initialize the new record.
-            var sizeInfo = doingCU
-                ? hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions)
-                : hlog.GetRMWInitialRecordSize(key, ref input, sessionFunctions);
-
-            AllocateOptions allocOptions = new()
+            // Allocate and initialize the new record
+            RecordSizeInfo sizeInfo;
+            if (!addTombstone)
             {
-                recycle = true,
-                elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
-            };
+                sizeInfo = doingCU
+                    ? hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions)
+                    : hlog.GetRMWInitialRecordSize(key, ref input, sessionFunctions);
+            }
+            else
+            {
+                Debug.Assert(!allocOptions.elideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
+                    "This block only handles NCU requested deletion for unelidable src records.");
+                sizeInfo = hlog.GetDeleteRecordSize(key);
+            }
 
             if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
@@ -392,7 +437,7 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.NOTFOUND);
                 }
             }
-            else
+            else if (!addTombstone)
             {
                 if (sessionFunctions.CopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                 {
@@ -420,7 +465,11 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
+                    Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
+                        "This block should only handle expiration/tombstoning via RCU.");
+                    addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
+                    newLogRecord.InfoRef.SetDirtyAndModified();
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
@@ -447,8 +496,17 @@ namespace Tsavorite.core
                 else
                     return OperationStatus.SUCCESS | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS);
             }
+            else
+            {
+                Debug.Assert(!addTombstone, "This block should only be handling tombstoning requests by NCU where the previous record was not elidable.");
+                newLogRecord.InfoRef.SetDirtyAndModified();
+                newLogRecord.InfoRef.SetTombstone();
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
+            }
 
         DoCAS:
+            // The record being cas'd below is going to be the tombstone record in the case of RCU requested tombstone, and NCU tombstoning.
+            // For all other cases this is the new computed record after an RMW.
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
@@ -464,8 +522,8 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // Else it was a CopyUpdater so call PCU
-                    if (!sessionFunctions.PostCopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                    // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
+                    if (!addTombstone && !sessionFunctions.PostCopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {

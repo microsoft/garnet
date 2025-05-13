@@ -473,6 +473,12 @@ namespace Tsavorite.test.Revivification
 
             internal int expectedInputLength = InitialLength;
 
+            // used to configurably change RMW behavior to test tombstoning via RMW route.
+            internal bool deleteInIpu = false;
+            internal bool deleteInNCU = false;
+            internal bool deleteInCU = false;
+            internal bool forceSkipIpu = false;
+
             // This is a queue rather than a single value because there may be calls to, for example, InPlaceWriter with one length
             // followed by InitialWriter with another.
             internal Queue<int> expectedValueLengths = new();
@@ -547,17 +553,24 @@ namespace Tsavorite.test.Revivification
                 return base.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
-            public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                AssertInfoValid(ref rmwInfo);
-                ClassicAssert.AreEqual(expectedInputLength, input.Length);
-
-                CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, rmwInfo.Address);
-                return logRecord.TrySetValueSpan(input.ReadOnlySpan, ref sizeInfo);
+                if (deleteInNCU)
+                {
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
+                }
+                return base.NeedCopyUpdate(ref srcLogRecord, ref input, ref output, ref rmwInfo);
             }
 
             public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
+                if (deleteInCU)
+                {
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
+                }
+
                 AssertInfoValid(ref rmwInfo);
                 ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
@@ -568,6 +581,16 @@ namespace Tsavorite.test.Revivification
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 AssertInfoValid(ref rmwInfo);
+
+                if (forceSkipIpu)
+                    return false;
+
+                if (deleteInIpu)
+                {
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
+                }
+
                 ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
                 CheckExpectedLengthsBefore(ref logRecord, ref sizeInfo, rmwInfo.Address, isIPU: true);
@@ -788,10 +811,57 @@ namespace Tsavorite.test.Revivification
             }
         }
 
+        internal enum DeletionRoutes
+        {
+            DELETE,
+            RMW_IPU,
+            RMW_NCU,
+            RMW_CU
+        }
+
+        private Status DeleteViaRMW(ReadOnlySpan<byte> key, Span<byte> mockInputVec, byte fillByte)
+        {
+            var mockInput = PinnedSpanByte.FromPinnedSpan(mockInputVec);
+            mockInputVec.Fill(fillByte);
+            return bContext.RMW(key, ref mockInput);
+        }
+
+        private Status PerformDeletion(DeletionRoutes deletionRoute, ReadOnlySpan<byte> key, byte fillByte)
+        {
+            Status status;
+            switch (deletionRoute)
+            {
+                case DeletionRoutes.DELETE:
+                    return bContext.Delete(key);
+                case DeletionRoutes.RMW_IPU:
+                    functions.deleteInIpu = true;
+                    Span<byte> mockInputVec = stackalloc byte[InitialLength];
+                    status = DeleteViaRMW(key, mockInputVec, fillByte);
+                    functions.deleteInIpu = false;
+                    break;
+                case DeletionRoutes.RMW_NCU:
+                    functions.deleteInNCU = true;
+                    mockInputVec = stackalloc byte[InitialLength];
+                    status = DeleteViaRMW(key, mockInputVec, fillByte);
+                    functions.deleteInNCU = false;
+                    break;
+                case DeletionRoutes.RMW_CU:
+                    functions.deleteInCU = true;
+                    mockInputVec = stackalloc byte[InitialLength];
+                    status = DeleteViaRMW(key, mockInputVec, fillByte);
+                    functions.deleteInCU = false;
+                    break;
+                default:
+                    throw new Exception("Unhandled deletion logic");
+            }
+
+            return status;
+        }
+
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
-        public void SpanByteSimpleTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
+        public void SpanByteSimpleTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values(DeletionRoutes.DELETE, DeletionRoutes.RMW_IPU)] DeletionRoutes deletionRoute)
         {
             Populate();
 
@@ -802,7 +872,8 @@ namespace Tsavorite.test.Revivification
             key.Fill(fillByte);
 
             functions.expectedValueLengths.Enqueue(InitialLength);
-            var status = bContext.Delete(key);
+            Status status = PerformDeletion(deletionRoute, key, fillByte);
+
             ClassicAssert.IsTrue(status.Found, status.ToString());
 
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -820,6 +891,54 @@ namespace Tsavorite.test.Revivification
 
             _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref pinnedInputSpan, input, ref output) : bContext.RMW(key, ref pinnedInputSpan);
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
+        public void SpanByteDeletionViaRMWRCURevivifiesOriginalRecordAfterTombstoning(
+            [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values(DeletionRoutes.RMW_NCU, DeletionRoutes.RMW_CU)] DeletionRoutes deletionRoute)
+        {
+            Populate();
+
+            Span<byte> key = stackalloc byte[KeyLength];
+            byte fillByte = 42;
+            key.Fill(fillByte);
+
+            functions.expectedValueLengths.Enqueue(InitialLength);
+
+            functions.forceSkipIpu = true;
+            var status = PerformDeletion(deletionRoute, key, fillByte);
+            functions.forceSkipIpu = false;
+
+            RevivificationTestUtils.WaitForRecords(store, want: true);
+
+            ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
+
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+
+            var tailAddress = store.Log.TailAddress;
+
+            Span<byte> inputVec = stackalloc byte[InitialLength];
+            var input = PinnedSpanByte.FromPinnedSpan(inputVec);
+            inputVec.Fill(fillByte);
+
+            SpanByteAndMemory output = new();
+
+            functions.expectedInputLength = InitialLength;
+            functions.expectedValueLengths.Enqueue(InitialLength);
+
+            // brand new value so we try to use a record out of free list
+            fillByte = 255;
+            key.Fill(fillByte);
+
+            _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref input, input.ReadOnlySpan, ref output) : bContext.RMW(key, ref input);
+
+            // since above would use revivification free list we should see no change of tail address.
+            ClassicAssert.AreEqual(store.Log.TailAddress, tailAddress);
+            ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
+            ClassicAssert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
+            output.Memory?.Dispose();
         }
 
         [Test]
