@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public struct OperationStackContext<TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -37,7 +39,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// If this is not <see cref="Constants.kInvalidAddress"/>, it is the logical Address allocated by CreateNewRecord*; if an exception
+        /// If this is not <see cref="kInvalidAddress"/>, it is the logical Address allocated by CreateNewRecord*; if an exception
         /// occurs, this needs to be set invalid and non-tentative by the caller's 'finally' (to avoid another try/finally overhead).
         /// </summary>
         private long newLogicalAddress;
@@ -56,14 +58,14 @@ namespace Tsavorite.core
         {
             Debug.Assert(newRecordInfo.Invalid, "Records should be invalidated until successfully inserted");   // TODO: If this does not fire, remove the following line that sets it
             newRecordInfo.SetInvalid();
-            newLogicalAddress = Constants.kInvalidAddress;
+            newLogicalAddress = kInvalidAddress;
         }
 
         /// <summary>
         /// Called during normal operations when a record insertion succeeds, to set the new record non-tentative (permanent).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearNewRecord() => newLogicalAddress = Constants.kInvalidAddress;
+        internal void ClearNewRecord() => newLogicalAddress = kInvalidAddress;
 
         /// <summary>
         /// Called during InternalXxx 'finally' handler, to set the new record invalid if an exception or other error occurred.
@@ -71,10 +73,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void HandleNewRecordOnException(TsavoriteKV<TStoreFunctions, TAllocator> store)
         {
-            if (newLogicalAddress != Constants.kInvalidAddress)
+            if (newLogicalAddress != kInvalidAddress)
             {
                 store.SetRecordInvalid(newLogicalAddress);
-                newLogicalAddress = Constants.kInvalidAddress;
+                newLogicalAddress = kInvalidAddress;
             }
         }
 

@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -345,7 +347,7 @@ namespace Tsavorite.core
             {
                 Version = sessionFunctions.Ctx.version,
                 SessionID = sessionFunctions.Ctx.sessionID,
-                Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
+                Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : kInvalidAddress,
                 KeyHash = stackCtx.hei.hash,
             };
 

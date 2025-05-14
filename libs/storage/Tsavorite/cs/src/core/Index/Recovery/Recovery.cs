@@ -203,13 +203,12 @@ namespace Tsavorite.core
         {
             using var current = new HybridLogCheckpointInfo();
             // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
-            current.Recover(token, checkpointManager, hlogBase.LogPageSizeBits,
-                out var _, true, version);
-            long snapshotDeviceOffset = hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress) << hlogBase.LogPageSizeBits;
+            current.Recover(token, checkpointManager, hlogBase.LogPageSizeBits, out var _, true, version);
+            long snapshotDeviceOffset = hlogBase.GetStartAbsoluteLogicalAddressOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
             return new LogFileInfo
             {
                 snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
-                hybridLogFileStartAddress = hlogBase.GetPage(current.info.beginAddress) << hlogBase.LogPageSizeBits,
+                hybridLogFileStartAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(hlogBase.GetPage(current.info.beginAddress)),
                 hybridLogFileEndAddress = current.info.flushedLogicalAddress,
                 deltaLogTailAddress = current.info.deltaTailAddress,
             };
@@ -247,8 +246,7 @@ namespace Tsavorite.core
                 try
                 {
                     current = new HybridLogCheckpointInfo();
-                    current.Recover(hybridLogToken, checkpointManager, hlogBase.LogPageSizeBits,
-                        out var currCookie, false);
+                    current.Recover(hybridLogToken, checkpointManager, hlogBase.LogPageSizeBits, out var currCookie, false);
                     var distanceToTarget = (requestedVersion == -1 ? long.MaxValue : requestedVersion) - current.info.version;
                     // This is larger than intended version, cannot recover to this.
                     if (distanceToTarget < 0) continue;
@@ -518,12 +516,12 @@ namespace Tsavorite.core
         private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress, long lastFreedPage)
         {
             // Adjust head and read-only address post-recovery
-            var _head = (1 + (tailAddress >> hlogBase.LogPageSizeBits) - (hlogBase.GetCapacityNumPages() - hlogBase.MinEmptyPageCount)) << hlogBase.LogPageSizeBits;
+            var _head = hlogBase.GetStartLogicalAddressOfPage(1 + hlogBase.GetPage(tailAddress) - (hlogBase.GetCapacityNumPages() - hlogBase.MinEmptyPageCount));
 
             // If additional pages have been freed to accommodate heap memory constraints, adjust head address accordingly
             if (lastFreedPage != NoPageFreed)
             {
-                var nextAddress = (lastFreedPage + 1) << hlogBase.LogPageSizeBits;
+                var nextAddress = hlogBase.GetStartLogicalAddressOfPage(lastFreedPage + 1);
                 if (_head < nextAddress)
                     _head = nextAddress;
             }
@@ -614,7 +612,7 @@ namespace Tsavorite.core
             headAddress = recoveredHLCInfo.info.headAddress;
             if (numPagesToPreload != -1)
             {
-                var head = (hlogBase.GetPage(tailAddress) - numPagesToPreload) << hlogBase.LogPageSizeBits;
+                var head = hlogBase.GetStartLogicalAddressOfPage(hlogBase.GetPage(tailAddress) - numPagesToPreload);
                 if (head > headAddress)
                     headAddress = head;
             }
@@ -861,10 +859,10 @@ namespace Tsavorite.core
             var pageUntilAddress = hlogBase.GetPageSize();
 
             if (recoverFromAddress > startLogicalAddress)
-                pageFromAddress = hlogBase.GetOffsetInPage(recoverFromAddress);
+                pageFromAddress = hlogBase.GetOffsetOnPage(recoverFromAddress);
 
             if (untilAddress < endLogicalAddress)
-                pageUntilAddress = hlogBase.GetOffsetInPage(untilAddress);
+                pageUntilAddress = hlogBase.GetOffsetOnPage(untilAddress);
 
             if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
@@ -1051,9 +1049,9 @@ namespace Tsavorite.core
 
 
                 if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
-                    pageFromAddress = hlogBase.GetOffsetInPage(fromAddress);
+                    pageFromAddress = hlogBase.GetOffsetOnPage(fromAddress);
                 if (endLogicalAddress > untilAddress)
-                    pageUntilAddress = hlogBase.GetOffsetInPage(untilAddress);
+                    pageUntilAddress = hlogBase.GetOffsetOnPage(untilAddress);
 
                 _ = RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress,
                                 startLogicalAddress, physicalAddress, nextVersion, options);
@@ -1226,7 +1224,7 @@ namespace Tsavorite.core
         {
             if (numPagesToPreload != -1)
             {
-                var head = (GetPage(untilAddress) - numPagesToPreload) << LogPageSizeBits;
+                var head = GetStartLogicalAddressOfPage(GetPage(untilAddress) - numPagesToPreload);
                 if (head > headAddress)
                     headAddress = head;
             }
@@ -1236,7 +1234,7 @@ namespace Tsavorite.core
             // Special cases: we do not load any records into memory
             if (
                 (beginAddress == untilAddress) || // Empty log
-                ((headAddress == untilAddress) && (GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
+                ((headAddress == untilAddress) && (GetOffsetOnPage(headAddress) == 0)) // Empty in-memory page
                 )
             {
                 if (!_wrapper.IsAllocated(GetPageIndexForAddress(headAddress)))

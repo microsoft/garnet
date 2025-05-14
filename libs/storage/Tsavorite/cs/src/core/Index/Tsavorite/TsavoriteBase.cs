@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     internal unsafe struct InternalHashTable
     {
         public long size;
@@ -181,7 +183,7 @@ namespace Tsavorite.core
                 // Install tentative tag in free slot
                 hei.entry = default;
                 hei.entry.Tag = hei.tag;
-                hei.entry.Address = Constants.kTempInvalidAddress;
+                hei.entry.Address = kTempInvalidAddress;
                 hei.entry.Tentative = true;
 
                 // Insert the tag into this slot. Failure means another session inserted a key into that slot, so continue the loop to find another free slot.
@@ -236,9 +238,9 @@ namespace Tsavorite.core
 
                     // If the entry points to an address that has been truncated, it's free; try to reclaim it by setting its word to 0.
                     hei.entry.word = target_entry_word;
-                    if (hei.entry.Address < BeginAddress && hei.entry.Address != Constants.kTempInvalidAddress)
+                    if (hei.entry.Address < BeginAddress && hei.entry.Address != kTempInvalidAddress)
                     {
-                        if (hei.entry.word == Interlocked.CompareExchange(ref hei.bucket->bucket_entries[index], Constants.kInvalidAddress, target_entry_word))
+                        if (hei.entry.word == Interlocked.CompareExchange(ref hei.bucket->bucket_entries[index], kInvalidAddress, target_entry_word))
                         {
                             if (hei.slot == Constants.kInvalidEntrySlot)
                             {

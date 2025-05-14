@@ -8,6 +8,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     // This is unused; just allows things to build. TsavoriteLog does not do key comparisons or value operations; it is just a memory allocator.
     using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
@@ -61,7 +63,7 @@ namespace Tsavorite.core
             }
         }
 
-        public override void Initialize() => Initialize(Constants.kFirstValidAddress);
+        public override void Initialize() => Initialize(kFirstValidAddress);
 
         /// <summary>
         /// Dispose memory allocator
@@ -101,10 +103,10 @@ namespace Tsavorite.core
         public long GetPhysicalAddress(long logicalAddress)
         {
             // Offset within page
-            var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
+            var offset = GetOffsetOnPage(logicalAddress);
 
             // Index of page within the circular buffer
-            var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+            var pageIndex = GetPage(logicalAddress);
             return *(nativePointers + pageIndex) + offset;
         }
 
@@ -240,7 +242,7 @@ namespace Tsavorite.core
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
 
                 uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+                long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
 
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {

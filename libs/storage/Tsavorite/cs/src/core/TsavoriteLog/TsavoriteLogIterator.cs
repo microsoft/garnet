@@ -34,7 +34,7 @@ namespace Tsavorite.core
         /// <summary>Constructor</summary>
         internal unsafe TsavoriteLogIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
             allocator = hlog;
@@ -749,9 +749,9 @@ namespace Tsavorite.core
                     outNextAddress = currentAddress;
                 }
 
-                var _currentPage = currentAddress >> allocator.LogPageSizeBits;
+                var _currentPage = allocator.GetPage(currentAddress);
                 var _currentFrame = _currentPage % frameSize;
-                var _currentOffset = currentAddress & allocator.PageSizeMask;
+                var _currentOffset = allocator.GetOffsetOnPage(currentAddress);
 
                 if (disposed)
                     return false;
@@ -787,14 +787,14 @@ namespace Tsavorite.core
                 if (entryLength == 0)
                 {
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
-                    var nextStart = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    var nextStart = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
-                        var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
+                        var pageOffset = allocator.GetOffsetOnPage(currentAddress);
 
                         // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
                         if (pageOffset == 0)
-                            throw new TsavoriteException("Uninitialized page found during scan at page " + (currentAddress >> allocator.LogPageSizeBits));
+                            throw new TsavoriteException("Uninitialized page found during scan at page " + allocator.GetPage(currentAddress));
                     }
                     continue;
                 }
@@ -827,8 +827,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
+                    currentAddress = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 
@@ -867,9 +867,9 @@ namespace Tsavorite.core
                     return false;
                 }
 
-                var _currentPage = currentAddress >> allocator.LogPageSizeBits;
+                var _currentPage = allocator.GetPage(currentAddress);
                 var _currentFrame = _currentPage % frameSize;
-                var _currentOffset = currentAddress & allocator.PageSizeMask;
+                var _currentOffset = allocator.GetOffsetOnPage(currentAddress);
 
                 if (disposed)
                     return false;
@@ -932,8 +932,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
+                    currentAddress = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 

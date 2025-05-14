@@ -3,10 +3,12 @@
 
 using System.Runtime.CompilerServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+    using static LogAddress;
+
     /// <summary>Hash table entry information for a key</summary>
     public unsafe struct HashEntryInfo
     {
@@ -45,7 +47,7 @@ namespace Tsavorite.core
         /// The original address of this hash entry (at the time of FindTag, etc.)
         /// </summary>
         internal readonly long Address => entry.Address;
-        internal readonly long AbsoluteAddress => Utility.AbsoluteAddress(Address);
+        internal readonly long AbsoluteAddress => AbsoluteAddress(Address);
 
         /// <summary>
         /// The current address of this hash entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
@@ -56,7 +58,7 @@ namespace Tsavorite.core
             get { return new HashBucketEntry() { word = bucket->bucket_entries[slot] }.Address; }
         }
 
-        internal readonly long AbsoluteCurrentAddress => Utility.AbsoluteAddress(CurrentAddress);
+        internal readonly long AbsoluteCurrentAddress => AbsoluteAddress(CurrentAddress);
 
         /// <summary>
         /// Return whether the <see cref="HashBucketEntry"/> has been updated
@@ -66,7 +68,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
         /// </summary>
-        internal readonly bool IsReadCache => entry.ReadCache;
+        internal readonly bool IsReadCache => entry.IsReadCache;
 
         /// <summary>
         /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.
@@ -86,9 +88,8 @@ namespace Tsavorite.core
             HashBucketEntry updatedEntry = new()
             {
                 Tag = tag,
-                Address = newLogicalAddress & Constants.kAddressMask,
+                Address = newLogicalAddress & kAddressBitMask,
                 Tentative = false
-                // .ReadCache is included in newLogicalAddress
             };
 
             if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))

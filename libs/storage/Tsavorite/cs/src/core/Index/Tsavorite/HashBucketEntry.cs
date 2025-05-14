@@ -3,6 +3,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using static Tsavorite.core.LogAddress;
 
 namespace Tsavorite.core
 {
@@ -16,16 +17,16 @@ namespace Tsavorite.core
         public long Address
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => word & Constants.kAddressMask;
+            readonly get => word & kAddressBitMask;
 
             set
             {
-                word &= ~Constants.kAddressMask;
-                word |= value & Constants.kAddressMask;
+                word &= ~kAddressBitMask;
+                word |= value & kAddressBitMask;
             }
         }
 
-        public readonly long AbsoluteAddress => Utility.AbsoluteAddress(Address);
+        public readonly long AbsoluteAddress => LogAddress.AbsoluteAddress(Address);
 
         public ushort Tag
         {
@@ -53,15 +54,15 @@ namespace Tsavorite.core
             }
         }
 
-        public readonly bool ReadCache
+        public readonly bool IsReadCache
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => (word & Constants.kReadCacheBitMask) != 0;
+            get => LogAddress.IsReadCache(word);
         }
 
         public override readonly string ToString()
         {
-            var addrRC = ReadCache ? "(rc)" : string.Empty;
+            var addrRC = IsReadCache ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"addr {AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}";
         }

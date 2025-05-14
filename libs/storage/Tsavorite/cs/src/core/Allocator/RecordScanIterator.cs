@@ -42,7 +42,7 @@ namespace Tsavorite.core
                 long beginAddress, long endAddress, LightEpoch epoch, 
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeSealedRecords = false, bool assumeInMemory = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode, includeSealedRecords, epoch, hlogBase.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode, includeSealedRecords, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
@@ -56,7 +56,7 @@ namespace Tsavorite.core
         /// </summary>
         internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddress(0) : beginAddress, hlogBase.GetTailAddress(), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
@@ -120,7 +120,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException("Iterator address is less than log HeadAddress in memory-scan mode");
             }
 
-            currentPage = currentAddress >> hlogBase.LogPageSizeBits;
+            currentPage = hlogBase.GetPage(currentAddress);
             if (currentAddress < headAddress && !assumeInMemory)
                 _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
 
@@ -131,7 +131,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SnapToLogicalAddressBoundary(ref long logicalAddress, long headAddress, long currentPage)
         {
-            var offset = logicalAddress & hlogBase.PageSizeMask;
+            var offset = hlogBase.GetOffsetOnPage(logicalAddress);
             var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset, out long allocatedSize) - offset;
             long totalSizes = 0;
             if (currentPage == 0)
@@ -182,7 +182,7 @@ namespace Tsavorite.core
                     if (!LoadPageIfNeeded(out var headAddress, out var currentPage, stopAddress))
                         return false;
 
-                    var offset = currentAddress & hlogBase.PageSizeMask;
+                    var offset = hlogBase.GetOffsetOnPage(currentAddress);
                     var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset, out long allocatedSize);
 
                     // If record did not fit on the page its recordInfo will be Null; skip to the next page if so.
@@ -190,7 +190,7 @@ namespace Tsavorite.core
 
                     if (recordInfo.IsNull)
                     {
-                        nextAddress = (1 + (currentAddress >> hlogBase.LogPageSizeBits)) << hlogBase.LogPageSizeBits;
+                        nextAddress = hlogBase.GetStartLogicalAddressOfPage(1 + hlogBase.GetPage(currentAddress));
                         continue;
                     }
 

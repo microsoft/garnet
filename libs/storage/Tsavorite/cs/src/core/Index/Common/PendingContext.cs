@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -85,7 +87,7 @@ namespace Tsavorite.core
             internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;
             internal void SetIsNoKey() => operationFlags |= kIsNoKey;
 
-            internal readonly bool HasMinAddress => minAddress != Constants.kInvalidAddress;
+            internal readonly bool HasMinAddress => minAddress != kInvalidAddress;
 
             internal readonly bool IsReadAtAddress => (operationFlags & kIsReadAtAddress) != 0;
             internal void SetIsReadAtAddress() => operationFlags |= kIsReadAtAddress;

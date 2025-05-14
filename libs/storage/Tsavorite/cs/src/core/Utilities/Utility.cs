@@ -135,12 +135,6 @@ namespace Tsavorite.core
             return v.ToString() + "B";
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsReadCache(long address) => (address & Constants.kReadCacheBitMask) != 0;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long AbsoluteAddress(long address) => address & ~Constants.kReadCacheBitMask;
-
         /// <summary>Rounds up value to alignment</summary>
         /// <param name="value">Value to be aligned</param>
         /// <param name="alignment">Align to this</param>

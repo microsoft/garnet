@@ -7,6 +7,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
@@ -84,7 +86,7 @@ namespace Tsavorite.core
         {
             semaphore = new SemaphoreSlim(0);
             request.id = -1;
-            request.minAddress = Constants.kInvalidAddress;
+            request.minAddress = kInvalidAddress;
             request.completionEvent = this;
         }
 

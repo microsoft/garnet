@@ -175,7 +175,7 @@ namespace Tsavorite.test.LockTests
             // Now make sure we did collide
             HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(deleteKey));
             ClassicAssert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
-            ClassicAssert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
+            ClassicAssert.Greater(hei.Address, LogAddress.kInvalidAddress, "Couldn't find deleteKey Address");
             var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
             var lookupKey = LogRecord.GetInlineKey(physicalAddress);
             ClassicAssert.AreEqual(collidingKeyNum, lookupKey.AsRef<long>(), "Expected collidingKey");

@@ -13,6 +13,7 @@ using Tsavorite.core;
 using Tsavorite.test.TransactionalUnsafeContext;
 using Tsavorite.test.LockTable;
 using static Tsavorite.test.TestUtils;
+using static Tsavorite.core.LogAddress;
 
 #pragma warning disable  // Add parentheses for clarity
 
@@ -204,9 +205,9 @@ namespace Tsavorite.test.ReadCacheTests
             var tagExists = store.FindHashBucketEntryForKey(key, out var entry);
             ClassicAssert.IsTrue(tagExists);
 
-            isReadCache = entry.ReadCache;
+            isReadCache = entry.IsReadCache;
             var log = isReadCache ? store.readcache : store.hlog;
-            var pa = log.GetPhysicalAddress(entry.Address & ~Constants.kReadCacheBitMask);
+            var pa = log.GetPhysicalAddress(entry.AbsoluteAddress);
             recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;
 
@@ -224,9 +225,9 @@ namespace Tsavorite.test.ReadCacheTests
             var info = LogRecord.GetInfo(physicalAddress);
             var la = info.PreviousAddress;
 
-            isReadCache = new HashBucketEntry { word = la }.ReadCache;
+            isReadCache = new HashBucketEntry { word = la }.IsReadCache;
             log = isReadCache ? store.readcache : store.hlog;
-            la &= ~Constants.kReadCacheBitMask;
+            la = AbsoluteAddress(la);
             var pa = log.GetPhysicalAddress(la);
             recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;
@@ -818,7 +819,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     key = completedOutputs.Current.Key.AsRef<long>();
-                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
                                     ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
                                     ClassicAssert.AreEqual(key, output % ValueAdd);
                                 }
@@ -1081,7 +1082,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     // Note: do NOT overwrite 'key' here
                                     long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
 
-                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
 
                                     ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");

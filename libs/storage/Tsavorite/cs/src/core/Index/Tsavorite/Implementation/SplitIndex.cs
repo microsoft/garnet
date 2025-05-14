@@ -6,6 +6,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -124,7 +126,7 @@ namespace Tsavorite.core
                         long physicalAddress = 0;
 
                         LogRecord logRecord = default;
-                        if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
+                        if (entry.IsReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
                             logRecord = readcache.CreateLogRecord(entry.AbsoluteAddress);
                         else if (logicalAddress >= hlogBase.HeadAddress)
                             logRecord = hlog.CreateLogRecord(logicalAddress);
@@ -151,7 +153,7 @@ namespace Tsavorite.core
 
                                 // Insert previous address in right
                                 entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 1);
-                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
+                                if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
                                 {
                                     if (right == right_end)
                                     {
@@ -183,7 +185,7 @@ namespace Tsavorite.core
 
                                 // Insert previous address in left
                                 entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 0);
-                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
+                                if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
                                 {
                                     if (left == left_end)
                                     {
@@ -243,7 +245,7 @@ namespace Tsavorite.core
             {
                 HashBucketEntry entry = new() { Address = logicalAddress };
                 LogRecord logRecord;
-                if (entry.ReadCache)
+                if (entry.IsReadCache)
                 {
                     if (logicalAddress < readCacheBase.HeadAddress)
                         break;

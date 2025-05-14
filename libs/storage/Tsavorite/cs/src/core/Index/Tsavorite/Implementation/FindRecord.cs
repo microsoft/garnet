@@ -4,10 +4,11 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -15,7 +16,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryFindRecordInMemory(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, bool stopAtHeadAddress = true)
         {
-            if (UseReadCache && FindInReadCache(key, ref stackCtx, minAddress: Constants.kInvalidAddress))
+            if (UseReadCache && FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress))
                 return true;
             if (minAddress < hlogBase.HeadAddress && stopAtHeadAddress)
                 minAddress = hlogBase.HeadAddress;
@@ -29,7 +30,7 @@ namespace Tsavorite.core
             // Add 1 to the pendingContext minAddresses because we don't want an inclusive search; we're looking to see if it was added *after*.
             if (UseReadCache)
             {
-                var minRC = IsReadCache(pendingContext.initialEntryAddress) ? pendingContext.initialEntryAddress + 1 : Constants.kInvalidAddress;
+                var minRC = IsReadCache(pendingContext.initialEntryAddress) ? pendingContext.initialEntryAddress + 1 : kInvalidAddress;
                 if (FindInReadCache(key, ref stackCtx, minAddress: minRC))
                     return true;
             }
@@ -43,8 +44,8 @@ namespace Tsavorite.core
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= minAddress)
             {
-                stackCtx.recSrc.SetPhysicalAddress();
-                TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress);
+                _ = stackCtx.recSrc.SetPhysicalAddress();
+                _ = TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress);
             }
             return stackCtx.recSrc.HasInMemorySrc;
         }
@@ -55,8 +56,8 @@ namespace Tsavorite.core
             Debug.Assert(!stackCtx.recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (stackCtx.recSrc.LogicalAddress >= minAddress)
             {
-                stackCtx.recSrc.SetPhysicalAddress();
-                TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress, maxAddress);
+                _ = stackCtx.recSrc.SetPhysicalAddress();
+                _ = TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress, maxAddress);
             }
             return stackCtx.recSrc.HasInMemorySrc;
         }
@@ -179,7 +180,7 @@ namespace Tsavorite.core
 
                 foundLogicalAddress = logRecord.Info.PreviousAddress;
             }
-            foundPhysicalAddress = Constants.kInvalidAddress;
+            foundPhysicalAddress = kInvalidAddress;
             return false;
         }
 
@@ -199,7 +200,7 @@ namespace Tsavorite.core
 
                 foundLogicalAddress = logRecord.Info.PreviousAddress;
             }
-            foundPhysicalAddress = Constants.kInvalidAddress;
+            foundPhysicalAddress = kInvalidAddress;
             return false;
         }
 

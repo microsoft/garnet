@@ -3,10 +3,11 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Carries various addresses and accompanying values corresponding to source records for the current InternalXxx or InternalContinuePendingR*
     /// operations, where "source" is a copy source for RMW and/or a locked record. This is passed to functions that create records, such as 

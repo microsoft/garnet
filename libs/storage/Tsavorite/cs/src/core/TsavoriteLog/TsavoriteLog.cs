@@ -13,6 +13,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Tsavorite Log
     /// </summary>
@@ -165,7 +167,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => allocator.GetStartLogicalAddressOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
 
         /// <summary>
         /// Create new log instance
@@ -202,9 +204,9 @@ namespace Tsavorite.core
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
             epoch = new LightEpoch();
-            CommittedUntilAddress = Constants.kFirstValidAddress;
-            CommittedBeginAddress = Constants.kFirstValidAddress;
-            SafeTailAddress = Constants.kFirstValidAddress;
+            CommittedUntilAddress = kFirstValidAddress;
+            CommittedBeginAddress = kFirstValidAddress;
+            SafeTailAddress = kFirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
             allocator = new(new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback });
             allocator.Initialize();
@@ -358,7 +360,7 @@ namespace Tsavorite.core
         /// </summary>
         public void Reset()
         {
-            var beginAddress = allocator.GetFirstValidLogicalAddress(0);
+            var beginAddress = allocator.GetFirstValidLogicalAddressOnPage(0);
             allocator.Reset();
             CommittedUntilAddress = beginAddress;
             CommittedBeginAddress = beginAddress;
@@ -406,7 +408,7 @@ namespace Tsavorite.core
             try
             {
                 if (beginAddress == 0)
-                    beginAddress = allocator.GetFirstValidLogicalAddress(0);
+                    beginAddress = allocator.GetFirstValidLogicalAddressOnPage(0);
 
                 if (committedUntilAddress == 0)
                     committedUntilAddress = beginAddress;
@@ -593,14 +595,12 @@ namespace Tsavorite.core
         /// Get page size in bits
         /// </summary>
         /// <returns></returns>
-        public int UnsafeGetLogPageSizeBits()
-            => allocator.LogPageSizeBits;
+        public int UnsafeGetLogPageSizeBits() => allocator.LogPageSizeBits;
 
         /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyAddressLagOffset()
-            => allocator.GetReadOnlyAddressLagOffset();
+        public long UnsafeGetReadOnlyAddressLagOffset() => allocator.GetReadOnlyAddressLagOffset();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -611,7 +611,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
 
@@ -2057,7 +2057,7 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
                 if (snapToPageStart)
-                    untilAddress &= ~allocator.PageSizeMask;
+                    untilAddress = allocator.GetStartOfPage(untilAddress);
 
                 bool epochProtected = epoch.ThisInstanceProtected();
                 try
@@ -2082,7 +2082,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, untilAddress & ~allocator.PageSizeMask, out _);
+            Utility.MonotonicUpdate(ref beginAddress, allocator.GetStartOfPage(untilAddress), out _);
         }
 
         /// <summary>
@@ -2542,7 +2542,7 @@ namespace Tsavorite.core
 
                 // Reset variables to normal
                 allocator.Initialize();
-                CommittedUntilAddress = Constants.kFirstValidAddress;
+                CommittedUntilAddress = kFirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2551,12 +2551,12 @@ namespace Tsavorite.core
 
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = kFirstValidAddress;
 
                 try
                 {
@@ -2627,12 +2627,12 @@ namespace Tsavorite.core
             Debug.Assert(info.CommitNum == requestedCommitNum);
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = kFirstValidAddress;
                 try
                 {
                     allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
@@ -2696,7 +2696,7 @@ namespace Tsavorite.core
                 logger?.LogDebug("Unable to recover using any available commit");
                 // Reset things to be something normal lol
                 allocator.Initialize();
-                CommittedUntilAddress = Constants.kFirstValidAddress;
+                CommittedUntilAddress = kFirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2705,12 +2705,12 @@ namespace Tsavorite.core
 
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = kFirstValidAddress;
                 await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
@@ -247,8 +249,8 @@ namespace Tsavorite.core
                 {
                     for (long p = startPage; p < endPage; p++)
                     {
-                        // Check if we have the page safely available to process in memory
-                        if (HeadAddress >= (p << LogPageSizeBits) + PageSize)
+                        // Check if we have the entire page safely available to process in memory
+                        if (HeadAddress >= GetStartLogicalAddressOfPage(p) + PageSize)
                             continue;
 
                         // All RCU pages need to be added to delta
@@ -256,7 +258,7 @@ namespace Tsavorite.core
                         if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
                             continue;
 
-                        var logicalAddress = p << LogPageSizeBits;
+                        var logicalAddress = GetStartLogicalAddressOfPage(p);
                         var physicalAddress = _wrapper.GetPhysicalAddress(logicalAddress);
 
                         var endLogicalAddress = logicalAddress + PageSize;
@@ -266,8 +268,9 @@ namespace Tsavorite.core
 
                         if (p == startPage)
                         {
-                            physicalAddress += (int)(startAddress & PageSizeMask);
-                            logicalAddress += (int)(startAddress & PageSizeMask);
+                            var offset = (int)GetOffsetOnPage(startAddress);
+                            physicalAddress += offset;
+                            logicalAddress += offset;
                         }
 
                         while (physicalAddress < endPhysicalAddress)
@@ -389,13 +392,14 @@ namespace Tsavorite.core
 
         #region LogRecord functions
 
+        /// <summary>Get start absolute logical address</summary>
+        public long GetStartAbsoluteLogicalAddressOfPage(long page) => page << LogPageSizeBits;
+
         /// <summary>Get start logical address</summary>
-        public long GetStartLogicalAddress(long page) => page << LogPageSizeBits;
+        public long GetStartLogicalAddressOfPage(long page) => SetIsInMemory(GetStartAbsoluteLogicalAddressOfPage(page));
 
         /// <summary>Get first valid address</summary>
-        public long GetFirstValidLogicalAddress(long page) => page == 0 ? Constants.kFirstValidAddress : page << LogPageSizeBits;
-
-        public static unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) => ref Unsafe.AsRef<RecordInfo>(ptr);
+        public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? kFirstValidAddress : GetStartLogicalAddressOfPage(page);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize, ObjectIdMap objectIdMap)
@@ -495,16 +499,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPage(long logicalAddress, long version)
         {
-            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
-            if (PageStatusIndicator[offset].Dirty < version)
-                PageStatusIndicator[offset].Dirty = version;
+            var pageIndex = GetPageIndexForAddress(logicalAddress);
+            if (PageStatusIndicator[pageIndex].Dirty < version)
+                PageStatusIndicator[pageIndex].Dirty = version;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void MarkPageAtomic(long logicalAddress, long version)
         {
-            var offset = (logicalAddress >> LogPageSizeBits) % BufferSize;
-            Utility.MonotonicUpdate(ref PageStatusIndicator[offset].Dirty, version, out _);
+            var pageIndex = GetPageIndexForAddress(logicalAddress);
+            Utility.MonotonicUpdate(ref PageStatusIndicator[pageIndex].Dirty, version, out _);
         }
 
         internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
@@ -514,10 +518,10 @@ namespace Tsavorite.core
             if (asyncResult.partial)
             {
                 // Write only required bytes within the page
-                int aligned_start = (int)(asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits));
+                int aligned_start = (int)(asyncResult.fromAddress - GetStartLogicalAddressOfPage(asyncResult.page));
                 aligned_start = (aligned_start / sectorSize) * sectorSize;
 
-                int aligned_end = (int)(asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits));
+                int aligned_end = (int)(asyncResult.untilAddress - GetStartLogicalAddressOfPage(asyncResult.page));
                 aligned_end = (aligned_end + (sectorSize - 1)) & ~(sectorSize - 1);
 
                 numBytesToWrite = (uint)(aligned_end - aligned_start);
@@ -597,7 +601,7 @@ namespace Tsavorite.core
             // Total HLOG size
             LogTotalSizeBits = settings.MemorySizeBits;
             LogTotalSizeBytes = 1L << LogTotalSizeBits;
-            BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
+            BufferSize = (int)(LogTotalSizeBytes / PageSize);
             BufferSizeMask = BufferSize - 1;
 
             LogMutableFraction = settings.MutableFraction;
@@ -697,29 +701,29 @@ namespace Tsavorite.core
         /// <summary>Initialize allocator</summary>
         protected void Initialize(long firstValidAddress)
         {
-            Debug.Assert(firstValidAddress <= PageSize, $"firstValidAddress {firstValidAddress} shoulld be <= PageSize {PageSize}");
+            Debug.Assert(AbsoluteAddress(firstValidAddress) <= PageSize, $"AbsoluteAddress(firstValidAddress) {AbsoluteAddress(firstValidAddress)} should be <= PageSize {PageSize}");
 
             bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
 
             if (BufferSize > 0)
             {
-                long tailPage = firstValidAddress >> LogPageSizeBits;
-                int tailPageIndex = (int)(tailPage % BufferSize);
+                long tailPage = GetPage(firstValidAddress);
+                int tailPageIndex = GetPageIndexForPage(tailPage);
                 if (!_wrapper.IsAllocated(tailPageIndex))
                     _wrapper.AllocatePage(tailPageIndex);
 
                 // Allocate next page as well
-                int nextPageIndex = (int)(tailPage + 1) % BufferSize;
+                int nextPageIndex = GetPageIndexForPage(tailPage + 1);
                 if (!_wrapper.IsAllocated(nextPageIndex))
                     _wrapper.AllocatePage(nextPageIndex);
             }
 
             if (PreallocateLog)
             {
-                for (int i = 0; i < BufferSize; i++)
+                for (int pageIndex = 0; pageIndex < BufferSize; pageIndex++)
                 {
-                    if (!_wrapper.IsAllocated(i))
-                        _wrapper.AllocatePage(i);
+                    if (!_wrapper.IsAllocated(pageIndex))
+                        _wrapper.AllocatePage(pageIndex);
                 }
             }
 
@@ -731,8 +735,8 @@ namespace Tsavorite.core
             FlushedUntilAddress = firstValidAddress;
             BeginAddress = firstValidAddress;
 
-            TailPageOffset.Page = (int)(firstValidAddress >> LogPageSizeBits);
-            TailPageOffset.Offset = (int)(firstValidAddress & PageSizeMask);
+            TailPageOffset.Page = (int)GetPage(firstValidAddress);
+            TailPageOffset.Offset = (int)GetOffsetOnPage(firstValidAddress);
         }
 
         /// <summary>Number of pages in circular buffer that are allocated</summary>
@@ -770,14 +774,14 @@ namespace Tsavorite.core
                     headOffsetLagSize -= emptyPageCount;
 
                     // Address lag offsets correspond to the number of pages "behind" TailPageOffset (the tail in the circular buffer).
-                    ReadOnlyAddressLagOffset = (long)(LogMutableFraction * headOffsetLagSize) << LogPageSizeBits;
-                    HeadAddressLagOffset = (long)headOffsetLagSize << LogPageSizeBits;
+                    ReadOnlyAddressLagOffset = GetStartLogicalAddressOfPage((long)(LogMutableFraction * headOffsetLagSize));
+                    HeadAddressLagOffset = GetStartLogicalAddressOfPage(headOffsetLagSize);
                 }
 
                 // Force eviction now if empty page count has increased
                 if (value >= oldEPC)
                 {
-                    bool prot = epoch.ThisInstanceProtected();
+                    var prot = epoch.ThisInstanceProtected();
 
                     if (!prot) epoch.Resume();
                     try
@@ -833,17 +837,20 @@ namespace Tsavorite.core
                 Thread.Yield();
                 local = TailPageOffset;
             }
-            return ((long)local.Page << LogPageSizeBits) | (uint)local.Offset;
+            return SetIsInMemory(GetStartLogicalAddressOfPage(local.Page) | (uint)local.Offset);
         }
 
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
-        public long GetPage(long logicalAddress) => logicalAddress >> LogPageSizeBits;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public long GetPage(long logicalAddress) => AbsoluteAddress(logicalAddress) >> LogPageSizeBits;
 
         /// <summary>Get page index for page</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public int GetPageIndexForPage(long page) => (int)(page % BufferSize);
 
         /// <summary>Get page index for address</summary>
-        public int GetPageIndexForAddress(long address) => (int)((address >> LogPageSizeBits) % BufferSize);
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public int GetPageIndexForAddress(long address) => GetPageIndexForPage(GetPage(address));
 
         /// <summary>Get capacity (number of pages)</summary>
         public int GetCapacityNumPages() => BufferSize;
@@ -851,8 +858,13 @@ namespace Tsavorite.core
         /// <summary>Get page size</summary>
         public long GetPageSize() => PageSize;
 
+        /// <summary>Get logical address of start of page</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public long GetStartOfPage(long address) => address & ~PageSizeMask;
+
         /// <summary>Get offset in page</summary>
-        public long GetOffsetInPage(long address) => address & PageSizeMask;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public long GetOffsetOnPage(long address) => address & PageSizeMask;
 
         /// <summary>Get sector size for main hlog device</summary>
         public int GetDeviceSectorSize() => sectorSize;
@@ -898,8 +910,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         bool NeedToShiftAddress(long pageIndex, PageOffset localTailPageOffset, int numSlots)
         {
-            var tailAddress = (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
-            var shiftAddress = pageIndex << LogPageSizeBits;
+            var tailAddress = SetIsInMemory(GetStartLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots)));
+            var shiftAddress = SetIsInMemory(GetStartLogicalAddressOfPage(pageIndex));
 
             // Check whether we need to shift ROA
             var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
@@ -928,7 +940,7 @@ namespace Tsavorite.core
         void IssueShiftAddress(long pageIndex)
         {
             // Issue the shift of address
-            var shiftAddress = pageIndex << LogPageSizeBits;
+            var shiftAddress = GetStartLogicalAddressOfPage(pageIndex);
             var tailAddress = GetTailAddress();
 
             long desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
@@ -998,10 +1010,10 @@ namespace Tsavorite.core
             localTailPageOffset.Offset = numSlots;
             TailPageOffset = localTailPageOffset;
 
-            // At this point, the slot is allocated and we are not allowed to refresh epochs any longer.
+            // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
 
-            // Offset is zero, for the first allocation on the new page
-            return ((long)localTailPageOffset.Page) << LogPageSizeBits;
+            // Offset is zero for the first allocation on the new page
+            return GetStartLogicalAddressOfPage(localTailPageOffset.Page);
         }
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
@@ -1036,9 +1048,10 @@ namespace Tsavorite.core
                 // Note that TailPageOffset is now unstable -- there may be a GetTailAddress call spinning for
                 // it to stabilize. Therefore, HandlePageOverflow needs to stabilize TailPageOffset immediately,
                 // before performing any epoch bumps or system calls.
-                return HandlePageOverflow(ref localTailPageOffset, numSlots);
+                return SetIsInMemory(HandlePageOverflow(ref localTailPageOffset, numSlots));
             }
-            return (((long)localTailPageOffset.Page) << LogPageSizeBits) | ((long)(localTailPageOffset.Offset - numSlots));
+
+            return SetIsInMemory(GetStartLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots)));
         }
 
         /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
@@ -1064,14 +1077,14 @@ namespace Tsavorite.core
         /// OnPagesClosed to be completed.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool CannotAllocate(int page) => page >= BufferSize + (ClosedUntilAddress >> LogPageSizeBits);
+        private bool CannotAllocate(int page) => page >= BufferSize + GetPage(ClosedUntilAddress);
 
         /// <summary>
         /// If the page we are trying to allocate is past the last page with an unflushed address region, 
         /// we have to wait for the flushEvent.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool NeedToWait(int page) => page >= BufferSize + (FlushedUntilAddress >> LogPageSizeBits);
+        private bool NeedToWait(int page) => page >= BufferSize + GetPage(FlushedUntilAddress);
 
         /// <summary>Used by applications to make the current state of the database immutable quickly</summary>
         public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
@@ -1160,8 +1173,8 @@ namespace Tsavorite.core
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal virtual void EvictPage(long page)
         {
-            var start = page << LogPageSizeBits;
-            var end = (page + 1) << LogPageSizeBits;
+            var start = GetStartLogicalAddressOfPage(page);
+            var end = GetStartLogicalAddressOfPage(page + 1);
             if (OnEvictionObserver is not null)
                 MemoryPageScan(start, end, OnEvictionObserver);
             _wrapper.FreePage(page);
@@ -1231,7 +1244,7 @@ namespace Tsavorite.core
                 if (IsReadCache)
                     EvictCallback(closeStartAddress, closeEndAddress);
 
-                for (long closePageAddress = closeStartAddress & ~PageSizeMask; closePageAddress < closeEndAddress; closePageAddress += PageSize)
+                for (long closePageAddress = GetStartOfPage(closeStartAddress); closePageAddress < closeEndAddress; closePageAddress += PageSize)
                 {
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
@@ -1247,7 +1260,7 @@ namespace Tsavorite.core
 
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
-                        _wrapper.FreePage((int)(closePageAddress >> LogPageSizeBits));
+                        _wrapper.FreePage((int)GetPage(closePageAddress));
 
                     _ = Utility.MonotonicUpdate(ref ClosedUntilAddress, end, out _);
                 }
@@ -1269,14 +1282,14 @@ namespace Tsavorite.core
             var _readonly = ReadOnlyAddress;
             var _tail = GetTailAddress();
 
-            Console.WriteLine("BeginAddress: {0}.{1}", GetPage(_begin), GetOffsetInPage(_begin));
-            Console.WriteLine("ClosedUntilAddress: {0}.{1}", GetPage(_closedUntil), GetOffsetInPage(_closedUntil));
-            Console.WriteLine("SafeHead: {0}.{1}", GetPage(_safehead), GetOffsetInPage(_safehead));
-            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetInPage(_head));
-            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetInPage(_flush));
-            Console.WriteLine("SafeReadOnly: {0}.{1}", GetPage(_safereadonly), GetOffsetInPage(_safereadonly));
-            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetInPage(_readonly));
-            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetInPage(_tail));
+            Console.WriteLine("BeginAddress: {0}.{1}", GetPage(_begin), GetOffsetOnPage(_begin));
+            Console.WriteLine("ClosedUntilAddress: {0}.{1}", GetPage(_closedUntil), GetOffsetOnPage(_closedUntil));
+            Console.WriteLine("SafeHead: {0}.{1}", GetPage(_safehead), GetOffsetOnPage(_safehead));
+            Console.WriteLine("Head: {0}.{1}", GetPage(_head), GetOffsetOnPage(_head));
+            Console.WriteLine("FlushedUntil: {0}.{1}", GetPage(_flush), GetOffsetOnPage(_flush));
+            Console.WriteLine("SafeReadOnly: {0}.{1}", GetPage(_safereadonly), GetOffsetOnPage(_safereadonly));
+            Console.WriteLine("ReadOnly: {0}.{1}", GetPage(_readonly), GetOffsetOnPage(_readonly));
+            Console.WriteLine("Tail: {0}.{1}", GetPage(_tail), GetOffsetOnPage(_tail));
         }
 
         /// <summary>
@@ -1285,7 +1298,7 @@ namespace Tsavorite.core
         /// </summary>
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
-            long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
+            long pageAlignedTailAddress = GetStartOfPage(currentTailAddress);
             long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyAddressLagOffset;
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out _))
             {
@@ -1302,12 +1315,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
         {
-            var desiredHeadAddress = (currentTailAddress & ~PageSizeMask) - HeadAddressLagOffset;
+            var desiredHeadAddress = GetStartOfPage(currentTailAddress) - HeadAddressLagOffset;
 
             // Obtain local values of variables that can change
             var currentFlushedUntilAddress = FlushedUntilAddress;
             if (desiredHeadAddress > currentFlushedUntilAddress)
-                desiredHeadAddress = currentFlushedUntilAddress & ~PageSizeMask;
+                desiredHeadAddress = GetStartOfPage(currentFlushedUntilAddress);
 
             if (Utility.MonotonicUpdate(ref HeadAddress, desiredHeadAddress, out _))
             {
@@ -1329,7 +1342,7 @@ namespace Tsavorite.core
             if (newHeadAddress > currentFlushedUntilAddress)
                 newHeadAddress = currentFlushedUntilAddress;
 
-            if (newHeadAddress % (1 << LogPageSizeBits) != 0)
+            if (GetOffsetOnPage(newHeadAddress) != 0)
             {
 
             }
@@ -1353,7 +1366,7 @@ namespace Tsavorite.core
 
             bool update = false;
             long pageLastFlushedAddress = PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress;
-            while (pageLastFlushedAddress >= currentFlushedUntilAddress && currentFlushedUntilAddress >= (page << LogPageSizeBits))
+            while (pageLastFlushedAddress >= currentFlushedUntilAddress && currentFlushedUntilAddress >= GetStartLogicalAddressOfPage(page))
             {
                 currentFlushedUntilAddress = pageLastFlushedAddress;
                 update = true;
@@ -1404,7 +1417,7 @@ namespace Tsavorite.core
         public void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             long tailPage = GetPage(tailAddress);
-            long offsetInPage = GetOffsetInPage(tailAddress);
+            long offsetInPage = GetOffsetOnPage(tailAddress);
             TailPageOffset.Page = (int)tailPage;
             TailPageOffset.Offset = (int)offsetInPage;
 
@@ -1430,7 +1443,7 @@ namespace Tsavorite.core
             pageIndex = GetPageIndexForAddress(tailAddress);
 
             // clear the last page starting from tail address
-            _wrapper.ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
+            _wrapper.ClearPage(pageIndex, (int)GetOffsetOnPage(tailAddress));
 
             // Printing debug info
             logger?.LogInformation("******* Recovered HybridLog Stats *******");
@@ -1442,9 +1455,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>Invoked by users to obtain a record from disk. It uses sector aligned memory to read the record efficiently into memory.</summary>
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
+            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
 
             var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
@@ -1468,13 +1481,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Read record to memory - simple read context version
         /// </summary>
-        /// <param name="fromLogical"></param>
+        /// <param name="fromLogicalAddress"></param>
         /// <param name="numBytes"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        internal unsafe void AsyncReadRecordToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * (fromLogical >> LogPageSizeBits) + (fromLogical & PageSizeMask));
+            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
             var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
 
             var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
@@ -1537,7 +1550,7 @@ namespace Tsavorite.core
 
                 var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
                 var readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask);
+                long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
 
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {
@@ -1562,11 +1575,11 @@ namespace Tsavorite.core
         /// <param name="noFlush"></param>
         public void AsyncFlushPages(long fromAddress, long untilAddress, bool noFlush = false)
         {
-            long startPage = fromAddress >> LogPageSizeBits;
-            long endPage = untilAddress >> LogPageSizeBits;
+            long startPage = GetPage(fromAddress);
+            long endPage = GetPage(untilAddress);
             var numPages = (int)(endPage - startPage);
 
-            long offsetInEndPage = GetOffsetInPage(untilAddress);
+            long offsetInEndPage = GetOffsetOnPage(untilAddress);
 
             // Extra (partial) page being flushed
             if (offsetInEndPage > 0)
@@ -1577,8 +1590,8 @@ namespace Tsavorite.core
              */
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
             {
-                long pageStartAddress = flushPage << LogPageSizeBits;
-                long pageEndAddress = (flushPage + 1) << LogPageSizeBits;
+                long pageStartAddress = GetStartLogicalAddressOfPage(flushPage);
+                long pageEndAddress = GetStartLogicalAddressOfPage(flushPage + 1);
 
                 var asyncResult = new PageAsyncFlushResult<Empty>
                 {
@@ -1625,7 +1638,7 @@ namespace Tsavorite.core
                     continue;
 
                 // Partial page starting point, need to wait until the ongoing adjacent flush is completed to ensure correctness
-                if (GetOffsetInPage(asyncResult.fromAddress) > 0)
+                if (GetOffsetOnPage(asyncResult.fromAddress) > 0)
                 {
                     var index = GetPageIndexForAddress(asyncResult.fromAddress);
 
@@ -1638,7 +1651,7 @@ namespace Tsavorite.core
 
                     // Perform work from shared queue if possible
                     if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
-                        WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                        WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);
                 }
                 else
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
@@ -1663,7 +1676,7 @@ namespace Tsavorite.core
                     context = context,
                     count = 1,
                     partial = false,
-                    untilAddress = (flushPage + 1) << LogPageSizeBits
+                    untilAddress = GetStartLogicalAddressOfPage(flushPage + 1)
                 };
 
                 WriteAsync(flushPage, callback, asyncResult);
@@ -1705,7 +1718,7 @@ namespace Tsavorite.core
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
-                    long flushPageAddress = flushPage << LogPageSizeBits;
+                    long flushPageAddress = GetStartLogicalAddressOfPage(flushPage);
                     var pageSize = PageSize;
                     if (flushPage == endPage - 1)
                         pageSize = (int)(endLogicalAddress - flushPageAddress);
@@ -1731,7 +1744,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void AsyncGetFromDisk(long fromLogical, int numBytes, AsyncIOContext context, SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context, SectorAlignedMemory result = default)
         {
             if (epoch.ThisInstanceProtected()) // Do not spin for unprotected IO threads
             {
@@ -1744,9 +1757,9 @@ namespace Tsavorite.core
             }
 
             if (result == null)
-                AsyncReadRecordToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, ref context);
+                AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
             else
-                AsyncReadRecordObjectsToMemory(fromLogical, numBytes, AsyncGetFromDiskCallback, context, result);
+                AsyncReadRecordObjectsToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, context, result);
         }
 
         /// <summary>
@@ -1784,7 +1797,7 @@ namespace Tsavorite.core
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
                 uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+                long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
 
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {
@@ -1899,8 +1912,8 @@ namespace Tsavorite.core
                 }
 
                 var _flush = FlushedUntilAddress;
-                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
-                    WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                if (GetOffsetOnPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+                    WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);
             }
             catch when (disposed) { }
         }
@@ -1910,12 +1923,12 @@ namespace Tsavorite.core
             try
             {
                 errorList.TruncateUntil(info.UntilAddress);
-                var page = info.FromAddress >> PageSizeMask;
+                var page = GetPage(info.FromAddress);
                 _ = Utility.MonotonicUpdate(ref PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress, info.UntilAddress, out _);
                 ShiftFlushedUntilAddress();
                 var _flush = FlushedUntilAddress;
-                if (GetOffsetInPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
-                    WriteAsync(request.fromAddress >> LogPageSizeBits, AsyncFlushPageCallback, request);
+                if (GetOffsetOnPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
+                    WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);
             }
             catch when (disposed) { }
         }
@@ -1945,7 +1958,7 @@ namespace Tsavorite.core
                 // Unset dirty bit for flushed pages
                 try
                 {
-                    var startAddress = result.page << LogPageSizeBits;
+                    var startAddress = GetStartLogicalAddressOfPage(result.page);
                     var endAddress = startAddress + PageSize;
 
                     if (result.fromAddress > startAddress)
@@ -1989,6 +2002,6 @@ namespace Tsavorite.core
             catch when (disposed) { }
         }
 
-        internal string PrettyPrintLogicalAddress(long logicalAddress) => $"{logicalAddress}:{GetPage(logicalAddress)}.{GetOffsetInPage(logicalAddress)}";
+        internal string PrettyPrintLogicalAddress(long logicalAddress) => $"{logicalAddress}:{GetPage(logicalAddress)}.{GetOffsetOnPage(logicalAddress)}";
     }
 }

@@ -6,10 +6,12 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+    using static LogAddress;
+
     // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
@@ -75,9 +77,6 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -86,7 +85,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize: int.MaxValue, objectIdMap: null);
 
-        public override void Initialize() => Initialize(Constants.kFirstValidAddress);
+        public override void Initialize() => Initialize(kFirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
@@ -222,10 +221,10 @@ namespace Tsavorite.core
         public long GetPhysicalAddress(long logicalAddress)
         {
             // Offset within page
-            var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
+            var offset = GetOffsetOnPage(logicalAddress);
 
             // Index of page within the circular buffer
-            var pageIndex = GetPageIndex(logicalAddress);
+            var pageIndex = GetPageIndexForAddress(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
 

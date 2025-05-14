@@ -6,14 +6,17 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     // RecordInfo layout (64 bits total, high to low):
+    //   RecordInfo bits:
     //      [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone]
-    //      [PreviousAddressIsOnDisk][HasExpiration][HasETag][Unused4][ValueIsObject][ValueIsInline][KeyIsInline]
-    //      [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] where R = readcache, A = address
+    //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline]
+    //   LogAddress bits (where A = address):
+    //      [AddressTypeHigh][AddressTypeLow] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
@@ -21,20 +24,13 @@ namespace Tsavorite.core
         const int kTotalSizeInBytes = 8;
         const int kTotalBits = kTotalSizeInBytes * 8;
 
-        // Previous address is the low 48 bits, with the 48th being the readcache bit
-        internal const int kPreviousAddressBits = 48;
-        internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
-
         // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
-        const int kKeyIsInlineBitOffset = kPreviousAddressBits;
+        const int kKeyIsInlineBitOffset = kAddressBits;
         const int kValueIsInlineBitOffset = kKeyIsInlineBitOffset + 1;
         const int kValueIsObjectBitOffset = kValueIsInlineBitOffset + 1;
-        const int kUnused3BitOffset = kValueIsObjectBitOffset + 1;
-        const int kHasETagBitOffset = kUnused3BitOffset + 1;
+        const int kHasETagBitOffset = kValueIsObjectBitOffset + 1;
         const int kHasExpirationBitOffset = kHasETagBitOffset + 1;
-        const int kPreviousAddressIsOnDiskBitOffset = kHasExpirationBitOffset + 1;
-
-        const int kTombstoneBitOffset = kPreviousAddressIsOnDiskBitOffset + 1;
+        const int kTombstoneBitOffset = kHasExpirationBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kSealedBitOffset = kValidBitOffset + 1;
         const int kUnused2BitOffset = kSealedBitOffset + 1;
@@ -47,11 +43,8 @@ namespace Tsavorite.core
         const long kKeyIsInlineBitMask = 1L << kKeyIsInlineBitOffset;
         const long kValueIsInlineBitMask = 1L << kValueIsInlineBitOffset;
         const long kValueIsObjectBitMask = 1L << kValueIsObjectBitOffset;
-        const long kUnused3BitMask = 1L << kUnused3BitOffset;
         const long kHasETagBitMask = 1L << kHasETagBitOffset;
         const long kHasExpirationBitMask = 1L << kHasExpirationBitOffset;
-        const long kPreviousAddressIsOnDiskBitMask = 1L << kPreviousAddressIsOnDiskBitOffset;
-
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
@@ -68,7 +61,7 @@ namespace Tsavorite.core
 
         // Used by routines to initialize a local recordInfo variable to serve as an initial source for srcRecordInfo, before we have 
         // an in-memory address (or even know if the key will be found in-memory).
-        internal static RecordInfo InitialValid = new() { Valid = true, PreviousAddress = Constants.kTempInvalidAddress };
+        internal static RecordInfo InitialValid = new() { Valid = true, PreviousAddress = kTempInvalidAddress };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteInfo(bool inNewVersion, long previousAddress)
@@ -248,7 +241,7 @@ namespace Tsavorite.core
         public void InitializeNewRecord()
         {
             // Initialize to Sealed and Invalid (do not include kValidBitMask) and to Inline Key and Value so no Oversize or ObjectId is expected.
-            word = kSealedBitMask | kKeyIsInlineBitMask | kValueIsInlineBitMask;    // Does not include 
+            word = kSealedBitMask | kKeyIsInlineBitMask | kValueIsInlineBitMask;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -280,10 +273,10 @@ namespace Tsavorite.core
         public long PreviousAddress
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get { return word & kPreviousAddressMaskInWord; }
+            readonly get { return word & kAddressBitMask; }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set { word = (word & ~kPreviousAddressMaskInWord) | (value & kPreviousAddressMaskInWord); }
+            set { word = (word & ~kAddressBitMask) | (value & kAddressBitMask); }
         }
 
         public readonly bool HasETag => (word & kHasETagBitMask) != 0;
@@ -314,14 +307,6 @@ namespace Tsavorite.core
 
         public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
-        internal bool PreviousAddressIsOnDisk
-        {
-            readonly get => (word & kPreviousAddressIsOnDiskBitMask) != 0;
-            set => word = value ? word | kPreviousAddressIsOnDiskBitMask : word & ~kPreviousAddressIsOnDiskBitMask;
-        }
-        public void SetPreviousAddressIsOnDisk() => word |= kPreviousAddressIsOnDiskBitMask;
-        public void ClearPreviousAddressIsOnDisk() => word &= ~kPreviousAddressIsOnDiskBitMask;
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength() => kTotalSizeInBytes;
 
@@ -337,19 +322,13 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
         }
 
-        internal bool Unused3
-        {
-            readonly get => (word & kUnused3BitMask) != 0;
-            set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
-        }
-
         public override readonly string ToString()
         {
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"prev {AbsoluteAddress(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
+            return $"prev {AddressString(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
                  + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, KisInl {KeyIsInline}, VisInl {ValueIsInline}, VisObj {bstr(ValueIsObject)},"
-                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
+                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
         }
     }
 }

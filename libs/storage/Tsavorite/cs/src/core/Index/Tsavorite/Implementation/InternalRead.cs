@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -77,12 +79,12 @@ namespace Tsavorite.core
             {
                 if (stackCtx.hei.IsReadCache)
                 {
-                    if (FindInReadCache(key, ref stackCtx, minAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
+                    if (FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false))
                     {
                         // Note: When session is in PREPARE phase, a read-cache record cannot be new-version. This is because a new-version record
                         // insertion would have invalidated the read-cache entry, and before the new-version record can go to disk become eligible
                         // to enter the read-cache, the PREPARE phase for that session will be over due to an epoch refresh.
-                        readInfo.Address = Constants.kInvalidAddress;   // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
+                        readInfo.Address = kInvalidAddress;     // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))

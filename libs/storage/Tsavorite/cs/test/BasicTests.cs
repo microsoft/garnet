@@ -648,7 +648,7 @@ namespace Tsavorite.test
             ClassicAssert.Less(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
 
             // Now this will read from the read cache.
-            functions.expectedReadAddress = Constants.kInvalidAddress;
+            functions.expectedReadAddress = LogAddress.kInvalidAddress;
             status = skipReadCachebContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output);
             ClassicAssert.IsFalse(status.IsPending);
             ClassicAssert.IsTrue(status.Found);
