@@ -87,7 +87,7 @@ jobs:
           auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           save-data-file: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           summary-always: true
-          gh-pages-branch: 'continuousbenchmark'
+          gh-pages-branch: ${{ matrix.framework == 'net8.0' && 'continuousbenchmark_net80' || 'continuousbenchmark' }}
           benchmark-data-dir-path: 'website/static/charts'
           max-items-in-chart: 50
           alert-threshold: '110%'
