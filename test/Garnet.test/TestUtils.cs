@@ -343,7 +343,7 @@ namespace Garnet.test
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
-                SlowLogThreshold = slowLogThreshold
+                SlowLogThreshold = slowLogThreshold,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -783,7 +783,7 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false, EndPoint endPoint = null)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -796,7 +796,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions, rawResult: raw);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

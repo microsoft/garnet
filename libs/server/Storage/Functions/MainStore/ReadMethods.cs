@@ -152,7 +152,7 @@ namespace Garnet.server
             if (existingEtag == etagToMatchAgainst)
             {
                 // write back array of the format [etag, nil]
-                var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                var nilResp = functionsState.nilResp;
                 // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                 var numDigitsInEtag = NumUtils.CountDigits(existingEtag);
                 WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);

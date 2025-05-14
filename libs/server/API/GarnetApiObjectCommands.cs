@@ -59,20 +59,20 @@ namespace Garnet.server
             => storageSession.SortedSetLength(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRange(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetRange(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetScore(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetScore(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetScores(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetScores(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetPop(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetPop(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetMPop(ReadOnlySpan<ArgSlice> keys, int count, bool lowScoresFirst, out ArgSlice poppedKey, out (ArgSlice member, ArgSlice score)[] pairs)
@@ -111,28 +111,28 @@ namespace Garnet.server
             => storageSession.SortedSetRemoveRangeByRank(key, start, stop, out countRemoved, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetIncrement(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetIncrement(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetIncrement(ArgSlice key, double increment, ArgSlice member, out double newScore)
             => storageSession.SortedSetIncrement(key, increment, member, out newScore, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRemoveRange(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetRemoveRange(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRank(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetRank(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
             => storageSession.SortedSetRank(key, member, reverse, out rank, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetRandomMember(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetRandomMember(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRange(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
@@ -170,24 +170,24 @@ namespace Garnet.server
             => storageSession.SortedSetIntersectStore(destinationKey, keys, weights, aggregateType, out count);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetExpire(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetExpire(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetExpire(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results)
             => storageSession.SortedSetExpire(key, members, expireAt, expireOption, out results, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetPersist(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetPersist(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetPersist(ArgSlice key, ReadOnlySpan<ArgSlice> members, out int[] results)
             => storageSession.SortedSetPersist(key, members, out results, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SortedSetTimeToLive(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SortedSetTimeToLive(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn)
@@ -210,12 +210,12 @@ namespace Garnet.server
         #region Geospatial commands
 
         /// <inheritdoc />
-        public GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.GeoAdd(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.GeoAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.GeoCommands(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.GeoCommands(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
@@ -257,12 +257,12 @@ namespace Garnet.server
             => storageSession.ListPush(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListPosition(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.ListPosition(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.ListPop(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus ListLeftPop(ArgSlice key, out ArgSlice element)
@@ -277,8 +277,8 @@ namespace Garnet.server
             => storageSession.ListPopMultiple(keys, OperationDirection.Left, count, ref objectContext, out poppedKey, out poppedElements);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListPop(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.ListPop(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus ListRightPop(ArgSlice key, out ArgSlice element)
@@ -315,24 +315,24 @@ namespace Garnet.server
             => storageSession.ListTrim(key, ref input, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListRange(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.ListRange(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListInsert(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
             => storageSession.ListInsert(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-             => storageSession.ListIndex(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+             => storageSession.ListIndex(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
             => storageSession.ListRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListSet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.ListSet(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ListSet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.ListSet(key, ref input, ref output, ref objectContext);
 
         #endregion
 
@@ -375,12 +375,12 @@ namespace Garnet.server
             => storageSession.SetMembers(key, out members, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetMembers(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SetMembers(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetIsMember(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SetIsMember(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetIsMember(ArgSlice key, ArgSlice[] members, out int[] result)
@@ -395,12 +395,12 @@ namespace Garnet.server
             => storageSession.SetPop(key, count, out members, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetPop(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SetPop(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.SetRandomMember(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.SetRandomMember(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
@@ -474,16 +474,16 @@ namespace Garnet.server
         => storageSession.HashGetAll(key, out values, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-        => storageSession.HashGet(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        => storageSession.HashGet(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashGetAll(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashGetAll(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashGetMultiple(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashGetMultiple(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
@@ -518,44 +518,44 @@ namespace Garnet.server
         => storageSession.HashRandomField(key, count, withValues, out fields, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashRandomField(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashRandomField(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashDelete(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
             => storageSession.HashDelete(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashKeys(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashKeys(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashVals(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashVals(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashIncrement(byte[] key, ArgSlice input, out ObjectOutputHeader output)
             => storageSession.HashIncrement(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashIncrement(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashIncrement(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashPersist(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashPersist(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input)

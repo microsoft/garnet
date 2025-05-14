@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -21,12 +20,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus GeoAdd<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-          => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+          => RMWObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
@@ -36,12 +35,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus GeoCommands<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus GeoCommands<TObjectContext>(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Geospatial search and return result..
@@ -85,7 +84,8 @@ namespace Garnet.server
                         return GarnetStatus.WRONGTYPE;
                     }
 
-                    firstSortedSet.GeoSearch(ref input, ref output, ref opts, true);
+                    firstSortedSet.GeoSearch(ref input, ref output, functionsState.respProtocolVersion,
+                                             ref opts, true);
 
                     return GarnetStatus.OK;
                 }
@@ -132,11 +132,7 @@ namespace Garnet.server
             }
             var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-            var curr = ptr;
-            var end = curr + output.Length;
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
             try
             {
@@ -147,7 +143,8 @@ namespace Garnet.server
                 {
                     if (firstObj.GarnetObject is SortedSetObject firstSortedSet)
                     {
-                        firstSortedSet.GeoSearch(ref input, ref searchOutMem, ref opts, false);
+                        firstSortedSet.GeoSearch(ref input, ref searchOutMem, functionsState.respProtocolVersion,
+                                                 ref opts, false);
                     }
                     else
                     {
@@ -164,8 +161,7 @@ namespace Garnet.server
                 {
                     // Expire/Delete the destination key if the source key is not found
                     _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref lockableContext, ref objectStoreLockableContext);
-                    while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
 
@@ -180,8 +176,7 @@ namespace Garnet.server
 
                     if (RespReadUtils.TryReadErrorAsSpan(out var error, ref currOutPtr, endOutPtr))
                     {
-                        while (!RespWriteUtils.TryWriteError(error, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        writer.WriteError(error);
                         return GarnetStatus.OK;
                     }
 
@@ -211,11 +206,10 @@ namespace Garnet.server
                         SortedSetOp = SortedSetOperation.ZADD,
                     }, ref parseState);
 
-                    var zAddOutput = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+                    var zAddOutput = new GarnetObjectStoreOutput();
                     RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreLockableContext, ref zAddOutput);
 
-                    while (!RespWriteUtils.TryWriteInt32(foundItems, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteInt32(foundItems);
                 }
                 finally
                 {
@@ -228,9 +222,6 @@ namespace Garnet.server
             {
                 if (createTransaction)
                     txnManager.Commit(true);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
             }
         }
     }

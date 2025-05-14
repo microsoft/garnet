@@ -251,6 +251,6 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">Database ID</param>
         /// <returns>Functions state</returns>
-        internal FunctionsState CreateFunctionsState(int dbId = 0);
+        internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
     }
 }

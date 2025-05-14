@@ -187,10 +187,11 @@ namespace Garnet.cluster
                     await Task.Yield();
 
                 // Get sync metadata for checkpoint
-                await PrepareForSync();
+                var fullSync = await PrepareForSync();
 
                 // Stream checkpoint to replicas
-                await TakeStreamingCheckpoint();
+                if (fullSync)
+                    await TakeStreamingCheckpoint();
 
                 // Notify sync session of success success
                 for (var i = 0; i < NumSessions; i++)
@@ -215,7 +216,7 @@ namespace Garnet.cluster
             }
 
             // Acquire checkpoint and lock AOF if possible
-            async Task PrepareForSync()
+            async Task<bool> PrepareForSync()
             {
                 if (disklessRepl)
                 {
@@ -235,6 +236,7 @@ namespace Garnet.cluster
                     #endregion
 
                     #region initializeConnection
+                    var fullSync = false;
                     for (var i = 0; i < NumSessions; i++)
                     {
                         try
@@ -257,6 +259,7 @@ namespace Garnet.cluster
                             {
                                 // Reset replica database in preparation for full sync
                                 Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["CLUSTER", "FLUSHALL"]));
+                                fullSync = true;
                             }
                         }
                         catch (Exception ex)
@@ -268,6 +271,8 @@ namespace Garnet.cluster
 
                     await WaitForFlush();
                     #endregion
+
+                    return fullSync;
                 }
                 else
                 {

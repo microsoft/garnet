@@ -24,9 +24,10 @@ namespace Garnet.server
         WithEtag = 16,
 
         /// <summary>
-        /// Flag indicating a SET operation that returns the previous value
+        /// Flag indicating a SET operation that returns the previous value (for strings).
         /// </summary>
         SetGet = 32,
+
         /// <summary>
         /// Deterministic
         /// </summary>

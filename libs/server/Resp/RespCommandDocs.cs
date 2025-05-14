@@ -2,11 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
-using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
 using Garnet.server.Resp;
@@ -72,16 +71,8 @@ namespace Garnet.server
         /// </summary>
         public RespCommandArgumentBase[] Arguments { get; init; }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
-
         private const string RespCommandsDocsEmbeddedFileName = @"RespCommandsDocs.json";
 
-        private string respFormat;
         private readonly RespCommandDocFlags docFlags;
         private readonly string[] respFormatDocFlags;
 
@@ -156,13 +147,12 @@ namespace Garnet.server
                 }
             }
 
-            AllRespCommandsDocs =
-                new Dictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs, StringComparer.OrdinalIgnoreCase);
-            AllRespSubCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllSubCommandsDocs);
-            ExternalRespCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpAllRespCommandsDocs
+            AllRespCommandsDocs = tmpAllRespCommandsDocs.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            AllRespSubCommandsDocs = tmpAllSubCommandsDocs.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+            ExternalRespCommandsDocs = tmpAllRespCommandsDocs
                 .Where(ci => allExternalCommands.Contains(ci.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
-            ExternalRespSubCommandsDocs = new ReadOnlyDictionary<string, RespCommandDocs>(tmpExternalSubCommandsDocs);
+                .ToFrozenDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+            ExternalRespSubCommandsDocs = tmpExternalSubCommandsDocs.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
             return true;
         }
@@ -219,84 +209,82 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public string ToRespFormat()
+        public void ToRespFormat(ref RespMemoryWriter writer)
         {
-            var sb = new StringBuilder();
-            var argCount = 0;
+            var argCount = 1; // group
 
-            string key;
+            if (Summary != null)
+                argCount++;
 
-            if (this.Summary != null)
+            if (Complexity != null)
+                argCount++;
+
+            if (DocFlags != RespCommandDocFlags.None)
+                argCount++;
+
+            if (ReplacedBy != null)
+                argCount++;
+
+            if (Arguments != null)
+                argCount++;
+
+            if (SubCommands != null)
+                argCount++;
+
+            writer.WriteAsciiBulkString(Name);
+            writer.WriteMapLength(argCount);
+
+            if (Summary != null)
             {
-                key = "summary";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Summary.Length}\r\n{this.Summary}\r\n");
-                argCount += 2;
+                writer.WriteBulkString("summary"u8);
+                writer.WriteAsciiBulkString(Summary);
             }
 
-            key = "group";
-            sb.Append($"${key.Length}\r\n{key}\r\n");
-            var respType = EnumUtils.GetEnumDescriptions(this.Group)[0];
-            sb.Append($"${respType.Length}\r\n{respType}\r\n");
-            argCount += 2;
+            writer.WriteBulkString("group"u8);
+            var respType = EnumUtils.GetEnumDescriptions(Group)[0];
+            writer.WriteAsciiBulkString(respType);
 
-            if (this.Complexity != null)
+            if (Complexity != null)
             {
-                key = "complexity";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.Complexity.Length}\r\n{this.Complexity}\r\n");
-                argCount += 2;
+                writer.WriteBulkString("complexity"u8);
+                writer.WriteAsciiBulkString(Complexity);
             }
 
-            if (this.DocFlags != RespCommandDocFlags.None)
+            if (DocFlags != RespCommandDocFlags.None)
             {
-                key = "doc_flags";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{respFormatDocFlags.Length}\r\n");
+                writer.WriteBulkString("doc_flags"u8);
+                writer.WriteSetLength(respFormatDocFlags.Length);
                 foreach (var respDocFlag in respFormatDocFlags)
                 {
-                    sb.Append($"+{respDocFlag.Length}\r\n");
+                    writer.WriteSimpleString(respDocFlag);
                 }
-
-                argCount += 2;
             }
 
-            if (this.ReplacedBy != null)
+            if (ReplacedBy != null)
             {
-                key = "replaced_by";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"${this.ReplacedBy.Length}\r\n{this.ReplacedBy}\r\n");
-                argCount += 2;
+                writer.WriteBulkString("replaced_by"u8);
+                writer.WriteAsciiBulkString(ReplacedBy);
             }
 
             if (Arguments != null)
             {
-                key = "arguments";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{Arguments.Length}\r\n");
+                writer.WriteBulkString("arguments"u8);
+                writer.WriteArrayLength(Arguments.Length);
                 foreach (var argument in Arguments)
                 {
-                    sb.Append(argument.RespFormat);
+                    argument.ToRespFormat(ref writer);
                 }
-
-                argCount += 2;
             }
 
             if (SubCommands != null)
             {
-                key = "subcommands";
-                sb.Append($"${key.Length}\r\n{key}\r\n");
-                sb.Append($"*{SubCommands.Length * 2}\r\n");
+                writer.WriteBulkString("subcommands"u8);
+                writer.WriteMapLength(SubCommands.Length);
                 foreach (var subCommand in SubCommands)
                 {
-                    sb.Append(subCommand.RespFormat);
+                    subCommand.ToRespFormat(ref writer);
                 }
-
-                argCount += 2;
             }
-
-            sb.Insert(0, $"${Name.Length}\r\n{Name}\r\n*{argCount}\r\n");
-            return sb.ToString();
         }
     }
 

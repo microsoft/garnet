@@ -363,12 +363,12 @@ namespace Garnet.server
         public override IDatabaseManager Clone(bool enableAof) => new SingleDatabaseManager(this, enableAof);
 
         /// <inheritdoc/>
-        public override FunctionsState CreateFunctionsState(int dbId = 0)
+        public override FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             return new(AppendOnlyFile, VersionMap, StoreWrapper.customCommandManager, null, ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer);
+                StoreWrapper.GarnetObjectSerializer, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
