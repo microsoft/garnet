@@ -67,7 +67,8 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, out long sizeChange)
+        public sealed override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+                                            byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -75,17 +76,7 @@ namespace Garnet.server
             {
                 // Scan Command
                 case RespCommand.COSCAN:
-                    if (ObjectUtils.ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
-                            out var patternLength, out var limitCount, out _, out var error))
-                    {
-                        Scan(cursorInput, out var items, out var cursorOutput, count: limitCount, pattern: pattern,
-                            patternLength: patternLength);
-                        ObjectUtils.WriteScanOutput(items, cursorOutput, ref output.SpanByteAndMemory);
-                    }
-                    else
-                    {
-                        ObjectUtils.WriteScanError(error, ref output.SpanByteAndMemory);
-                    }
+                    Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
                     if ((byte)input.header.type != this.type)

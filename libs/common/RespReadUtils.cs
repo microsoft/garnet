@@ -298,7 +298,7 @@ namespace Garnet.common
         /// and, if successful, moves the given ptr to the end of the length header.
         /// <para />
         /// NOTE:
-        ///     It will throw an <see cref="RespParsingException"/> if length header is negative. 
+        ///     It will throw an <see cref="RespParsingException"/> if length header is negative.
         ///     It is primarily used for parsing header length from packets received from server side.
         /// </summary>
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
@@ -719,8 +719,8 @@ namespace Garnet.common
         /// Try slice a byte array with length header.
         /// </summary>
         /// <remarks>
-        /// SAFETY: Because this hands out a span over the underlying buffer to the caller, 
-        /// it must be aware that any changes in the memory where <paramref name="ptr"/> pointed to 
+        /// SAFETY: Because this hands out a span over the underlying buffer to the caller,
+        /// it must be aware that any changes in the memory where <paramref name="ptr"/> pointed to
         /// will be reflected in the <paramref name="result"/> span. i.e.
         /// <code>
         /// byte[] buffer = "$2\r\nAB\r\n"u8.ToArray();
@@ -728,7 +728,7 @@ namespace Garnet.common
         /// {
         ///     TrySliceWithLengthHeader(out var result, ref ptr, ptr + buffer.Length);
         ///     Debug.Assert(result.SequenceEquals("AB"u8)); // True
-        ///     
+        ///
         ///     *(ptr - 4) = (byte)'C';
         ///     *(ptr - 3) = (byte)'D';
         ///     Debug.Assert(result.SequenceEquals("CD"u8)); // True
@@ -1217,7 +1217,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Read serialized data for migration
-        /// </summary>        
+        /// </summary>
         public static bool TryReadSerializedSpanByte(ref byte* keyPtr, ref byte keyMetaDataSize, ref byte* valPtr, ref byte valMetaDataSize, ref byte* ptr, byte* end)
         {
             //1. safe read ksize
@@ -1251,7 +1251,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Read serialized data for migration
-        /// </summary>  
+        /// </summary>
         public static bool TryReadSerializedData(out byte[] key, out byte[] value, out long expiration, ref byte* ptr, byte* end)
         {
             expiration = -1;

@@ -23,16 +23,9 @@ namespace Garnet.server
             try
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                if (respProtocolVersion == 2)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
-                        SendAndReset();
-                }
+
+                WritePushLength(3);
+
                 while (!RespWriteUtils.TryWriteBulkString("message"u8, ref dcurr, dend))
                     SendAndReset();
 
@@ -60,16 +53,9 @@ namespace Garnet.server
             try
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                if (respProtocolVersion == 2)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(4, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWritePushLength(4, ref dcurr, dend))
-                        SendAndReset();
-                }
+
+                WritePushLength(4);
+
                 while (!RespWriteUtils.TryWriteBulkString("pmessage"u8, ref dcurr, dend))
                     SendAndReset();
 

@@ -45,17 +45,9 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        [JsonIgnore]
-        public string RespFormat => respFormat ??= ToRespFormat();
-
         [JsonIgnore]
         public string[] RespFormatFlags => respFormatFlags;
 
-        private string respFormat;
         private readonly KeySpecificationFlags flags;
         private readonly string[] respFormatFlags;
 
@@ -63,40 +55,48 @@ namespace Garnet.server
         /// Serializes the current object to RESP format
         /// </summary>
         /// <returns>Serialized value</returns>
-        public string ToRespFormat()
+        public void ToRespFormat(ref RespMemoryWriter writer)
         {
-            var sb = new StringBuilder();
             var elemCount = 0;
 
-            if (this.Notes != null)
+            if (Notes != null)
+                elemCount++;
+
+            if (Flags != KeySpecificationFlags.None)
+                elemCount++;
+
+            if (BeginSearch != null)
+                elemCount++;
+
+            if (FindKeys != null)
+                elemCount++;
+
+            writer.WriteMapLength(elemCount);
+
+            if (Notes != null)
             {
-                elemCount += 2;
-                sb.Append("$5\r\nnotes\r\n");
-                sb.Append($"${this.Notes.Length}\r\n{this.Notes}\r\n");
+                writer.WriteBulkString("notes"u8);
+                writer.WriteAsciiBulkString(Notes);
             }
 
-            if (this.Flags != KeySpecificationFlags.None)
+            if (Flags != KeySpecificationFlags.None)
             {
-                elemCount += 2;
-                sb.Append("$5\r\nflags\r\n");
-                sb.Append($"*{this.respFormatFlags.Length}\r\n");
-                foreach (var flag in this.respFormatFlags)
-                    sb.Append($"+{flag}\r\n");
+                writer.WriteBulkString("flags"u8);
+                writer.WriteSetLength(respFormatFlags.Length);
+
+                foreach (var flag in respFormatFlags)
+                    writer.WriteSimpleString(flag);
             }
 
-            if (this.BeginSearch != null)
+            if (BeginSearch != null)
             {
-                elemCount += 2;
-                sb.Append(this.BeginSearch.RespFormat);
+                BeginSearch.ToRespFormat(ref writer);
             }
 
-            if (this.FindKeys != null)
+            if (FindKeys != null)
             {
-                elemCount += 2;
-                sb.Append(this.FindKeys.RespFormat);
+                FindKeys.ToRespFormat(ref writer);
             }
-
-            return $"*{elemCount}\r\n{sb}";
         }
     }
 
@@ -147,39 +147,8 @@ namespace Garnet.server
         /// </summary>
         public abstract string MethodName { get; }
 
-        /// <summary>
-        /// Type of the key specification method in RESP format
-        /// </summary>
-        public abstract string RespFormatType { get; }
-
-        /// <summary>
-        /// Spec of the key specification method in RESP format
-        /// </summary>
-        public abstract string RespFormatSpec { get; }
-
-        /// <summary>
-        /// Returns the serialized representation of the current object in RESP format
-        /// This property returns a cached value, if exists (this value should never change after object initialization)
-        /// </summary>
-        public string RespFormat => respFormat ??= ToRespFormat();
-
-        private string respFormat;
-
-        /// <summary>
-        /// Serializes the current object to RESP format
-        /// </summary>
-        /// <returns>Serialized value</returns>
-        public string ToRespFormat()
-        {
-            var sb = new StringBuilder();
-            sb.Append($"${this.MethodName.Length}\r\n{this.MethodName}\r\n");
-            sb.Append("*4\r\n");
-            sb.Append("$4\r\ntype\r\n");
-            sb.Append($"{this.RespFormatType}\r\n");
-            sb.Append("$4\r\nspec\r\n");
-            sb.Append($"{this.RespFormatSpec}\r\n");
-            return sb.ToString();
-        }
+        /// <inheritdoc />
+        public abstract void ToRespFormat(ref RespMemoryWriter writer);
     }
 
     /// <summary>
@@ -213,17 +182,17 @@ namespace Garnet.server
         public int Index { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$5\r\nindex";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            get { return this.respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("index"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(1);
+            writer.WriteBulkString("index"u8);
+            writer.WriteInt32(Index);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public BeginSearchIndex()
@@ -267,17 +236,19 @@ namespace Garnet.server
         public int StartFrom { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$7\r\nkeyword";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            get { return this.respFormatSpec ??= $"*4\r\n$7\r\nkeyword\r\n${this.Keyword?.Length ?? 0}\r\n{this.Keyword}\r\n$9\r\nstartfrom\r\n:{this.StartFrom}"; }
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("keyword"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("keyword"u8);
+            writer.WriteAsciiBulkString(Keyword);
+            writer.WriteBulkString("startfrom"u8);
+            writer.WriteInt32(StartFrom);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public BeginSearchKeyword() { }
@@ -323,17 +294,15 @@ namespace Garnet.server
     public class BeginSearchUnknown : BeginSearchKeySpecMethodBase
     {
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$7\r\nunknown";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            get { return this.respFormatSpec ??= $"*0"; }
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("unknown"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteEmptyArray();
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public override bool TryGetStartIndex(ref SessionParseState parseState, out int index)
@@ -384,17 +353,21 @@ namespace Garnet.server
         public int Limit { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$5\r\nrange";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            get { return this.respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("range"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(3);
+            writer.WriteBulkString("lastkey"u8);
+            writer.WriteInt32(LastKey);
+            writer.WriteBulkString("keystep"u8);
+            writer.WriteInt32(KeyStep);
+            writer.WriteBulkString("limit"u8);
+            writer.WriteInt32(Limit);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public FindKeysRange() { }
@@ -460,17 +433,21 @@ namespace Garnet.server
         public int KeyStep { get; init; }
 
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$6\r\nkeynum";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            get { return this.respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("keynum"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteMapLength(3);
+            writer.WriteBulkString("keynumidx"u8);
+            writer.WriteInt32(KeyNumIdx);
+            writer.WriteBulkString("firstkey"u8);
+            writer.WriteInt32(FirstKey);
+            writer.WriteBulkString("keystep"u8);
+            writer.WriteInt32(KeyStep);
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public FindKeysKeyNum() { }
@@ -530,17 +507,15 @@ namespace Garnet.server
     public class FindKeysUnknown : FindKeysKeySpecMethodBase
     {
         /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatType => "$7\r\nunknown";
-
-        /// <inheritdoc />
-        [JsonIgnore]
-        public sealed override string RespFormatSpec
+        public override void ToRespFormat(ref RespMemoryWriter writer)
         {
-            get { return this.respFormatSpec ??= $"*0"; }
+            writer.WriteAsciiBulkString(MethodName);
+            writer.WriteMapLength(2);
+            writer.WriteBulkString("type"u8);
+            writer.WriteBulkString("unknown"u8);
+            writer.WriteBulkString("spec"u8);
+            writer.WriteEmptyArray();
         }
-
-        private string respFormatSpec;
 
         /// <inheritdoc />
         public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)

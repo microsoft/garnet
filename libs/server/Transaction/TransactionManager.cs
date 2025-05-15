@@ -94,13 +94,15 @@ namespace Garnet.server
         /// </summary>
         private TxnKeyEntries keyEntries;
 
-        internal TransactionManager(
+        internal TransactionManager(StoreWrapper storeWrapper,
             RespServerSession respSession,
+            BasicGarnetApi garnetApi,
+            LockableGarnetApi lockableGarnetApi,
             StorageSession storageSession,
             ScratchBufferManager scratchBufferManager,
-            StateMachineDriver stateMachineDriver,
             bool clusterEnabled,
-            ILogger logger = null)
+            ILogger logger = null,
+            int dbId = 0)
         {
             var session = storageSession.basicContext.Session;
             basicContext = session.BasicContext;
@@ -122,11 +124,14 @@ namespace Garnet.server
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, lockableContext, objectStoreLockableContext);
             this.scratchBufferManager = scratchBufferManager;
-            this.stateMachineDriver = stateMachineDriver;
 
-            garnetTxMainApi = respSession.lockableGarnetApi;
-            garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(respSession.basicGarnetApi);
-            garnetTxFinalizeApi = respSession.basicGarnetApi;
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            Debug.Assert(dbFound);
+            this.stateMachineDriver = db.StateMachineDriver;
+
+            garnetTxMainApi = lockableGarnetApi;
+            garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(garnetApi);
+            garnetTxFinalizeApi = garnetApi;
 
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)

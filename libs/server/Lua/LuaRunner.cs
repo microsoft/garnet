@@ -236,7 +236,7 @@ namespace Garnet.server
             // Explicitly force to RESP2 for now
             if (respServerSession != null)
             {
-                respServerSession.respProtocolVersion = 2;
+                respServerSession.UpdateRespProtocolVersion(2);
 
                 // The act of setting these fields causes NoScript checks to be performed
                 (respServerSession.noScriptStart, respServerSession.noScriptBitmap) = NoScriptDetails;
@@ -1412,8 +1412,8 @@ namespace Garnet.server
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
             // Get sandbox_env and "KEYS" on the stack
-            var sandboxEnvIndex = state.StackTop;
             _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+            var sandboxEnvIndex = state.StackTop;
             state.PushConstantString(constStrs.KEYS);
 
             // Make new KEYS
@@ -1442,8 +1442,8 @@ namespace Garnet.server
             Debug.Assert(state.TryEnsureMinimumStackCapacity(NeededStackSpace), "LUA_MINSTACK should ensure this always succeeds");
 
             // Get sandbox_env and "KEYS" on the stack
-            var sandboxEnvIndex = state.StackTop;
             _ = state.RawGetInteger(LuaType.Table, (int)LuaRegistry.Index, sandboxEnvRegistryIndex);
+            var sandboxEnvIndex = state.StackTop;
             state.PushConstantString(constStrs.ARGV);
 
             // Make new ARGV
@@ -1477,7 +1477,7 @@ namespace Garnet.server
                 // Every invocation starts in RESP2
                 if (respServerSession != null)
                 {
-                    respServerSession.respProtocolVersion = 2;
+                    respServerSession.UpdateRespProtocolVersion(2);
                 }
 
                 _ = state.RawGetInteger(LuaType.Function, (int)LuaRegistry.Index, functionRegistryIndex);

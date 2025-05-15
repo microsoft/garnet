@@ -3116,6 +3116,168 @@ namespace Garnet.test
             CollectionAssert.AreEquivalent(new[] { "b", "c", "d", "e" }, unionStoreResult.Select(x => x.Element.ToString()));
         }
 
+        [Test]
+        public void ZInterWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            var result = db.SortedSetCombine(SetOperation.Intersect, [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(0, result.Length);
+
+            var resultWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect, [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(0, resultWithScores.Length);
+        }
+
+        [Test]
+        public void ZInterStoreWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            var result = db.SortedSetCombineAndStore(SetOperation.Intersect, "dest", [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(0, result);
+
+            var exists = db.KeyExists("dest");
+            ClassicAssert.IsFalse(exists);
+        }
+
+        [Test]
+        public void ZInterCardWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            var result = (long)db.Execute("ZINTERCARD", "2", "nonexistentkey", "zset2");
+            ClassicAssert.AreEqual(0, result);
+
+            result = (long)db.Execute("ZINTERCARD", "2", "nonexistentkey", "zset2", "LIMIT", "10");
+            ClassicAssert.AreEqual(0, result);
+        }
+
+        [Test]
+        public void ZDiffWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            var diff = db.SortedSetCombine(SetOperation.Difference, [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(0, diff.Length);
+
+            var diffWithScores = db.SortedSetCombineWithScores(SetOperation.Difference, [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(0, diffWithScores.Length);
+        }
+
+        [Test]
+        public void ZDiffStoreWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            db.SortedSetAdd("dest",
+            [
+                new SortedSetEntry("existing", 100)
+            ]);
+
+            var result = db.SortedSetCombineAndStore(SetOperation.Difference, "dest", [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(0, result);
+
+            var exists = db.KeyExists("dest");
+            ClassicAssert.IsFalse(exists);
+        }
+
+        [Test]
+        public void ZUnionWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+
+            var result = db.SortedSetCombine(SetOperation.Union, [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(3, result.Length);
+            CollectionAssert.AreEqual(new string[] { "one", "two", "four" }, result.Select(r => r.ToString()).ToArray());
+
+            var resultWithScores = db.SortedSetCombineWithScores(SetOperation.Union, [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(3, resultWithScores.Length);
+            ClassicAssert.AreEqual("one", resultWithScores[0].Element.ToString());
+            ClassicAssert.AreEqual(1, resultWithScores[0].Score);
+            ClassicAssert.AreEqual("two", resultWithScores[1].Element.ToString());
+            ClassicAssert.AreEqual(2, resultWithScores[1].Score);
+            ClassicAssert.AreEqual("four", resultWithScores[2].Element.ToString());
+            ClassicAssert.AreEqual(4, resultWithScores[2].Score);
+        }
+
+        [Test]
+        public void ZUnionStoreWithFirstKeyNotExisting()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("zset2",
+            [
+                new SortedSetEntry("one", 1),
+                new SortedSetEntry("two", 2),
+                new SortedSetEntry("four", 4)
+            ]);
+            db.SortedSetAdd("dest",
+            [
+                new SortedSetEntry("existing", 100)
+            ]);
+
+            var result = db.SortedSetCombineAndStore(SetOperation.Union, "dest", [new RedisKey("nonexistentkey"), new RedisKey("zset2")]);
+            ClassicAssert.AreEqual(3, result);
+
+            var storedValues = db.SortedSetRangeByScoreWithScores("dest");
+            ClassicAssert.AreEqual(3, storedValues.Length);
+            ClassicAssert.AreEqual("one", storedValues[0].Element.ToString());
+            ClassicAssert.AreEqual(1, storedValues[0].Score);
+            ClassicAssert.AreEqual("two", storedValues[1].Element.ToString());
+            ClassicAssert.AreEqual(2, storedValues[1].Score);
+            ClassicAssert.AreEqual("four", storedValues[2].Element.ToString());
+            ClassicAssert.AreEqual(4, storedValues[2].Score);
+        }
+
         #endregion
 
         #region LightClientTests

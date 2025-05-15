@@ -30,11 +30,10 @@ Simple string reply: OK.
 #### Syntax
 
 ```bash
-    COMMITAOF
+    COMMITAOF [DBID]
 ```
 
-Issues a manual commit of the append-only-file. This is useful when auto-commits are turned off, but you need the
-system to commit at specific times.
+Issues a manual commit of the append-only-file (for all active databases in the Garnet instance). This is useful when auto-commits are turned off, but you need the system to commit at specific times. If a DB ID is specified, a manual commit of the append-only-file of that specific database will be issues.
 
 #### Resp Reply
 
@@ -273,6 +272,22 @@ One of the following:
 
 - **Array reply**: If the ETag does not match, an array of two items is returned. The first item is the latest ETag, and the second item is the value associated with the key. If the Etag matches  the first item in the response array is the etag and the second item is nil.
 - **Nil reply**: If the key does not exist.
+
+---
+
+### **DELIFGREATER**
+
+#### **Syntax**
+
+```bash
+DELIFGREATER key etag
+```
+
+Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.
+
+#### **Response**
+
+- **Integer reply**: Returns 1 if the key was successfully deleted; otherwise, returns 0.
 
 ---
 

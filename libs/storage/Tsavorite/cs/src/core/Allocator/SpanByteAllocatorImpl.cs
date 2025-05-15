@@ -131,6 +131,16 @@ namespace Tsavorite.core
             return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref SpanByte key)
+        {
+            int keySize = key.TotalSize;
+            // Only metadata space needed since this is going to be used for tombstoning anyway.
+            int minAllocationForTombstone = sizeof(int);
+            int size = RecordInfo.GetLength() + RoundUp(keySize, Constants.kRecordAlignment) + minAllocationForTombstone;
+            return (size, RoundUp(size, Constants.kRecordAlignment), keySize);
+        }
+
         public int GetRequiredRecordSize(long physicalAddress, int availableBytes)
         {
             // We need at least [average record size]...

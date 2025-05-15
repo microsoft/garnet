@@ -56,7 +56,7 @@ jobs:
         run: dotnet restore
 
       - name: Run BDN.benchmark Perf Test
-        run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }}
+        run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }} ${{ matrix.framework }}
         shell: pwsh
         continue-on-error: false
    

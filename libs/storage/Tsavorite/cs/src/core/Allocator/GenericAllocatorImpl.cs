@@ -142,6 +142,9 @@ namespace Tsavorite.core
         internal (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<TInput, TVariableLengthInput>(ref TKey key, ref TInput input, ref TValue value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
             => (RecordSize, RecordSize, KeySize);
 
+        internal (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key)
+            => (RecordSize, RecordSize, KeySize);
+
         internal int GetAverageRecordSize() => RecordSize;
 
         internal int GetFixedRecordSize() => RecordSize;
@@ -433,7 +436,17 @@ namespace Tsavorite.core
                             if (ValueHasObjects() && !record.info.Tombstone)
                             {
                                 long pos = ms.Position;
-                                valueSerializer.Serialize(ref src[i].value);
+                                try
+                                {
+                                    valueSerializer.Serialize(ref src[i].value);
+                                }
+                                catch (Exception ex)
+                                {
+                                    logger?.LogError(ex, "Failed to serialize value");
+                                    ms.Position = pos;
+                                    TValue defaultValue = default;
+                                    valueSerializer.Serialize(ref defaultValue);
+                                }
 
                                 // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
                                 value_address->Address = pos;

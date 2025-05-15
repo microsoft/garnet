@@ -33,6 +33,12 @@ namespace Garnet.common
 #pragma warning disable format
     public static class Format
     {
+        static EndPoint[] defaultBindAny(int port)
+            => Socket.OSSupportsIPv6 ? [new IPEndPoint(IPAddress.Any, port), new IPEndPoint(IPAddress.IPv6Any, port)] : [new IPEndPoint(IPAddress.Any, port)];
+
+        static EndPoint[] defaultBindLoopBack(int port)
+            => Socket.OSSupportsIPv6 ? [new IPEndPoint(IPAddress.Loopback, port), new IPEndPoint(IPAddress.IPv6Loopback, port)] : [new IPEndPoint(IPAddress.Loopback, port)];
+
         /// <summary>
         /// Parse address list string containing address separated by whitespace
         /// </summary>
@@ -40,16 +46,18 @@ namespace Garnet.common
         /// <param name="port">Endpoint Port</param>
         /// <param name="endpoints">List of endpoints generated from the input IPs</param>
         /// <param name="errorHostnameOrAddress">Output error if any</param>
+        /// <param name="protectedMode">Is protected mode enabled?</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if parse and address validation was successful, otherwise false</returns>
-        public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress, ILogger logger = null)
+        public static bool TryParseAddressList(string addressList, int port, out EndPoint[] endpoints, out string errorHostnameOrAddress,
+                                               bool protectedMode = false, ILogger logger = null)
         {
             endpoints = null;
             errorHostnameOrAddress = null;
             // Check if input null or empty
             if (string.IsNullOrEmpty(addressList) || string.IsNullOrWhiteSpace(addressList))
             {
-                endpoints = [new IPEndPoint(IPAddress.Any, port)];
+                endpoints = protectedMode ? defaultBindLoopBack(port) : defaultBindAny(port);
                 return true;
             }
 
@@ -83,13 +91,13 @@ namespace Garnet.common
         public static async Task<EndPoint[]> TryCreateEndpoint(string singleAddressOrHostname, int port, bool tryConnect = false, ILogger logger = null)
         {
             if (string.IsNullOrEmpty(singleAddressOrHostname) || string.IsNullOrWhiteSpace(singleAddressOrHostname))
-                return [new IPEndPoint(IPAddress.Any, port)];
+                return defaultBindAny(port);
 
             if (singleAddressOrHostname[0] == '-')
                 singleAddressOrHostname = singleAddressOrHostname.Substring(1);
 
             if (singleAddressOrHostname.Equals("localhost", StringComparison.CurrentCultureIgnoreCase))
-                return [new IPEndPoint(IPAddress.Loopback, port)];
+                return defaultBindLoopBack(port);
 
             if (IPAddress.TryParse(singleAddressOrHostname, out var ipAddress))
                 return [new IPEndPoint(ipAddress, port)];

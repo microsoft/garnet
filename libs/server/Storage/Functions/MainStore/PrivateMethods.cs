@@ -213,7 +213,7 @@ namespace Garnet.server
                     if (!overflow)
                         CopyRespNumber(retValue, ref dst);
                     else
-                        CopyDefaultResp(CmdStrings.RESP_ERRNOTFOUND, ref dst);
+                        CopyDefaultResp(functionsState.nilResp, ref dst);
                     return;
 
                 case RespCommand.BITFIELD_RO:

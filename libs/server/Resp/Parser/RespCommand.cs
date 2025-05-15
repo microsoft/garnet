@@ -117,6 +117,7 @@ namespace Garnet.server
         DECR,
         DECRBY,
         DEL,
+        DELIFGREATER,
         EXPIRE,
         EXPIREAT,
         FLUSHALL,
@@ -191,6 +192,7 @@ namespace Garnet.server
         SPOP,
         SREM,
         SUNIONSTORE,
+        SWAPDB,
         UNLINK,
         ZADD,
         ZCOLLECT,
@@ -238,6 +240,7 @@ namespace Garnet.server
         PSUBSCRIBE,
         UNSUBSCRIBE,
         PUNSUBSCRIBE,
+
         ASKING,
         SELECT,
         ECHO,
@@ -402,6 +405,7 @@ namespace Garnet.server
             RespCommand.ASYNC,
             RespCommand.PING,
             RespCommand.SELECT,
+            RespCommand.SWAPDB,
             RespCommand.ECHO,
             RespCommand.MONITOR,
             RespCommand.MODULE_LOADCS,
@@ -558,6 +562,7 @@ namespace Garnet.server
                 RespCommand.FLUSHALL => false,
                 RespCommand.KEYS => false,
                 RespCommand.SCAN => false,
+                RespCommand.SWAPDB => false,
                 _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
             };
         }
@@ -1294,6 +1299,10 @@ namespace Garnet.server
                                                 }
                                             }
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SWAPDB\r\n"u8))
+                                        {
+                                            return RespCommand.SWAPDB;
+                                        }
                                         break;
 
                                     case 'U':
@@ -1730,6 +1739,32 @@ namespace Garnet.server
             return RespCommand.NONE;
         }
 
+        private bool TryParseCustomCommand(ReadOnlySpan<byte> command, out RespCommand cmd)
+        {
+            if (customCommandManagerSession.Match(command, out currentCustomTransaction))
+            {
+                cmd = RespCommand.CustomTxn;
+                return true;
+            }
+            else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
+            {
+                cmd = RespCommand.CustomProcedure;
+                return true;
+            }
+            else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
+            {
+                cmd = RespCommand.CustomRawStringCmd;
+                return true;
+            }
+            else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
+            {
+                cmd = RespCommand.CustomObjCmd;
+                return true;
+            }
+            cmd = RespCommand.NONE;
+            return false;
+        }
+
         /// <summary>
         /// Parses the receive buffer, starting from the current read head, for all command names that are
         /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
@@ -1753,6 +1788,19 @@ namespace Garnet.server
             // Account for the command name being taken off the read head
             count -= 1;
 
+            if (TryParseCustomCommand(command, out var cmd))
+            {
+                return cmd;
+            }
+            else
+            {
+                return SlowParseCommand(command, ref count, ref specificErrorMsg, out success);
+            }
+        }
+
+        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
+        {
+            success = true;
             if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
@@ -1774,14 +1822,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1843,14 +1889,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1882,14 +1926,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1951,14 +1993,12 @@ namespace Garnet.server
                     return RespCommand.COMMAND;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2010,14 +2050,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2217,14 +2255,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2256,14 +2292,12 @@ namespace Garnet.server
                 }
                 else if (count >= 1)
                 {
-                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                    var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
                         return RespCommand.NONE;
                     }
-
-                    AsciiUtils.ToUpperInPlace(subCommand);
 
                     count--;
 
@@ -2342,7 +2376,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -2375,14 +2409,12 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
-
-                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -2446,7 +2478,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -2454,7 +2486,7 @@ namespace Garnet.server
                 }
 
                 count--;
-                AsciiUtils.ToUpperInPlace(subCommand);
+
                 if (subCommand.SequenceEqual(CmdStrings.LOADCS))
                 {
                     return RespCommand.MODULE_LOADCS;
@@ -2475,7 +2507,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -2483,7 +2515,7 @@ namespace Garnet.server
                 }
 
                 count--;
-                AsciiUtils.ToUpperInPlace(subCommand);
+
                 if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
                 {
                     return RespCommand.PUBSUB_CHANNELS;
@@ -2515,47 +2547,26 @@ namespace Garnet.server
             {
                 return RespCommand.ZCOLLECT;
             }
-            else
+            // Note: The commands below are not slow path commands, so they should probably move to earlier.
+            else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
             {
-                // Custom commands should have never been set when we reach this point
-                // (they should have been executed and reset)
-                Debug.Assert(currentCustomTransaction == null);
-                Debug.Assert(currentCustomRawStringCommand == null);
-                Debug.Assert(currentCustomObjectCommand == null);
-                Debug.Assert(currentCustomProcedure == null);
-
-                if (customCommandManagerSession.Match(command, out currentCustomTransaction))
-                {
-                    return RespCommand.CustomTxn;
-                }
-                else if (customCommandManagerSession.Match(command, out currentCustomRawStringCommand))
-                {
-                    return RespCommand.CustomRawStringCmd;
-                }
-                else if (customCommandManagerSession.Match(command, out currentCustomObjectCommand))
-                {
-                    return RespCommand.CustomObjCmd;
-                }
-                else if (customCommandManagerSession.Match(command, out currentCustomProcedure))
-                {
-                    return RespCommand.CustomProcedure;
-                }
-                else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
-                {
-                    return RespCommand.SETIFMATCH;
-                }
-                else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
-                {
-                    return RespCommand.SETIFGREATER;
-                }
-                else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
-                {
-                    return RespCommand.GETWITHETAG;
-                }
-                else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
-                {
-                    return RespCommand.GETIFNOTMATCH;
-                }
+                return RespCommand.SETIFMATCH;
+            }
+            else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
+            {
+                return RespCommand.SETIFGREATER;
+            }
+            else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
+            {
+                return RespCommand.GETWITHETAG;
+            }
+            else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
+            {
+                return RespCommand.GETIFNOTMATCH;
+            }
+            else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
+            {
+                return RespCommand.DELIFGREATER;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
@@ -2616,6 +2627,66 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Version of <see cref="ParseRespCommandBuffer(ReadOnlySpan{byte})"/> for fuzzing.
+        /// 
+        /// Expects (and allows) partial commands.
+        /// 
+        /// Returns true if a command was succesfully parsed
+        /// </summary>
+        internal bool FuzzParseCommandBuffer(ReadOnlySpan<byte> buffer, out RespCommand cmd)
+        {
+            var oldRecvBufferPtr = recvBufferPtr;
+            var oldReadHead = readHead;
+            var oldBytesRead = bytesRead;
+
+            try
+            {
+                // Slap the buffer in
+                recvBufferPtr = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(buffer));
+                readHead = 0;
+                bytesRead = buffer.Length;
+
+                // Duplicate check in ProcessMessages
+                if ((bytesRead - readHead) >= 4)
+                {
+                    cmd = ParseCommand(writeErrorOnFailure: false, out _);
+                }
+                else
+                {
+                    cmd = RespCommand.INVALID;
+                }
+
+                return cmd != RespCommand.INVALID;
+            }
+            finally
+            {
+                // Validate state post-fuzz
+                if (readHead > buffer.Length)
+                {
+                    throw new InvalidOperationException("readHead was left past end of buffer");
+                }
+
+                if (!buffer.IsEmpty)
+                {
+                    if (Unsafe.IsAddressLessThan(ref Unsafe.AsRef<byte>(recvBufferPtr), ref MemoryMarshal.GetReference(buffer)))
+                    {
+                        throw new InvalidOperationException("recvBufferPtr was left before buffer");
+                    }
+
+                    if (Unsafe.IsAddressGreaterThan(ref Unsafe.AsRef<byte>(recvBufferPtr), ref Unsafe.Add(ref MemoryMarshal.GetReference(buffer), buffer.Length)))
+                    {
+                        throw new InvalidOperationException("recvBufferPtr was left after buffer");
+                    }
+                }
+
+                // Remove references to temporary buffer
+                recvBufferPtr = oldRecvBufferPtr;
+                readHead = oldReadHead;
+                bytesRead = oldBytesRead;
+            }
+        }
+
+        /// <summary>
         /// Parses the command from the given input buffer.
         /// </summary>
         /// <param name="writeErrorOnFailure">If true, when a parsing error occurs an error response will written.</param>
@@ -2654,7 +2725,7 @@ namespace Garnet.server
             }
             endReadHead = (int)(ptr - recvBufferPtr);
 
-            if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
             return cmd;
