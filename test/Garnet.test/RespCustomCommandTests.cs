@@ -40,7 +40,7 @@ namespace Garnet.test
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (var i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
                 {
                     if (!ResetBuffer(garnetApi, ref output, buffOffset))
@@ -49,8 +49,8 @@ namespace Garnet.test
             }
 
             buffOffset = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
-            garnetApi.GET(key, out var outval2);
+            garnetApi.GET(key, out PinnedSpanByte outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
             if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             buffOffset = garnetApi.GetScratchBufferOffset();
@@ -79,7 +79,7 @@ namespace Garnet.test
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (int i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
                 {
                     if (!garnetApi.ResetScratchBuffer(buffOffset))
@@ -100,10 +100,10 @@ namespace Garnet.test
             var key = GetNextArg(ref procInput, ref offset);
 
             var buffOffset1 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval1);
 
             var buffOffset2 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval2);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
 
             if (!garnetApi.ResetScratchBuffer(buffOffset1))
             {
@@ -153,7 +153,7 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrement, out long _, 1);
 
             var keyToReturn = GetNextArg(ref procInput, ref offset);
-            garnetApi.GET(keyToReturn, out ArgSlice outval);
+            garnetApi.GET(keyToReturn, out PinnedSpanByte outval);
             WriteBulkString(ref output, outval.Span);
             return true;
         }
@@ -178,7 +178,7 @@ namespace Garnet.test
 
             // key will have an etag associated with it already but the transaction should not be able to see it.
             // if the transaction needs to see it, then it can send GET with cmd as GETWITHETAG
-            garnetApi.GET(key, out ArgSlice outval);
+            garnetApi.GET(key, out PinnedSpanByte outval);
 
             List<byte> valueToMessWith = outval.ToArray().ToList();
 
@@ -203,17 +203,15 @@ namespace Garnet.test
             RawStringInput input = new RawStringInput(RespCommand.SET);
             input.header.cmd = RespCommand.SET;
             // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetWithEtagFlag();
+            input.header.SetWithETagFlag();
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
-                ArgSlice valForKey1 = new ArgSlice(valuePtr, valueToMessWith.Count);
+                PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
                 // since we are setting with retain to etag, this change should be reflected in an etag update
-                SpanByte sameKeyToUse = key.SpanByte;
-                garnetApi.SET_Conditional(ref sameKeyToUse, ref input);
+                garnetApi.SET_Conditional(key, ref input);
             }
-
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 

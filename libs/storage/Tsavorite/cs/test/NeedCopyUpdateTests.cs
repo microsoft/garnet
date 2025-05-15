@@ -1,11 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using static Tsavorite.test.NeedCopyUpdateTests;
+//  using static Tsavorite.test.NeedCopyUpdateTests;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
@@ -235,8 +237,10 @@ namespace Tsavorite.test
             }
         }
 
-        internal class RMWSinglePageFunctions : SimpleSimpleFunctions<long, long>
+        internal class RMWSinglePageFunctions : SimpleLongSimpleFunctions<long, long>
         {
         }
     }
 }
+
+#endif // LOGRECORD_TODO

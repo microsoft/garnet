@@ -14,7 +14,7 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     [TestFixture]
-    public class RespEtagTests
+    public class RespETagTests
     {
         private GarnetServer server;
         private Random r;

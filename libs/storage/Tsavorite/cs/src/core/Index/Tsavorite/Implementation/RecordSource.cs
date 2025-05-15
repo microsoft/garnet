@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -11,9 +12,9 @@ namespace Tsavorite.core
     /// operations, where "source" is a copy source for RMW and/or a locked record. This is passed to functions that create records, such as 
     /// TsavoriteKV.CreateNewRecord*() or TsavoriteKV.InternalTryCopyToTail(), and to unlocking utilities.
     /// </summary>
-    internal struct RecordSource<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal struct RecordSource<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// If valid, this is the logical address of a record. As "source", it may be copied from for RMW or pending Reads,
@@ -54,14 +55,14 @@ namespace Tsavorite.core
         /// <summary>
         /// If <see cref="HasInMemorySrc"/>, this is the allocator base (hlog or readcache) that <see cref="LogicalAddress"/> is in.
         /// </summary>
-        internal AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> AllocatorBase { get; private set; }
+        internal AllocatorBase<TStoreFunctions, TAllocator> AllocatorBase { get; private set; }
 
         struct InternalStates
         {
             internal const int None = 0;
-            internal const int TransientSLock = 0x0001;    // LockTable
-            internal const int TransientXLock = 0x0002;    // LockTable
-            internal const int LockBits = TransientSLock | TransientXLock;
+            internal const int EphemeralSLock = 0x0001;    // LockTable
+            internal const int EphemeralXLock = 0x0002;    // LockTable
+            internal const int LockBits = EphemeralSLock | EphemeralXLock;
 
             internal const int MainLogSrc = 0x0100;
             internal const int ReadCacheSrc = 0x0200;
@@ -79,13 +80,13 @@ namespace Tsavorite.core
                     if ((state & value) != 0)
                     {
                         if (sb.Length > 0)
-                            sb.Append(", ");
-                        sb.Append(name);
+                            _ = sb.Append(", ");
+                        _ = sb.Append(name);
                     }
                 }
 
-                append(TransientSLock, nameof(TransientSLock));
-                append(TransientXLock, nameof(TransientXLock));
+                append(EphemeralSLock, nameof(EphemeralSLock));
+                append(EphemeralXLock, nameof(EphemeralXLock));
                 append(MainLogSrc, nameof(MainLogSrc));
                 append(ReadCacheSrc, nameof(ReadCacheSrc));
                 return sb.ToString();
@@ -95,22 +96,22 @@ namespace Tsavorite.core
         int internalState;
 
         /// <summary>
-        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Shared lock (does not include Manual locks; this is per-operation only).
+        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Ephemeral Shared lock (does not include Manual locks; this is per-operation only).
         /// </summary>
-        internal readonly bool HasTransientSLock => (internalState & InternalStates.TransientSLock) != 0;
+        internal readonly bool HasEphemeralSLock => (internalState & InternalStates.EphemeralSLock) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasTransientSLock() => internalState |= InternalStates.TransientSLock;
+        internal void SetHasEphemeralSLock() => internalState |= InternalStates.EphemeralSLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientSLock() => internalState &= ~InternalStates.TransientSLock;
+        internal void ClearHasEphemeralSLock() => internalState &= ~InternalStates.EphemeralSLock;
 
         /// <summary>
-        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Transient Exclusive lock (does not include Manual locks; this is per-operation only).
+        /// Set (and cleared) by caller to indicate whether we have a LockTable-based Ephemeral Exclusive lock (does not include Manual locks; this is per-operation only).
         /// </summary>
-        internal readonly bool HasTransientXLock => (internalState & InternalStates.TransientXLock) != 0;
+        internal readonly bool HasEphemeralXLock => (internalState & InternalStates.EphemeralXLock) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasTransientXLock() => internalState |= InternalStates.TransientXLock;
+        internal void SetHasEphemeralXLock() => internalState |= InternalStates.EphemeralXLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasTransientXLock() => internalState &= ~InternalStates.TransientXLock;
+        internal void ClearHasEphemeralXLock() => internalState &= ~InternalStates.EphemeralXLock;
 
         /// <summary>
         /// Indicates whether we have any type of non-Manual lock.
@@ -138,11 +139,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref RecordInfo GetInfo() => ref Allocator.GetInfo(PhysicalAddress);
+        internal readonly ref RecordInfo GetInfoRef() => ref LogRecord.GetInfoRef(PhysicalAddress);
+        internal readonly RecordInfo GetInfo() => LogRecord.GetInfoRef(PhysicalAddress);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref TKey GetKey() => ref Allocator.GetKey(PhysicalAddress);
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly ref TValue GetValue() => ref Allocator.GetValue(PhysicalAddress);
+        internal readonly LogRecord CreateLogRecord()
+        {
+            Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
+            Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log memory");
+            return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
+        }
 
         internal readonly bool HasInMemorySrc => (internalState & (InternalStates.MainLogSrc | InternalStates.ReadCacheSrc)) != 0;
 
@@ -150,7 +156,7 @@ namespace Tsavorite.core
         /// Initialize to the latest logical address from the caller.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(long latestLogicalAddress, AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
+        internal void Set(long latestLogicalAddress, AllocatorBase<TStoreFunctions, TAllocator> srcAllocatorBase)
         {
             PhysicalAddress = default;
             LowestReadCacheLogicalAddress = default;
@@ -158,17 +164,17 @@ namespace Tsavorite.core
             ClearHasMainLogSrc();
             ClearHasReadCacheSrc();
 
-            // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
+            // HasEphemeralLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
             LatestLogicalAddress = LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             SetAllocator(srcAllocatorBase);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetAllocator(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> srcAllocatorBase)
+        internal void SetAllocator(AllocatorBase<TStoreFunctions, TAllocator> srcAllocatorBase)
         {
-            this.AllocatorBase = srcAllocatorBase;
-            this.Allocator = AllocatorBase._wrapper;
+            AllocatorBase = srcAllocatorBase;
+            Allocator = AllocatorBase._wrapper;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
