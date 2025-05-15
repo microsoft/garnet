@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -22,17 +21,14 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
         {
             pendingContext.flushEvent = allocator.FlushEvent;
-            logicalAddress = allocator.TryAllocateRetryNow(recordSize);
-            if (logicalAddress > 0)
+            if (allocator.TryAllocateRetryNow(recordSize, out logicalAddress))
             {
                 pendingContext.flushEvent = default;
                 internalStatus = OperationStatus.SUCCESS;
                 return true;
             }
 
-            // logicalAddress less than 0 (RETRY_NOW) should already have been handled
-            Debug.Assert(logicalAddress == 0);
-            // We expect flushEvent to be signaled.
+            // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
             internalStatus = OperationStatus.ALLOCATE_FAILED;
             return false;
         }

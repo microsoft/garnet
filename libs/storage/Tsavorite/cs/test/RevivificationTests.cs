@@ -1501,10 +1501,8 @@ namespace Tsavorite.test.Revivification
                     key.Fill((byte)ii);
                     input.Fill((byte)ii);
 
-                    if (iter == 65 && ii == 103)
-                        ii += 0;  // TODO to get a breakpoint here
-
                     functions.expectedValueLengths.Enqueue(iter == 0 ? InitialLength : InitialLength);
+
                     var status = bContext.Delete(key);
                     ClassicAssert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
                 }
@@ -1515,11 +1513,6 @@ namespace Tsavorite.test.Revivification
                     input.Fill((byte)ii);
 
                     functions.expectedValueLengths.Enqueue(InitialLength);
-
-                    if (iter == 56 && ii == 65)
-                        ii += 0;  // TODO to get a breakpoint here
-                    if (iter == 64 && ii == 103)
-                        ii += 0;  // TODO to get a breakpoint here
 
                     SpanByteAndMemory output = new();
                     _ = updateOp == UpdateOp.Upsert 

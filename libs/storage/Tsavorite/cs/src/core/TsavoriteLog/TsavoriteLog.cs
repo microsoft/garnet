@@ -664,14 +664,13 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            {
+                epoch.Suspend();
+                if (cannedException != null)
+                    throw cannedException;
+                return false;
+            }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
@@ -705,12 +704,11 @@ namespace Tsavorite.core
             epoch.Resume();
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -746,14 +744,13 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            {
+                epoch.Suspend();
+                if (cannedException != null)
+                    throw cannedException;
+                return false;
+            }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = entry)
@@ -787,11 +784,11 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -821,11 +818,11 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -1107,15 +1104,15 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
-                if (logicalAddress > 0)
+                if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                     return logicalAddress;
 
-                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
                 Debug.Assert(logicalAddress == 0);
 
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 try
                 {
                     flushEvent.Wait();
@@ -1146,11 +1143,11 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -1187,11 +1184,11 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -1227,11 +1224,11 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -2286,12 +2283,12 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            var logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out var logicalAddress))
             {
                 epoch.Suspend();
                 return false;
             }
+
             // Finish filling in all fields
             info.BeginAddress = BeginAddress;
             info.UntilAddress = logicalAddress + allocatedLength;
@@ -2748,21 +2745,18 @@ namespace Tsavorite.core
             int totalEntries = readOnlySpanBatch.TotalEntries();
             allocatedLength = 0;
             for (int i = 0; i < totalEntries; i++)
-            {
                 allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + headerSize;
-            }
 
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 

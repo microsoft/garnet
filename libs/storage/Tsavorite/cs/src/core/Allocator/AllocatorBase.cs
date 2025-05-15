@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
@@ -639,7 +640,7 @@ namespace Tsavorite.core
             if (PageSize < sectorSize)
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
-            AlignedPageSizeBytes = (PageSize + (sectorSize - 1)) & ~(sectorSize - 1);
+            AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
         }
 
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
@@ -1062,16 +1063,17 @@ namespace Tsavorite.core
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long TryAllocateRetryNow(int numSlots = 1)
+        public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
         {
-            long logicalAddress;
-            while ((logicalAddress = TryAllocate(numSlots)) < 0)
+            long address;
+            while ((address = TryAllocate(numSlots)) < 0)
             {
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
                 Thread.Yield();
             }
-            return SetIsInLogMemory(logicalAddress);
+            logicalAddress = SetIsInLogMemory(address);
+            return address != 0;
         }
 
         /// <summary>
@@ -1848,7 +1850,7 @@ namespace Tsavorite.core
                     if (hasFullRecord)
                     {
                         // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
-                        if (currentRecordIsInRange)
+                        if (currentRecordIsInRange && diskLogRecord.Info.ValueIsObject)
                             ctx.ValueObject = diskLogRecord.DeserializeValueObject(storeFunctions.CreateValueObjectSerializer());
 
                         if (ctx.completionEvent is not null)
@@ -1898,16 +1900,13 @@ namespace Tsavorite.core
                 {
                     if (errorCode != 0)
                     {
-                        // Note down error details and trigger handling only when we are certain this is the earliest
-                        // error among currently issued flushes
+                        // Note down error details and trigger handling only when we are certain this is the earliest error among currently issued flushes
                         errorList.Add(new CommitInfo { FromAddress = result.fromAddress, UntilAddress = result.untilAddress, ErrorCode = errorCode });
                     }
                     else
                     {
-                        // Update the page's last flushed until address only if there is no failure.
-                        _ = Utility.MonotonicUpdate(
-                            ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress,
-                            result.untilAddress, out _);
+                        // There is no failure so update the page's last flushed until address.
+                        _ = MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                     }
 
                     ShiftFlushedUntilAddress();

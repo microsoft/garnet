@@ -292,11 +292,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
-            // Offset within page
-            var offset = GetOffsetOnPage(logicalAddress);
-
-            // Index of page within the circular buffer
+            // Index of page within the circular buffer, and offset on the page
             var pageIndex = GetPageIndexForAddress(logicalAddress);
+            var offset = GetOffsetOnPage(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
 

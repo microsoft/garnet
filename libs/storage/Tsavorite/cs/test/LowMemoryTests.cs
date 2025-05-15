@@ -74,8 +74,8 @@ namespace Tsavorite.test.LowMemory
                 if (!status.IsPending)
                 {
                     ++numCompleted;
-                    ClassicAssert.IsTrue(status.Found);
-                    ClassicAssert.AreEqual(key, output);
+                    ClassicAssert.IsTrue(status.Found, $"key = {key}");
+                    ClassicAssert.AreEqual(key, output, $"key = {key}");
                 }
             }
 
@@ -95,7 +95,7 @@ namespace Tsavorite.test.LowMemory
         [Test]
         [Category("TsavoriteKV")]
         [Category(StressTestCategory)]
-        public void LowMemConcurrentUpsertRMWReadTest([Values] bool completeSync)
+        public void LowMemConcurrentUpsertRMWReadTest()
         {
             using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
             var bContext1 = s1.BasicContext;

@@ -419,7 +419,11 @@ namespace Tsavorite.core
             // Value is a span so we can use RecordIsInline format, so both key and value are int length.
             recordSize = RecordInfo.GetLength() + key.TotalSize() + LogField.InlineLengthPrefixSize;
 
-            allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
+            if (allocatedRecord is not null)
+                allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
+            else
+                allocatedRecord = bufferPool.Get((int)recordSize);
+
             physicalAddress = (long)allocatedRecord.GetValidPointer();
             ptr = (byte*)physicalAddress;
 
