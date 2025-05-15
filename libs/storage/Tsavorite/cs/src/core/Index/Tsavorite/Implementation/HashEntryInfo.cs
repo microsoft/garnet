@@ -40,7 +40,7 @@ namespace Tsavorite.core
             slot = default;
             entry = default;
             this.hash = hash;
-            tag = (ushort)((ulong)this.hash >> Constants.kHashTagShift);
+            tag = (ushort)((ulong)this.hash >> HashBucketEntry.kHashTagShift);
         }
 
         /// <summary>
@@ -103,9 +103,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryElide()
         {
-            if (entry.word != Interlocked.CompareExchange(ref bucket->bucket_entries[slot], 0L, entry.word))
+            if (entry.word != Interlocked.CompareExchange(ref bucket->bucket_entries[slot], kInvalidAddress, entry.word))
                 return false;
-            entry.word = 0L;
+
+            // We have successfully updated the actual bucket; set the local copy of the entry to match.
+            entry.word = kInvalidAddress;
             return true;
         }
 
@@ -116,14 +118,10 @@ namespace Tsavorite.core
             if (bucket == null)
                 return $"hash {hashStr} <no bucket>";
 
-            var isRC = "(rc)";
-            var addrRC = IsReadCache ? isRC : string.Empty;
-            var currAddrRC = IsCurrentReadCache ? isRC : string.Empty;
             var isNotCurr = Address == CurrentAddress ? string.Empty : "*";
 
-            var result = $"addr {AbsoluteAddress}{addrRC}, currAddr {AbsoluteCurrentAddress}{currAddrRC}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot},";
-            result += $" Bkt1 [index {bucketIndex}, {HashBucket.ToString(firstBucket)}]";
-            return result;
+            return $"addr {AddressString(Address)}, currAddr {AddressString(CurrentAddress)}{isNotCurr}, hash {hashStr}, tag {tag}, slot {slot},"
+                 + $" Bkt1 [index {bucketIndex}, {HashBucket.ToString(firstBucket)}]";
         }
     }
 }

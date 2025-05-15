@@ -124,7 +124,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}, BA {BeginAddress}";
+            => $"TA {AddressString(GetTailAddress())}, ROA {AddressString(ReadOnlyAddress)}, SafeROA {AddressString(SafeReadOnlyAddress)}, HA {AddressString(HeadAddress)},"
+             + $" SafeHA {AddressString(SafeHeadAddress)}, CUA {AddressString(ClosedUntilAddress)}, FUA {AddressString(FlushedUntilAddress)}, BA {AddressString(BeginAddress)}";
         #endregion
 
         #region Protected device info
@@ -396,10 +397,10 @@ namespace Tsavorite.core
         public long GetStartAbsoluteLogicalAddressOfPage(long page) => page << LogPageSizeBits;
 
         /// <summary>Get start logical address</summary>
-        public long GetStartLogicalAddressOfPage(long page) => SetIsInMemory(GetStartAbsoluteLogicalAddressOfPage(page));
+        public long GetStartLogicalAddressOfPage(long page) => SetIsInLogMemory(GetStartAbsoluteLogicalAddressOfPage(page));
 
         /// <summary>Get first valid address</summary>
-        public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? kFirstValidAddress : GetStartLogicalAddressOfPage(page);
+        public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? FirstValidAddress : GetStartLogicalAddressOfPage(page);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize, ObjectIdMap objectIdMap)
@@ -669,8 +670,9 @@ namespace Tsavorite.core
 
             if (FlushedUntilAddress > _wrapper.GetFirstValidLogicalAddress(0))
             {
-                int currTailSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
-                if ((FlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                var flushedUntilAddress = AbsoluteAddress(FlushedUntilAddress);
+                int currTailSegment = (int)(flushedUntilAddress >> LogSegmentSizeBits);
+                if ((flushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
                     currTailSegment--;
 
                 if (currTailSegment > lastAvailSegment)
@@ -774,8 +776,8 @@ namespace Tsavorite.core
                     headOffsetLagSize -= emptyPageCount;
 
                     // Address lag offsets correspond to the number of pages "behind" TailPageOffset (the tail in the circular buffer).
-                    ReadOnlyAddressLagOffset = GetStartLogicalAddressOfPage((long)(LogMutableFraction * headOffsetLagSize));
-                    HeadAddressLagOffset = GetStartLogicalAddressOfPage(headOffsetLagSize);
+                    ReadOnlyAddressLagOffset = GetStartAbsoluteLogicalAddressOfPage((long)(LogMutableFraction * headOffsetLagSize));
+                    HeadAddressLagOffset = GetStartAbsoluteLogicalAddressOfPage(headOffsetLagSize);
                 }
 
                 // Force eviction now if empty page count has increased
@@ -837,7 +839,7 @@ namespace Tsavorite.core
                 Thread.Yield();
                 local = TailPageOffset;
             }
-            return SetIsInMemory(GetStartLogicalAddressOfPage(local.Page) | (uint)local.Offset);
+            return GetStartLogicalAddressOfPage(local.Page) | (uint)local.Offset;
         }
 
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
@@ -910,8 +912,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         bool NeedToShiftAddress(long pageIndex, PageOffset localTailPageOffset, int numSlots)
         {
-            var tailAddress = SetIsInMemory(GetStartLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots)));
-            var shiftAddress = SetIsInMemory(GetStartLogicalAddressOfPage(pageIndex));
+            var tailAddress = GetStartLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
+            var shiftAddress = GetStartLogicalAddressOfPage(pageIndex);
 
             // Check whether we need to shift ROA
             var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
@@ -1020,7 +1022,7 @@ namespace Tsavorite.core
         /// <param name="numSlots">Number of slots to allocate</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long TryAllocate(int numSlots = 1)
+        private long TryAllocate(int numSlots = 1)
         {
             if (numSlots > PageSize)
                 ThrowTsavoriteException("Entry does not fit on page");
@@ -1042,16 +1044,18 @@ namespace Tsavorite.core
             // so they will exit and RETRY in HandlePageOverflow; the first thread "owns" the overflow operation and must stabilize it.
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
 
+            // Note: Below here we defer SetIsInLogMemory(..) to TryAllocateRetryNow, so 0 and -1 returns are preserved.
+
             // Slow path when we reach the end of a page.
             if (localTailPageOffset.Offset > PageSize)
             {
                 // Note that TailPageOffset is now unstable -- there may be a GetTailAddress call spinning for
                 // it to stabilize. Therefore, HandlePageOverflow needs to stabilize TailPageOffset immediately,
                 // before performing any epoch bumps or system calls.
-                return SetIsInMemory(HandlePageOverflow(ref localTailPageOffset, numSlots));
+                return HandlePageOverflow(ref localTailPageOffset, numSlots);
             }
 
-            return SetIsInMemory(GetStartLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots)));
+            return GetStartLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
         }
 
         /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
@@ -1067,7 +1071,7 @@ namespace Tsavorite.core
                 epoch.ProtectAndDrain();
                 Thread.Yield();
             }
-            return logicalAddress;
+            return SetIsInLogMemory(logicalAddress);
         }
 
         /// <summary>
@@ -1298,8 +1302,7 @@ namespace Tsavorite.core
         /// </summary>
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
-            long pageAlignedTailAddress = GetStartOfPage(currentTailAddress);
-            long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyAddressLagOffset;
+            long desiredReadOnlyAddress = GetStartOfPage(currentTailAddress) - SetIsInLogMemory(ReadOnlyAddressLagOffset);
             if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
@@ -1315,7 +1318,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
         {
-            var desiredHeadAddress = GetStartOfPage(currentTailAddress) - HeadAddressLagOffset;
+            var desiredHeadAddress = GetStartOfPage(currentTailAddress) - SetIsInLogMemory(HeadAddressLagOffset);
 
             // Obtain local values of variables that can change
             var currentFlushedUntilAddress = FlushedUntilAddress;

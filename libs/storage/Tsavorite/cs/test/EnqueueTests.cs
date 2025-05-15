@@ -135,7 +135,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -143,13 +143,9 @@ namespace Tsavorite.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
-                        {
                             ClassicAssert.AreEqual((byte)entryFlag, result[0]);
-                        }
                         else
-                        {
                             ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
-                        }
 
                         currentEntry++;
                     }
@@ -158,9 +154,7 @@ namespace Tsavorite.test
 
             // Make sure expected length (entryLength) is same as current - also makes sure that data verification was not skipped
             ClassicAssert.AreEqual(entryLength, currentEntry);
-
         }
-
 
         [Test]
         [Category("TsavoriteLog")]

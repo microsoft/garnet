@@ -13,30 +13,14 @@ namespace Tsavorite.core
         // RecordInfo has a long field, so it should be aligned to 8-bytes
         public const int kRecordAlignment = 8;
 
-        public const bool kFineGrainedHandoverRecord = false;
-        public const bool kFineGrainedHandoverBucket = true;
-
         /// Number of entries per bucket (assuming 8-byte entries to fill a cacheline)
         /// Number of bits per bucket (assuming 8-byte entries to fill a cacheline)
         public const int kBitsPerBucket = 3;
-
         public const int kEntriesPerBucket = 1 << kBitsPerBucket;
 
         // Position of fields in hash-table entry
         public const int kTentativeBitShift = 63;
         public const long kTentativeBitMask = 1L << kTentativeBitShift;
-
-
-
-        public const int kTagSize = 62 - LogAddress.kAddressBits;
-        public const int kTagShift = 62 - kTagSize;
-        public const long kTagMask = (1L << kTagSize) - 1;
-        public const long kTagPositionMask = kTagMask << kTagShift;
-
-        // Position of tag in hash value (offset is always in the least significant bits)
-        public const int kHashTagShift = 64 - kTagSize;
-
-
 
         // Default number of entries in the lock table.
         public const int kDefaultLockTableSize = 16 * 1024;

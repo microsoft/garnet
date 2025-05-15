@@ -227,7 +227,6 @@ namespace Tsavorite.test.ReadCacheTests
 
             isReadCache = new HashBucketEntry { word = la }.IsReadCache;
             log = isReadCache ? store.readcache : store.hlog;
-            la = AbsoluteAddress(la);
             var pa = log.GetPhysicalAddress(la);
             recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;

@@ -204,9 +204,9 @@ namespace Tsavorite.core
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
             epoch = new LightEpoch();
-            CommittedUntilAddress = kFirstValidAddress;
-            CommittedBeginAddress = kFirstValidAddress;
-            SafeTailAddress = kFirstValidAddress;
+            CommittedUntilAddress = FirstValidAddress;
+            CommittedBeginAddress = FirstValidAddress;
+            SafeTailAddress = FirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
             allocator = new(new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback });
             allocator.Initialize();
@@ -2542,7 +2542,7 @@ namespace Tsavorite.core
 
                 // Reset variables to normal
                 allocator.Initialize();
-                CommittedUntilAddress = kFirstValidAddress;
+                CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2556,7 +2556,7 @@ namespace Tsavorite.core
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = kFirstValidAddress;
+                    headAddress = FirstValidAddress;
 
                 try
                 {
@@ -2632,7 +2632,7 @@ namespace Tsavorite.core
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = kFirstValidAddress;
+                    headAddress = FirstValidAddress;
                 try
                 {
                     allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
@@ -2696,7 +2696,7 @@ namespace Tsavorite.core
                 logger?.LogDebug("Unable to recover using any available commit");
                 // Reset things to be something normal lol
                 allocator.Initialize();
-                CommittedUntilAddress = kFirstValidAddress;
+                CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2710,7 +2710,7 @@ namespace Tsavorite.core
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = kFirstValidAddress;
+                    headAddress = FirstValidAddress;
                 await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 

@@ -65,6 +65,7 @@ namespace Tsavorite.core
             internal const int EphemeralXLock = 0x0002;    // LockTable
             internal const int LockBits = EphemeralSLock | EphemeralXLock;
 
+            // These are separate from the AddressType in LogicalAddress because we need to know if that LogicalAddress matched the key.
             internal const int MainLogSrc = 0x0100;
             internal const int ReadCacheSrc = 0x0200;
             internal const int InMemSrcBits = MainLogSrc | ReadCacheSrc;
@@ -167,7 +168,7 @@ namespace Tsavorite.core
 
             // HasEphemeralLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
-            LatestLogicalAddress = LogicalAddress = AbsoluteAddress(latestLogicalAddress);
+            LatestLogicalAddress = LogicalAddress = latestLogicalAddress;
             SetAllocator(srcAllocatorBase);
         }
 
@@ -182,12 +183,7 @@ namespace Tsavorite.core
         internal readonly string LockStateString() => InternalStates.ToString(internalState & InternalStates.LockBits);
 
         public override readonly string ToString()
-        {
-            var isRC = "(rc)";
-            var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
-            var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
-            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" hasInMemorySrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, hasLocks {LockStateString()}";
-        }
+            => $"lla {AddressString(LatestLogicalAddress)}, la {AddressString(LogicalAddress)}, lrcla {AddressString(LowestReadCacheLogicalAddress)},"
+             + $" inMemSrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, locks {LockStateString()}";
     }
 }

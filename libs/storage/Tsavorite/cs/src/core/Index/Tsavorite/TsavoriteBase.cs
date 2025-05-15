@@ -153,7 +153,7 @@ namespace Tsavorite.core
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation)
-                target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
+                target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & kAddressBitMask;
                 if (target_entry_word == 0)
                 {
                     // We lock the firstBucket, so it can't be cleared.
@@ -260,7 +260,7 @@ namespace Tsavorite.core
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation). Don't mask off the non-address bits here; they're needed for CAS.
                 target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex);
-                while ((target_entry_word & Constants.kAddressMask) == 0)
+                while ((target_entry_word & kAddressBitMask) == 0)
                 {
                     // There is no next bucket. If slot is Constants.kInvalidEntrySlot then we did not find an empty slot, so must allocate a new bucket.
                     if (hei.slot == Constants.kInvalidEntrySlot)
@@ -270,7 +270,7 @@ namespace Tsavorite.core
                         var physicalBucketAddress = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(logicalBucketAddress);
                         long compare_word = target_entry_word;
                         target_entry_word = logicalBucketAddress;
-                        target_entry_word |= compare_word & ~Constants.kAddressMask;
+                        target_entry_word |= compare_word & ~kAddressBitMask;
 
                         long result_word = Interlocked.CompareExchange(
                             ref hei.bucket->bucket_entries[Constants.kOverflowBucketIndex],
@@ -299,7 +299,7 @@ namespace Tsavorite.core
                 }
 
                 // The next bucket was there or was allocated. Move to it.
-                hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & Constants.kAddressMask);
+                hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & kAddressBitMask);
             } while (true);
         }
 
@@ -335,7 +335,7 @@ namespace Tsavorite.core
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation).
-                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
+                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & kAddressBitMask;
                 if (target_entry_word == 0)
                     return false;
                 bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);

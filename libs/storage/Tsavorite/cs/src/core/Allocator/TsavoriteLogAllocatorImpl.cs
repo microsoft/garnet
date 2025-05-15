@@ -63,7 +63,7 @@ namespace Tsavorite.core
             }
         }
 
-        public override void Initialize() => Initialize(kFirstValidAddress);
+        public override void Initialize() => Initialize(FirstValidAddress);
 
         /// <summary>
         /// Dispose memory allocator
