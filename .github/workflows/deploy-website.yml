@@ -32,10 +32,17 @@ jobs:
           sparse-checkout: |
             website/static/charts
           path: continuousbenchmark
+      - uses: actions/checkout@v4
+        with:
+          ref: continuousbenchmark_net80
+          sparse-checkout: |
+            website/static/charts
+          path: continuousbenchmark_net80
       - name: Copy charts
         run: |
           mkdir -p static/charts
           cp ../continuousbenchmark/website/static/charts/* static/charts
+          cp ../continuousbenchmark_net80/website/static/charts/data.js static/charts/data_net80.js
       - uses: actions/setup-node@v4
         with:
           node-version: 20
