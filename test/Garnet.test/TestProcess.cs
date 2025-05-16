@@ -13,13 +13,13 @@ namespace Garnet.test
 {
     internal class GarnetServerTestProcess : IDisposable
     {
-        private readonly Process p = default;
+        private readonly Process process = default;
         private readonly Stopwatch stopWatch = default;
         private readonly LightClientRequest lightClientRequest = default;
 
-        internal GarnetServerTestProcess(out ConfigurationOptions opts,
-                                         Dictionary<string, string> env = default,
-                                         int port = 7000)
+        public ConfigurationOptions Options { get; }
+
+        internal GarnetServerTestProcess(Dictionary<string, string> env = default, int port = 7000)
         {
             var a = Assembly.GetAssembly(typeof(Garnet.Program));
             var name = a.Location;
@@ -27,15 +27,15 @@ namespace Garnet.test
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                name = name.AsSpan().Slice(0, pos).ToString() + ".exe";
+                name = string.Concat(name.AsSpan(0, pos), ".exe");
             }
             else
             {
-                name = name.AsSpan().Slice(0, pos).ToString();
+                name = name.Substring(0, pos);
             }
 
             var endPoint = new IPEndPoint(IPAddress.Loopback, port);
-            opts = TestUtils.GetConfig([endPoint]);
+            Options = TestUtils.GetConfig([endPoint]);
 
             // We don't have to disable objects, it's done to improve startup time a bit.
             var psi = new ProcessStartInfo(name, ["--bind", "127.0.0.1", "--port", port.ToString(), "--enable-debug-command", "local", "--no-pubsub", "--no-obj"])
@@ -51,12 +51,12 @@ namespace Garnet.test
                     psi.Environment.Add(e.Key, e.Value);
             }
 
-            p = Process.Start(psi);
-            ClassicAssert.NotNull(p);
+            process = Process.Start(psi);
+            ClassicAssert.NotNull(process);
 
             // Block until the startup message to ensure process is up.
             var dummy = new char[1];
-            _ = p.StandardOutput.ReadBlock(dummy, 0, 1);
+            _ = process.StandardOutput.ReadBlock(dummy, 0, 1);
 
             // Give it a bit more time
             Thread.Sleep(100);
@@ -73,7 +73,7 @@ namespace Garnet.test
                 Console.WriteLine(stopWatch.ElapsedMilliseconds);
             }
 
-            if (p != default)
+            if (process != default)
             {
                 // We want to be sure the process is down, otherwise it may conflict
                 // with a future run. First, we'll ask nicely and then kill it.
@@ -85,10 +85,10 @@ namespace Garnet.test
                 }
                 catch { }
 
-                try { p.Kill(); }
+                try { process.Kill(); }
                 catch { }
 
-                p.Close();
+                process.Close();
             }
         }
     }
