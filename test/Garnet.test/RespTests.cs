@@ -5004,17 +5004,19 @@ namespace Garnet.test
 
             // Start blocking client
             using var blockingClient = TestUtils.CreateRequest();
-            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"), 0,
+                                                Garnet.common.NumUtils.MaximumFormatInt64Length * 2);
             var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+            var isError = false;
             Task blockingTask = null;
-            bool isError = false;
+
             if (clientType == "BLOCKING")
             {
                 blockingTask = taskFactory.StartNew(() =>
                 {
                     var startTime = Stopwatch.GetTimestamp();
                     var response = blockingClient.SendCommand("BLMPOP 10 1 keyA LEFT");
-                    if (Encoding.ASCII.GetString(response).Substring(0, "-UNBLOCKED".Length) == "-UNBLOCKED")
+                    if (Encoding.ASCII.GetString(response, 0, "-UNBLOCKED".Length) == "-UNBLOCKED")
                     {
                         isError = true;
                     }
@@ -5065,14 +5067,17 @@ namespace Garnet.test
 
             // Start blocking client
             using var blockingClient = TestUtils.CreateRequest();
-            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
+            var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"), 0,
+                                                            Garnet.common.NumUtils.MaximumFormatInt64Length * 2);
             var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+            ClassicAssert.IsTrue(long.TryParse(clientId, out _));
 
             string blockingResult = null;
             var blockingTask = Task.Run(() =>
             {
                 var response = blockingClient.SendCommand($"BLMPOP 10 1 {key} LEFT COUNT 30");
-                blockingResult = Encoding.ASCII.GetString(response);
+                blockingResult = Encoding.ASCII.GetString(response, 0,
+                                    Garnet.common.NumUtils.MaximumFormatInt64Length * (numberOfItems + 1));
             });
 
             // Wait for client to enter blocking state
