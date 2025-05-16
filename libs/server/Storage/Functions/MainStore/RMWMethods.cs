@@ -26,6 +26,7 @@ namespace Garnet.server
                 case RespCommand.EXPIREAT:
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
+                case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
                     return false;
@@ -832,6 +833,18 @@ namespace Garnet.server
                     }
 
                     return false;
+                case RespCommand.DELIFEXPIM:
+                    // Only if the key has expired, will we delete it.
+                    if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
+                    {
+                        // setting the action and returning false will tombstone this record
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        // reset etag state that may have been initialized earlier,
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+                    shouldUpdateEtag = false;
+                    break;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -908,6 +921,8 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFEXPIM:
+                    return false;
                 case RespCommand.DELIFGREATER:
                     if (rmwInfo.RecordInfo.ETag)
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);

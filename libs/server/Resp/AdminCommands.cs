@@ -72,6 +72,7 @@ namespace Garnet.server
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
+                RespCommand.DELIFEXPIM => NetworkDELIFEXPIM(),
                 _ => cmdFound = false
             };
 
@@ -854,6 +855,15 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// DELIFEXPIM [
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkDELIFEXPIM()
+        {
+
         }
 
         /// <summary>
