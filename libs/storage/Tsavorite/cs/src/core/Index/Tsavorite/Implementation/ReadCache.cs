@@ -60,6 +60,7 @@ namespace Tsavorite.core
                         stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
                         stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
                         stackCtx.recSrc.SetAllocator(readCacheBase);
+                        stackCtx.recSrc.SetHasReadCacheSrc();
 
                         // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
                         if (!alwaysFindLatestLA)
@@ -165,7 +166,7 @@ namespace Tsavorite.core
 
                 if (!entry->IsReadCache) continue;
                 var logicalAddress = entry->Address;
-                var physicalAddress = readcache.GetPhysicalAddress(AbsoluteAddress(logicalAddress));
+                var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
 
                 while (true)
                 {
@@ -173,7 +174,7 @@ namespace Tsavorite.core
                     entry->Address = logicalAddress;
                     if (!entry->IsReadCache)
                         break;
-                    physicalAddress = readcache.GetPhysicalAddress(AbsoluteAddress(logicalAddress));
+                    physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                 }
             }
         }
@@ -223,7 +224,7 @@ namespace Tsavorite.core
             // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
             while (entry.IsReadCache && (!!untilEntry.IsReadCache || entry.Address > untilEntry.Address))
             {
-                var logRecord = readcache.CreateLogRecord(entry.AbsoluteAddress);
+                var logRecord = readcache.CreateLogRecord(entry.Address);
                 ref var recordInfo = ref logRecord.InfoRef;
                 if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, logRecord.Key))
                 {
@@ -248,6 +249,11 @@ namespace Tsavorite.core
 
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
+            // ReadCache is internally an allocator so has IsInLogMemory set for its addresses. Convert the boundary
+            // addresses to ReadCache; the entries in the hash chain are already ReadCache.
+            rcLogicalAddress = SetIsReadCache(rcLogicalAddress);
+            rcToLogicalAddress = SetIsReadCache(rcToLogicalAddress);
+
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)
             {
@@ -270,7 +276,7 @@ namespace Tsavorite.core
                 //  2. Call FindTag on that key in the main store to get the start of the hash chain.
                 //  3. Walk the hash chain's readcache entries, removing records in the "to be removed" range.
                 //     Do not remove Invalid records outside this range; that leads to race conditions.
-                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
+                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || rcRecordInfo.PreviousAddress < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
                 HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
@@ -298,8 +304,7 @@ namespace Tsavorite.core
             HashBucketEntry entry = new() { word = hei.entry.word };
             while (entry.IsReadCache)
             {
-                var la = entry.AbsoluteAddress;
-                var logRecord = new LogRecord(readcache.GetPhysicalAddress(la));
+                var logRecord = new LogRecord(readcache.GetPhysicalAddress(entry.Address));
                 ref var recordInfo = ref logRecord.InfoRef;
 
 #if DEBUG
@@ -311,15 +316,15 @@ namespace Tsavorite.core
 #endif
 
                 // If the record's address is above the eviction range, leave it there and track nextPhysicalAddress.
-                if (la >= rcToLogicalAddress)
+                if (entry.Address >= rcToLogicalAddress)
                 {
                     nextPhysicalAddress = logRecord.physicalAddress;
                     entry.word = recordInfo.PreviousAddress;
                     continue;
                 }
 
-                // The record is being evicted. If we have a higher readcache record that is not being evicted, unlink 'la' by setting
-                // (nextPhysicalAddress).PreviousAddress to (la).PreviousAddress.
+                // The record is being evicted. If we have a higher readcache record that is not being evicted, unlink 'entry.Address' by setting
+                // (nextPhysicalAddress).PreviousAddress to (entry.Address).PreviousAddress.
                 if (nextPhysicalAddress != kInvalidAddress)
                 {
                     ref var nextri = ref LogRecord.GetInfoRef(nextPhysicalAddress);

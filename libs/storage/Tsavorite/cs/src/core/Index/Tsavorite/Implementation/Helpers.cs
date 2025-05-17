@@ -178,7 +178,7 @@ namespace Tsavorite.core
         {
             // This is called on exception recovery for a newly-inserted record.
             var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
-            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
+            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(logicalAddress)).SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

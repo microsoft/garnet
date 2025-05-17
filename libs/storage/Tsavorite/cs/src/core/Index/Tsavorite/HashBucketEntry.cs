@@ -73,9 +73,8 @@ namespace Tsavorite.core
 
         public override readonly string ToString()
         {
-            var addrRC = IsReadCache ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"addr {AbsoluteAddress}{addrRC}, tag {Tag}, tent {bstr(Tentative)}";
+            return $"addr {AddressString(Address)}, tag {Tag}, tent {bstr(Tentative)}";
         }
     }
 }

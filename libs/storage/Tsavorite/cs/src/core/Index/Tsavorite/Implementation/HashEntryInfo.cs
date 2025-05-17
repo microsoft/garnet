@@ -47,7 +47,6 @@ namespace Tsavorite.core
         /// The original address of this hash entry (at the time of FindTag, etc.)
         /// </summary>
         internal readonly long Address => entry.Address;
-        internal readonly long AbsoluteAddress => AbsoluteAddress(Address);
 
         /// <summary>
         /// The current address of this hash entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
@@ -57,8 +56,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get { return new HashBucketEntry() { word = bucket->bucket_entries[slot] }.Address; }
         }
-
-        internal readonly long AbsoluteCurrentAddress => AbsoluteAddress(CurrentAddress);
 
         /// <summary>
         /// Return whether the <see cref="HashBucketEntry"/> has been updated

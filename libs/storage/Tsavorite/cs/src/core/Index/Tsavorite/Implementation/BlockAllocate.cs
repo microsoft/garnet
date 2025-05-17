@@ -133,10 +133,13 @@ namespace Tsavorite.core
                 if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
+                // Mark this as a ReadCache record.
+                newLogicalAddress = SetIsReadCache(newLogicalAddress);
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
-                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.AbsoluteAddress)
+                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.Address)
                     {
                         allocatedSize = recordSizeInfo.AllocatedInlineRecordSize;
                         return true;

@@ -125,7 +125,12 @@ namespace Tsavorite.core
         /// </summary>
         internal readonly bool HasMainLogSrc => (internalState & InternalStates.MainLogSrc) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasMainLogSrc() => internalState |= InternalStates.MainLogSrc;
+        internal void SetHasMainLogSrc()
+        {
+            Debug.Assert(IsInLogMemory(LogicalAddress), "LogicalAddress must be a non-readcache in-mmeory address to set HasMainLogSrc");
+            internalState |= InternalStates.MainLogSrc;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasMainLogSrc() => internalState &= ~InternalStates.MainLogSrc;
 
@@ -134,7 +139,12 @@ namespace Tsavorite.core
         /// </summary>
         internal readonly bool HasReadCacheSrc => (internalState & InternalStates.ReadCacheSrc) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasReadCacheSrc() => internalState |= InternalStates.ReadCacheSrc;
+        internal void SetHasReadCacheSrc()
+        {
+            Debug.Assert(IsReadCache(LogicalAddress), "LogicalAddress must be a readcache address to set HasReadCacheSrc");
+            internalState |= InternalStates.ReadCacheSrc;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
@@ -148,7 +158,7 @@ namespace Tsavorite.core
         internal readonly LogRecord CreateLogRecord()
         {
             Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
-            Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log memory");
+            Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log or readcache memory");
             return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
         }
 

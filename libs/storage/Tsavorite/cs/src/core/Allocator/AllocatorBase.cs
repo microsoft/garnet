@@ -394,15 +394,6 @@ namespace Tsavorite.core
 
         #region LogRecord functions
 
-        /// <summary>Get start absolute logical address</summary>
-        public long GetStartAbsoluteLogicalAddressOfPage(long page) => page << LogPageSizeBits;
-
-        /// <summary>Get start logical address</summary>
-        public long GetStartLogicalAddressOfPage(long page) => SetIsInLogMemory(GetStartAbsoluteLogicalAddressOfPage(page));
-
-        /// <summary>Get first valid address</summary>
-        public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? FirstValidAddress : GetStartLogicalAddressOfPage(page);
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize, ObjectIdMap objectIdMap)
         {
@@ -657,11 +648,11 @@ namespace Tsavorite.core
             // Delete disk segments until specified disk begin address
 
             // First valid disk segment required for recovery
-            long firstValidSegment = (int)(diskBeginAddress >> LogSegmentSizeBits);
+            long firstValidSegment = (int)GetSegment(diskBeginAddress);
 
             // Last valid disk segment required for recovery
-            var lastValidSegment = (int)(diskFlushedUntilAddress >> LogSegmentSizeBits);
-            if ((diskFlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+            var lastValidSegment = (int)GetSegment(diskFlushedUntilAddress);
+            if (GetOffsetOnSegment(diskFlushedUntilAddress) == 0)
                 lastValidSegment--;
 
             logger?.LogInformation("Recovery requires disk segments in range [{firstSegment}--{tailStartSegment}]", firstValidSegment, lastValidSegment);
@@ -671,9 +662,9 @@ namespace Tsavorite.core
 
             if (FlushedUntilAddress > _wrapper.GetFirstValidLogicalAddress(0))
             {
-                var flushedUntilAddress = AbsoluteAddress(FlushedUntilAddress);
-                int currTailSegment = (int)(flushedUntilAddress >> LogSegmentSizeBits);
-                if ((flushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
+                var flushedUntilAddress = FlushedUntilAddress;
+                int currTailSegment = (int)GetSegment(flushedUntilAddress);
+                if (GetOffsetOnSegment(flushedUntilAddress) == 0)
                     currTailSegment--;
 
                 if (currTailSegment > lastAvailSegment)
@@ -691,7 +682,7 @@ namespace Tsavorite.core
             if (trimLog)
             {
                 logger?.LogInformation("Trimming disk segments until (not including) {firstSegment}", firstValidSegment);
-                TruncateUntilAddressBlocking(firstValidSegment << LogSegmentSizeBits);
+                TruncateUntilAddressBlocking(GetStartLogicalAddressOfSegment(firstValidSegment));
 
                 for (int s = lastValidSegment + 1; s <= lastAvailSegment; s++)
                 {
@@ -868,6 +859,29 @@ namespace Tsavorite.core
         /// <summary>Get offset in page</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public long GetOffsetOnPage(long address) => address & PageSizeMask;
+
+        /// <summary>Get start absolute logical address</summary>
+        public long GetStartAbsoluteLogicalAddressOfPage(long page) => page << LogPageSizeBits;
+
+        /// <summary>Get start logical address</summary>
+        public long GetStartLogicalAddressOfPage(long page) => SetIsInLogMemory(GetStartAbsoluteLogicalAddressOfPage(page));
+
+        /// <summary>Get first valid address</summary>
+        public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? FirstValidAddress : GetStartLogicalAddressOfPage(page);
+
+        /// <summary>Get log segment index from <paramref name="logicalAddress"/></summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public long GetSegment(long logicalAddress) => AbsoluteAddress(logicalAddress) >> LogSegmentSizeBits;
+
+        /// <summary>Get offset in page</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public long GetOffsetOnSegment(long address) => address & (SegmentSize - 1);
+
+        /// <summary>Get start absolute logical address</summary>
+        public long GetStartAbsoluteLogicalAddressOfSegment(long segment) => segment << LogSegmentSizeBits;
+
+        /// <summary>Get start logical address</summary>
+        public long GetStartLogicalAddressOfSegment(long segment) => SetIsInLogMemory(GetStartAbsoluteLogicalAddressOfSegment(segment));
 
         /// <summary>Get sector size for main hlog device</summary>
         public int GetDeviceSectorSize() => sectorSize;
