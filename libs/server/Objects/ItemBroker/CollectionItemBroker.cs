@@ -108,7 +108,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void StartMainLoop()
         {
-            if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED && 
+            if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED &&
                 Interlocked.CompareExchange(ref mainLoopTaskStatus, MAIN_LOOP_STARTED, MAIN_LOOP_NOT_STARTED) == MAIN_LOOP_NOT_STARTED)
             {
                 mainLoopTask = Task.Run(Start);

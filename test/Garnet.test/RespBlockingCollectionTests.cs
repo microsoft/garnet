@@ -224,11 +224,11 @@ namespace Garnet.test
         [TestCase("BLPOP", GarnetObjectType.SortedSet)]
         public void BlockingListPopWrongTypeTests(string blockingCmd, GarnetObjectType wrongObjectType)
         {
-            var keys = new[] { "key1", "key2", "key3"};
+            var keys = new[] { "key1", "key2", "key3" };
             var values = new[]
             {
-                [new RedisValue("key1:v1")], 
-                [new RedisValue("key2:v1")], 
+                [new RedisValue("key1:v1")],
+                [new RedisValue("key2:v1")],
                 new[] { new RedisValue("key3:v1") }
             };
 
@@ -624,7 +624,7 @@ namespace Garnet.test
             var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
             ClassicAssert.IsNotNull(ex);
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
-            
+
             // Source key empty, dest key empty - dest gets wrong type, fail once source gets an item
             var delResult = db.KeyDelete(srcKey);
             ClassicAssert.IsTrue(delResult);
