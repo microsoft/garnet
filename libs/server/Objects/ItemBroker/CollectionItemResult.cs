@@ -34,9 +34,10 @@ namespace Garnet.server
             Items = items;
         }
 
-        private CollectionItemResult(bool isForceUnblocked)
+        private CollectionItemResult(bool isForceUnblocked, bool isTypeMismatch)
         {
             IsForceUnblocked = isForceUnblocked;
+            IsTypeMismatch = isTypeMismatch;
         }
 
         /// <summary>
@@ -72,7 +73,12 @@ namespace Garnet.server
         /// <summary>
         /// Gets a value indicating whether the item retrieval was force unblocked.
         /// </summary>
-        internal readonly bool IsForceUnblocked { get; }
+        internal bool IsForceUnblocked { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether the item retrieval returned a type mismatch.
+        /// </summary>
+        internal bool IsTypeMismatch { get; }
 
         /// <summary>
         /// Instance of empty result
@@ -80,8 +86,13 @@ namespace Garnet.server
         internal static readonly CollectionItemResult Empty = new(null, item: null);
 
         /// <summary>
-        /// Instance representing an Force Unblocked result.
+        /// Instance representing a Force Unblocked result.
         /// </summary>
-        internal static readonly CollectionItemResult ForceUnblocked = new(true);
+        internal static readonly CollectionItemResult ForceUnblocked = new(isForceUnblocked: true, isTypeMismatch: false);
+
+        /// <summary>
+        /// Instance representing a Type Mismatch result.
+        /// </summary>
+        internal static readonly CollectionItemResult TypeMismatch = new(isForceUnblocked: false, isTypeMismatch: true);
     }
 }

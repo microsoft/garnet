@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Concurrent;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -22,15 +20,9 @@ namespace Garnet.server
         /// </summary>
         internal readonly byte[] Key;
 
-        /// <summary>
-        /// Observers
-        /// </summary>
-        internal readonly ConcurrentQueue<CollectionItemObserver> Observers;
-
-        public CollectionUpdatedEvent(byte[] key, ConcurrentQueue<CollectionItemObserver> observers)
+        public CollectionUpdatedEvent(byte[] key)
         {
             Key = key;
-            Observers = observers;
         }
     }
 

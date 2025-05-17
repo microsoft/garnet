@@ -1565,6 +1565,20 @@ namespace Garnet.server
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
+            if (result.IsForceUnblocked)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (result.IsTypeMismatch)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             if (!result.Found)
             {
                 WriteNull();
@@ -1667,6 +1681,20 @@ namespace Garnet.server
             cmdArgs[1] = new ArgSlice((byte*)&popCount, sizeof(int));
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs).Result;
+
+            if (result.IsForceUnblocked)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (result.IsTypeMismatch)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (!result.Found)
             {
