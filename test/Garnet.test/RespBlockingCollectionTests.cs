@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -85,7 +86,7 @@ namespace Garnet.test
         [TestCase("BRPOP", "LPUSH", 0.5)]
         [TestCase("BLPOP", "RPUSH", 0)]
         [TestCase("BLPOP", "RPUSH", 0.5)]
-        public void MultiListBlockingPopTestSE(string blockingCmd, string pushCmd, double timeout)
+        public void MultiListBlockingPopTest(string blockingCmd, string pushCmd, double timeout)
         {
             var key = "mykey";
 
@@ -214,6 +215,511 @@ namespace Garnet.test
                 expectedResponse = $"*2\r\n${keys[i].Length}\r\n{keys[i]}\r\n${values[i].Length}\r\n{values[i]}\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             }
+        }
+
+        [Test]
+        [TestCase("BRPOP", GarnetObjectType.Set)]
+        [TestCase("BRPOP", GarnetObjectType.SortedSet)]
+        [TestCase("BLPOP", GarnetObjectType.Set)]
+        [TestCase("BLPOP", GarnetObjectType.SortedSet)]
+        public void BlockingListPopWrongTypeTests(string blockingCmd, GarnetObjectType wrongObjectType)
+        {
+            var keys = new[] { "key1", "key2", "key3"};
+            var values = new[]
+            {
+                [new RedisValue("key1:v1")], 
+                [new RedisValue("key2:v1")], 
+                new[] { new RedisValue("key3:v1") }
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // First key right type, second key wrong type - succeed
+            var result = db.ListLeftPush(keys[0], values[0]);
+            ClassicAssert.AreEqual(values[0].Length, result);
+
+            result = wrongObjectType switch
+            {
+                GarnetObjectType.Set => db.SetAdd(keys[1], values[1]),
+                GarnetObjectType.SortedSet => db.SortedSetAdd(keys[1],
+                    values[1].Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                _ => -1,
+            };
+            ClassicAssert.AreEqual(values[1].Length, result);
+
+            var popResult = db.Execute(blockingCmd, keys[0], keys[1], keys[2], 0);
+            ClassicAssert.AreEqual(2, popResult.Length);
+            ClassicAssert.AreEqual(keys[0], popResult[0].ToString());
+            ClassicAssert.AreEqual(values[0][0], popResult[1].ToString());
+
+            // First key empty, second key wrong type - fail immediately
+            var delResult = db.KeyDelete(keys[0]);
+            ClassicAssert.IsTrue(delResult);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute(blockingCmd, keys[0], keys[1], keys[2], 0));
+            var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
+
+            // All keys empty, second key gets wrong type then right type - succeed
+            delResult = db.KeyDelete(keys[1]);
+            ClassicAssert.IsTrue(delResult);
+
+            var blockingTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"{blockingCmd} {keys[0]} {keys[1]} {keys[2]} 0", 3);
+                var btExpectedResponse = $"*2\r\n${keys[2].Length}\r\n{keys[2]}\r\n${values[2][0].ToString().Length}\r\n{values[2][0]}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+            });
+
+            var releasingTask = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                result = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetAdd(keys[2], values[2]),
+                    GarnetObjectType.SortedSet => db.SortedSetAdd(keys[2],
+                        values[2].Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, result);
+
+                var setPopCount = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetPop(keys[2], 2).Length,
+                    GarnetObjectType.SortedSet => db.SortedSetPop(keys[2], 2).Length,
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, setPopCount);
+
+                result = db.ListLeftPush(keys[2], values[2]);
+                ClassicAssert.AreEqual(values[2].Length, result);
+            });
+
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll([blockingTask, releasingTask], timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase("BZPOPMIN", GarnetObjectType.Set)]
+        [TestCase("BZPOPMIN", GarnetObjectType.List)]
+        [TestCase("BZPOPMAX", GarnetObjectType.Set)]
+        [TestCase("BZPOPMAX", GarnetObjectType.List)]
+        public void BlockingSortedSetPopWrongTypeTests(string blockingCmd, GarnetObjectType wrongObjectType)
+        {
+            var keys = new[] { "key1", "key2", "key3" };
+            var values = new[]
+            {
+                [new SortedSetEntry("key1:v1", 1)],
+                [new SortedSetEntry("key2:v1", 2)],
+                new[] { new SortedSetEntry("key3:v1", 3) }
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // First key right type, second key wrong type - succeed
+            var result = db.SortedSetAdd(keys[0], values[0]);
+            ClassicAssert.AreEqual(values[0].Length, result);
+
+            result = wrongObjectType switch
+            {
+                GarnetObjectType.Set => db.SetAdd(keys[1], values[1].Select(v => v.Element).ToArray()),
+                GarnetObjectType.List => db.ListLeftPush(keys[1], values[1].Select(v => v.Element).ToArray()),
+                _ => -1,
+            };
+            ClassicAssert.AreEqual(values[1].Length, result);
+
+            var popResult = db.Execute(blockingCmd, keys[0], keys[1], keys[2], 0);
+            ClassicAssert.AreEqual(3, popResult.Length);
+            ClassicAssert.AreEqual(keys[0], popResult[0].ToString());
+            ClassicAssert.AreEqual(values[0][0].Element, popResult[1].ToString());
+            ClassicAssert.AreEqual(values[0][0].Score.ToString(), popResult[2].ToString());
+
+            // First key empty, second key wrong type - fail immediately
+            var delResult = db.KeyDelete(keys[0]);
+            ClassicAssert.IsTrue(delResult);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute(blockingCmd, keys[0], keys[1], keys[2], 0));
+            var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
+
+            // All keys empty, second key gets wrong type then right type - succeed
+            delResult = db.KeyDelete(keys[1]);
+            ClassicAssert.IsTrue(delResult);
+
+            var blockingTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"{blockingCmd} {keys[0]} {keys[1]} {keys[2]} 0", 4);
+                var btExpectedResponse = $"*3\r\n${keys[2].Length}\r\n{keys[2]}\r\n${values[2][0].Element.ToString().Length}\r\n{values[2][0].Element}\r\n${values[2][0].Score.ToString().Length}\r\n{values[2][0].Score}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+            });
+
+            var releasingTask = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                result = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetAdd(keys[2], values[2].Select(v => v.Element).ToArray()),
+                    GarnetObjectType.List => db.ListLeftPush(keys[2], values[2].Select(v => v.Element).ToArray()),
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, result);
+
+                var setPopCount = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetPop(keys[2], 2).Length,
+                    GarnetObjectType.List => db.ListLeftPop(keys[2], 2).Length,
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, setPopCount);
+
+                result = db.SortedSetAdd(keys[2], values[2]);
+                ClassicAssert.AreEqual(values[2].Length, result);
+            });
+
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll([blockingTask, releasingTask], timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase(GarnetObjectType.Set)]
+        [TestCase(GarnetObjectType.SortedSet)]
+        public void BlockingListMultiPopWrongTypeTest(GarnetObjectType wrongObjectType)
+        {
+            var keys = new[] { "key1", "key2", "key3" };
+            var values = new[]
+            {
+                [new RedisValue("key1:v1")],
+                [new RedisValue("key2:v1"), new RedisValue("key2:v2")],
+                new[] { new RedisValue("key3:v1"), new RedisValue("key3:v2") }
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // First key right type, second key wrong type - succeed
+            var result = db.ListLeftPush(keys[0], values[0]);
+            ClassicAssert.AreEqual(values[0].Length, result);
+
+            result = wrongObjectType switch
+            {
+                GarnetObjectType.Set => db.SetAdd(keys[1], values[1]),
+                GarnetObjectType.SortedSet => db.SortedSetAdd(keys[1],
+                    values[1].Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                _ => -1,
+            };
+            ClassicAssert.AreEqual(values[1].Length, result);
+
+            var popResult = db.Execute("BLMPOP", 0, 3, keys[0], keys[1], keys[2], "RIGHT", "COUNT", 2);
+            ClassicAssert.AreEqual(2, popResult.Length);
+            ClassicAssert.AreEqual(keys[0], popResult[0].ToString());
+            ClassicAssert.AreEqual(1, popResult[1].Length);
+            ClassicAssert.AreEqual(values[0][0], popResult[1][0].ToString());
+
+            // First key empty, second key wrong type - fail immediately
+            var delResult = db.KeyDelete(keys[0]);
+            ClassicAssert.IsTrue(delResult);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BLMPOP", 0, 3, keys[0], keys[1], keys[2], "RIGHT", "COUNT", 2));
+            var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
+
+            // All keys empty, second key gets wrong type then right type - succeed
+            delResult = db.KeyDelete(keys[1]);
+            ClassicAssert.IsTrue(delResult);
+
+            var blockingTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"BLMPOP 0 3 {keys[0]} {keys[1]} {keys[2]} RIGHT COUNT 2", 3);
+                var btExpectedResponse = $"*2\r\n${keys[2].Length}\r\n{keys[2]}\r\n*2\r\n${values[2][0].ToString().Length}\r\n{values[2][0]}\r\n${values[2][1].ToString().Length}\r\n{values[2][1]}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+            });
+
+            var releasingTask = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                result = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetAdd(keys[2], values[2]),
+                    GarnetObjectType.SortedSet => db.SortedSetAdd(keys[2],
+                        values[2].Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, result);
+
+                var setPopCount = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetPop(keys[2], 2).Length,
+                    GarnetObjectType.SortedSet => db.SortedSetPop(keys[2], 2).Length,
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, setPopCount);
+
+                result = db.ListLeftPush(keys[2], values[2]);
+                ClassicAssert.AreEqual(values[2].Length, result);
+            });
+
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll([blockingTask, releasingTask], timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase(GarnetObjectType.Set)]
+        [TestCase(GarnetObjectType.List)]
+        public void BlockingSortedSetMultiPopWrongTypeTest(GarnetObjectType wrongObjectType)
+        {
+            var keys = new[] { "key1", "key2", "key3" };
+            var values = new[]
+            {
+                [new SortedSetEntry("key1:v1", 1)],
+                [new SortedSetEntry("key2:v1", 2)],
+                new[] { new SortedSetEntry("key3:v1", 3) }
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // First key right type, second key wrong type - succeed
+            var result = db.SortedSetAdd(keys[0], values[0]);
+            ClassicAssert.AreEqual(values[0].Length, result);
+
+            result = wrongObjectType switch
+            {
+                GarnetObjectType.Set => db.SetAdd(keys[1], values[1].Select(v => v.Element).ToArray()),
+                GarnetObjectType.List => db.ListLeftPush(keys[1], values[1].Select(v => v.Element).ToArray()),
+                _ => -1,
+            };
+            ClassicAssert.AreEqual(values[1].Length, result);
+
+            var popResult = db.Execute("BZMPOP", 0, 3, keys[0], keys[1], keys[2], "MAX", "COUNT", 2);
+            ClassicAssert.AreEqual(2, popResult.Length);
+            ClassicAssert.AreEqual(keys[0], popResult[0].ToString());
+            ClassicAssert.AreEqual(1, popResult[1].Length);
+            ClassicAssert.AreEqual(2, popResult[1][0].Length);
+            ClassicAssert.AreEqual(values[0][0].Element, popResult[1][0][0].ToString());
+            ClassicAssert.AreEqual(values[0][0].Score.ToString(), popResult[1][0][1].ToString());
+
+            // First key empty, second key wrong type - fail immediately
+            var delResult = db.KeyDelete(keys[0]);
+            ClassicAssert.IsTrue(delResult);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BZMPOP", 0, 3, keys[0], keys[1], keys[2], "MAX", "COUNT", 2));
+            var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
+
+            // All keys empty, second key gets wrong type then right type - succeed
+            delResult = db.KeyDelete(keys[1]);
+            ClassicAssert.IsTrue(delResult);
+
+            var blockingTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"BZMPOP 0 3 {keys[0]} {keys[1]} {keys[2]} MAX COUNT 2", 2);
+                var btExpectedResponse = $"*2\r\n${keys[2].Length}\r\n{keys[2]}\r\n*1\r\n*2\r\n${values[2][0].Element.ToString().Length}\r\n{values[2][0].Element}\r\n${values[2][0].Score.ToString().Length}\r\n{values[2][0].Score}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+            });
+
+            var releasingTask = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                result = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetAdd(keys[2], values[2].Select(v => v.Element).ToArray()),
+                    GarnetObjectType.List => db.ListLeftPush(keys[2], values[2].Select(v => v.Element).ToArray()),
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, result);
+
+                var setPopCount = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetPop(keys[2], 2).Length,
+                    GarnetObjectType.List => db.ListLeftPop(keys[2], 2).Length,
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(values[2].Length, setPopCount);
+
+                result = db.SortedSetAdd(keys[2], values[2]);
+                ClassicAssert.AreEqual(values[2].Length, result);
+            });
+
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll([blockingTask, releasingTask], timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
+        }
+
+        [Test]
+        [TestCase(GarnetObjectType.Set)]
+        [TestCase(GarnetObjectType.SortedSet)]
+        public void BlockingListMoveWrongTypeTest(GarnetObjectType wrongObjectType)
+        {
+            var srcKey = "srcKey";
+            var dstKey = "dstKey";
+            var srcValues = new[] { new RedisValue("srcKey:v1"), new RedisValue("srcKey:v2") };
+            var dstValues = new[] { new RedisValue("dstKey:v1") };
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Source key right type, dest key wrong type - fail immediately
+            var result = db.ListLeftPush(srcKey, srcValues);
+            ClassicAssert.AreEqual(srcValues.Length, result);
+
+            result = wrongObjectType switch
+            {
+                GarnetObjectType.Set => db.SetAdd(dstKey, dstValues),
+                GarnetObjectType.SortedSet => db.SortedSetAdd(dstKey,
+                    dstValues.Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                _ => -1,
+            };
+            ClassicAssert.AreEqual(dstValues.Length, result);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BLMOVE", srcKey, dstKey, "RIGHT", "LEFT", 0));
+            var expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            ClassicAssert.IsNotNull(ex);
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
+            
+            // Source key empty, dest key empty - dest gets wrong type, fail once source gets an item
+            var delResult = db.KeyDelete(srcKey);
+            ClassicAssert.IsTrue(delResult);
+            delResult = db.KeyDelete(dstKey);
+            ClassicAssert.IsTrue(delResult);
+
+            var blockingTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"BLMOVE {srcKey} {dstKey} RIGHT LEFT 0");
+                var btExpectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+            });
+
+            var releasingTask = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                result = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetAdd(dstKey, dstValues),
+                    GarnetObjectType.SortedSet => db.SortedSetAdd(dstKey,
+                        dstValues.Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(dstValues.Length, result);
+
+                result = db.ListLeftPush(srcKey, srcValues);
+                ClassicAssert.AreEqual(srcValues.Length, result);
+            });
+
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll([blockingTask, releasingTask], timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
+
+            // Source key empty, dst key right type, src key gets wrong type then right type - succeed
+            delResult = db.KeyDelete(srcKey);
+            ClassicAssert.IsTrue(delResult);
+            delResult = db.KeyDelete(dstKey);
+            ClassicAssert.IsTrue(delResult);
+
+            result = db.ListLeftPush(dstKey, dstValues);
+            ClassicAssert.AreEqual(dstValues.Length, result);
+
+            blockingTask = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"BLMOVE {srcKey} {dstKey} RIGHT LEFT 0");
+                var btExpectedResponse = $"${srcValues[0].ToString().Length}\r\n{srcValues[0]}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, btResponse);
+            });
+
+            releasingTask = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                result = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetAdd(srcKey, srcValues),
+                    GarnetObjectType.SortedSet => db.SortedSetAdd(srcKey,
+                        srcValues.Select(v => new SortedSetEntry(v, 1)).ToArray()),
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(srcValues.Length, result);
+
+                var setPopCount = wrongObjectType switch
+                {
+                    GarnetObjectType.Set => db.SetPop(srcKey, 2).Length,
+                    GarnetObjectType.SortedSet => db.SortedSetPop(srcKey, 2).Length,
+                    _ => -1,
+                };
+                ClassicAssert.AreEqual(srcValues.Length, setPopCount);
+
+                result = db.ListLeftPush(srcKey, srcValues);
+                ClassicAssert.AreEqual(srcValues.Length, result);
+            });
+
+            try
+            {
+                Task.WaitAll([blockingTask, releasingTask], timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            ClassicAssert.IsTrue(releasingTask.IsCompletedSuccessfully);
         }
 
         [Test]

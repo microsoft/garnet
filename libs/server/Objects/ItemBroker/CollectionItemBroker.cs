@@ -46,8 +46,13 @@ namespace Garnet.server
         // Task for the main loop, we keep field for diagnostic purposes
         Task mainLoopTask = null;
 
-        // Flag to indicate if the main loop task has started
-        int mainLoopTaskStarted = 0;
+        // Integer to indicate main loop status
+        int mainLoopTaskStatus = MAIN_LOOP_NOT_STARTED;
+
+        // Constants denoting status of main loop
+        private const int MAIN_LOOP_NOT_STARTED = 0;
+        private const int MAIN_LOOP_STARTED = 1;
+        private const int MAIN_LOOP_DISPOSED = 2;
 
         /// <summary>
         /// Constructor for CollectionItemBroker
@@ -103,7 +108,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void StartMainLoop()
         {
-            if (mainLoopTaskStarted == 0 && Interlocked.CompareExchange(ref mainLoopTaskStarted, 1, 0) == 0)
+            if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED && 
+                Interlocked.CompareExchange(ref mainLoopTaskStatus, MAIN_LOOP_STARTED, MAIN_LOOP_NOT_STARTED) == MAIN_LOOP_NOT_STARTED)
             {
                 mainLoopTask = Task.Run(Start);
             }
@@ -161,22 +167,40 @@ namespace Garnet.server
 
         void HandleCollectionUpdateWorker(byte[] key)
         {
-            ConcurrentQueue<CollectionItemObserver> observers = null;
+            ConcurrentQueue<CollectionItemObserver> observers;
+
             keysToObserversLock.ReadLock();
             try
             {
-                if (!keysToObservers.TryGetValue(key, out observers) || observers.IsEmpty) return;
+                if (!keysToObservers.TryGetValue(key, out observers)) return;
             }
             finally
             {
                 keysToObserversLock.ReadUnlock();
             }
 
-            if (observers != null)
+            // If the observer queue is empty, remove the key entry
+            if (observers.IsEmpty)
             {
-                // Add collection updated event to queue
-                brokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key, observers));
+                keysToObserversLock.WriteLock();
+                try
+                {
+                    if (!keysToObservers.TryGetValue(key, out observers)) return;
+
+                    if (observers.IsEmpty)
+                    {
+                        keysToObservers.Remove(key);
+                        return;
+                    }
+                }
+                finally
+                {
+                    keysToObserversLock.WriteUnlock();
+                }
             }
+
+            // Add collection updated event to queue
+            brokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key));
         }
 
         /// <summary>
@@ -205,7 +229,7 @@ namespace Garnet.server
                     InitializeObserver(noe.Observer, noe.Keys);
                     return;
                 case CollectionUpdatedEvent cue:
-                    TryAssignItemFromKey(cue.Key, cue.Observers);
+                    TryAssignItemFromKey(cue.Key);
                     return;
             }
         }
@@ -227,14 +251,20 @@ namespace Garnet.server
                 foreach (var key in keys)
                 {
                     // If the key already has a non-empty observer queue, it does not have an item to retrieve
-                    // Otherwise, try to retrieve next available item
-                    if ((keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty) ||
-                        !TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
+                    if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
+                        continue;
+
+                    // The key has an empty observer queue, try to retrieve next available item
+                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
                             out _, out var result)) continue;
 
                     // An item was found - set the observer result and return
                     sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
                     observer.HandleSetResult(result);
+
+                    // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
+                    keysToObservers.Remove(key);
+
                     return;
                 }
 
@@ -257,51 +287,81 @@ namespace Garnet.server
         /// Try to assign item available (if exists) with next ready observer in queue
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="observers">Observers of updated key of collection from which to assign item</param>
         /// <returns>True if successful in assigning item</returns>
-        private bool TryAssignItemFromKey(byte[] key, ConcurrentQueue<CollectionItemObserver> observers)
+        private bool TryAssignItemFromKey(byte[] key)
         {
-            // Peek at next observer in queue
-            while (observers.TryPeek(out var observer))
-            {
-                // If observer is not waiting for result, dequeue it and continue to next observer in queue
-                if (observer.Status != ObserverStatus.WaitingForResult)
-                {
-                    _ = observers.TryDequeue(out _);
-                    continue;
-                }
+            ConcurrentQueue<CollectionItemObserver> observers;
 
-                observer.ObserverStatusLock.EnterUpgradeableReadLock();
+            keysToObserversLock.ReadLock();
+            try
+            {
+                keysToObservers.TryGetValue(key, out observers);
+
+                if (observers != null && !observers.IsEmpty)
+                {
+                    // Peek at next observer in queue
+                    while (observers.TryPeek(out var observer))
+                    {
+                        // If observer is not waiting for result, dequeue it and continue to next observer in queue
+                        if (observer.Status != ObserverStatus.WaitingForResult)
+                        {
+                            _ = observers.TryDequeue(out _);
+                            continue;
+                        }
+
+                        observer.ObserverStatusLock.EnterUpgradeableReadLock();
+                        try
+                        {
+                            // If observer is not waiting for result, dequeue it and continue to next observer in queue
+                            if (observer.Status != ObserverStatus.WaitingForResult)
+                            {
+                                _ = observers.TryDequeue(out _);
+                                continue;
+                            }
+
+                            // Try to get next available item from object stored in key
+                            if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false,
+                                    out var currCount, out var result))
+                            {
+                                // If unsuccessful getting next item but there is at least one item in the collection,
+                                // continue to next observer in the queue, otherwise return
+                                if (currCount > 0) continue;
+                                return false;
+                            }
+
+                            // Dequeue the observer, and set the observer's result
+                            _ = observers.TryDequeue(out observer);
+
+                            sessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
+                            observer.HandleSetResult(result);
+
+                            return true;
+                        }
+                        finally
+                        {
+                            observer.ObserverStatusLock.ExitUpgradeableReadLock();
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                keysToObserversLock.ReadUnlock();
+            }
+
+            if (observers != null && observers.IsEmpty)
+            {
+                keysToObserversLock.WriteLock();
                 try
                 {
-                    // If observer is not waiting for result, dequeue it and continue to next observer in queue
-                    if (observer.Status != ObserverStatus.WaitingForResult)
+                    if (keysToObservers.TryGetValue(key, out observers) && observers.IsEmpty)
                     {
-                        _ = observers.TryDequeue(out _);
-                        continue;
+                        keysToObservers.Remove(key);
                     }
-
-                    // Try to get next available item from object stored in key
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
-                            out var currCount, out var result))
-                    {
-                        // If unsuccessful getting next item but there is at least one item in the collection,
-                        // continue to next observer in the queue, otherwise return
-                        if (currCount > 0) continue;
-                        return false;
-                    }
-
-                    // Dequeue the observer, and set the observer's result
-                    _ = observers.TryDequeue(out observer);
-
-                    sessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(result);
-
-                    return true;
                 }
                 finally
                 {
-                    observer.ObserverStatusLock.ExitUpgradeableReadLock();
+                    keysToObserversLock.WriteUnlock();
                 }
             }
 
@@ -390,7 +450,7 @@ namespace Garnet.server
         /// BZPOPMIN and BZPOPMAX share same implementation since Dictionary.First() and Last() 
         /// handle the ordering automatically based on sorted set scores
         /// </summary>
-        private static unsafe bool TryGetNextSetObjects(byte[] key, SortedSetObject sortedSetObj, int count, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
+        private static unsafe bool TryGetNextSortedSetItem(byte[] key, SortedSetObject sortedSetObj, int count, RespCommand command, ArgSlice[] cmdArgs, out CollectionItemResult result)
         {
             result = default;
 
@@ -412,7 +472,7 @@ namespace Garnet.server
                     var scores = new double[popCount];
                     var items = new byte[popCount][];
 
-                    for (int i = 0; i < popCount; i++)
+                    for (var i = 0; i < popCount; i++)
                     {
                         var popResult = sortedSetObj.PopMinOrMax(!lowScoresFirst);
                         scores[i] = popResult.Score;
@@ -427,7 +487,8 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out CollectionItemResult result)
+        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command,
+            ArgSlice[] cmdArgs, bool failOnSrcTypeMismatch, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
             result = default;
@@ -470,6 +531,19 @@ namespace Garnet.server
                 var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
+                // Check for type match between the observer and the source object type
+                if ((GarnetObjectType)osObject.GarnetObject.Type != objectType)
+                {
+                    // Return a type mismatch result if we should fail on source object type mismatch
+                    if (failOnSrcTypeMismatch)
+                    {
+                        result = CollectionItemResult.TypeMismatch;
+                        return true;
+                    }
+
+                    return false;
+                }
+
                 IGarnetObject dstObj = null;
                 byte[] arrDstKey = default;
                 if (command == RespCommand.BLMOVE)
@@ -477,15 +551,20 @@ namespace Garnet.server
                     arrDstKey = dstKey.ToArray();
                     var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.GarnetObject;
+
+                    // If there is a destination object type mismatch, we should always return a type mismatch result
+                    if ((GarnetObjectType)osDstObject.GarnetObject.Type != objectType)
+                    {
+                        result = CollectionItemResult.TypeMismatch;
+                        return true;
+                    }
                 }
 
-                // Check for type match between the observer and the actual object type
-                // If types match, get next item based on item type
+                // Get next item based on item type
                 switch (osObject.GarnetObject)
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
-                        if (objectType != GarnetObjectType.List) return false;
                         if (currCount == 0) return false;
 
                         switch (command)
@@ -509,7 +588,8 @@ namespace Garnet.server
                                 }
                                 else return false;
 
-                                isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
+                                isSuccessful = TryMoveNextListItem(listObj, dstList,
+                                    (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
                                     (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
                                 result = new CollectionItemResult(key, nextItem);
 
@@ -528,7 +608,9 @@ namespace Garnet.server
                                 var items = new byte[popCount][];
                                 for (var i = 0; i < popCount; i++)
                                 {
-                                    var _ = TryGetNextListItem(listObj, popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP, out items[i]); // Return can be ignored because it is guaranteed to return true
+                                    var _ = TryGetNextListItem(listObj,
+                                        popDirection == OperationDirection.Left ? RespCommand.BLPOP : RespCommand.BRPOP,
+                                        out items[i]); // Return can be ignored because it is guaranteed to return true
                                 }
 
                                 result = new CollectionItemResult(key, items);
@@ -536,14 +618,12 @@ namespace Garnet.server
                             default:
                                 return false;
                         }
-                    case SortedSetObject setObj:
-                        currCount = setObj.Count();
-                        if (objectType != GarnetObjectType.SortedSet)
-                            return false;
+                    case SortedSetObject sortedSetObj:
+                        currCount = sortedSetObj.Count();
                         if (currCount == 0)
                             return false;
 
-                        return TryGetNextSetObjects(key, setObj, currCount, command, cmdArgs, out result);
+                        return TryGetNextSortedSetItem(key, sortedSetObj, currCount, command, cmdArgs, out result);
 
                     default:
                         return false;
@@ -613,16 +693,13 @@ namespace Garnet.server
                 }
             }
 
-            var mainLoopStatus = mainLoopTaskStarted;
-            while (Interlocked.CompareExchange(ref mainLoopTaskStarted, 2, mainLoopStatus) != mainLoopStatus)
-            {
-                mainLoopStatus = mainLoopTaskStarted;
-            }
+            var prevMainLoopStatus = Interlocked.Exchange(ref mainLoopTaskStatus, MAIN_LOOP_DISPOSED);
 
-            if (mainLoopStatus == 1)
+            if (prevMainLoopStatus == MAIN_LOOP_STARTED)
             {
                 done.Wait();
             }
+
             done.Dispose();
             cts.Dispose();
         }
