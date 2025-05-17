@@ -108,7 +108,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void StartMainLoop()
         {
-            if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED &&
+            if (mainLoopTaskStatus == MAIN_LOOP_NOT_STARTED && 
                 Interlocked.CompareExchange(ref mainLoopTaskStatus, MAIN_LOOP_STARTED, MAIN_LOOP_NOT_STARTED) == MAIN_LOOP_NOT_STARTED)
             {
                 mainLoopTask = Task.Run(Start);
@@ -550,13 +550,16 @@ namespace Garnet.server
                 {
                     arrDstKey = dstKey.ToArray();
                     var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
-                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.GarnetObject;
-
-                    // If there is a destination object type mismatch, we should always return a type mismatch result
-                    if ((GarnetObjectType)osDstObject.GarnetObject.Type != objectType)
+                    if (dstStatusOp != GarnetStatus.NOTFOUND)
                     {
-                        result = CollectionItemResult.TypeMismatch;
-                        return true;
+                        dstObj = osDstObject.GarnetObject;
+
+                        // If there is a destination object type mismatch, we should always return a type mismatch result
+                        if ((GarnetObjectType)dstObj.Type != objectType)
+                        {
+                            result = CollectionItemResult.TypeMismatch;
+                            return true;
+                        }
                     }
                 }
 
