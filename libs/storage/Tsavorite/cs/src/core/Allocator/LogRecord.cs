@@ -530,7 +530,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeForReuse(ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(!Info.HasETag && Info.HasExpiration, "Record should not have ETag or Expiration here");
+            Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Record should not have ETag or Expiration here");
 
             // This assumes the record has just been allocated, so it's at the tail (or very close to it). The Key and Value have not been set.
             // The record does not need to be zeroinitialized if we are not doing that on initial allocation; the zero-length key and value

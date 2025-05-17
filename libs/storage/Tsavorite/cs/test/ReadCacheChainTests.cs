@@ -977,7 +977,7 @@ namespace Tsavorite.test.ReadCacheTests
             /// <inheritdoc/>
             public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                if (!base.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                if (!dstLogRecord.TrySetValueSpan(input, ref sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;
@@ -986,8 +986,7 @@ namespace Tsavorite.test.ReadCacheTests
             /// <inheritdoc/>
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                // The default implementation of IPU simply writes input to destination, if there is space
-                if (!base.InPlaceUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                if (!logRecord.TrySetValueSpan(input, ref sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;
@@ -1133,7 +1132,7 @@ namespace Tsavorite.test.ReadCacheTests
                             long value = BitConverter.ToInt64(output.ReadOnlySpan);
                             ClassicAssert.AreEqual(ii + ValueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
-                            output.Memory?.Dispose();
+                            output.Dispose();
                         }
 
                         if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == NumKeys - 1))
@@ -1156,7 +1155,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     long value = BitConverter.ToInt64(output.ReadOnlySpan);
                                     ClassicAssert.AreEqual(keyLong + ValueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
 
-                                    output.Memory?.Dispose();
+                                    output.Dispose();
                                 }
                             }
                         }

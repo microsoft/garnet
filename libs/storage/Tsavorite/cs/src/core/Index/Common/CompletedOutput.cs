@@ -113,7 +113,7 @@ namespace Tsavorite.core
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
             keyContainer = new SpanByteHeapContainer(pendingContext.Key, bufferPool);
             inputContainer = pendingContext.input;
-            pendingContext.input = null;
+            pendingContext.input = default;
 
             Output = pendingContext.output;
             Context = pendingContext.userContext;

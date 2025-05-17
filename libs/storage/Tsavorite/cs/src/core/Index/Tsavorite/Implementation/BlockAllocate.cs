@@ -85,6 +85,8 @@ namespace Tsavorite.core
                     break;
 
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+
+                // If allocation had to flush and did it inline, then the epoch was refreshed and we need to check for address safety.
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
                     allocatedSize = sizeInfo.AllocatedInlineRecordSize;

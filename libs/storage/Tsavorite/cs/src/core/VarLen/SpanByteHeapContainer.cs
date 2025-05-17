@@ -27,6 +27,6 @@ namespace Tsavorite.core
 
         public unsafe ref PinnedSpanByte Get() => ref pinnedSpanByte;
 
-        public void Dispose() => mem.Return();
+        public void Dispose() => mem?.Return();
     }
 }
