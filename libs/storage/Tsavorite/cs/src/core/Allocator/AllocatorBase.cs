@@ -117,6 +117,11 @@ namespace Tsavorite.core
         /// </summary>
         long OngoingCloseUntilAddress;
 
+        /// <summary>
+        /// Maximum size of the mutable region of the hybrid log
+        /// </summary>
+        public double MaxSizeOfMutableRegion;
+
         /// <inheritdoc/>
         public override string ToString()
             => $"TA {GetTailAddress()}, ROA {ReadOnlyAddress}, SafeROA {SafeReadOnlyAddress}, HA {HeadAddress}, SafeHA {SafeHeadAddress}, CUA {ClosedUntilAddress}, FUA {FlushedUntilAddress}, BA {BeginAddress}";
@@ -562,6 +567,8 @@ namespace Tsavorite.core
             BufferSizeMask = BufferSize - 1;
 
             LogMutableFraction = settings.MutableFraction;
+
+            MaxSizeOfMutableRegion = LogMutableFraction * LogTotalSizeBytes; 
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;

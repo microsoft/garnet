@@ -110,7 +110,10 @@ namespace Garnet.server
             return true;
         }
 
-        internal void ScanExpiredKeys(long cursor, out long storeCursor, out List<byte[]> keys, long count, ReadOnlySpan<byte> typeObject = default)
+        /// <summary>
+        /// Iterates over hybrid log collecting keys that point to live, expired records.
+        /// </summary>
+        internal (bool, long) ScanExpiredKeys(long cursor, out long storeCursor, out List<byte[]> keys, long endAddress, ReadOnlySpan<byte> typeObject = default)
         {
             Keys ??= new();
             Keys.Clear();
@@ -121,7 +124,7 @@ namespace Garnet.server
             mainStoreDbExpiredScanFuncs.Initialize(keys);
 
             storeCursor = cursor;
-            basicContext.Session.ScanCursor(ref storeCursor, count, mainStoreDbExpiredScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            return (basicContext.Session.ScanCursor(ref storeCursor, count: int.MaxValue, mainStoreDbExpiredScanFuncs, endAddress, validateCursor: cursor != 0 && cursor != lastScanCursor), mainStoreDbExpiredScanFuncs.totalRecordsScanned);
         }
 
         /// <summary>
@@ -228,6 +231,8 @@ namespace Garnet.server
 
             internal sealed class MainStoreGetExpiredKeys : IScanIteratorFunctions<SpanByte, SpanByte>
             {
+                public long totalRecordsScanned;
+
                 private readonly GetDBKeysInfo info;
 
                 internal MainStoreGetExpiredKeys() => info = new();
@@ -240,6 +245,7 @@ namespace Garnet.server
 
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
+                    totalRecordsScanned++;
                     if (value.MetadataSize == 0 || !MainSessionFunctions.CheckExpiry(ref value))
                         cursorRecordResult = CursorRecordResult.Skip;
                     else
@@ -251,7 +257,12 @@ namespace Garnet.server
                     return true;
                 }
 
-                public bool OnStart(long beginAddress, long endAddress) => true;
+                public bool OnStart(long beginAddress, long endAddress)
+                {
+                    totalRecordsScanned = 0;
+                    return true;
+                }
+
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
