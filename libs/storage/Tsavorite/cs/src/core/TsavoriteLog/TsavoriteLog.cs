@@ -164,6 +164,8 @@ namespace Tsavorite.core
         /// </summary>
         public long MaxMemorySizeBytes => allocator.MaxMemorySizeBytes;
 
+        internal long SetAddressType(long address) => allocator.SetAddressType(address);
+
         /// <summary>
         /// Actual memory used by log
         /// </summary>
@@ -2054,7 +2056,7 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
                 if (snapToPageStart)
-                    untilAddress = allocator.GetStartOfPage(untilAddress);
+                    untilAddress = allocator.GetAddressOfStartOfPage(untilAddress);
 
                 bool epochProtected = epoch.ThisInstanceProtected();
                 try
@@ -2079,7 +2081,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, allocator.GetStartOfPage(untilAddress), out _);
+            Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPage(untilAddress), out _);
         }
 
         /// <summary>

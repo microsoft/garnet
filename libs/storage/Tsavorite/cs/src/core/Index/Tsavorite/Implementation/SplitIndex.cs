@@ -126,7 +126,7 @@ namespace Tsavorite.core
                         long physicalAddress = 0;
 
                         LogRecord logRecord = default;
-                        if (entry.IsReadCache && SetIsInLogMemory(entry.Address) >= readCacheBase.HeadAddress)  // Convert IsReadCache to IsInLogMemory for this comparison
+                        if (entry.IsReadCache && entry.Address >= readCacheBase.HeadAddress)  // Convert IsReadCache to IsInLogMemory for this comparison
                             logRecord = readcache.CreateLogRecord(entry.Address);
                         else if (logicalAddress >= hlogBase.HeadAddress)
                             logRecord = hlog.CreateLogRecord(logicalAddress);

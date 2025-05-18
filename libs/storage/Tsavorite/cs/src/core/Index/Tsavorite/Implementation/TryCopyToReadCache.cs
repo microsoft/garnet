@@ -30,7 +30,7 @@ namespace Tsavorite.core
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, ref sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out _))
                 return false;
             var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
-            stackCtx.SetNewRecord(SetIsReadCache(newLogicalAddress));
+            stackCtx.SetNewRecord(newLogicalAddress);
 
             // Even though readcache records are immutable, we have to initialize the lengths
             readcache.InitializeValue(newPhysicalAddress, ref sizeInfo);
@@ -39,7 +39,7 @@ namespace Tsavorite.core
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
-            var success = stackCtx.hei.TryCAS(SetIsReadCache(newLogicalAddress));
+            var success = stackCtx.hei.TryCAS(newLogicalAddress);
             var casSuccess = success;
 
             var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh

@@ -84,7 +84,7 @@ namespace Tsavorite.core
             allocatorBase.EmptyPageCount = pageCount;
             if (wait)
             {
-                long newHeadAddress = allocatorBase.GetStartOfPage(allocatorBase.GetTailAddress()) - allocatorBase.HeadAddressLagOffset;
+                long newHeadAddress = allocatorBase.GetAddressOfStartOfPage(allocatorBase.GetTailAddress()) - allocatorBase.HeadAddressLagOffset;
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }
@@ -120,7 +120,7 @@ namespace Tsavorite.core
         public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (snapToPageStart)
-                untilAddress = allocatorBase.GetStartOfPage(untilAddress);
+                untilAddress = allocatorBase.GetAddressOfStartOfPage(untilAddress);
 
             var epochProtected = store.epoch.ThisInstanceProtected();
             try

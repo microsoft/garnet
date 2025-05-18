@@ -20,8 +20,7 @@ namespace Tsavorite.core
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
             // minAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
-            // Make sure it is considered IsInLogMemory, as the readcache's *Address fields are, of course, IsInLogMemory.
-            minAddress = IsReadCache(minAddress) ? SetIsInLogMemory(minAddress) : readCacheBase.HeadAddress;
+            minAddress = IsReadCache(minAddress) ? minAddress : readCacheBase.HeadAddress;
 
         RestartChain:
 
@@ -33,7 +32,6 @@ namespace Tsavorite.core
             stackCtx.recSrc.LogicalAddress = kInvalidAddress;
             stackCtx.recSrc.PhysicalAddress = 0;
 
-            var foundInRC = false;
             while (true)
             {
                 if (ReadCacheNeedToWaitForEviction(ref stackCtx))
@@ -49,7 +47,7 @@ namespace Tsavorite.core
 
                 // When traversing the readcache, we skip Invalid (Closed) records. We don't have Sealed records in the readcache because they cause
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
-                if (!recordInfo.Invalid && SetIsInLogMemory(stackCtx.recSrc.LatestLogicalAddress) >= minAddress && !foundInRC)
+                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
                     ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
                         ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)
@@ -65,7 +63,6 @@ namespace Tsavorite.core
                         // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
                         if (!alwaysFindLatestLA)
                             return true;
-                        foundInRC = true;
                     }
                 }
 
@@ -249,10 +246,7 @@ namespace Tsavorite.core
 
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
-            // ReadCache is internally an allocator so has IsInLogMemory set for its addresses. Convert the boundary
-            // addresses to ReadCache; the entries in the hash chain are already ReadCache.
-            rcLogicalAddress = SetIsReadCache(rcLogicalAddress);
-            rcToLogicalAddress = SetIsReadCache(rcToLogicalAddress);
+            Debug.Assert(IsReadCache(rcLogicalAddress) && IsReadCache(rcToLogicalAddress), "rcLogicalAddress and rcToLogicalAddress must be readcache addresses");
 
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)

@@ -34,18 +34,28 @@ namespace Tsavorite.core
 
         public const long kInvalidAddress = 0L;
         public const long kTempInvalidAddress = 1L;
+
+        /// <summary>FirstValidAddress is set for kIsInLogMemoryBitMask due to TsavoriteLog usage. ReadCache does not work with
+        ///     TsavoriteLog, so we will override that in readCacheBase initialization.</summary>
         public const long FirstValidAddress = 64L | kIsInLogMemoryBitMask;
+
+        /// <summary>The max valid address is the in-memory mask (which is greater than the on-disk mask) and the full absolute address range.</summary>
         public const long MaxValidAddress = kAbsoluteAddressBitMask | kIsInLogMemoryBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsReadCache(long address) => (address & kIsReadCacheBitMask) == kIsReadCacheBitMask;
+        internal static long GetLogAddressType(bool isReadCache) => isReadCache ? kIsReadCacheBitMask : kIsInLogMemoryBitMask;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long SetIsReadCache(long address) => (address & kAbsoluteAddressBitMask) | kIsReadCacheBitMask;
+        internal static bool IsReadCache(long address) => (address & kIsReadCacheBitMask) == kIsReadCacheBitMask;
+        // Unused in favor of allocatorBase.SetAddressType
+        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
+        //internal static long SetIsReadCache(long address) => (address & kAbsoluteAddressBitMask) | kIsReadCacheBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsInLogMemory(long address) => (address & kIsInLogMemoryBitMask) == kIsInLogMemoryBitMask;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long SetIsInLogMemory(long address) => (address & kAbsoluteAddressBitMask) | kIsInLogMemoryBitMask;
+        // Unused in favor of allocatorBase.SetAddressType
+        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
+        //internal static long SetIsInLogMemory(long address) => (address & kAbsoluteAddressBitMask) | kIsInLogMemoryBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsOnDisk(long address) => (address & kIsOnDiskBitMask) == kIsOnDiskBitMask;
@@ -57,6 +67,13 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long AbsoluteAddress(long address) => address & kAbsoluteAddressBitMask;
+
+        /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long GetPage(long logicalAddress, int logPageSizeBits) => AbsoluteAddress(logicalAddress) >> logPageSizeBits;
+
+        /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
+        internal static long GetStartAbsoluteLogicalAddressOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
 
         public static string AddressString(long address)
         {

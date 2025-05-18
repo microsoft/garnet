@@ -693,7 +693,7 @@ namespace Tsavorite.core
                         if (x.Tentative)
                             ++total_entries_with_tentative_bit_set;
 
-                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (SetIsInLogMemory(x.Address) >= readCacheBase.HeadAddress))) // Convert IsReadCache to IsInLogMemory for this comparison
+                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (x.Address >= readCacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");
