@@ -87,7 +87,7 @@ namespace Garnet.server
                     int numExpiredKeysFound = keys.Count;
 
                     Debug.Assert(totalRecordsScanned > 0, "Since we don't trigger collection till a threshold, in no scenario should we get a 0 value for scanning." +
-                        "The value being greater than zero is an invariant. Violation will cause issues in yield calculation.");
+                        "The value being greater than zero is an invariant. Violation will cause issues in yieldFromRound calculation.");
 
                     RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIM);
                     // If there is any sort of shift of the marker then a few of my scanned records will be from a redundant region.
@@ -107,21 +107,21 @@ namespace Garnet.server
 
                     logger?.LogDebug("Deleted {numKeys} keys out {totalRecords} records in range {start} to {end}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill);
 
-                    double yield = numExpiredKeysFound / totalRecordsScanned;
+                    double yieldFromRound = numExpiredKeysFound / totalRecordsScanned;
                     // yield helps us determine whether we should be increasing or decreasing the frequency here. Multiplier manages frequency changes.
                     double multiplier;
-                    if (yield > minGoodYield)
+                    if (yieldFromRound > minGoodYield)
                     {
                         // we did better than min acceptable here
                         // now there are two possibilities.
                         multiplier = rateOfAcceleration;
-                        lastYield = yield;
+                        lastYield = yieldFromRound;
                         badYieldStreak = 0;
                     }
                     else
                     {
                         multiplier = rateOfDeceleration;
-                        lastYield = yield;
+                        lastYield = yieldFromRound;
                         badYieldStreak++;
                     }
 
@@ -134,9 +134,11 @@ namespace Garnet.server
                     }
                     else
                     {
-                        // maybe we have severly overshot our interval and records are escaping the expirable range
-                        // due to speed of tail record movement
-                        collectionFrequencySecs *= decay;
+                        // maybe we have overshot our interval and records are escaping the expirable due to speed of tail record movement
+                        // in this case we slowly reduce the decay, and eventually we are
+                        // Need to check if the decay works for this?
+                        // TODO: write distrbuition function I can use to test this! As an INFO
+                        collectionFrequencySecs = Math.Max(MINCOLLECTIONFREQUENCY_SECS, collectionFrequencySecs * decay);
                     }
 
                 SLEEP:
