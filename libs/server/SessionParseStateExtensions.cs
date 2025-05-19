@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Text;
 using Garnet.common;
 
@@ -688,6 +689,21 @@ namespace Garnet.server
                 value = ExpirationOption.PXAT;
             else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.KEEPTTL))
                 value = ExpirationOption.KEEPTTL;
+            else
+                return false;
+
+            return true;
+        }
+
+        internal static bool TryGetStoreOption(this SessionParseState parseState, int idx, out StoreOptions value)
+        {
+            value = default;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAIN))
+                value = StoreOptions.MAIN;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OBJ))
+                value = StoreOptions.OBJ;
             else
                 return false;
 

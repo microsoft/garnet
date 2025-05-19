@@ -57,6 +57,8 @@ namespace Tsavorite.core
         /// <summary> Minimum address above which tombstoned records can be added to freelist for revivification. </summary>
         public long MinRevivifiableAddress => RevivificationManager.GetMinRevivifiableAddress(Log.TailAddress, Log.ReadOnlyAddress);
 
+        public double MaxSizeOfMutableRegionInBytes => hlogBase.MaxSizeOfMutableRegion;
+
         /// <summary>
         /// Hybrid log used by this Tsavorite instance
         /// </summary>

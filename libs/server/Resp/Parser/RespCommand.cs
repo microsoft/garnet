@@ -276,6 +276,7 @@ namespace Garnet.server
         TIME,
         ROLE,
         SAVE,
+        ACTEXP,
         LASTSAVE,
         BGSAVE,
         COMMITAOF,

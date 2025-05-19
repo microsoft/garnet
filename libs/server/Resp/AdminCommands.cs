@@ -54,6 +54,7 @@ namespace Garnet.server
                 RespCommand.SLOWLOG_RESET => NetworkSlowLogReset(),
                 RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
+                RespCommand.ACTEXP => NetworkACTEXP(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
@@ -72,7 +73,6 @@ namespace Garnet.server
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
-                RespCommand.DELIFEXPIM => NetworkDELIFEXPIM(),
                 _ => cmdFound = false
             };
 
@@ -858,15 +858,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// DELIFEXPIM [
-        /// </summary>
-        /// <returns></returns>
-        private bool NetworkDELIFEXPIM()
-        {
-
-        }
-
-        /// <summary>
         /// SAVE [DBID]
         /// </summary>
         /// <returns></returns>
@@ -899,6 +890,62 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// ACTEXP OBJ|MAIN (0-100] [DBID]
+        /// Given Revivifiable region range to scan. Scan the region and add all expired keys in-memory to freelist.
+        /// This is meant to be able to let users do on-demand active expiration, and even build their own schedulers
+        /// for calling expiration based on their known workload patterns.
+        /// </summary>
+        private bool NetworkACTEXP()
+        {
+            if (parseState.Count < 2 || parseState.Count > 3)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ACTEXP));
+            }
+
+            StoreOptions storeOption;
+            if (!parseState.TryGetStoreOption(0, out storeOption))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_INVALID_STORE_OPTION, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+            
+            if(!parseState.TryGetInt(1, out int range) || range < 1 || range > 100)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_INVALID_ACTIVE_EXP_RANGE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // default to all databases
+            int dbId = -1;
+            if (parseState.Count > 2)
+            {
+                if (!TryParseDatabaseId(0, out dbId))
+                    return true;
+            }
+
+            // do GC collection and then respond with num keys expired and num keys scanned
+            (long recordsExpired, long recordsScanned) = storeWrapper.OnDemandCollectedExpiredMainStoreKeys(dbId, range);
+
+            // *2\r\n$NUM1\r\n$NUM2\r\n
+
+            int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
+
+            if (dcurr - dend < requiredSpace)
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsScanned, ref dcurr, dend))
+                SendAndReset();
         }
 
         /// <summary>
