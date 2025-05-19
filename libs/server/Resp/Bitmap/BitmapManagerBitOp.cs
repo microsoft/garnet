@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Numerics.Tensors;
+using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using Garnet.common.Numerics;
 
@@ -61,17 +62,17 @@ namespace Garnet.server
                     return;
                 }
 
-                // If the inputs are not the same length, fallback to the n-ary path for the tail handling
+                // If the source bitmaps are not the same length, fallback to the n-ary path for the tail handling
             }
 
-            // Fallback for n-ary input, for some n ≥ 2
+            // Fallback for n-ary source bitmaps, for some n ≥ 2
             if (op == BitmapOperation.AND) InvokeNaryBitwiseOperation<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
             else if (op == BitmapOperation.OR) InvokeNaryBitwiseOperation<BitwiseOrOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
             else if (op == BitmapOperation.XOR) InvokeNaryBitwiseOperation<BitwiseXorOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
         }
 
         /// <summary>
-        /// Invokes bitwise binary operation for n-ary bitm.
+        /// Invokes bitwise binary operation across n-ary source bitmaps.
         /// </summary>
         /// <typeparam name="TBinaryOperator">The binary operator type to compute bitwise</typeparam>
         /// <param name="srcCount">Number of source bitmaps.</param>
@@ -80,6 +81,7 @@ namespace Garnet.server
         /// <param name="dstPtr">Destination buffer to write the result.</param>
         /// <param name="dstLength">Destination buffer length.</param>
         /// <param name="shortestSrcLength">The length of shortest source buffer.</param>
+        [SkipLocalsInit]
         private static void InvokeNaryBitwiseOperation<TBinaryOperator>(int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
             where TBinaryOperator : struct, IBinaryOperator
         {
@@ -89,7 +91,16 @@ namespace Garnet.server
             var batchRemainder = shortestSrcLength;
             byte* dstBatchEndPtr;
 
-            ref var firstSrcPtr = ref srcPtrs[0];
+            // Keep the cursor of the first source buffer in local to keep processing tidy.
+            var firstSrcPtr = srcPtrs[0];
+
+            // Copy remaining source buffer pointers so we don't increment caller's.
+            var tmpSrcPtrs = stackalloc byte*[srcCount];
+            for (var i = 0; i < srcCount; i++)
+            {
+                tmpSrcPtrs[i] = srcPtrs[i];
+            }
+            srcPtrs = tmpSrcPtrs;
 
             if (Vector256.IsHardwareAccelerated && Vector256<byte>.IsSupported)
             {
