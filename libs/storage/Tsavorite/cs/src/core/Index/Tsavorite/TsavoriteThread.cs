@@ -143,7 +143,7 @@ namespace Tsavorite.core
                                                      status,
                                                      new RecordMetadata(pendingContext.logicalAddress));
                 }
-                else
+                else if (pendingContext.type == OperationType.RMW)
                 {
                     sessionFunctions.RMWCompletionCallback(ref diskLogRecord,
                                                      ref pendingContext.input.Get(),

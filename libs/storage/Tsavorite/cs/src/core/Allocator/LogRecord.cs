@@ -470,6 +470,8 @@ namespace Tsavorite.core
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
         {
+            if (Info.IsNull)
+                return (RecordInfo.GetLength(), RecordInfo.GetLength());
             var actualSize = ActualRecordSize;
             return (actualSize, actualSize + GetFillerLength());
         }

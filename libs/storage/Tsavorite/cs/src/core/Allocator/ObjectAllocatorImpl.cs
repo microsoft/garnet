@@ -94,6 +94,7 @@ namespace Tsavorite.core
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
             values[index] = new();
         }
 

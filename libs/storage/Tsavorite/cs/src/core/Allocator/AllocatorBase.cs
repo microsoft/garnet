@@ -114,9 +114,6 @@ namespace Tsavorite.core
         /// <summary>The lowest valid address in the log</summary>
         public long BeginAddress;
 
-        /// <summary>The lowest valid address on disk - updated when truncating log</summary>
-        public long PersistedBeginAddress;
-
         /// <summary>
         /// Address until which we are currently closing. Used to coordinate linear closing of pages.
         /// Only one thread will be closing pages at a time.
@@ -362,12 +359,11 @@ namespace Tsavorite.core
         /// <summary>Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
-            PersistedBeginAddress = toAddress;
-            _ = Task.Run(() => device.TruncateUntilAddress(toAddress));
+            _ = Task.Run(() => device.TruncateUntilAddress(AbsoluteAddress(toAddress)));
         }
 
         /// <summary>Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices</summary>
-        protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
+        protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(AbsoluteAddress(toAddress));
 
         /// <summary>Remove disk segment</summary>
         protected virtual void RemoveSegment(int segment) => device.RemoveSegment(segment);
@@ -1781,6 +1777,9 @@ namespace Tsavorite.core
                     epoch.ProtectAndDrain();
                 }
             }
+
+            // Convert to absolute address as we're going to disk
+            fromLogicalAddress = AbsoluteAddress(fromLogicalAddress);
 
             if (result == null)
                 AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);

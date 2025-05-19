@@ -147,7 +147,7 @@ namespace Tsavorite.core
             {
                 var nextPage = currentPage + i;
 
-                // Convert to absolute addresses as we are going to disk. The LogAddress methods (GetPage, etc.) work with absolute addresses.
+                // Convert to absolute addresses as we are going to disk. The LogAddress methods (GetPage, etc.) work with both absolute and AddressType-prefixed addresses.
                 currentAddress = AbsoluteAddress(currentAddress);
                 headAddress = AbsoluteAddress(headAddress);
                 endAddress = AbsoluteAddress(endAddress);
@@ -290,6 +290,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"BA {BeginAddress}, EA {EndAddress}, CA {CurrentAddress}, NA {NextAddress}";
+        public override string ToString() => $"BA {AddressString(BeginAddress)}, EA {AddressString(EndAddress)}, CA {AddressString(CurrentAddress)}, NA {AddressString(NextAddress)}";
     }
 }

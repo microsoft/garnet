@@ -122,17 +122,18 @@ namespace Tsavorite.core
                         if (Constants.kInvalidEntry == entry.word)
                             continue;
 
-                        var logicalAddress = entry.Address;
-                        long physicalAddress = 0;
-
                         LogRecord logRecord = default;
-                        if (entry.IsReadCache && entry.Address >= readCacheBase.HeadAddress)  // Convert IsReadCache to IsInLogMemory for this comparison
-                            logRecord = readcache.CreateLogRecord(entry.Address);
-                        else if (logicalAddress >= hlogBase.HeadAddress)
-                            logRecord = hlog.CreateLogRecord(logicalAddress);
+                        if (entry.IsReadCache)
+                        {
+                            if (entry.Address >= readCacheBase.HeadAddress)
+                                logRecord = readcache.CreateLogRecord(entry.Address);
+                        }
+                        else if (entry.Address >= hlogBase.HeadAddress)
+                            logRecord = hlog.CreateLogRecord(entry.Address);
 
                         if (logRecord.IsSet)
                         {
+                            var physicalAddress = logRecord.physicalAddress;
                             var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
@@ -241,9 +242,8 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                HashBucketEntry entry = new() { Address = logicalAddress };
                 LogRecord logRecord;
-                if (entry.IsReadCache)
+                if (IsReadCache(logicalAddress))
                 {
                     if (logicalAddress < readCacheBase.HeadAddress)
                         break;

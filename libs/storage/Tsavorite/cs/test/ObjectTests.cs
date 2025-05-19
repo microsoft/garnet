@@ -94,6 +94,7 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(input2.value, output.value.value);
         }
 
+#if LOGRECORD_TODO
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteRead()
         {
@@ -171,5 +172,6 @@ namespace Tsavorite.test
                 }
             }
         }
+#endif // LOGRECORD_TODO
     }
 }

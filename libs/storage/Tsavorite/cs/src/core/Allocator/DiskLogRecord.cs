@@ -90,7 +90,7 @@ namespace Tsavorite.core
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetSerializedLength()
-            => RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
+            => Info.IsNull ? RecordInfo.GetLength() : RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
         /// <summary>Called by IO to determine whether the record is complete (full serialized length has been read)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

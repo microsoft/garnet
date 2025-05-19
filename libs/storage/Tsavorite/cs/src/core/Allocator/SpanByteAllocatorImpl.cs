@@ -59,6 +59,7 @@ namespace Tsavorite.core
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
         }
 
         void ReturnPage(int index)
@@ -237,7 +238,7 @@ namespace Tsavorite.core
         {
             VerifyCompatibleSectorSize(device);
             WriteAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)RoundUp(pageSize, sectorSize), callback, asyncResult, device);
+                        (uint)AlignedPageSizeBytes, callback, asyncResult, device);
         }
 
         internal void ClearPage(long page, int offset)
