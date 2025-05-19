@@ -105,7 +105,7 @@ namespace Tsavorite.test.spanbyte
                     _ = (i + 1000).TryFormat(valueSpan, out var valueBytesWritten);
 
                     _ = bContext.Upsert(
-                        SpanByte.FromPinnedSpan(keySpan.Slice(0, keyBytesWritten)), 
+                        SpanByte.FromPinnedSpan(keySpan.Slice(0, keyBytesWritten)),
                         SpanByte.FromPinnedSpan(valueSpan.Slice(0, valueBytesWritten)));
                 }
 

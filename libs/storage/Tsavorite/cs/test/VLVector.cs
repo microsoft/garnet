@@ -26,7 +26,7 @@ namespace Tsavorite.test
 
         public static Span<T> AsSpan<T>(this ref SpanByte sb) where T : unmanaged
             => MemoryMarshal.Cast<byte, T>(sb.AsSpan());
-        
+
         internal static T[] ToArray<T>(this ref SpanByte spanByte) where T : unmanaged
             => AsSpan<T>(ref spanByte).ToArray();
     }
