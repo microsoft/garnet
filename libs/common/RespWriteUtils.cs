@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Text;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -353,6 +354,28 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write bulk string
+        /// </summary>
+        public static bool TryWriteBulkString(IEnumerable<byte[]> items, int lenght, ref byte* curr, byte* end)
+        {
+            var itemDigits = NumUtils.CountDigits(lenght);
+            int totalLen = 1 + itemDigits + 2 + lenght + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.WriteInt32(lenght, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            foreach (var item in items)
+            {
+                item.CopyTo(new Span<byte>(curr, item.Length));
+                curr += item.Length;
+            }
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
         /// Encodes the <paramref name="chars"/> as ASCII bulk string to <paramref name="curr"/>
         /// </summary>
         public static bool TryWriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
@@ -670,27 +693,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Create header for *Scan output
-        /// *scan commands have an array of two elements
-        /// a cursor and an array of items or fields
-        /// </summary>
-        /// <param name="cursor"></param>
-        /// <param name="curr"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
-        public static bool TryWriteScanOutputHeader(long cursor, ref byte* curr, byte* end)
-        {
-            if (!TryWriteArrayLength(2, ref curr, end))
-                return false;
-
-            // Cursor value
-            if (!TryWriteInt32AsBulkString((int)cursor, ref curr, end))
-                return false;
-
-            return true;
-        }
-
-        /// <summary>
         /// Write empty array
         /// </summary>
         public static bool TryWriteEmptyArray(ref byte* curr, byte* end)
@@ -735,29 +737,6 @@ namespace Garnet.common
                 return false;
 
             WriteBytes<uint>(ref curr, "#f\r\n"u8);
-            return true;
-        }
-
-        /// <summary>
-        /// Write an array with len number of null elements
-        /// </summary>
-        public static bool TryWriteArrayWithNullElements(int len, ref byte* curr, byte* end)
-        {
-            var numDigits = NumUtils.CountDigits(len);
-            var totalLen = 1 + numDigits + 2;
-            totalLen += len * 5; // 5 is the length of $-1\r\n
-
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            *curr++ = (byte)'*';
-            NumUtils.WriteInt32(len, numDigits, ref curr);
-            WriteNewline(ref curr);
-            for (var i = 0; i < len; i++)
-            {
-                if (!TryWriteNull(ref curr, end))
-                    return false;
-            }
             return true;
         }
 

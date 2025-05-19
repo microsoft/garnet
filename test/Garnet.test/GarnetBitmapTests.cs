@@ -2314,6 +2314,9 @@ namespace Garnet.test
             long count = db.StringBitCount(key);
             ClassicAssert.AreEqual(26, count);
 
+            count = db.StringBitCount(key, 0, int.MaxValue);
+            ClassicAssert.AreEqual(26, count);
+
             count = db.StringBitCount(key, 0, 0);
             ClassicAssert.AreEqual(4, count);
 

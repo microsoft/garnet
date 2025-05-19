@@ -101,7 +101,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceUpdater(long physicalAddress, ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
         {
-            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
+            (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, rmwInfo.FullRecordLength) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
 
             if (_clientSession.functions.InPlaceUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
             {

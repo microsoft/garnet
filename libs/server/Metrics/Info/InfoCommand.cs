@@ -62,9 +62,9 @@ namespace Garnet.server
             }
             else
             {
-                var sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : [.. sections];
+                var sectionsArr = sections == null ? GarnetInfoMetrics.DefaultInfo : [.. sections];
                 var garnetInfo = new GarnetInfoMetrics();
-                var info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
+                var info = garnetInfo.GetRespInfo(sectionsArr, activeDbId, storeWrapper);
                 if (!string.IsNullOrEmpty(info))
                 {
                     while (!RespWriteUtils.TryWriteAsciiBulkString(info, ref dcurr, dend))
@@ -72,7 +72,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
                         SendAndReset();
                 }
             }

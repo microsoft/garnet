@@ -511,12 +511,6 @@ namespace Garnet.test
         [Test]
         public void RedisLogDisabled()
         {
-            // This is a temporary fix to address a regression in .NET9, an open issue can be found here - https://github.com/dotnet/runtime/issues/111242
-            // Once the issue is resolved the #if can be removed permanently.
-#if NET9_0_OR_GREATER
-            Assert.Ignore($"Ignoring test when running in .NET9.");
-#endif
-
             // Just because it's hard to test in LuaScriptTests, doing this here
             using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "", Timeout.InfiniteTimeSpan, LuaLoggingMode.Disable, []), "redis.log(redis.LOG_WARNING, 'foo')");
 
@@ -741,6 +735,41 @@ namespace Garnet.test
 
             var res = (string)allRunner.RunForRunner();
             ClassicAssert.AreEqual("nil", res);
+        }
+
+        [Test]
+        public void Issue1165()
+        {
+            // See: https://github.com/microsoft/garnet/issues/1165
+
+            using var runner = new LuaRunner(new(LuaMemoryManagementMode.Native, "10m", Timeout.InfiniteTimeSpan, LuaLoggingMode.Enable, []), "return 1");
+
+            runner.CompileForRunner();
+            _ = runner.RunForRunner([.. Enumerable.Repeat("key", 9)], [.. Enumerable.Repeat("argv", 9)]);
+        }
+
+        [Test]
+        public void NeedsDisposeCheck()
+        {
+            foreach (var mode in Enum.GetValues<LuaMemoryManagementMode>())
+            {
+                foreach (var limit in new[] { null, "1m" })
+                {
+                    if (limit != null && mode == LuaMemoryManagementMode.Native)
+                    {
+                        continue;
+                    }
+
+                    var opts = new LuaOptions(mode, limit, Timeout.InfiniteTimeSpan, LuaLoggingMode.Silent, []);
+
+                    using var runner = new LuaRunner(opts, "return 1");
+
+                    runner.CompileForRunner();
+                    _ = runner.RunForRunner([], []);
+
+                    ClassicAssert.IsFalse(runner.NeedsDispose);
+                }
+            }
         }
 
         private sealed class FakeLogger : ILogger, IDisposable

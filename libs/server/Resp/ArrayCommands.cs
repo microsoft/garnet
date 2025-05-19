@@ -44,8 +44,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                         break;
                 }
             }
@@ -111,8 +110,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                            WriteNull();
                             o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                         }
                         else
@@ -143,8 +141,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
             }
@@ -231,25 +228,91 @@ namespace Garnet.server
                 return true;
             }
 
-            if (index < storeWrapper.databaseNum)
+            if (index != 0 && storeWrapper.serverOptions.EnableCluster)
+            {
+                // Cluster mode does not allow non-zero DBID to be selected
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (index < 0 || index >= storeWrapper.serverOptions.MaxDatabases)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (index == this.activeDbId || this.TrySwitchActiveDatabaseSession(index))
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                if (storeWrapper.serverOptions.EnableCluster)
-                {
-                    // Cluster mode does not allow DBID
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
-                        SendAndReset();
-                }
+                // Should never reach here
+                Debug.Fail("Database SELECT should have succeeded.");
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_SELECT_UNSUCCESSFUL, ref dcurr, dend))
+                    SendAndReset();
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// SWAPDB index1 index2
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkSWAPDB()
+        {
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SWAPDB));
+            }
+
+            if (storeWrapper.serverOptions.EnableCluster)
+            {
+                // Cluster mode does not allow SWAPDB
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Validate index
+            if (!parseState.TryGetInt(0, out var index1))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_FIRST_DB_INDEX, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (!parseState.TryGetInt(1, out var index2))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SECOND_DB_INDEX, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (index1 < 0 ||
+                index2 < 0 ||
+                index1 >= storeWrapper.serverOptions.MaxDatabases ||
+                index2 >= storeWrapper.serverOptions.MaxDatabases)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (storeWrapper.TrySwapDatabases(index1, index2))
+            {
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED, ref dcurr, dend))
+                    SendAndReset();
+            }
+
             return true;
         }
 

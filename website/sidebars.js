@@ -20,13 +20,14 @@ const sidebars = {
 		{type: 'category', label: 'Welcome', collapsed: false, items: ["welcome/intro", "welcome/news", "welcome/features", "welcome/releases", "welcome/compatibility", "welcome/roadmap", "welcome/faq", "welcome/about-us"]},
 		{type: 'category', label: 'Getting Started', items: ["getting-started/build", "getting-started/configuration", "getting-started/memory", "getting-started/security", "getting-started/compaction"]},
 		{type: 'category', label: 'Benchmarking', items: ["benchmarking/overview", "benchmarking/results-resp-bench", "benchmarking/resp-bench", {type: 'link', label: 'BDN Charts', href: 'https://microsoft.github.io/garnet/charts/'}]},
-		{type: 'category', label: 'Commands', items: ["commands/overview", "commands/api-compatibility", "commands/raw-string", "commands/generic-commands", "commands/analytics-commands", "commands/data-structures", "commands/server-commands", "commands/client-commands", "commands/checkpoint-commands", "commands/transactions-commands", "commands/cluster", "commands/acl-commands", "commands/scripting-commands", "commands/garnet-specific-commands"]},
+		{type: 'category', label: 'Commands', items: ["commands/overview", "commands/api-compatibility", "commands/raw-string", "commands/generic-commands", "commands/analytics-commands", "commands/data-structures", "commands/server-commands", "commands/client-commands", "commands/checkpoint-commands", "commands/transactions-commands", "commands/cluster", "commands/acl-commands", "commands/scripting-commands", "commands/garnet-specific-commands", "commands/json"]},
 		{type: 'category', label: 'Server Extensions', items: ["extensions/overview", "extensions/raw-strings", "extensions/objects", "extensions/transactions", "extensions/procedure", "extensions/module"]},
 		{type: 'category', label: 'Cluster Mode', items: ["cluster/overview", "cluster/replication", "cluster/key-migration"]},
 		{type: 'category', label: 'Developer Guide', items: ["dev/onboarding", "dev/code-structure", "dev/configuration", "dev/network", "dev/processing", "dev/garnet-api",
 		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/storefunctions", "dev/tsavorite/epoch"]},
 		  "dev/transactions",
 		  "dev/custom-commands",
+		  "dev/multi-db",
 		  "dev/collection-broker",
 		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration"]},
 		  "dev/contributing"]},
@@ -40,6 +41,7 @@ const sidebars = {
 		{type: 'category', label: 'Diagnostics', items: ["logger", "metrics"]},
 		"research",
 			*/
+		{type: 'category', label: 'Research', items: ["research/papers"]},
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},
                         {type: 'link', label: 'License', href: 'https://github.com/microsoft/garnet/blob/main/LICENSE'},

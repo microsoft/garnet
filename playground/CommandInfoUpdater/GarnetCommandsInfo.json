@@ -394,6 +394,30 @@
     "SubCommands": null
   },
   {
+    "Command": "DELIFGREATER",
+    "Name": "DELIFGREATER",
+    "Arity": 2,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RM, Delete"
+      }
+    ]
+  },
+  {
     "Command": "FORCEGC",
     "Name": "FORCEGC",
     "Arity": -1,
@@ -654,6 +678,16 @@
     ]
   },
   {
+    "Command": "LASTSAVE",
+    "Name": "LASTSAVE",
+    "Arity": -1,
+    "Flags": "Fast, Loading, Stale",
+    "AclCategories": "Admin, Dangerous, Fast",
+    "Tips": [
+      "nondeterministic_output"
+    ]
+  },
+  {
     "Command": "PURGEBP",
     "Name": "PURGEBP",
     "IsInternal": false,
@@ -741,6 +775,13 @@
         "Flags": "OW, Insert"
       }
     ]
+  },
+  {
+    "Command": "SAVE",
+    "Name": "SAVE",
+    "Arity": -1,
+    "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript",
+    "AclCategories": "Admin, Dangerous, Slow"
   },
   {
     "Command": "SETIFMATCH",
@@ -866,6 +907,256 @@
           "Limit": 0
         },
         "Flags": "RO"
+      }
+    ]
+  },
+  {
+    "Command": "ZCOLLECT",
+    "Name": "ZCOLLECT",
+    "Arity": 2,
+    "Flags": "Admin, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Write, Admin, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
+      }
+    ]
+  },
+  {
+    "Command": "ZEXPIRE",
+    "Name": "ZEXPIRE",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "ZEXPIREAT",
+    "Name": "ZEXPIREAT",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "ZEXPIRETIME",
+    "Name": "ZEXPIRETIME",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZPERSIST",
+    "Name": "ZPERSIST",
+    "Arity": -5,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "ZPEXPIRE",
+    "Name": "ZPEXPIRE",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "ZPEXPIREAT",
+    "Name": "ZPEXPIREAT",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "ZPEXPIRETIME",
+    "Name": "ZPEXPIRETIME",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZPTTL",
+    "Name": "ZPTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZTTL",
+    "Name": "ZTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
       }
     ]
   }

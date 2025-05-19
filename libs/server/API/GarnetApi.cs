@@ -131,6 +131,10 @@ namespace Garnet.server
             => storageSession.SET_Conditional(ref key, ref input, ref context);
 
         /// <inheritdoc />
+        public GarnetStatus DEL_Conditional(ref SpanByte key, ref RawStringInput input)
+            => storageSession.DEL_Conditional(ref key, ref input, ref context);
+
+        /// <inheritdoc />
         public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
             => storageSession.SET_Conditional(ref key, ref input, ref output, ref context);
 
@@ -415,8 +419,8 @@ namespace Garnet.server
         #region Common Methods
 
         /// <inheritdoc />
-        public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter)
-         => storageSession.ObjectScan(key, ref input, ref outputFooter, ref objectContext);
+        public GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+         => storageSession.ObjectScan(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public int GetScratchBufferOffset()

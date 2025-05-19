@@ -90,88 +90,88 @@ namespace Tsavorite.core
                     return false;
 
                 epoch?.Resume();
-                var headAddress = hlog.HeadAddress;
-
-                if (currentAddress < hlog.BeginAddress)
-                    currentAddress = hlog.BeginAddress;
-
-                // If currentAddress < headAddress and we're not buffering, fail.
-                if (frameSize == 0 && currentAddress < headAddress)
+                try
                 {
-                    epoch?.Suspend();
-                    throw new TsavoriteException("Iterator address is less than log HeadAddress in memory-scan mode");
-                }
+                    var headAddress = hlog.HeadAddress;
 
-                currentPage = currentAddress >> hlog.LogPageSizeBits;
-                currentOffset = (currentAddress & hlog.PageSizeMask) / recordSize;
+                    if (currentAddress < hlog.BeginAddress)
+                        currentAddress = hlog.BeginAddress;
 
-                if (currentAddress < headAddress)
-                    _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
-
-                // Check if record fits on page, if not skip to next page
-                if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
-                {
-                    nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
-                    epoch?.Suspend();
-                    continue;
-                }
-
-                nextAddress = currentAddress + recordSize;
-
-                if (currentAddress >= headAddress)
-                {
-                    // Read record from cached page memory
-                    currentPage %= hlog.BufferSize;
-                    currentFrame = -1;      // Frame is not used in this case.
-
-                    recordInfo = hlog.values[currentPage][currentOffset].info;
-                    bool _skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                    if (_skipOnScan)
+                    // If currentAddress < headAddress and we're not buffering, fail.
+                    if (frameSize == 0 && currentAddress < headAddress)
                     {
-                        epoch?.Suspend();
+                        throw new TsavoriteException("Iterator address is less than log HeadAddress in memory-scan mode");
+                    }
+
+                    currentPage = currentAddress >> hlog.LogPageSizeBits;
+                    currentOffset = (currentAddress & hlog.PageSizeMask) / recordSize;
+
+                    if (currentAddress < headAddress)
+                        _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
+
+                    // Check if record fits on page, if not skip to next page
+                    if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
+                    {
+                        nextAddress = (1 + (currentAddress >> hlog.LogPageSizeBits)) << hlog.LogPageSizeBits;
                         continue;
                     }
 
-                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
-                    // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
-                    try
+                    nextAddress = currentAddress + recordSize;
+
+                    if (currentAddress >= headAddress)
                     {
-                        // We cannot use GetKey() because it has not yet been set.
-                        if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key);
+                        // Read record from cached page memory
+                        currentPage %= hlog.BufferSize;
+                        currentFrame = -1;      // Frame is not used in this case.
 
                         recordInfo = hlog.values[currentPage][currentOffset].info;
-                        currentKey = hlog.values[currentPage][currentOffset].key;
-                        currentValue = hlog.values[currentPage][currentOffset].value;
-                    }
-                    finally
-                    {
-                        if (stackCtx.recSrc.HasLock)
-                            store.UnlockForScan(ref stackCtx);
+                        bool _skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                        if (_skipOnScan)
+                        {
+                            continue;
+                        }
+
+                        // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
+                        // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
+                        OperationStackContext<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> stackCtx = default;
+                        try
+                        {
+                            // We cannot use GetKey() because it has not yet been set.
+                            if (currentAddress >= headAddress && store is not null)
+                                store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key);
+
+                            recordInfo = hlog.values[currentPage][currentOffset].info;
+                            currentKey = hlog.values[currentPage][currentOffset].key;
+                            currentValue = hlog.values[currentPage][currentOffset].value;
+                        }
+                        finally
+                        {
+                            if (stackCtx.recSrc.HasLock)
+                                store.UnlockForScan(ref stackCtx);
+                        }
+
+                        // Success
+                        return true;
                     }
 
+                    currentFrame = currentPage % frameSize;
+                    recordInfo = frame.GetInfo(currentFrame, currentOffset);
+                    bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                    if (skipOnScan || recordInfo.IsNull())
+                    {
+                        continue;
+                    }
+
+                    // Copy the object values from the frame to data members.
+                    currentKey = frame.GetKey(currentFrame, currentOffset);
+                    currentValue = frame.GetValue(currentFrame, currentOffset);
+                    currentPage = currentOffset = -1;
+                }
+                finally
+                {
                     // Success
                     epoch?.Suspend();
-                    return true;
                 }
-
-                currentFrame = currentPage % frameSize;
-                recordInfo = frame.GetInfo(currentFrame, currentOffset);
-                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull())
-                {
-                    epoch?.Suspend();
-                    continue;
-                }
-
-                // Copy the object values from the frame to data members.
-                currentKey = frame.GetKey(currentFrame, currentOffset);
-                currentValue = frame.GetValue(currentFrame, currentOffset);
-                currentPage = currentOffset = -1;
-
-                // Success
-                epoch?.Suspend();
                 return true;
             }
         }

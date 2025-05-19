@@ -25,21 +25,37 @@ public class BaseConfig : ManualConfig
 
     public BaseConfig()
     {
-        AddLogger(ConsoleLogger.Default);
-        AddExporter(DefaultExporters.Markdown);
-        AddColumnProvider(DefaultColumnProviders.Instance);
-        WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
+        _ = AddLogger(ConsoleLogger.Default);
+        _ = AddExporter(DefaultExporters.Markdown);
+        _ = AddColumnProvider(DefaultColumnProviders.Instance);
+        _ = WithSummaryStyle(SummaryStyle.Default.WithSizeUnit(SizeUnit.B));
 
         var baseJob = Job.Default.WithGcServer(true);
 
-        Net8BaseJob = baseJob.WithRuntime(CoreRuntime.Core80)
+        Net8BaseJob = baseJob
+            .WithRuntime(CoreRuntime.Core80)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
-        Net9BaseJob = baseJob.WithRuntime(CoreRuntime.Core90)
+        Net9BaseJob = baseJob
+            .WithRuntime(CoreRuntime.Core90)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
-        AddJob(
-            Net8BaseJob.WithId(".NET 8"),
-            Net9BaseJob.WithId(".NET 9")
-            );
+        // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net9.0 or both (if env var is not set or invalid)
+        var bdnRunParam = Environment.GetEnvironmentVariable("BDNRUNPARAM");
+
+        switch (bdnRunParam)
+        {
+            case "net8.0":
+                _ = AddJob(Net8BaseJob.WithId(".NET 8"));
+                break;
+            case "net9.0":
+                _ = AddJob(Net9BaseJob.WithId(".NET 9"));
+                break;
+            default:
+                _ = AddJob(
+                    Net8BaseJob.WithId(".NET 8"),
+                    Net9BaseJob.WithId(".NET 9")
+                    );
+                break;
+        }
     }
 }

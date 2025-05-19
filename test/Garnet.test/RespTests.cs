@@ -2308,7 +2308,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var reply = db.Execute("SELECT", "0");
             ClassicAssert.IsTrue(reply.ToString() == "OK");
-            Assert.Throws<RedisServerException>(() => db.Execute("SELECT", "1"));
+            Assert.Throws<RedisServerException>(() => db.Execute("SELECT", "17"));
 
             //select again the def db
             db.Execute("SELECT", "0");
@@ -2319,8 +2319,8 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
-            var expectedResponse = "-ERR invalid database index.\r\n+PONG\r\n";
-            var response = lightClientRequest.Execute("SELECT 1", "PING", expectedResponse.Length);
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE)}\r\n+PONG\r\n";
+            var response = lightClientRequest.Execute("SELECT 17", "PING", expectedResponse.Length);
             ClassicAssert.AreEqual(expectedResponse, response);
         }
 
@@ -3843,6 +3843,52 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(resultDict);
             ClassicAssert.AreEqual(3, (int)resultDict["proto"]);
             ClassicAssert.AreEqual("master", (string)resultDict["role"]);
+        }
+
+        [Test]
+        [TestCase([2, "$-1\r\n", "$1\r\n", "*4", '*'], Description = "RESP2 output")]
+        [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
+        public async Task RespOutputTests(int respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+
+            response = await c.ExecuteAsync("GET", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("GEODIST", "nx", "foo", "bar");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("HGET", "nx", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("LPOP", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("LPOS", "nx", "foo");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("SPOP", "nx");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("ZSCORE", "nx", "foo");
+            ClassicAssert.AreEqual(expectedResponse, response);
+
+            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
+            ClassicAssert.AreEqual("*1\r\n:1\r\n", response);
+            response = await c.ExecuteAsync("BITFIELD", "bf", "OVERFLOW", "FAIL", "INCRBY", "u1", "1", "1");
+            ClassicAssert.AreEqual("*1\r\n" + expectedResponse, response);
+
+            response = await c.ExecuteAsync("SADD", "set", "foo", "bar");
+            ClassicAssert.AreEqual(":2\r\n", response);
+            response = await c.ExecuteAsync("SMEMBERS", "set");
+            ClassicAssert.AreEqual(setPrefix + "2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n", response);
+
+            response = await c.ExecuteAsync("MSET", "s1", "foo", "s2", "bar");
+            ClassicAssert.AreEqual("+OK\r\n", response);
+            response = await c.ExecuteAsync("LCS", "s1", "s2", "IDX");
+            ClassicAssert.AreEqual(mapPrefix + "\r\n$7\r\nmatches\r\n*0\r\n$3\r\nlen\r\n:0\r\n", response);
+
+            response = await c.ExecuteAsync("ZADD", "z", "0", "a");
+            ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync("ZSCORE", "z", "a");
+            ClassicAssert.AreEqual(doublePrefix + "0\r\n", response);
         }
 
         [Test]

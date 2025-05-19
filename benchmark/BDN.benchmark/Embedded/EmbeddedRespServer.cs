@@ -21,7 +21,7 @@ namespace Embedded.server
         /// <param name="opts">Server options to configure the base GarnetServer instance</param>
         /// <param name="loggerFactory">Logger factory to configure the base GarnetServer instance</param>
         /// <param name="server">Server network</param>
-        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null) : base(opts, loggerFactory, server)
+        public EmbeddedRespServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, GarnetServerEmbedded server = null) : base(opts, loggerFactory, server == null ? null : [server])
         {
             this.garnetServerEmbedded = server;
             this.subscribeBroker = opts.DisablePubSub ? null :

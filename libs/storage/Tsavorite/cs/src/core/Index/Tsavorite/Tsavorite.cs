@@ -653,32 +653,90 @@ namespace Tsavorite.core
             long beginAddress = hlogBase.BeginAddress;
             Dictionary<int, long> histogram = new();
 
+            Dictionary<int, long> ofb_chaining_histogram = new();
+            long total_entries_in_ofb = 0;
+            long total_zeroed_out_slots = 0;
+            long total_entries_below_begin_address = 0;
+            long total_entries_in_ofb_below_begin_address = 0;
+            long total_entries_with_tentative_bit_set = 0;
+            Dictionary<int, long> slots_unused_by_nonofb_buckets_histogram = new();
+            Dictionary<int, long> slots_unused_by_ofb_buckets_histogram = new();
+
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
+                bool is_bucket_in_ofb_table = false;
                 List<int> tags = new();
-                int cnt = 0;
+                int total_valid_records_in_this_bucket_cnt = 0;
+                int total_valid_entries_in_ofb_in_this_bucket_cnt = 0;
                 HashBucket b = *(ptable_ + bucket);
                 while (true)
                 {
+                    // per bucket calculate the number of zero'd out slots
+                    int zeroed_out_slots = 0;
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
+
+                        if (x.Tentative)
+                            ++total_entries_with_tentative_bit_set;
+
                         if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readCacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");
                             tags.Add(x.Tag);
-                            ++cnt;
+                            ++total_valid_records_in_this_bucket_cnt;
                             ++total_record_count;
                         }
+                        else if (x.word != default)
+                        {
+                            if (is_bucket_in_ofb_table)
+                                ++total_entries_in_ofb_below_begin_address;
+
+                            ++total_entries_below_begin_address;
+                        }
+                        else
+                        {
+                            ++zeroed_out_slots;
+                        }
+
+                        if (is_bucket_in_ofb_table)
+                            total_valid_entries_in_ofb_in_this_bucket_cnt++;
                     }
-                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
+
+                    total_zeroed_out_slots += zeroed_out_slots;
+
+                    if (is_bucket_in_ofb_table)
+                    {
+                        if (!slots_unused_by_ofb_buckets_histogram.ContainsKey(zeroed_out_slots))
+                            slots_unused_by_ofb_buckets_histogram[zeroed_out_slots] = 0;
+                        slots_unused_by_ofb_buckets_histogram[zeroed_out_slots]++;
+                    }
+                    else
+                    {
+                        if (!slots_unused_by_nonofb_buckets_histogram.ContainsKey(zeroed_out_slots))
+                            slots_unused_by_nonofb_buckets_histogram[zeroed_out_slots] = 0;
+                        slots_unused_by_nonofb_buckets_histogram[zeroed_out_slots]++;
+                    }
+
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0)
+                        break;
+
                     b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
+                    is_bucket_in_ofb_table = true;
                 }
 
-                if (!histogram.ContainsKey(cnt)) histogram[cnt] = 0;
-                histogram[cnt]++;
+                if (!histogram.ContainsKey(total_valid_records_in_this_bucket_cnt))
+                    histogram[total_valid_records_in_this_bucket_cnt] = 1;
+                else
+                    histogram[total_valid_records_in_this_bucket_cnt]++;
+
+                total_valid_entries_in_ofb_in_this_bucket_cnt /= (int)Constants.kOverflowBucketIndex;
+                if (!ofb_chaining_histogram.ContainsKey(total_valid_entries_in_ofb_in_this_bucket_cnt)) ofb_chaining_histogram[total_valid_entries_in_ofb_in_this_bucket_cnt] = 0;
+                ofb_chaining_histogram[total_valid_entries_in_ofb_in_this_bucket_cnt]++;
+
+                total_entries_in_ofb += total_valid_entries_in_ofb_in_this_bucket_cnt;
             }
 
             var distribution =
@@ -687,9 +745,33 @@ namespace Tsavorite.core
                 $"Size of each bucket: {Constants.kEntriesPerBucket * sizeof(HashBucketEntry)} bytes\n" +
                 $"Total distinct hash-table entry count: {{{total_record_count}}}\n" +
                 $"Average #entries per hash bucket: {{{total_record_count / (double)table_size_:0.00}}}\n" +
+                $"Total zeroed out slots: {total_zeroed_out_slots} \n" +
+                $"Total entries below begin addr: {total_entries_below_begin_address} \n" +
+                $"Total entries in overflow buckets: {total_entries_in_ofb} \n" +
+                $"Total entries in overflow buckets below begin addr: {total_entries_in_ofb_below_begin_address} \n" +
+                $"Total entries with tentative bit set: {total_entries_with_tentative_bit_set} \n" +
                 $"Histogram of #entries per bucket:\n";
 
             foreach (var kvp in histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            distribution += $"Histogram of #buckets per OFB chain and their frequencies: \n";
+            foreach (var kvp in ofb_chaining_histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            // Histogram of slots unused per bucket in OFB and non-OFB
+            distribution += $"Histogram of #unused slots per bucket in main hash index:\n";
+            foreach (var kvp in slots_unused_by_nonofb_buckets_histogram.OrderBy(e => e.Key))
+            {
+                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+            }
+
+            distribution += $"Histogram of #unused slots per bucket in overflow buckets:\n";
+            foreach (var kvp in slots_unused_by_ofb_buckets_histogram.OrderBy(e => e.Key))
             {
                 distribution += $"  {kvp.Key} : {kvp.Value}\n";
             }

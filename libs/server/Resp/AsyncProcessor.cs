@@ -119,8 +119,7 @@ namespace Garnet.server
                                 else
                                 {
                                     sessionMetrics?.incr_total_notfound();
-                                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                        SendAndReset();
+                                    WriteNull();
                                 }
                             }
                             if (dcurr > networkSender.GetResponseObjectHead())

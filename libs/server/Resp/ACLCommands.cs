@@ -432,19 +432,16 @@ namespace Garnet.server
 
                 if (user is null)
                 {
-                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNull();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
-                        SendAndReset();
+                    WriteMapLength(3);
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(1, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSetLength(1);
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
                         SendAndReset();

@@ -5033,9 +5033,9 @@ estree-util-to-js@^2.0.0:
     source-map "^0.7.0"
 
 estree-util-value-to-estree@^3.0.1:
-  version "3.3.2"
-  resolved "https://registry.npmjs.org/estree-util-value-to-estree/-/estree-util-value-to-estree-3.3.2.tgz"
-  integrity sha512-hYH1aSvQI63Cvq3T3loaem6LW4u72F187zW4FHpTrReJSm6W66vYTFNO1vH/chmcOulp1HlAj1pxn8Ag0oXI5Q==
+  version "3.3.3"
+  resolved "https://registry.yarnpkg.com/estree-util-value-to-estree/-/estree-util-value-to-estree-3.3.3.tgz#800b03a551b466dd77ed2c574b042a9992546cf2"
+  integrity sha512-Db+m1WSD4+mUO7UgMeKkAwdbfNWwIxLt48XF2oFU9emPfXkIu+k5/nlOj313v7wqtAPo0f9REhUvznFrPkG8CQ==
   dependencies:
     "@types/estree" "^1.0.0"
 
@@ -5869,9 +5869,9 @@ http-parser-js@>=0.5.1:
   integrity sha512-n1XsPy3rXVxlqxVioEWdC+0+M+SQw0DpJynwtOPo1X+ZlvdzTLtDBIJJlDQTnwZIFJrZSzSGmIOUdP8tu+SgLw==
 
 http-proxy-middleware@^2.0.3:
-  version "2.0.7"
-  resolved "https://registry.npmjs.org/http-proxy-middleware/-/http-proxy-middleware-2.0.7.tgz"
-  integrity sha512-fgVY8AV7qU7z/MmXJ/rxwbrtQH4jBQ9m7kp3llF0liB7glmFeVZFBepQb32T3y8n8k2+AEYuMPCpinYW+/CuRA==
+  version "2.0.9"
+  resolved "https://registry.yarnpkg.com/http-proxy-middleware/-/http-proxy-middleware-2.0.9.tgz#e9e63d68afaa4eee3d147f39149ab84c0c2815ef"
+  integrity sha512-c1IyJYLYppU574+YI7R4QyX2ystMtVXZwIdzazUIPIJsHuWNd+mho2j+bKoHftndicGj9yh+xjd+l0yj7VeT1Q==
   dependencies:
     "@types/http-proxy" "^1.17.8"
     http-proxy "^1.18.1"
@@ -5926,9 +5926,9 @@ ignore@^5.2.0, ignore@^5.2.4:
   integrity sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==
 
 image-size@^1.0.2:
-  version "1.2.0"
-  resolved "https://registry.npmjs.org/image-size/-/image-size-1.2.0.tgz"
-  integrity sha512-4S8fwbO6w3GeCVN6OPtA9I5IGKkcDMPcKndtUlpJuCwu7JLjtj7JZpwqLuyY2nrmQT3AWsCJLSKPsc2mPBSl3w==
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/image-size/-/image-size-1.2.1.tgz#ee118aedfe666db1a6ee12bed5821cde3740276d"
+  integrity sha512-rH+46sQJ2dlwfjfhCyNx5thzrv+dtmBIhPHk0zgRUukHzZ/kRueTJXoYYsclBaKcSMBWuGbOFXtioLpzTb5euw==
   dependencies:
     queue "6.0.2"
 
@@ -9694,9 +9694,9 @@ undici-types@~6.20.0:
   integrity sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==
 
 undici@^6.19.5:
-  version "6.21.1"
-  resolved "https://registry.npmjs.org/undici/-/undici-6.21.1.tgz"
-  integrity sha512-q/1rj5D0/zayJB2FraXdaWxbhWiNKDvu8naDT2dl1yTlvJp4BLtOcp2a5BvgGNQpYYJzau7tf1WgKv3b+7mqpQ==
+  version "6.21.3"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-6.21.3.tgz#185752ad92c3d0efe7a7d1f6854a50f83b552d7a"
+  integrity sha512-gBLkYIlEnSp8pFbT64yFgGE6UIB9tAkhukC23PmMDCe5Nd+cRqKxSjw5y54MK2AZMgZfJWMaNE4nYUHgi1XEOw==
 
 unicode-canonical-property-names-ecmascript@^2.0.0:
   version "2.0.1"
