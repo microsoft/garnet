@@ -6,9 +6,38 @@ using System.IO;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
+    static class CheckpointEntryExtensions
+    {
+        public static void LogCheckpointEntry(this ILogger logger, LogLevel logLevel, string msg, CheckpointEntry entry)
+        {
+            logger?.Log(logLevel, "\n" +
+                "[{msg}]\n" +
+                "storeVersion: {storeVersion}\n" +
+                "storeHlogToken: {storeHlogToken}\n" +
+                "storeIndexToken: {storeIndexToken}\n" +
+                "storeCheckpointCoveredAofAddress: {storeCheckpointCoveredAofAddress}\n" +
+                "------------------------------------------------------------------------\n" +
+                "objectStoreVersion:{objectStoreVersion}\n" +
+                "objectStoreHlogToken:{objectStoreHlogToken}\n" +
+                "objectStoreIndexToken:{objectStoreIndexToken}\n" +
+                "objectCheckpointCoveredAofAddress:{objectCheckpointCoveredAofAddress}\n" +
+                "------------------------------------------------------------------------\n",
+                msg,
+                entry.metadata.storeVersion,
+                entry.metadata.storeHlogToken,
+                entry.metadata.storeIndexToken,
+                entry.metadata.storeCheckpointCoveredAofAddress,
+                entry.metadata.objectStoreVersion,
+                entry.metadata.objectStoreHlogToken,
+                entry.metadata.objectStoreIndexToken,
+                entry.metadata.objectCheckpointCoveredAofAddress);
+        }
+    }
+
     sealed class CheckpointEntry
     {
         public CheckpointMetadata metadata;
@@ -61,23 +90,6 @@ namespace Garnet.cluster
                 CheckpointFileType.OBJ_STORE_INDEX => metadata.objectStoreIndexToken.Equals(entry.metadata.objectStoreIndexToken),
                 _ => throw new Exception($"Option {fileType} not supported")
             };
-        }
-
-        public string GetCheckpointEntryDump()
-        {
-            string dump = $"\n" +
-                $"storeVersion: {metadata.storeVersion}\n" +
-                $"storeHlogToken: {metadata.storeHlogToken}\n" +
-                $"storeIndexToken: {metadata.storeIndexToken}\n" +
-                $"storeCheckpointCoveredAofAddress: {metadata.storeCheckpointCoveredAofAddress}\n" +
-                $"------------------------------------------------------------------------\n" +
-                $"objectStoreVersion:{metadata.objectStoreVersion}\n" +
-                $"objectStoreHlogToken:{metadata.objectStoreHlogToken}\n" +
-                $"objectStoreIndexToken:{metadata.objectStoreIndexToken}\n" +
-                $"objectCheckpointCoveredAofAddress:{metadata.objectCheckpointCoveredAofAddress}\n" +
-                $"------------------------------------------------------------------------\n" +
-                $"activeReaders:{_lock}";
-            return dump;
         }
 
         public byte[] ToByteArray()

@@ -283,7 +283,7 @@ namespace Garnet.cluster
                     {
                         logger?.LogError("syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, storeWrapper.appendOnlyFile.BeginAddress);
                         var tailEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
-                        logger?.LogError("tailEntry:{tailEntry}", tailEntry.GetCheckpointEntryDump());
+                        logger?.LogCheckpointEntry(LogLevel.Error, "Requested replay address truncated", tailEntry);
                         tailEntry.RemoveReader();
                         throw new Exception("Failed syncing because replica requested truncated AOF address");
                     }
@@ -293,7 +293,7 @@ namespace Garnet.cluster
                     if (syncFromAofAddress < storeWrapper.appendOnlyFile.BeginAddress)
                     {
                         logger?.LogWarning("AOF truncated, unsafe attach: syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, storeWrapper.appendOnlyFile.BeginAddress);
-                        logger?.LogWarning("{cEntryDump}", localEntry.GetCheckpointEntryDump());
+                        logger?.LogCheckpointEntry(LogLevel.Warning, "Unsafe replay due to truncated AOF address", localEntry);
                     }
                 }
 
@@ -311,7 +311,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "acquiredEntry: {cEntryDump}", localEntry.GetCheckpointEntryDump());
+                logger?.LogCheckpointEntry(LogLevel.Error, "Error at attaching", localEntry);
                 if (aofSyncTaskInfo != null) _ = clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
                 errorMsg = ex.Message;// this is error sent to remote client
                 return false;
