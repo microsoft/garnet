@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1747775895027,
+  "lastUpdate": 1747775906644,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Lua.LuaRunnerOperations (ubuntu-latest  net9.0 Release)": [
@@ -486,6 +486,56 @@ window.BENCHMARK_DATA = {
             "value": 17799.72071126302,
             "unit": "ns",
             "range": "± 120.8870430652041"
+          }
+        ]
+      }
+    ],
+    "Cluster.ClusterMigrate (ubuntu-latest  net9.0 Release)": [
+      {
+        "commit": {
+          "author": {
+            "email": "darrenge@microsoft.com",
+            "name": "darrenge",
+            "username": "darrenge"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "febbd1897465aef20267c23905c242338afa7701",
+          "message": "Fix BDN scaling issue so that each framework is saved to different branch (#1203)\n\n* Updated the gh-pages to choose different branch for continous branch based on framework\n\n* Update deploy-website.yml\n\n* Move the branch for the data file to the matrix setting\n\n---------\n\nCo-authored-by: Badrish Chandramouli <badrishc@microsoft.com>",
+          "timestamp": "2025-05-20T14:10:31-07:00",
+          "tree_id": "7905811cbd61b699cac113c1ffeab230bdfa419a",
+          "url": "https://github.com/microsoft/garnet/commit/febbd1897465aef20267c23905c242338afa7701"
+        },
+        "date": 1747775631852,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Get(Params: None)",
+            "value": 35311.021881103516,
+            "unit": "ns",
+            "range": "± 148.71605621956752"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.Set(Params: None)",
+            "value": 36344.50432840983,
+            "unit": "ns",
+            "range": "± 52.77657672471875"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MGet(Params: None)",
+            "value": 32238.362361027645,
+            "unit": "ns",
+            "range": "± 34.03122187273039"
+          },
+          {
+            "name": "BDN.benchmark.Cluster.ClusterMigrate.MSet(Params: None)",
+            "value": 30777.813807560848,
+            "unit": "ns",
+            "range": "± 37.04915490566373"
           }
         ]
       }
