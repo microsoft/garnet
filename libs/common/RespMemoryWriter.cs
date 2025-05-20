@@ -97,14 +97,14 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write bulk strings to memory.
+        /// Write bulk string to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteBulkStrings(IEnumerable<byte[]> bulkStrings)
+        public void WriteBulkString(IEnumerable<byte[]> items)
         {
-            var stringLen = bulkStrings.Sum(x => x.Length);
+            var stringLen = items.Sum(x => x.Length);
 
-            while (!RespWriteUtils.TryWriteBulkString(bulkStrings, stringLen, ref curr, end))
+            while (!RespWriteUtils.TryWriteBulkString(items, stringLen, ref curr, end))
             {
                 var len = RespWriteUtils.GetBulkStringLength(stringLen);
                 ReallocateOutput(len);

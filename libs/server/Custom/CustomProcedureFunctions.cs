@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Base class for custom function
     /// </summary>
-    public abstract class CustomFunctions
+    public abstract class CustomProcedureFunctions
     {
         /// <summary>
         /// Shared memory pool used by functions

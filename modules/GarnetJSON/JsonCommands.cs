@@ -174,7 +174,7 @@ namespace GarnetJSON
             else
             {
                 writer.Realloc(outputArr.Select(x => x.Length).Sum());
-                writer.WriteBulkStrings(outputArr);
+                writer.WriteBulkString(outputArr);
             }
             return true;
         }

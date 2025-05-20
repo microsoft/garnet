@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Base class for custom command
     /// </summary>
-    public abstract class CustomProcedure : CustomFunctions
+    public abstract class CustomProcedure : CustomProcedureFunctions
     {
         /// <summary>
         /// Custom command implementation
