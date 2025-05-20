@@ -204,8 +204,35 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0)
-            => throw new NotImplementedException();
+        public override async Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+
+            var db = databasesMapSnapshot[dbId];
+
+            // Take lock to ensure no other task will be taking a checkpoint
+            var checkpointsPaused = TryPauseCheckpoints(dbId);
+
+            try
+            {
+                // If an external task has taken a checkpoint beyond the provided entryTime return
+                if (!checkpointsPaused || db.LastSaveTime > entryTime)
+                    return;
+
+                // Necessary to take a checkpoint because the latest checkpoint is before entryTime
+                var result = await TakeCheckpointAsync(db, logger: Logger);
+
+                var storeTailAddress = result.Item1;
+                var objectStoreTailAddress = result.Item2;
+                UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+            }
+            finally
+            {
+                ResumeCheckpoints(dbId);
+            }
+        }
 
         /// <inheritdoc/>
         public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit, CancellationToken token = default,
