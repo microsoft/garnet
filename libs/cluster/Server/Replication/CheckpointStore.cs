@@ -151,6 +151,7 @@ namespace Garnet.cluster
                     entry.metadata.storePrimaryReplId = tail.metadata.storePrimaryReplId;
                 }
 
+                tail.next = entry;
                 tail = tail.next;
             }
 
@@ -232,12 +233,13 @@ namespace Garnet.cluster
         /// Caller is responsible for releasing reader by calling removeReader on entry
         /// </summary>
         /// <returns></returns>
-        public CheckpointEntry GetLatestCheckpointEntryFromMemory()
+        public bool GetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
         {
+            cEntry = null;
             var _tail = tail;
             if (_tail == null)
             {
-                var cEntry = new CheckpointEntry()
+                cEntry = new CheckpointEntry()
                 {
                     metadata = new()
                     {
@@ -245,20 +247,15 @@ namespace Garnet.cluster
                         objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
                     }
                 };
-                return cEntry;
+                cEntry.TryAddReader();
+                return true;
             }
 
-            while (true)
-            {
-                // Attempt to TryAddReader to ref of tail entry and return if successful
-                if (_tail.TryAddReader())
-                    return _tail;
+            if (!_tail.TryAddReader())
+                return false;
 
-                Thread.Yield();
-
-                // Update reference to latest tail entry and continue trying to add a new reader
-                _tail = tail;
-            }
+            cEntry = _tail;
+            return true;
         }
 
         /// <summary>

@@ -282,9 +282,7 @@ namespace Garnet.cluster
                     if (syncFromAofAddress < storeWrapper.appendOnlyFile.BeginAddress)
                     {
                         logger?.LogError("syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, storeWrapper.appendOnlyFile.BeginAddress);
-                        var tailEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
-                        logger?.LogCheckpointEntry(LogLevel.Error, "Requested replay address truncated", tailEntry);
-                        tailEntry.RemoveReader();
+                        logger?.LogCheckpointEntry(LogLevel.Error, "Requested replay address truncated", localEntry);
                         throw new Exception("Failed syncing because replica requested truncated AOF address");
                     }
                 }
@@ -346,7 +344,13 @@ namespace Garnet.cluster
                 var lastSaveTime = storeWrapper.lastSaveTime;
 
                 // Retrieve latest checkpoint and lock it from deletion operations
-                cEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
+                if (!clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry))
+                {
+                    // Fail to acquire lock, could mean that a writer might be trying to delete
+                    Debug.Assert(cEntry == null);
+                    await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
+                    continue;
+                }
 
                 // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
                 // We do this to avoid waiting indefinitely for a checkpoint that will never be taken
@@ -368,7 +372,7 @@ namespace Garnet.cluster
                 {
                     cEntry.RemoveReader();
                     await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-                    cEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
+                    clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry);
                     startAofAddress = cEntry.GetMinAofCoveredAddress();
                 }
 
