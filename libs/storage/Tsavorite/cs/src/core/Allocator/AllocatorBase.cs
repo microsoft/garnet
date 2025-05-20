@@ -834,55 +834,63 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPage(long logicalAddress) => LogAddress.GetPage(logicalAddress, LogPageSizeBits);
 
         /// <summary>Get page index for page</summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForPage(long page) => (int)(page % BufferSize);
 
         /// <summary>Get page index for address</summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForAddress(long address) => GetPageIndexForPage(GetPage(address));
 
         /// <summary>Get capacity (number of pages)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetCapacityNumPages() => BufferSize;
 
         /// <summary>Get page size</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPageSize() => PageSize;
 
         /// <summary>Get logical address of start of page</summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetAddressOfStartOfPage(long address) => address & ~PageSizeMask;
 
         /// <summary>Get offset in page</summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetOffsetOnPage(long address) => address & PageSizeMask;
 
         /// <summary>Get start absolute logical address</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetStartAbsoluteLogicalAddressOfPage(long page) => LogAddress.GetStartAbsoluteLogicalAddressOfPage(page, LogPageSizeBits);
 
         /// <summary>Get start logical address</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetStartLogicalAddressOfPage(long page) => SetAddressType(GetStartAbsoluteLogicalAddressOfPage(page));
 
         /// <summary>Get first valid address</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? FirstValidAddress : GetStartLogicalAddressOfPage(page);
 
         /// <summary>Get log segment index from <paramref name="logicalAddress"/></summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetSegment(long logicalAddress) => AbsoluteAddress(logicalAddress) >> LogSegmentSizeBits;
 
         /// <summary>Get offset in page</summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetOffsetOnSegment(long address) => address & (SegmentSize - 1);
 
         /// <summary>Get start absolute logical address</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetStartAbsoluteLogicalAddressOfSegment(long segment) => segment << LogSegmentSizeBits;
 
         /// <summary>Get start logical address</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetStartLogicalAddressOfSegment(long segment) => SetAddressType(GetStartAbsoluteLogicalAddressOfSegment(segment));
 
         /// <summary>Get sector size for main hlog device</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetDeviceSectorSize() => sectorSize;
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1607,11 +1615,15 @@ namespace Tsavorite.core
             if (offsetInEndPage > 0)
                 numPages++;
 
-            /* Request asynchronous writes to the device. If waitForPendingFlushComplete
-             * is set, then a CountDownEvent is set in the callback handle.
-             */
+            // Note: This is called synchronously from OnPagesMarkedReadOnly to kick off a flush sequence of (possibly multiple and/or partial) pages.
+            // That call is gated by MonotonicUpdate, so the page indexes will increased monotonically; therefore we don't need to check the PendingFlush
+            // queue for previous pages indexes. Also, flush callbacks will attempt to dequeue from PendingFlushes for FlushedUntilAddress, which again
+            // increases monotonically.
+
+            // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
             {
+                // Default to writing the full page.
                 long pageStartAddress = GetStartLogicalAddressOfPage(flushPage);
                 long pageEndAddress = GetStartLogicalAddressOfPage(flushPage + 1);
 
@@ -1624,11 +1636,10 @@ namespace Tsavorite.core
                     untilAddress = pageEndAddress
                 };
 
-                // If either fromAddress or untilAddress is in the middle of the page, prepare to handle a partial page
-                if (
-                    ((fromAddress > pageStartAddress) && (fromAddress < pageEndAddress)) ||
-                    ((untilAddress > pageStartAddress) && (untilAddress < pageEndAddress))
-                    )
+                // If either fromAddress or untilAddress is in the middle of the page, this will be a partial page flush.
+                // We'll enqueue into PendingFlush to ensure ordering of the partial-page writes.
+                if (((fromAddress > pageStartAddress) && (fromAddress < pageEndAddress)) ||
+                    ((untilAddress > pageStartAddress) && (untilAddress < pageEndAddress)))
                 {
                     asyncResult.partial = true;
 
@@ -1639,7 +1650,7 @@ namespace Tsavorite.core
                         asyncResult.fromAddress = fromAddress;
                 }
 
-                bool skip = false;
+                var skip = false;
                 if (asyncResult.untilAddress <= BeginAddress)
                 {
                     // Short circuit as no flush needed
@@ -1664,19 +1675,26 @@ namespace Tsavorite.core
                 {
                     var index = GetPageIndexForAddress(asyncResult.fromAddress);
 
-                    // Try to merge request with existing adjacent (earlier) pending requests
+                    // Try to merge request with existing adjacent (earlier) pending requests (these have not yet begun or they
+                    // would not be in the queue).
                     while (PendingFlush[index].RemovePreviousAdjacent(asyncResult.fromAddress, out var existingRequest))
                         asyncResult.fromAddress = existingRequest.fromAddress;
 
-                    // Enqueue work in shared queue
+                    // Enqueue the (possibly merged) new work item into the queue.
                     PendingFlush[index].Add(asyncResult);
 
-                    // Perform work from shared queue if possible
+                    // Perform work from shared queue if possible: When a flush completes it updates FlushedUntilAddress. If there
+                    // is an item in the shared queue that starts at FlushedUntilAddress, it can now be flushed. Flush callbacks
+                    // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
                     if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
-                        WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);
+                        WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
                 }
                 else
-                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                {
+                    // Write the entire page up to asyncResult.untilAddress (there can be no previous items in the queue). Flush callbacks
+                    // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
+                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class
+                }
             }
         }
 
@@ -1885,7 +1903,7 @@ namespace Tsavorite.core
                     // We don't have the full record and may not even have gotten a full key, so we need to do another IO
                     if (requiredBytes > int.MaxValue)
                         throw new TsavoriteException("Records exceeding 2GB are not yet supported"); // TODO note: We should not have written this yet; serialization is int-limited
-                    
+
                     ctx.record.Return();
                     AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
                 }
@@ -1935,7 +1953,7 @@ namespace Tsavorite.core
 
                 var _flush = FlushedUntilAddress;
                 if (GetOffsetOnPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
-                    WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);
+                    WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
             }
             catch when (disposed) { }
         }
@@ -1950,7 +1968,7 @@ namespace Tsavorite.core
                 ShiftFlushedUntilAddress();
                 var _flush = FlushedUntilAddress;
                 if (GetOffsetOnPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
-                    WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);
+                    WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
             }
             catch when (disposed) { }
         }

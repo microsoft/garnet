@@ -32,8 +32,9 @@ namespace Tsavorite.benchmark
         public int padding;
 
         // Only call this for stack-based structs, not the ones in the *_keys vectors
-        public override string ToString() => "{ " + value + " }";
+        public override readonly string ToString() => "{ " + value + " }";
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe ReadOnlySpan<byte> AsReadOnlySpan() => new(Unsafe.AsPointer(ref this), DataSize);
     }
 }

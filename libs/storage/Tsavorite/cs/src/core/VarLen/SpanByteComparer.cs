@@ -18,6 +18,7 @@ namespace Tsavorite.core
         public static readonly SpanByteComparer Instance = new();
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe long GetHashCode64(ReadOnlySpan<byte> key) => StaticGetHashCode64(key);
 
         /// <summary>
@@ -27,15 +28,13 @@ namespace Tsavorite.core
         public static unsafe long StaticGetHashCode64(ReadOnlySpan<byte> key) => Utility.HashBytes(key);
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => StaticEquals(k1, k2);
 
         /// <summary>
         /// Equality comparison
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool StaticEquals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2)
-        {
-            return k1.SequenceEqual(k2);
-        }
+        public static unsafe bool StaticEquals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.SequenceEqual(k2);
     }
 }

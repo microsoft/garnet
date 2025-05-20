@@ -73,8 +73,10 @@ namespace Tsavorite.core
         internal static long GetPage(long logicalAddress, int logPageSizeBits) => AbsoluteAddress(logicalAddress) >> logPageSizeBits;
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetStartAbsoluteLogicalAddressOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
 
+        /// <summary>Pretty-print the address</summary>
         public static string AddressString(long address)
         {
             var absoluteAddress = AbsoluteAddress(address);
