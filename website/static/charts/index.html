@@ -280,8 +280,8 @@
                 }
 
                 const [data8, data9] = await Promise.all([
-                    fetchAndParseBenchmarkData('https://raw.githubusercontent.com/microsoft/garnet/503a5fb2260f433c0db329ebfaa2c756476b148e/website/static/charts/data.js'),
-                    fetchAndParseBenchmarkData('https://raw.githubusercontent.com/microsoft/garnet/refs/heads/gh-pages/charts/data.js')
+                    fetchAndParseBenchmarkData('https://microsoft.github.io/garnet/charts/data_net80.js')
+                    fetchAndParseBenchmarkData('https://microsoft.github.io/garnet/charts/data.js')
                 ]);
 
                 if (!data8 && !data9) {
