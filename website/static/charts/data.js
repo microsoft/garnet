@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1747776142075,
+  "lastUpdate": 1747776148199,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Network.BasicOperations (ubuntu-latest  net8.0 Release)": [
@@ -1194,6 +1194,92 @@ window.BENCHMARK_DATA = {
             "value": 116814.26955003005,
             "unit": "ns",
             "range": "± 170.60416949274622"
+          }
+        ]
+      }
+    ],
+    "Network.RawStringOperations (windows-latest  net8.0 Release)": [
+      {
+        "commit": {
+          "author": {
+            "email": "darrenge@microsoft.com",
+            "name": "darrenge",
+            "username": "darrenge"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "febbd1897465aef20267c23905c242338afa7701",
+          "message": "Fix BDN scaling issue so that each framework is saved to different branch (#1203)\n\n* Updated the gh-pages to choose different branch for continous branch based on framework\n\n* Update deploy-website.yml\n\n* Move the branch for the data file to the matrix setting\n\n---------\n\nCo-authored-by: Badrish Chandramouli <badrishc@microsoft.com>",
+          "timestamp": "2025-05-20T14:10:31-07:00",
+          "tree_id": "7905811cbd61b699cac113c1ffeab230bdfa419a",
+          "url": "https://github.com/microsoft/garnet/commit/febbd1897465aef20267c23905c242338afa7701"
+        },
+        "date": 1747775897438,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Set(Params: None)",
+            "value": 228.67209911346436,
+            "unit": "ns",
+            "range": "± 0.23503511174896163"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetEx(Params: None)",
+            "value": 271.4279753821237,
+            "unit": "ns",
+            "range": "± 0.7053751003957393"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetNx(Params: None)",
+            "value": 297.37119334084645,
+            "unit": "ns",
+            "range": "± 0.6868797539651281"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.SetXx(Params: None)",
+            "value": 297.07326889038086,
+            "unit": "ns",
+            "range": "± 0.31960060180536326"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetFound(Params: None)",
+            "value": 216.42407735188803,
+            "unit": "ns",
+            "range": "± 0.21428098270295454"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.GetNotFound(Params: None)",
+            "value": 170.87945938110352,
+            "unit": "ns",
+            "range": "± 0.23990951837306415"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Increment(Params: None)",
+            "value": 319.21072006225586,
+            "unit": "ns",
+            "range": "± 0.41865933685523166"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.Decrement(Params: None)",
+            "value": 314.78252092997235,
+            "unit": "ns",
+            "range": "± 0.29861403756097776"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.IncrementBy(Params: None)",
+            "value": 353.4672663762019,
+            "unit": "ns",
+            "range": "± 1.2274193979097794"
+          },
+          {
+            "name": "BDN.benchmark.Network.RawStringOperations.DecrementBy(Params: None)",
+            "value": 357.59474754333496,
+            "unit": "ns",
+            "range": "± 0.9894952649931728"
           }
         ]
       }
