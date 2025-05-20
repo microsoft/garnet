@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1747775926091,
+  "lastUpdate": 1747775982887,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Lua.LuaRunnerOperations (ubuntu-latest  net9.0 Release)": [
@@ -656,6 +656,50 @@ window.BENCHMARK_DATA = {
             "value": 70.61426560084026,
             "unit": "ns",
             "range": "± 0.16673859917937528"
+          }
+        ]
+      }
+    ],
+    "Operations.PubSubOperations (windows-latest  net9.0 Release)": [
+      {
+        "commit": {
+          "author": {
+            "email": "darrenge@microsoft.com",
+            "name": "darrenge",
+            "username": "darrenge"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "febbd1897465aef20267c23905c242338afa7701",
+          "message": "Fix BDN scaling issue so that each framework is saved to different branch (#1203)\n\n* Updated the gh-pages to choose different branch for continous branch based on framework\n\n* Update deploy-website.yml\n\n* Move the branch for the data file to the matrix setting\n\n---------\n\nCo-authored-by: Badrish Chandramouli <badrishc@microsoft.com>",
+          "timestamp": "2025-05-20T14:10:31-07:00",
+          "tree_id": "7905811cbd61b699cac113c1ffeab230bdfa419a",
+          "url": "https://github.com/microsoft/garnet/commit/febbd1897465aef20267c23905c242338afa7701"
+        },
+        "date": 1747775724652,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: ACL)",
+            "value": 15152.854715983072,
+            "unit": "ns",
+            "range": "± 19.996636769496867"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AOF)",
+            "value": 15164.084683931791,
+            "unit": "ns",
+            "range": "± 10.050186803865664"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: None)",
+            "value": 15235.072937011719,
+            "unit": "ns",
+            "range": "± 12.081762014314593"
           }
         ]
       }
