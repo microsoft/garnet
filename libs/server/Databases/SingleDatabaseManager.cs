@@ -198,7 +198,8 @@ namespace Garnet.server
             }
             finally
             {
-                ResumeCheckpoints(dbId);
+                if (checkpointsPaused)
+                    ResumeCheckpoints(dbId);
             }
         }
 
