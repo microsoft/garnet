@@ -205,37 +205,27 @@ namespace Garnet.cluster
             // Update head after delete
             head = curr;
             logger?.LogCheckpointEntry(LogLevel.Trace, "Current Head", head);
-        }
 
-        /// <summary>
-        /// Check if specific token can be delete by scanning through the entries of the in memory checkpoint store.
-        /// If token is not shared we can return immediately and delete it
-        /// If token is shared try suspending the addition of new readers
-        ///     if failed suspending new readers cannot delete token
-        ///     else we need to move up the chain of entries and ensure the token is not shared with other entries
-        /// </summary>
-        /// <param name="toDelete"></param>
-        /// <param name="fileType"></param>
-        /// <returns></returns>
-        private bool CanDeleteToken(CheckpointEntry toDelete, CheckpointFileType fileType)
-        {
-            var curr = toDelete.next;
-            while (curr != null && curr != tail)
+            bool CanDeleteToken(CheckpointEntry toDelete, CheckpointFileType fileType)
             {
-                //Token can be deleted when curr entry and toDelete do not share it
-                if (!curr.ContainsSharedToken(toDelete, fileType))
-                    return true;
+                var curr = toDelete.next;
+                while (curr != null && curr != tail)
+                {
+                    // Token can be deleted when curr entry and toDelete do not share it
+                    if (!curr.ContainsSharedToken(toDelete, fileType))
+                        return true;
 
-                //If token is shared then try to suspend addition of new readers
-                if (!curr.TrySuspendReaders())
-                    return false;
+                    // If token is shared then try to suspend addition of new readers
+                    if (!curr.TrySuspendReaders())
+                        return false;
 
-                //If suspend new readers succeeds continue up the chain to find how far token is being used
-                curr = curr.next;
+                    // If suspend new readers succeeds continue up the chain to find how far token is being used
+                    curr = curr.next;
+                }
+
+                // Here we reached the tail so we can delete the token only if it is not shared with the tail
+                return !curr.ContainsSharedToken(toDelete, fileType);
             }
-
-            //Here we reached the tail so we can delete the token only if it is not shared with the tail
-            return !curr.ContainsSharedToken(toDelete, fileType);
         }
 
         /// <summary>
