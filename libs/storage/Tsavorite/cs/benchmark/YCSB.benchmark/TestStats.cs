@@ -28,7 +28,7 @@ namespace Tsavorite.benchmark
         {
             initsPerRun.Add(result.ips);
             opsPerRun.Add(result.ops);
-            tailAddresses.Add(result.tailAddress);
+            tailAddresses.Add(LogAddress.AbsoluteAddress(result.tailAddress));
         }
 
         internal void ShowAllStats(AggregateType aggregateType, string discardMessage = "")
@@ -58,7 +58,7 @@ namespace Tsavorite.benchmark
                 AggregateType.FinalTrimmed => StatsLineNum.FinalTrimmedTail,
                 _ => throw new InvalidOperationException("Unknown AggregateType")
             };
-            ShowStats(statsLineNum, "TailAddress", tailAddresses);
+            ShowStats(statsLineNum, "TailAddress (abs)", tailAddresses);
         }
 
         private void ShowStats(StatsLineNum lineNum, string tag, List<double> vec)

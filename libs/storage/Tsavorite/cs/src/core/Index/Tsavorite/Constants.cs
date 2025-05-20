@@ -18,10 +18,6 @@ namespace Tsavorite.core
         public const int kBitsPerBucket = 3;
         public const int kEntriesPerBucket = 1 << kBitsPerBucket;
 
-        // Position of fields in hash-table entry
-        public const int kTentativeBitShift = 63;
-        public const long kTentativeBitMask = 1L << kTentativeBitShift;
-
         // Default number of entries in the lock table.
         public const int kDefaultLockTableSize = 16 * 1024;
 

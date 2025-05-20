@@ -40,7 +40,7 @@ namespace Tsavorite.core
             slot = default;
             entry = default;
             this.hash = hash;
-            tag = (ushort)((ulong)this.hash >> HashBucketEntry.kHashTagShift);
+            tag = HashBucketEntry.GetTag(hash);
         }
 
         /// <summary>

@@ -14,6 +14,10 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     internal struct HashBucketEntry
     {
+        // Position of fields in hash-table entry
+        public const int kTentativeBitShift = 63;
+        public const long kTentativeBitMask = 1L << kTentativeBitShift;
+
         public const int kTagSize = 63 - kAddressBits;
         public const int kTagShift = 63 - kTagSize;
         public const long kTagMask = (1L << kTagSize) - 1;
@@ -21,6 +25,9 @@ namespace Tsavorite.core
 
         // Position of tag in hash value (offset is always in the least significant bits)
         public const int kHashTagShift = 64 - kTagSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ushort GetTag(long hashCode) => (ushort)(((ulong)hashCode >> kHashTagShift) & kTagMask);
 
         [FieldOffset(0)]
         public long word;
@@ -30,39 +37,25 @@ namespace Tsavorite.core
             readonly get => word & kAddressBitMask;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            set
-            {
-                word &= ~kAddressBitMask;
-                word |= value & kAddressBitMask;
-            }
+            set => word = (word & ~kAddressBitMask) | (value & kAddressBitMask);
         }
-
-        public readonly long AbsoluteAddress => LogAddress.AbsoluteAddress(Address);
 
         public ushort Tag
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => (ushort)((word & kTagPositionMask) >> kTagShift);
 
-            set
-            {
-                word &= ~kTagPositionMask;
-                word |= (long)value << kTagShift;
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => word = (word & ~kTagPositionMask) | ((value & kTagMask) << kTagShift);
         }
 
         public bool Tentative
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            readonly get => (word & Constants.kTentativeBitMask) != 0;
+            readonly get => (word & kTentativeBitMask) != 0;
 
-            set
-            {
-                if (value)
-                    word |= Constants.kTentativeBitMask;
-                else
-                    word &= ~Constants.kTentativeBitMask;
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set => word = value ? (word | kTentativeBitMask) : (word & ~kTentativeBitMask);
         }
 
         public readonly bool IsReadCache

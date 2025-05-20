@@ -66,7 +66,7 @@ namespace Tsavorite.core
         internal static bool IsInMemory(long address) => (address & kAddressTypeBitMask) >= kIsInLogMemoryBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long AbsoluteAddress(long address) => address & kAbsoluteAddressBitMask;
+        public static long AbsoluteAddress(long address) => address & kAbsoluteAddressBitMask;
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
