@@ -10,12 +10,12 @@ using Garnet.common;
 namespace Garnet.server
 {
     /// <summary>
-    /// Base class for custom function
+    /// Base class for custom procedures
     /// </summary>
-    public abstract class CustomProcedureFunctions
+    public abstract class CustomProcedureBase
     {
         /// <summary>
-        /// Shared memory pool used by functions
+        /// Shared memory pool used by procedures
         /// </summary>
         protected static MemoryPool<byte> MemoryPool => MemoryPool<byte>.Shared;
 
