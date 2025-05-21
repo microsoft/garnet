@@ -44,6 +44,11 @@ namespace Garnet.common
                 throw new GarnetException($"Exception injection triggered {exceptionType}");
         }
 
+        /// <summary>
+        /// Trigger condition and reset it
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
         public static bool TriggerCondition(ExceptionInjectionType exceptionType)
         {
 #if DEBUG

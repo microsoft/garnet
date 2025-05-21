@@ -92,13 +92,17 @@ namespace Garnet.cluster
             };
         }
 
+        /// <summary>
+        /// Serialize CheckpointEntry
+        /// </summary>
+        /// <returns></returns>
         public byte[] ToByteArray()
         {
             var ms = new MemoryStream();
             var writer = new BinaryWriter(ms, Encoding.ASCII);
-            byte[] byteBuffer = default;
+            byte[] byteBuffer;
 
-            //Write checkpoint entry data for main store
+            // Write checkpoint entry data for main store
             writer.Write(metadata.storeVersion);
             byteBuffer = metadata.storeHlogToken.ToByteArray();
             writer.Write(byteBuffer.Length);
@@ -110,7 +114,7 @@ namespace Garnet.cluster
             writer.Write(metadata.storePrimaryReplId == null ? 0 : 1);
             if (metadata.storePrimaryReplId != null) writer.Write(metadata.storePrimaryReplId);
 
-            //Write checkpoint entry data for object store
+            // Write checkpoint entry data for object store
             writer.Write(metadata.objectStoreVersion);
             byteBuffer = metadata.objectStoreHlogToken.ToByteArray();
             writer.Write(byteBuffer.Length);
@@ -122,12 +126,17 @@ namespace Garnet.cluster
             writer.Write(metadata.objectStorePrimaryReplId == null ? 0 : 1);
             if (metadata.objectStorePrimaryReplId != null) writer.Write(metadata.objectStorePrimaryReplId);
 
-            byte[] byteArray = ms.ToArray();
+            var byteArray = ms.ToArray();
             writer.Dispose();
             ms.Dispose();
             return byteArray;
         }
 
+        /// <summary>
+        /// Deserialize CheckpointEntry
+        /// </summary>
+        /// <param name="serialized"></param>
+        /// <returns></returns>
         public static CheckpointEntry FromByteArray(byte[] serialized)
         {
             if (serialized.Length == 0) return null;
@@ -155,5 +164,11 @@ namespace Garnet.cluster
             ms.Dispose();
             return cEntry;
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public override string ToString() => $"{metadata},readers={_lock}";
     }
 }

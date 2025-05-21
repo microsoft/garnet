@@ -119,10 +119,7 @@ namespace Garnet.cluster
             // If not full checkpoint index checkpoint will be the one of the previous checkpoint
             if (!fullCheckpoint)
             {
-                var lastEntry = tail;
-                if (lastEntry == null)
-                    throw new GarnetException("Failed to find lastEntry for full checkpoint");
-
+                var lastEntry = tail ?? throw new GarnetException("Failed to find lastEntry for full checkpoint");
                 entry.metadata.storeIndexToken = lastEntry.metadata.storeIndexToken;
                 entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
@@ -293,6 +290,29 @@ namespace Garnet.cluster
                 }
                 return ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1);
             }
+        }
+
+        /// <summary>
+        /// Get latest checkpoint from memory info
+        /// </summary>
+        /// <returns></returns>
+        public string GetLatestCheckpointFromMemoryInfo()
+        {
+            var _tail = tail;
+            if (_tail == null)
+                return "(empty)";
+
+            return _tail.ToString();
+        }
+
+        /// <summary>
+        /// Get latest checkpoint from memory info
+        /// </summary>
+        /// <returns></returns>
+        public string GetLatestCheckpointFromDiskInfo()
+        {
+            var cEntry = GetLatestCheckpointEntryFromDisk();
+            return cEntry.ToString();
         }
     }
 }

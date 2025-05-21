@@ -261,6 +261,9 @@ namespace Garnet.cluster
                     for (var i = 0; i < replicaInfo.Count; i++)
                         replicationInfo.Add(new($"slave{i}", replicaInfo[i].ToString()));
                 }
+
+                replicationInfo.Add(new("memory_checkpoint_entry", replicationManager.GetLatestCheckpointFromMemoryInfo()));
+                replicationInfo.Add(new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo()));
             }
             return [.. replicationInfo];
         }
