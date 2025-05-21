@@ -41,9 +41,9 @@ namespace Garnet.cluster
 
             if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1) head = tail = null;
 
-            //This purge does not check for active readers
-            //1. If primary is initializing then we will not have any active readers since not connections are established at recovery
-            //2. If replica is initializing during failover we do this before allowing other replicas to attach.
+            // This purge does not check for active readers
+            // 1. If primary is initializing then we will not have any active readers since not connections are established at recovery
+            // 2. If replica is initializing during failover we do this before allowing other replicas to attach.
             if (safelyRemoveOutdated)
                 PurgeAllCheckpointsExceptEntry(tail);
         }
@@ -119,7 +119,7 @@ namespace Garnet.cluster
             // If not full checkpoint index checkpoint will be the one of the previous checkpoint
             if (!fullCheckpoint)
             {
-                var lastEntry = tail ?? throw new GarnetException("Failed to find lastEntry for full checkpoint");
+                var lastEntry = tail ?? throw new GarnetException($"Checkpoint history unavailable, need full checkpoint for {entry}");
                 entry.metadata.storeIndexToken = lastEntry.metadata.storeIndexToken;
                 entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
