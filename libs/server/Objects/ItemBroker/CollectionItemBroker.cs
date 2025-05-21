@@ -309,7 +309,7 @@ namespace Garnet.server
                             continue;
                         }
 
-                        observer.ObserverStatusLock.EnterUpgradeableReadLock();
+                        observer.ObserverStatusLock.WriteLock();
                         try
                         {
                             // If observer is not waiting for result, dequeue it and continue to next observer in queue
@@ -333,13 +333,14 @@ namespace Garnet.server
                             _ = observers.TryDequeue(out observer);
 
                             sessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
-                            observer.HandleSetResult(result);
+
+                            observer.HandleSetResult(result, true);
 
                             return true;
                         }
                         finally
                         {
-                            observer.ObserverStatusLock.ExitUpgradeableReadLock();
+                            observer.ObserverStatusLock.WriteUnlock();
                         }
                     }
                 }
@@ -507,12 +508,13 @@ namespace Garnet.server
                 dstKey = cmdArgs[0];
             }
 
+            var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
+
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
             {
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
-                var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
@@ -523,6 +525,7 @@ namespace Garnet.server
                 _ = storageSession.txnManager.Run(true);
             }
 
+            var lockableContext = storageSession.txnManager.LockableContext;
             var objectLockableContext = storageSession.txnManager.ObjectStoreLockableContext;
 
             try
@@ -563,6 +566,7 @@ namespace Garnet.server
                     }
                 }
 
+                bool isSuccessful;
                 // Get next item based on item type
                 switch (osObject.GarnetObject)
                 {
@@ -574,9 +578,9 @@ namespace Garnet.server
                         {
                             case RespCommand.BLPOP:
                             case RespCommand.BRPOP:
-                                var isSuccessful = TryGetNextListItem(listObj, command, out var nextItem);
+                                isSuccessful = TryGetNextListItem(listObj, command, out var nextItem);
                                 result = new CollectionItemResult(key, nextItem);
-                                return isSuccessful;
+                                break;
                             case RespCommand.BLMOVE:
                                 ListObject dstList;
                                 var newObj = false;
@@ -602,7 +606,7 @@ namespace Garnet.server
                                                    GarnetStatus.OK;
                                 }
 
-                                return isSuccessful;
+                                break;
                             case RespCommand.BLMPOP:
                                 var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
                                 var popCount = *(int*)(cmdArgs[1].ptr);
@@ -617,16 +621,33 @@ namespace Garnet.server
                                 }
 
                                 result = new CollectionItemResult(key, items);
-                                return true;
+                                isSuccessful = true;
+                                break;
                             default:
                                 return false;
                         }
+
+                        if (isSuccessful && listObj.LnkList.Count == 0)
+                        {
+                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                                ref lockableContext, ref objectLockableContext);
+                        }
+
+                        return isSuccessful;
                     case SortedSetObject sortedSetObj:
                         currCount = sortedSetObj.Count();
                         if (currCount == 0)
                             return false;
 
-                        return TryGetNextSortedSetItem(key, sortedSetObj, currCount, command, cmdArgs, out result);
+                        isSuccessful = TryGetNextSortedSetItem(key, sortedSetObj, currCount, command, cmdArgs, out result);
+
+                        if (isSuccessful && sortedSetObj.Count() == 0)
+                        {
+                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                                ref lockableContext, ref objectLockableContext);
+                        }
+
+                        return isSuccessful;
 
                     default:
                         return false;

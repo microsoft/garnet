@@ -920,6 +920,17 @@ namespace Garnet.test
             Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+
+            // Pop the remaining item and verify that key does not exist after
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"BLMPOP 30 1 {key} LEFT COUNT 1");
+            var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n$6\r\nvalue4\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            response = lightClientRequest.SendCommand($"EXISTS {key}");
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -1005,14 +1016,14 @@ namespace Garnet.test
         public void BzmpopBlockingBehaviorTest()
         {
             var key = "blockingzset";
-            var value = "testvalue";
-            var score = 1.5;
+            var values = new[] { "value1", "value2", "value3" };
+            var scores = new[] { "0.5", "1.5", "2.5" };
 
             var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
-                var response = lcr.SendCommand($"BZMPOP 30 1 {key} MIN COUNT 2");
-                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${value.Length}\r\n{value}\r\n${score.ToString().Length}\r\n{score}\r\n";
+                var response = lcr.SendCommand($"BZMPOP 30 1 {key} MIN COUNT 2", 2);
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*2\r\n{string.Join("\r\n", values.Take(2).Zip(scores.Take(2), (v, s) => $"*2\r\n${v.Length}\r\n{v}\r\n${s.Length}\r\n{s}"))}\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
@@ -1020,13 +1031,24 @@ namespace Garnet.test
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
-                var result = lcr.SendCommand($"ZADD {key} {score} {value}");
+                var result = lcr.SendCommand($"ZADD {key} {string.Join(' ', scores.Zip(values, (s, v) => $"{s} {v}"))}");
                 return result;
             });
 
             Task.WaitAll([blockingTask, pushingTask], TimeSpan.FromSeconds(10));
             ClassicAssert.IsTrue(blockingTask.IsCompletedSuccessfully);
             ClassicAssert.IsTrue(pushingTask.IsCompletedSuccessfully);
+
+            // Pop the remaining item and verify that key does not exist after
+            using var lcr = TestUtils.CreateRequest();
+            var response = lcr.SendCommand($"BZMPOP 30 1 {key} MIN COUNT 2");
+            var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n${values[2].Length}\r\n{values[2]}\r\n${scores[2].Length}\r\n{scores[2]}\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            response = lightClientRequest.SendCommand($"EXISTS {key}");
+            expectedResponse = ":0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
