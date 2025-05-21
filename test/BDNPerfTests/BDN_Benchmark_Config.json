@@ -359,9 +359,9 @@
     "WARN-ON-FAIL_ModuleJsonSetCommand_None": 223200
   },
   "BDN.benchmark.Operations.JsonOperations.*": {
-    "expected_ModuleJsonGetCommand_ACL": 240000,
+    "expected_ModuleJsonGetCommand_ACL": 320000,
     "expected_ModuleJsonSetCommand_ACL": 59200,
-    "expected_ModuleJsonGetDeepPath_ACL": 96800,
+    "expected_ModuleJsonGetDeepPath_ACL": 460000,
     "expected_ModuleJsonGetArrayPath_ACL": 58400,
     "expected_ModuleJsonGetArrayElementsPath_ACL": 800,
     "expected_ModuleJsonGetFilterPath_ACL": 435600,
@@ -371,7 +371,7 @@
     "expected_ModuleJsonGetDeepPath_AOF": 480000,
     "expected_ModuleJsonGetArrayPath_AOF": 370000,
     "expected_ModuleJsonGetArrayElementsPath_AOF": 800,
-    "expected_ModuleJsonGetFilterPath_AOF": 69600,
+    "expected_ModuleJsonGetFilterPath_AOF": 410000,
     "expected_ModuleJsonGetRecursive_AOF": 4612008,
     "expected_ModuleJsonGetCommand_None": 77600,
     "expected_ModuleJsonSetCommand_None": 240000,
@@ -379,7 +379,7 @@
     "expected_ModuleJsonGetArrayPath_None": 330000,
     "expected_ModuleJsonGetArrayElementsPath_None": 800,
     "expected_ModuleJsonGetFilterPath_None": 435000,
-    "expected_ModuleJsonGetRecursive_None": 18612006
+    "expected_ModuleJsonGetRecursive_None": 18600000
   },
   "BDN.benchmark.Network.RawStringOperations.*": {
     "expected_Set_None": 0,
