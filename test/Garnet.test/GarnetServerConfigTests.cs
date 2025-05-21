@@ -866,6 +866,7 @@ namespace Garnet.test
             var hostname = TestUtils.GetHostName();
             var addresses = Dns.GetHostAddresses(hostname);
             addresses = [.. addresses, IPAddress.IPv6Loopback, IPAddress.Loopback];
+            addresses = [.. addresses.Distinct()];
 
             var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
             var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints);

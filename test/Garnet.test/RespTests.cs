@@ -5024,7 +5024,7 @@ namespace Garnet.test
                 {
                     var startTime = Stopwatch.GetTimestamp();
                     var response = blockingClient.SendCommand("BLMPOP 10 1 keyA LEFT");
-                    if (Encoding.ASCII.GetString(response).Substring(0, "-UNBLOCKED".Length) == "-UNBLOCKED")
+                    if (Encoding.ASCII.GetString(response, 0, "-UNBLOCKED".Length) == "-UNBLOCKED")
                     {
                         isError = true;
                     }
@@ -5077,6 +5077,7 @@ namespace Garnet.test
             using var blockingClient = TestUtils.CreateRequest();
             var clientIdResponse = Encoding.ASCII.GetString(blockingClient.SendCommand("CLIENT ID"));
             var clientId = clientIdResponse.Substring(1, clientIdResponse.IndexOf("\r\n") - 1);
+            ClassicAssert.IsTrue(long.TryParse(clientId, out _));
 
             string blockingResult = null;
             var blockingTask = Task.Run(() =>
