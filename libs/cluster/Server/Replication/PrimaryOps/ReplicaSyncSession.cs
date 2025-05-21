@@ -344,12 +344,12 @@ namespace Garnet.cluster
                 var lastSaveTime = storeWrapper.lastSaveTime;
 
                 // Retrieve latest checkpoint and lock it from deletion operations
-                if (!clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry))
+                if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition) || !clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry))
                 {
                     // Fail to acquire lock, could mean that a writer might be trying to delete
                     Debug.Assert(cEntry == null);
                     await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-                    continue;
+                    continue; // Go back to re-acquire checkpoint
                 }
 
                 // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
@@ -372,8 +372,7 @@ namespace Garnet.cluster
                 {
                     cEntry.RemoveReader();
                     await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-                    clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry);
-                    startAofAddress = cEntry.GetMinAofCoveredAddress();
+                    continue; // Go back to re-acquire checkpoint
                 }
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations

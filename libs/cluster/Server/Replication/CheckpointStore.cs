@@ -247,7 +247,7 @@ namespace Garnet.cluster
                         objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
                     }
                 };
-                cEntry.TryAddReader();
+                _ = cEntry.TryAddReader();
                 return true;
             }
 
