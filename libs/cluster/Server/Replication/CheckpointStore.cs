@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -121,7 +120,8 @@ namespace Garnet.cluster
             if (!fullCheckpoint)
             {
                 var lastEntry = tail;
-                Debug.Assert(lastEntry != null);
+                if (lastEntry == null)
+                    throw new GarnetException("Failed to find lastEntry for full checkpoint");
 
                 entry.metadata.storeIndexToken = lastEntry.metadata.storeIndexToken;
                 entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
@@ -131,7 +131,7 @@ namespace Garnet.cluster
                 head = tail = entry;
             else
             {
-                // We don't have multiple writers because these is called under the CheckpointLock
+                // We don't have multiple writers because this method is called under the CheckpointLock
                 // So it is safe to update in-place.
                 tail.next = entry;
                 tail = tail.next;

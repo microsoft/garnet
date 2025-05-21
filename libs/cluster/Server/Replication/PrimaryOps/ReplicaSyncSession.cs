@@ -344,7 +344,9 @@ namespace Garnet.cluster
                 var lastSaveTime = storeWrapper.lastSaveTime;
 
                 // Retrieve latest checkpoint and lock it from deletion operations
-                if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition) || !clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry))
+                var acquiredCheckpoint = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition) ||
+                    !clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry);
+                if (acquiredCheckpoint)
                 {
                     // Fail to acquire lock, could mean that a writer might be trying to delete
                     Debug.Assert(cEntry == null);
