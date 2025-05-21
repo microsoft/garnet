@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1007,7 +1008,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoSRANDMEMBERWithCountCommandLC()
+        public unsafe void CanDoSRANDMEMBERWithCountCommandLC()
         {
             var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
 
@@ -1025,43 +1026,31 @@ namespace Garnet.test
             CreateLongSet();
 
             response = lightClientRequest.SendCommand("SRANDMEMBER myset", 1);
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-            var item = Encoding.ASCII.GetString(response).Substring(4, Int32.Parse(strLen));
+            var strLen = Encoding.ASCII.GetString(response, 1, 1);
+            var item = Encoding.ASCII.GetString(response, 4, int.Parse(strLen));
             ClassicAssert.IsTrue(myset.Contains(item));
 
             // Get three random members
             response = lightClientRequest.SendCommand("SRANDMEMBER myset 3", 3);
-            TestUtils.AssertEqualUpToExpectedLength("*", response);
-
-            var strResponse = Encoding.ASCII.GetString(response);
-            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-            ClassicAssert.IsTrue(arrLenEndIdx > 1);
-
-            var strArrLen = strResponse.AsSpan().Slice(1, arrLenEndIdx - 1);
-            ClassicAssert.IsTrue(int.TryParse(strArrLen, out var arrLen));
-            ClassicAssert.AreEqual(3, arrLen);
+            TestUtils.AssertEqualUpToExpectedLength("*3\r\n", response);
 
             // Get 6 random members and verify that at least two elements are the same
             response = lightClientRequest.SendCommand("SRANDMEMBER myset -6", 6);
-            var strReponse = Encoding.ASCII.GetString(response);
-            arrLenEndIdx = strReponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-            strArrLen = strReponse.AsSpan().Slice(1, arrLenEndIdx - 1);
-            ClassicAssert.IsTrue(int.TryParse(strArrLen, out arrLen));
+            TestUtils.AssertEqualUpToExpectedLength("*6\r\n", response);
 
-            var members = new HashSet<string>();
-            var repeatedMembers = false;
-            for (var i = 0; i < arrLen; i++)
+            string[] results;
+
+            fixed (byte* p = &response[0])
             {
-                var member = strReponse.Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
-                if (members.Contains(member))
-                {
-                    repeatedMembers = true;
-                    break;
-                }
-                members.Add(member);
+                var ptr = p;
+                ClassicAssert.IsTrue(
+                    RespReadUtils.TryReadStringArrayWithLengthHeader(out results, ref ptr,
+                                                                p + (Garnet.common.NumUtils.MaximumFormatInt64Length * 10))
+                );
             }
 
-            ClassicAssert.IsTrue(repeatedMembers, "At least two members are repeated.");
+            ClassicAssert.IsTrue(results.Distinct().Count() != results.Length,
+                                 "At least two members are repeated.");
         }
 
         [Test]
