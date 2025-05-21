@@ -245,8 +245,9 @@ namespace Garnet.cluster
         {
             Guid objectStoreHLogToken = default;
             Guid objectStoreIndexToken = default;
-            storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken);
-            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken);
+            var objectStoreVersion = -1L;
+            storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken, out var storeVersion);
+            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken, out objectStoreVersion);
             var (storeCheckpointCoveredAofAddress, storePrimaryReplId) = GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken);
             var (objectCheckpointCoveredAofAddress, objectStorePrimaryReplId) = objectStoreHLogToken == default ? (long.MaxValue, null) : GetCheckpointCookieMetadata(StoreType.Object, objectStoreHLogToken);
 
@@ -254,13 +255,13 @@ namespace Garnet.cluster
             {
                 metadata = new()
                 {
-                    storeVersion = storeHLogToken == default ? -1 : storeWrapper.store.GetLatestCheckpointVersion(),
+                    storeVersion = storeVersion,
                     storeHlogToken = storeHLogToken,
                     storeIndexToken = storeIndexToken,
                     storeCheckpointCoveredAofAddress = storeCheckpointCoveredAofAddress,
                     storePrimaryReplId = storePrimaryReplId,
 
-                    objectStoreVersion = objectStoreHLogToken == default ? -1 : storeWrapper.objectStore.GetLatestCheckpointVersion(),
+                    objectStoreVersion = objectStoreVersion,
                     objectStoreHlogToken = objectStoreHLogToken,
                     objectStoreIndexToken = objectStoreIndexToken,
                     objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,
@@ -312,6 +313,8 @@ namespace Garnet.cluster
         public string GetLatestCheckpointFromDiskInfo()
         {
             var cEntry = GetLatestCheckpointEntryFromDisk();
+            if (cEntry == null)
+                return "(empty)";
             return cEntry.ToString();
         }
     }
