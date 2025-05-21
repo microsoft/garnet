@@ -151,8 +151,7 @@ namespace Garnet.cluster
                     entry.metadata.storePrimaryReplId = tail.metadata.storePrimaryReplId;
                 }
 
-                tail.next = entry;
-                tail = entry;
+                tail = tail.next;
             }
 
             logger?.LogCheckpointEntry(LogLevel.Trace, nameof(AddCheckpointEntry), entry);
@@ -173,12 +172,12 @@ namespace Garnet.cluster
             var curr = head;
             while (curr != null && curr != tail)
             {
-                logger?.LogTrace("Try suspend readers!");
+                logger?.LogCheckpointEntry(LogLevel.Trace, nameof(DeleteOutdatedCheckpoints), curr);
 
                 // If cannot suspend readers for this entry
                 if (!curr.TrySuspendReaders()) break;
 
-                logger?.LogCheckpointEntry(LogLevel.Trace, nameof(DeleteOutdatedCheckpoints), curr);
+                logger?.LogTrace("Suspended readers and deleting outdated checkpoint!");
 
                 // Below check each checkpoint token separately if it is eligible for deletion
                 if (CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
