@@ -404,6 +404,9 @@ namespace Garnet.common
         /// <param name="totalLenHint"></param>
         public void Realloc(int totalLenHint)
         {
+            if (totalLenHint >= Array.MaxLength)
+                throw new ArgumentOutOfRangeException("too large!");
+
             var len = (int)(end - ptr);
             if (totalLenHint <= len)
                 return;
@@ -427,17 +430,26 @@ namespace Garnet.common
                     length = 8;
             }
 
-            checked
+            if (length == 0x40000000)
             {
-                if (length < extraLenHint)
-                {
-                    length = (int)BitOperations.RoundUpToPowerOf2((uint)extraLenHint + (uint)length);
-                }
-                else
-                {
-                    length <<= 1;
-                }
+                // Maximal allocation from MemoryPool Rent()
+                length = Array.MaxLength;
             }
+            else if (length < extraLenHint)
+            {
+                var total = (uint)extraLenHint + (uint)length;
+                if ((total >= 0x40000000) && (total < Array.MaxLength))
+                    length = Array.MaxLength;
+                else
+                    length = (int)BitOperations.RoundUpToPowerOf2(total);
+            }
+            else
+            {
+                length <<= 1;
+            }
+
+            if (length <= 0)
+                throw new OverflowException("length");
 
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();
