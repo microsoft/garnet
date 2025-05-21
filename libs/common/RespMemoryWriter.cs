@@ -416,11 +416,14 @@ namespace Garnet.common
         {
             var length = output.Length;
 
-            if (length < 1024)
+            if (!lowerMinimum)
             {
-                if (!lowerMinimum)
+                if (length < 1024)
                     length = 512;
-                else // Internally pool has a minimum of 16, no point allocating less.
+            }
+            else
+            {
+                if (length < 16)
                     length = 8;
             }
 
