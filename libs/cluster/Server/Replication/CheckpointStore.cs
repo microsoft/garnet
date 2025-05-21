@@ -114,9 +114,8 @@ namespace Garnet.cluster
         /// Since there can be not concurrent checkpoints this method is not thread safe.
         /// </summary>
         /// <param name="entry"></param>
-        /// <param name="storeType"></param>
         /// <param name="fullCheckpoint"></param>
-        public void AddCheckpointEntry(CheckpointEntry entry, StoreType storeType, bool fullCheckpoint = false)
+        public void AddCheckpointEntry(CheckpointEntry entry, bool fullCheckpoint = false)
         {
             // If not full checkpoint index checkpoint will be the one of the previous checkpoint
             if (!fullCheckpoint)
@@ -128,29 +127,12 @@ namespace Garnet.cluster
                 entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
 
-            // Assume we don't have multiple writers so it is safe to update the tail directly
             if (tail == null)
                 head = tail = entry;
             else
             {
-                if (storeType == StoreType.Main)
-                {
-                    entry.metadata.objectStoreVersion = tail.metadata.objectStoreVersion;
-                    entry.metadata.objectStoreHlogToken = tail.metadata.objectStoreHlogToken;
-                    entry.metadata.objectStoreIndexToken = tail.metadata.objectStoreIndexToken;
-                    entry.metadata.objectCheckpointCoveredAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
-                    entry.metadata.objectStorePrimaryReplId = tail.metadata.objectStorePrimaryReplId;
-                }
-
-                if (storeType == StoreType.Object)
-                {
-                    entry.metadata.storeVersion = tail.metadata.storeVersion;
-                    entry.metadata.storeHlogToken = tail.metadata.storeHlogToken;
-                    entry.metadata.storeIndexToken = tail.metadata.storeIndexToken;
-                    entry.metadata.storeCheckpointCoveredAofAddress = tail.metadata.objectCheckpointCoveredAofAddress;
-                    entry.metadata.storePrimaryReplId = tail.metadata.storePrimaryReplId;
-                }
-
+                // We don't have multiple writers because these is called under the CheckpointLock
+                // So it is safe to update in-place.
                 tail.next = entry;
                 tail = tail.next;
             }

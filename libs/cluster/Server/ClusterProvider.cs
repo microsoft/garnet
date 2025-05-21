@@ -149,31 +149,25 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(StoreType storeType, bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
+        public void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
         {
             var entry = new CheckpointEntry();
 
-            if (storeType is StoreType.Main or StoreType.All)
-            {
-                entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
-                entry.metadata.storeHlogToken = storeCheckpointToken;
-                entry.metadata.storeIndexToken = storeCheckpointToken;
-                entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
-            }
+            entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
+            entry.metadata.storeHlogToken = storeCheckpointToken;
+            entry.metadata.storeIndexToken = storeCheckpointToken;
+            entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+            entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
 
-            if (storeType is StoreType.Object or StoreType.All)
-            {
-                entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
-                entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
-            }
+            entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
+            entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+            entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+            entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+            entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
 
             // Keep track of checkpoints for replica
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
-            replicationManager.AddCheckpointEntry(entry, storeType, full);
+            replicationManager.AddCheckpointEntry(entry, full);
 
             // Truncate AOF
             SafeTruncateAOF(CheckpointCoveredAofAddress);

@@ -69,10 +69,9 @@ namespace Garnet.cluster
         /// Add new checkpoint entry to the in-memory store
         /// </summary>
         /// <param name="entry"></param>
-        /// <param name="storeType"></param>
         /// <param name="fullCheckpoint"></param>
-        public void AddCheckpointEntry(CheckpointEntry entry, StoreType storeType, bool fullCheckpoint)
-            => checkpointStore.AddCheckpointEntry(entry, storeType, fullCheckpoint);
+        public void AddCheckpointEntry(CheckpointEntry entry, bool fullCheckpoint)
+            => checkpointStore.AddCheckpointEntry(entry, fullCheckpoint);
 
         public void PurgeAllCheckpointsExceptEntry(CheckpointEntry except)
             => checkpointStore.PurgeAllCheckpointsExceptEntry(except);
