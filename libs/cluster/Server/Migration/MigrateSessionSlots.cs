@@ -10,7 +10,6 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-
         /// <summary>
         /// Migrate Slots inline driver
         /// </summary>
