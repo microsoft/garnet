@@ -3,6 +3,9 @@
 
 using System;
 using System.Threading.Tasks;
+#if DEBUG
+using Garnet.common;
+#endif
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -19,6 +22,11 @@ namespace Garnet.cluster
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
             var mainStorePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+
+#if DEBUG
+            // Only on Debug mode
+            ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).GetAwaiter().GetResult();
+#endif
 
             // Send main store
             CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
