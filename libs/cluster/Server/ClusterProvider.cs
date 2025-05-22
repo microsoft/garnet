@@ -265,6 +265,10 @@ namespace Garnet.cluster
             return [.. replicationInfo];
         }
 
+        public MetricsItem[] GetCheckpointInfo()
+            => [new("memory_checkpoint_entry", replicationManager.GetLatestCheckpointFromMemoryInfo()),
+                new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo())];
+
         /// <inheritdoc />
         public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
         {

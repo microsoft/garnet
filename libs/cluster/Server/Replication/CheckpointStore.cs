@@ -303,7 +303,33 @@ namespace Garnet.cluster
             if (_tail == null)
                 return "(empty)";
 
-            return _tail.ToString();
+            try
+            {
+                return _tail.ToString();
+            }
+            catch
+            {
+                return "(empty)";
+            }
+        }
+
+        /// <summary>
+        /// Get latest checkpoint from memory info
+        /// </summary>
+        /// <returns></returns>
+        public string GetLatestCheckpointFromDiskInfo()
+        {
+            var cEntry = GetLatestCheckpointEntryFromDisk();
+            if (cEntry == null)
+                return "(empty)";
+            try
+            {
+                return cEntry.ToString();
+            }
+            catch
+            {
+                return "(empty)";
+            }
         }
     }
 }

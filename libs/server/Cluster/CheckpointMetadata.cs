@@ -45,12 +45,12 @@ namespace Garnet.server
                 $"storeHlogToken={storeHlogToken}," +
                 $"storeIndexToken={storeIndexToken}," +
                 $"storeCheckpointCoveredAofAddress={storeCheckpointCoveredAofAddress}," +
-                $"storePrimaryReplId={storePrimaryReplId}," +
+                $"storePrimaryReplId={storePrimaryReplId ?? "(empty)"}," +
                 $"objectStoreVersion={objectStoreVersion}," +
                 $"objectStoreHlogToken={objectStoreHlogToken}," +
                 $"objectStoreIndexToken={objectStoreIndexToken}," +
                 $"objectCheckpointCoveredAofAddress={objectCheckpointCoveredAofAddress}," +
-                $"objectStorePrimaryReplId={objectStorePrimaryReplId}";
+                $"objectStorePrimaryReplId={objectStorePrimaryReplId ?? "(empty)"}";
         }
     }
 }
