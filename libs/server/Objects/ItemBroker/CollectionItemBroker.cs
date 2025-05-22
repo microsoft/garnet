@@ -24,8 +24,11 @@ namespace Garnet.server
     /// </summary>
     public class CollectionItemBroker : IDisposable
     {
+        // Minimum amount of seconds between cleanings of keysToObservers map
+        private const int MIN_SECS_BETWEEN_KEYS_TO_OBSERVERS_CLEANS = 5 * 60;
+
         // Queue of events to be handled by the main loops
-        readonly AsyncQueue<BrokerEventBase> brokerEventsQueue = new();
+        readonly AsyncQueue<CollectionItemBrokerEvent> brokerEventsQueue = new();
 
         // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
         readonly ConcurrentDictionary<int, CollectionItemObserver> sessionIdToObserver = new();
@@ -33,6 +36,12 @@ namespace Garnet.server
         // Mapping of observed keys to queue of observers, by order of subscription
         // Instantiated only when needed
         Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = null;
+
+        // Last time keysToObservers was cleaned (in ticks)
+        long keysToObserversLastClean = DateTime.Now.Ticks;
+
+        // Minimum amount of time between cleanings of keysToObservers (in ticks)
+        readonly long keysToObserversTimeBetweenCleans = TimeSpan.FromSeconds(MIN_SECS_BETWEEN_KEYS_TO_OBSERVERS_CLEANS).Ticks;
 
         // Synchronization for the keysToObservers dictionary
         SingleWriterMultiReaderLock keysToObserversLock = new();
@@ -125,7 +134,7 @@ namespace Garnet.server
             StartMainLoop();
 
             // Add a new observer event to the event queue
-            brokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
+            brokerEventsQueue.Enqueue(new CollectionItemBrokerEvent(observer, keys));
 
             var timeout = timeoutInSeconds == 0
                 ? TimeSpan.FromMilliseconds(-1)
@@ -200,7 +209,7 @@ namespace Garnet.server
             }
 
             // Add collection updated event to queue
-            brokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key));
+            brokerEventsQueue.Enqueue(new CollectionItemBrokerEvent(key));
         }
 
         /// <summary>
@@ -220,16 +229,16 @@ namespace Garnet.server
         /// <summary>
         /// Calls the appropriate method based on the broker event type
         /// </summary>
-        /// <param name="brokerEvent"></param>
-        private void HandleBrokerEvent(BrokerEventBase brokerEvent)
+        /// <param name="brokerEvent">Event to handle</param>
+        private void HandleBrokerEvent(ref CollectionItemBrokerEvent brokerEvent)
         {
-            switch (brokerEvent)
+            switch (brokerEvent.EventType)
             {
-                case NewObserverEvent noe:
-                    InitializeObserver(noe.Observer, noe.Keys);
+                case CollectionItemBrokerEventType.NewObserver:
+                    InitializeObserver(brokerEvent.Observer, brokerEvent.Keys);
                     return;
-                case CollectionUpdatedEvent cue:
-                    TryAssignItemFromKey(cue.Key);
+                case CollectionItemBrokerEventType.CollectionUpdated:
+                    TryAssignItemFromKey(brokerEvent.Key);
                     return;
             }
         }
@@ -671,6 +680,7 @@ namespace Garnet.server
                 // Repeat while not disposed or cancelled
                 while (!cts.IsCancellationRequested)
                 {
+
                     // Try to synchronously get the next event
                     if (!brokerEventsQueue.TryDequeue(out var nextEvent))
                     {
@@ -686,14 +696,43 @@ namespace Garnet.server
                         }
                     }
 
-                    if (nextEvent == default) continue;
+                    if (nextEvent.IsDefault()) continue;
 
-                    HandleBrokerEvent(nextEvent);
+                    HandleBrokerEvent(ref nextEvent);
+
+                    // Check if keysToObservers requires cleaning
+                    if (keysToObserversLastClean + keysToObserversTimeBetweenCleans < DateTime.Now.Ticks)
+                        CleanKeysToObservers();
                 }
             }
             finally
             {
                 done.Set();
+            }
+        }
+
+        private void CleanKeysToObservers()
+        {
+            keysToObserversLock.WriteLock();
+            try
+            {
+                foreach (var kvp in keysToObservers)
+                {
+                    // Pop disposed observers from head of queue
+                    while (kvp.Value.TryPeek(out var observer) && observer.Status != ObserverStatus.WaitingForResult)
+                        kvp.Value.TryDequeue(out _);
+
+                    // Remove key from map if queue is now empty
+                    if (kvp.Value.IsEmpty)
+                        keysToObservers.Remove(kvp.Key);
+                }
+
+                // Update last cleaned time
+                keysToObserversLastClean = DateTime.Now.Ticks;
+            }
+            finally
+            {
+                keysToObserversLock.WriteUnlock();
             }
         }
 

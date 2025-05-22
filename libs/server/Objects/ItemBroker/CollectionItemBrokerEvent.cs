@@ -1,50 +1,72 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.InteropServices;
+
 namespace Garnet.server
 {
     /// <summary>
-    /// Base class for events handled by CollectionItemBroker's main loop
+    /// Event types handled by CollectionItemBroker
     /// </summary>
-    internal abstract class BrokerEventBase
+    internal enum CollectionItemBrokerEventType : byte
     {
+        NotSet = 0,
+        NewObserver = 1,
+        CollectionUpdated = 2,
     }
 
     /// <summary>
-    /// Event to notify CollectionItemBroker that a collection has been updated
+    /// Struct that holds data for different event types handled by CollectionItemBroker
     /// </summary>
-    internal class CollectionUpdatedEvent : BrokerEventBase
+    [StructLayout(LayoutKind.Explicit, Size = 17)]
+    internal struct CollectionItemBrokerEvent
     {
         /// <summary>
-        /// Key of updated collection
+        /// Key of updated collection (for a CollectionUpdated event)
         /// </summary>
-        internal readonly byte[] Key;
+        [FieldOffset(0)]
+        internal readonly byte[] Key = null;
 
-        public CollectionUpdatedEvent(byte[] key)
+        /// <summary>
+        /// The keys that the observer requests to subscribe on (for a NewObserver event)
+        /// </summary>
+        [FieldOffset(0)]
+        internal byte[][] Keys = null;
+
+        /// <summary>
+        /// The new observer instance (for a NewObserver event)
+        /// </summary>
+        [FieldOffset(8)]
+        internal CollectionItemObserver Observer = null;
+
+        /// <summary>
+        /// The type of event represented
+        /// </summary>
+        [FieldOffset(16)]
+        internal readonly CollectionItemBrokerEventType EventType = CollectionItemBrokerEventType.NotSet;
+
+        /// <summary>
+        /// Creates a CollectionUpdated event
+        /// </summary>
+        /// <param name="key">Key of updated collection</param>
+        public CollectionItemBrokerEvent(byte[] key)
         {
+            EventType = CollectionItemBrokerEventType.CollectionUpdated;
             Key = key;
         }
-    }
-
-    /// <summary>
-    /// Event to notify CollectionItemBroker that a new observer was created
-    /// </summary>
-    internal class NewObserverEvent : BrokerEventBase
-    {
-        /// <summary>
-        /// The new observer instance
-        /// </summary>
-        internal CollectionItemObserver Observer { get; }
 
         /// <summary>
-        /// The keys that the observer requests to subscribe on
+        /// Creates a NewObserver event
         /// </summary>
-        internal byte[][] Keys { get; }
-
-        internal NewObserverEvent(CollectionItemObserver observer, byte[][] keys)
+        /// <param name="observer">The new observer instance</param>
+        /// <param name="keys">The keys that the observer requests to subscribe on</param>
+        public CollectionItemBrokerEvent(CollectionItemObserver observer, byte[][] keys)
         {
+            EventType = CollectionItemBrokerEventType.NewObserver;
             Observer = observer;
             Keys = keys;
         }
+
+        public bool IsDefault() => EventType == CollectionItemBrokerEventType.NotSet;
     }
 }
