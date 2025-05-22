@@ -3527,157 +3527,118 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task CanDoZRangeByLex()
+        public void CanDoZRangeByLex()
         {
-            using var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
-
             //ZRANGE key min max BYLEX [WITHSCORES]
-            c.Execute("ZADD", "board", "0", "a");
-            c.Execute("ZADD", "board", "0", "b");
-            c.Execute("ZADD", "board", "0", "c");
-            c.Execute("ZADD", "board", "0", "d");
-            c.Execute("ZADD", "board", "0", "e");
-            c.Execute("ZADD", "board", "0", "f");
-            c.Execute("ZADD", "board", "0", "g");
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD board 0 a");
+            lightClientRequest.SendCommand("ZADD board 0 b");
+            lightClientRequest.SendCommand("ZADD board 0 c");
+            lightClientRequest.SendCommand("ZADD board 0 d");
+            lightClientRequest.SendCommand("ZADD board 0 e");
+            lightClientRequest.SendCommand("ZADD board 0 f");
+            lightClientRequest.SendCommand("ZADD board 0 g");
 
             // get a range by lex order
-            var response = await c.ExecuteForArrayAsync("ZRANGE", "board", "(a", "(d", "BYLEX");
-            ClassicAssert.AreEqual(2, response.Length);
-            ClassicAssert.AreEqual("b", response[0]);
-            ClassicAssert.AreEqual("c", response[1]);
+            response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX", 3);
+            var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "[aaa", "(g", "BYLEX");
-            ClassicAssert.AreEqual(5, response.Length);
-            ClassicAssert.AreEqual("b", response[0]);
-            ClassicAssert.AreEqual("c", response[1]);
-            ClassicAssert.AreEqual("d", response[2]);
-            ClassicAssert.AreEqual("e", response[3]);
-            ClassicAssert.AreEqual("f", response[4]);
+            response = lightClientRequest.SendCommand("ZRANGE board [aaa (g BYLEX", 6);
+            expectedResponse = "*5\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$1\r\nf\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "[c", "BYLEX");
-            ClassicAssert.AreEqual(3, response.Length);
-            ClassicAssert.AreEqual("a", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
-            ClassicAssert.AreEqual("c", response[2]);
+            response = lightClientRequest.SendCommand("ZRANGE board - [c BYLEX", 4);
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZRANGEBYLEX Synonym
-            response = await c.ExecuteForArrayAsync("ZRANGEBYLEX", "board", "-", "[c");
-            ClassicAssert.AreEqual(3, response.Length);
-            ClassicAssert.AreEqual("a", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
-            ClassicAssert.AreEqual("c", response[2]);
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX board - [c", 4);
+            //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Test infinites
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "-", "BYLEX");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board - - BYLEX");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "(+", "BYLEX");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board - (+ BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "+", "BYLEX");
-            ClassicAssert.AreEqual(7, response.Length);
-            ClassicAssert.AreEqual("a", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
-            ClassicAssert.AreEqual("c", response[2]);
-            ClassicAssert.AreEqual("d", response[3]);
-            ClassicAssert.AreEqual("e", response[4]);
-            ClassicAssert.AreEqual("f", response[5]);
-            ClassicAssert.AreEqual("g", response[6]);
+            response = lightClientRequest.SendCommand("ZRANGE board + - BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "+", "-", "BYLEX");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board + + BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "+", "+", "BYLEX");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board - + BYLEX");
+            expectedResponse = "*7\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$1\r\nf\r\n$1\r\ng\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "[+", "+", "BYLEX");
-            ClassicAssert.AreEqual(7, response.Length);
-            ClassicAssert.AreEqual("a", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
-            ClassicAssert.AreEqual("c", response[2]);
-            ClassicAssert.AreEqual("d", response[3]);
-            ClassicAssert.AreEqual("e", response[4]);
-            ClassicAssert.AreEqual("f", response[5]);
-            ClassicAssert.AreEqual("g", response[6]);
+            response = lightClientRequest.SendCommand("ZRANGE board [+ + BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
-        public async Task CanDoZRangeByLexReverse()
+        public void CanDoZRangeByLexReverse()
         {
-            using var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
-
-            //ZRANGE key min max BYLEX [WITHSCORES]
-            c.Execute("ZADD", "board", "0", "a");
-            c.Execute("ZADD", "board", "0", "b");
-            c.Execute("ZADD", "board", "0", "c");
-            c.Execute("ZADD", "board", "0", "d");
-            c.Execute("ZADD", "board", "0", "e");
-            c.Execute("ZADD", "board", "0", "f");
-            c.Execute("ZADD", "board", "0", "g");
+            //ZRANGE key min max BYLEX REV [WITHSCORES]
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD board 0 a");
+            lightClientRequest.SendCommand("ZADD board 0 b");
+            lightClientRequest.SendCommand("ZADD board 0 c");
+            lightClientRequest.SendCommand("ZADD board 0 d");
+            lightClientRequest.SendCommand("ZADD board 0 e");
+            lightClientRequest.SendCommand("ZADD board 0 f");
+            lightClientRequest.SendCommand("ZADD board 0 g");
 
             // get a range by lex order
-            var response = await c.ExecuteForArrayAsync("ZRANGE", "board", "(a", "(d", "BYLEX", "REV");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX REV", 1);
+            var expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // get a range by lex order
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "(d", "(a", "BYLEX", "REV");
-            ClassicAssert.AreEqual(2, response.Length);
-            ClassicAssert.AreEqual("c", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
+            response = lightClientRequest.SendCommand("ZRANGE board (d (a BYLEX REV", 3);
+            expectedResponse = "*2\r\n$1\r\nc\r\n$1\r\nb\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "[g", "(aaa", "BYLEX", "REV");
-            ClassicAssert.AreEqual(6, response.Length);
-            ClassicAssert.AreEqual("g", response[0]);
-            ClassicAssert.AreEqual("f", response[1]);
-            ClassicAssert.AreEqual("e", response[2]);
-            ClassicAssert.AreEqual("d", response[3]);
-            ClassicAssert.AreEqual("c", response[4]);
-            ClassicAssert.AreEqual("b", response[5]);
+            response = lightClientRequest.SendCommand("ZRANGE board [g (aaa BYLEX REV", 6);
+            expectedResponse = "*6\r\n$1\r\ng\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "[c", "-", "BYLEX", "REV");
-            ClassicAssert.AreEqual(3, response.Length);
-            ClassicAssert.AreEqual("c", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
-            ClassicAssert.AreEqual("a", response[2]);
+            response = lightClientRequest.SendCommand("ZRANGE board [c - BYLEX REV", 4);
+            expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            // ZRANGEBYLEX Synonym
-            response = await c.ExecuteForArrayAsync("ZREVRANGEBYLEX", "board", "[c", "-");
-            ClassicAssert.AreEqual(3, response.Length);
-            ClassicAssert.AreEqual("c", response[0]);
-            ClassicAssert.AreEqual("b", response[1]);
-            ClassicAssert.AreEqual("a", response[2]);
+            // ZREVRANGEBYLEX Synonym
+            response = lightClientRequest.SendCommand("ZREVRANGEBYLEX board [c - REV", 4);
+            //expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Test infinites
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "-", "BYLEX", "REV");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board - - BYLEX REV");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "(+", "BYLEX", "REV");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board - (+ BYLEX REV");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "-", "+", "BYLEX", "REV");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board - + BYLEX REV");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "+", "-", "BYLEX", "REV");
-            ClassicAssert.AreEqual(7, response.Length);
-            ClassicAssert.AreEqual("g", response[0]);
-            ClassicAssert.AreEqual("f", response[1]);
-            ClassicAssert.AreEqual("e", response[2]);
-            ClassicAssert.AreEqual("d", response[3]);
-            ClassicAssert.AreEqual("c", response[4]);
-            ClassicAssert.AreEqual("b", response[5]);
-            ClassicAssert.AreEqual("a", response[6]);
+            response = lightClientRequest.SendCommand("ZRANGE board + + BYLEX REV");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "+", "+", "BYLEX", "REV");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board [+ + BYLEX REV");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            response = await c.ExecuteForArrayAsync("ZRANGE", "board", "[+", "+", "BYLEX", "REV");
-            ClassicAssert.AreEqual(0, response.Length);
+            response = lightClientRequest.SendCommand("ZRANGE board + - BYLEX REV", 6);
+            expectedResponse = "*7\r\n$1\r\ng\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]

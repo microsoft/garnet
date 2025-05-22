@@ -28,7 +28,7 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
-        private enum SpecialRanges
+        private enum SpecialRanges : byte
         {
             None = 0,
             InfiniteMin = 1,
@@ -1154,7 +1154,7 @@ namespace Garnet.server
             {
                 if ((limitChars[0] == '-') || (limitChars[0] == '+'))
                 {
-                    // Doing this on '+' is intentional for compatibility.
+                    // Redis accepts [+ yet in practice seems to treat it as a minimum.
                     infinity = SpecialRanges.InfiniteMin;
                     limitChars = default;
                 }
