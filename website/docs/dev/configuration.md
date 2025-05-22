@@ -39,7 +39,7 @@ The initialization of the object consists of:
 
 ### Configuration File Parsing
 
-Parsing of the configuration files is done by calling **ServerSettingsManager.TryImportServerOptions()**. This method supports reading files from multiple sources (curretly supported: **local files** & remote files on **Azure Storage**), as well as reading multiple file formats (specified by the **ConfigFileType** enum).
+Parsing of the configuration files is done by calling **ServerSettingsManager.TryImportServerOptions()**. This method supports reading files from multiple sources (currently supported: **local files** & remote files on **Azure Storage**), as well as reading multiple file formats (specified by the **ConfigFileType** enum).
 This is done by calling the following factory methods: 
 1) **StreamProviderFactory.GetStreamProvider()** - returns a **StreamProviderBase** for reading from the appropriate file source
 2) **ConfigProviderFactory.GetConfigProvider()** - returns an **IConfigProvider** for reading the appropriate file format
@@ -78,7 +78,7 @@ The **GarnetConfigProvider** is the implementation of **IConfigProvider** which 
 #### RedisConf
 The **RedisConf** configuration file format is the file format used to configure a Redis server (read more [here](https://redis.io/docs/management/config/)).\
 Each Garnet-supported setting in this format has a matching property in the **RedisOptions** class (`GarnetServer\Configuration\RedisOptions.cs`).\
-Each property is decorated with the **RedisOptionAttribute**, which is used to specify the key (the Redis keyword), the Garnet property name that matches this property, and optionally - the type of trasformer to use when transforming the Redis property to the Garnet property.
+Each property is decorated with the **RedisOptionAttribute**, which is used to specify the key (the Redis keyword), the Garnet property name that matches this property, and optionally - the type of transformer to use when transforming the Redis property to the Garnet property.
 
 The **RedisConfigProvider** is the implementation of **IConfigProvider** which allows to deserialize options into an Options object (from an instance of **StreamProviderBase**).It uses a custom serializer, **RedisConfigSerializer** (`GarnetServer\Configuration\RedisConfigSerializer.cs`) to deserialize and populate the Options object.
 Deserialization may use a custom converter to convert the string value to a Redis type (all Redis types and custom converters can be found in `GarnetServer\Configuration\RedisTypes.cs` and `GarnetServer\Configuration\TypeConverters.cs`).\
@@ -94,7 +94,7 @@ Command line arguments parsing is effectively done twice, we first parse the com
 ### Options Validation
 
 Once Options parsing is done, the **ServerSettingsManager.TryParseCommandLineArguments()** then calls the instance method **Options.IsValid()** to validate the final Options object.\
-Each Options property may be decorated with a ValidationAttribute (all custom Garnet validation attributes can be found in `GarnetServer\Configuration\OptionsValidators.cs`), which can then be used to check each property value validity.\ 
+Each Options property may be decorated with a ValidationAttribute (all custom Garnet validation attributes can be found in `GarnetServer\Configuration\OptionsValidators.cs`), which can then be used to check each property value validity. 
 If any invalid property values are found, the method will return a null options object, as well as a list of the invalid property names.\
 All errors returned by the validators will be written to the console.
 
