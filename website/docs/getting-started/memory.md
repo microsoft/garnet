@@ -37,20 +37,20 @@ reasoning for this is:
 The index described above does not hold keys or values. Instead, both keys and values are stored in a separate structure 
 called the hybrid log. The memory occupied by the log is configured using `MemorySize` (`-m` or `--memory`).
 
-Memory is organized as a circular buffer of pages, where each page has size cofigured using `PageSize` (`-p` or `--page`). The page
+Memory is organized as a circular buffer of pages, where each page has size configured using `PageSize` (`-p` or `--page`). The page
 size controls the maximum key or value size you can store, as a record needs to fit entirely within a page.
 
 A record in the Garnet main store consists of:
 * An 8-byte header, called `RecordInfo`, which holds metadata and the logical address of the previous entry in a record chain.
-* The key, which consists of an 8-byte header followed the the key bytes (`SpanByte`)
-* The value, which consists of an 8-byte header followed the the value bytes (`SpanByte`)
+* The key, which consists of an 8-byte header followed by the key bytes (`SpanByte`)
+* The value, which consists of an 8-byte header followed by the value bytes (`SpanByte`)
 
 
 ### Overflow buckets
 
 Each hash bucket has 7 entries (slots) that store the root of a chain of records stored in the log. If the hash bucket for
 a given key is full, we overflow into extra buckets called overflow buckets that are allocated dynamically. While these
-cannot be controlled or bounded, they are typically very small and can be ignored. In case, your index was sized too small, 
+cannot be controlled or bounded, they are typically very small and can be ignored. In case your index was sized too small, 
 they can take up more space, and to combat this, you can dynamically grow the index as described [below](#auto-resizing-index).
 
 
@@ -101,9 +101,9 @@ To summarize, the total space occupied by the object store is the sum of:
 
 ## Read Cache
 
-Read cache helps bring in records from disk to memory in a separate read cache region without growing the main log. This helps avoid additional I/O when reading records that are already on the disk. More details on the internals of read cache are available [here](../dev/tsavorite/locking.md#readcache)
+Read cache helps bring in records from disk to memory in a separate read cache region without growing the main log. This helps avoid additional I/O when reading records that are already on the disk. More details on the internals of read cache are available [here](../dev/tsavorite/locking.md#readcache).
 
-Read cache can be independently enabled for either the main store or the object store or both of them simulataneously.
+Read cache can be independently enabled for either the main store or the object store or both of them simultaneously.
 Use the `--readcache` option to enable it for the main store and the `--obj-readcache` option for the object store.
 
 Following configuration options can be used to control the memory utilization of the read cache:
