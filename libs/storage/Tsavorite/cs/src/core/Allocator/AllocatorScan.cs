@@ -186,11 +186,11 @@ namespace Tsavorite.core
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and do GetRequiredRecordSize/RetrievedFullRecord as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
-        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
         private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress)
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress, bool resetCursor = true)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
         {
@@ -250,6 +250,7 @@ namespace Tsavorite.core
                 bContext.CompletePending(wait: true);
 
             IterationComplete:
+            if (resetCursor) cursor = 0;
             scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }
