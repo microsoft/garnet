@@ -12,7 +12,7 @@ Find releases at [https://github.com/microsoft/garnet/releases](https://github.c
 
 Garnet can be installed as a [.NET tool](https://aka.ms/global-tools):
 
-``` txt
+```bash
 > dotnet tool install --global garnet-server
 >
 > garnet-server

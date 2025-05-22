@@ -15,14 +15,14 @@ Within a session, the `TryConsumeMessages` method is responsible for processing 
 
 The `ProcessMessages` method does a fast parsing of the incoming data to quickly identify the right command type. Based on the type of the command, further processing is performed by one of the below methods.
 
-    * `ProcessBasicCommands`
-    This includes commands like GET, SET, DEL, RENAME, EXISTS, EXPIRE, TTL, INCR, PING, MULTI, EXEC, QUIT, etc.
+* `ProcessBasicCommands`  
+  This includes commands like GET, SET, DEL, RENAME, EXISTS, EXPIRE, TTL, INCR, PING, MULTI, EXEC, QUIT, etc.
 
-    * `ProcessArrayCommands`
-    If it is not one of the basic commands above, further parsing is performed to check if the incoming data matches any of the array commands - commands related to multiple keys, commands that operate using Object store, etc. like MGET, MSET, KEYS, SCAN, ZADD, ZREM, LPUSH, HSET, etc.
+* `ProcessArrayCommands`  
+  If it is not one of the basic commands above, further parsing is performed to check if the incoming data matches any of the array commands - commands related to multiple keys, commands that operate using Object store, etc. like MGET, MSET, KEYS, SCAN, ZADD, ZREM, LPUSH, HSET, etc.
 
-    * `ProcessOtherCommands`
-    This caters to processing rest of the commands including `ProcessAdminCommands` (for commands like AUTH, CONFIG, CLUSTER, etc), custom commands, custom transactions, etc.
+* `ProcessOtherCommands`  
+  This caters to processing rest of the commands including `ProcessAdminCommands` (for commands like AUTH, CONFIG, CLUSTER, etc), custom commands, custom transactions, etc.
 
 This method also tracks session level metrics like the number of read, write and total commands that have been processed.
 Transaction related operations are also performed here like calls to skip, start, stop and process commands within. See [transactions page](transactions.md) for more details.
