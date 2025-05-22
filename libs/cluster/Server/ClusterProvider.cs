@@ -263,7 +263,6 @@ namespace Garnet.cluster
                 }
 
                 replicationInfo.Add(new("memory_checkpoint_entry", replicationManager.GetLatestCheckpointFromMemoryInfo()));
-                replicationInfo.Add(new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo()));
             }
             return [.. replicationInfo];
         }

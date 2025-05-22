@@ -305,17 +305,5 @@ namespace Garnet.cluster
 
             return _tail.ToString();
         }
-
-        /// <summary>
-        /// Get latest checkpoint from memory info
-        /// </summary>
-        /// <returns></returns>
-        public string GetLatestCheckpointFromDiskInfo()
-        {
-            var cEntry = GetLatestCheckpointEntryFromDisk();
-            if (cEntry == null)
-                return "(empty)";
-            return cEntry.ToString();
-        }
     }
 }

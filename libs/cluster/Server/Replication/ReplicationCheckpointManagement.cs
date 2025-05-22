@@ -84,9 +84,6 @@ namespace Garnet.cluster
 
         public string GetLatestCheckpointFromMemoryInfo()
             => checkpointStore.GetLatestCheckpointFromMemoryInfo();
-
-        public string GetLatestCheckpointFromDiskInfo()
-            => checkpointStore.GetLatestCheckpointFromDiskInfo();
         #endregion
 
         public long StoreCurrentSafeAofAddress => clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).CurrentSafeAofAddress;
