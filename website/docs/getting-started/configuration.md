@@ -6,7 +6,7 @@ title: Garnet Configuration
 
 ## How to Configure Garnet
 
-The Garnet server (GarnetServer.exe) can be configured using a configuration file (e.g. `garnet.conf` or `redis.conf`), while command line arguments can be used to override any settings specified in the file. /
+The Garnet server (GarnetServer.exe) can be configured using a configuration file (e.g. `garnet.conf` or `redis.conf`), while command line arguments can be used to override any settings specified in the file. 
 Any settings not specified in either configuration file or command line arguments are set to default valued specified in the [defaults.conf](https://github.com/microsoft/garnet/blob/main/libs/host/defaults.conf) file (path to this file can be overridden via the command line arguments).
 
 Garnet currently supports two configuration file formats:
@@ -15,10 +15,10 @@ Garnet currently supports two configuration file formats:
     ```
     keyword argument1 argument2 argument3 ... argumentN
     ```
-    See Redis [docs](https://redis.io/docs/management/config/) for reference./
+    See Redis [docs](https://redis.io/docs/management/config/) for reference.
     **Important:** Not all redis.conf keywords are supported in Garnet. In order to have full configuration settings coverage, use the `garnet.conf` format.
 
-Specifying a configuration file path (and a default file path) can be done via the command line parameters./
+Specifying a configuration file path (and a default file path) can be done via the command line parameters.
 1) For `garnet.conf`:
     ```
     GarnetServer.exe --config-import-path <file-path>
@@ -32,7 +32,7 @@ Specifying a configuration file path (and a default file path) can be done via t
 
 ## garnet.conf
 
-The default configuration file format for Garnet, which supports the full-range of configurable Garnet settings./
+The default configuration file format for Garnet, which supports the full-range of configurable Garnet settings.
 `garnet.conf` is a JSON-formatted file containing a collection of configuration settings. For all the available settings, see the `defaults.conf` file or refer to the complete Garnet settings [list](#configurable-settings).
 
 ## redis.conf
@@ -61,8 +61,8 @@ Garnet supports the `redis.conf` file format as a configuration file. Note that 
 
 ## Command line arguments
 
-Any setting in Garnet can be also configured by specifying a command line argument. /
-If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. /
+Any setting in Garnet can be also configured by specifying a command line argument. 
+If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. 
 For all available command line settings, run `GarnetServer.exe -h` or `GarnetServer.exe -help`, or refer to the complete Garnet settings [list](#configurable-settings).
 
 ## Configurable Settings

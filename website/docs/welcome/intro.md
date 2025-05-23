@@ -17,7 +17,7 @@ Garnet uses Redis' RESP as its primary wire protocol. Thus, one can use Garnet w
 [available](https://redis.io/docs/latest/develop/connect/clients/) in most programming languages, for example, with [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis)
 in C#. Compared to other open-source cache-stores, you get much better performance, latency, extensibility, and durability features.
 
-Note that Garnet is a research project from Microsoft Research, and the project should be treated as such. That said, we are bunch 
+Note that Garnet is a research project from Microsoft Research, and the project should be treated as such. That said, we are a bunch 
 of highly passionate researchers and developers working on it full-time at the moment to make it as stable and efficient as we 
 can. Our goal is to create a vibrant community around Garnet. In fact, Garnet has been of sufficiently high quality that several 
 first-party and platform teams at Microsoft have deployed versions of Garnet internally for many months now.
