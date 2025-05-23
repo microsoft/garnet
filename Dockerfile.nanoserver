@@ -8,15 +8,17 @@ WORKDIR /src
 # Copy files
 COPY . .
 
+WORKDIR /src/libs/host
+
 # Set protected mode to no for Docker images
-RUN icacls 'libs/host/defaults.conf'
+RUN icacls 'defaults.conf'
 
-RUN if (Test-Path 'libs/host/defaults.conf') { \
-    (Get-Content 'libs/host/defaults.conf' -Raw -Encoding UTF8) -replace '"ProtectedMode": "yes",', '"ProtectedMode": "no",' | \
-    Set-Content 'libs/host/defaults.conf' -Encoding UTF8 \
-} else { Write-Host "File not found: libs/host/defaults.conf" }
+RUN if (Test-Path 'defaults.conf') { \
+    (Get-Content 'defaults.conf' -Raw -Encoding UTF8) -replace '"ProtectedMode": "yes",', '"ProtectedMode": "no",' | \
+    Set-Content 'defaults.conf' -Encoding UTF8 \
+} else { Write-Host "File not found: defaults.conf" }
 
-#RUN pwsh -Command "(Get-Content '' -Raw -Encoding UTF8) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content '/src/libs/host/defaults.conf' -Encoding UTF8"
+#RUN pwsh -Command "(Get-Content 'defaults.conf' -Raw -Encoding UTF8) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content 'defaults.conf' -Encoding UTF8"
 
 WORKDIR /src/main/GarnetServer
 
