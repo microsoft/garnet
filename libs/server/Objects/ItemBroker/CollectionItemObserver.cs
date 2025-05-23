@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -38,7 +39,7 @@ namespace Garnet.server
         /// <summary>
         /// Lock for the status of the observer
         /// </summary>
-        internal ReaderWriterLockSlim ObserverStatusLock { get; } = new();
+        internal SingleWriterMultiReaderLock ObserverStatusLock;
 
         /// <summary>
         /// Semaphore to notify the ResultSet status
@@ -62,14 +63,16 @@ namespace Garnet.server
         /// Safely set the result for the observer
         /// </summary>
         /// <param name="result"></param>
-        internal void HandleSetResult(CollectionItemResult result)
+        /// <param name="isWriteLocked">True if the ObserverStatusLock was write locked by the caller</param>
+        internal void HandleSetResult(CollectionItemResult result, bool isWriteLocked = false)
         {
             // If the result is already set or the observer session is disposed
             // There is no need to set the result
             if (Status != ObserverStatus.WaitingForResult)
                 return;
 
-            ObserverStatusLock.EnterWriteLock();
+            if (!isWriteLocked)
+                ObserverStatusLock.WriteLock();
             try
             {
                 if (Status != ObserverStatus.WaitingForResult)
@@ -82,7 +85,8 @@ namespace Garnet.server
             }
             finally
             {
-                ObserverStatusLock.ExitWriteLock();
+                if (!isWriteLocked)
+                    ObserverStatusLock.WriteUnlock();
             }
         }
 
@@ -93,7 +97,7 @@ namespace Garnet.server
             if (Status != ObserverStatus.WaitingForResult)
                 return false;
 
-            ObserverStatusLock.EnterWriteLock();
+            ObserverStatusLock.WriteLock();
             try
             {
                 if (Status != ObserverStatus.WaitingForResult)
@@ -107,7 +111,7 @@ namespace Garnet.server
             }
             finally
             {
-                ObserverStatusLock.ExitWriteLock();
+                ObserverStatusLock.WriteUnlock();
             }
         }
 
@@ -116,7 +120,7 @@ namespace Garnet.server
         /// </summary>
         internal void HandleSessionDisposed()
         {
-            ObserverStatusLock.EnterWriteLock();
+            ObserverStatusLock.WriteLock();
             try
             {
                 Status = ObserverStatus.SessionDisposed;
@@ -124,7 +128,7 @@ namespace Garnet.server
             }
             finally
             {
-                ObserverStatusLock.ExitWriteLock();
+                ObserverStatusLock.WriteUnlock();
             }
         }
     }
