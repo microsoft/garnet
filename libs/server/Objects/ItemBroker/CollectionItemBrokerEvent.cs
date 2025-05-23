@@ -25,7 +25,7 @@ namespace Garnet.server
         /// Key of updated collection (for a CollectionUpdated event)
         /// </summary>
         [FieldOffset(0)]
-        internal readonly byte[] Key = null;
+        internal byte[] Key = null;
 
         /// <summary>
         /// The keys that the observer requests to subscribe on (for a NewObserver event)
@@ -43,16 +43,24 @@ namespace Garnet.server
         /// The type of event represented
         /// </summary>
         [FieldOffset(16)]
-        internal readonly CollectionItemBrokerEventType EventType = CollectionItemBrokerEventType.NotSet;
+        internal CollectionItemBrokerEventType EventType = CollectionItemBrokerEventType.NotSet;
+
+        public CollectionItemBrokerEvent()
+        {
+            
+        }
 
         /// <summary>
         /// Creates a CollectionUpdated event
         /// </summary>
         /// <param name="key">Key of updated collection</param>
-        public CollectionItemBrokerEvent(byte[] key)
+        public static CollectionItemBrokerEvent CreateCollectionUpdatedEvent(byte[] key)
         {
-            EventType = CollectionItemBrokerEventType.CollectionUpdated;
-            Key = key;
+            return new CollectionItemBrokerEvent
+            {
+                EventType = CollectionItemBrokerEventType.CollectionUpdated, 
+                Key = key
+            };
         }
 
         /// <summary>
@@ -60,11 +68,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="observer">The new observer instance</param>
         /// <param name="keys">The keys that the observer requests to subscribe on</param>
-        public CollectionItemBrokerEvent(CollectionItemObserver observer, byte[][] keys)
+        public static CollectionItemBrokerEvent CreateNewObserverEvent(CollectionItemObserver observer, byte[][] keys)
         {
-            EventType = CollectionItemBrokerEventType.NewObserver;
-            Observer = observer;
-            Keys = keys;
+            return new CollectionItemBrokerEvent
+            {
+                EventType = CollectionItemBrokerEventType.NewObserver,
+                Observer = observer,
+                Keys = keys,
+            };
         }
 
         public bool IsDefault() => EventType == CollectionItemBrokerEventType.NotSet;

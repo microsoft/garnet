@@ -38,7 +38,7 @@ namespace Garnet.server
         Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = null;
 
         // Last time keysToObservers was cleaned (in ticks)
-        long keysToObserversLastClean = DateTime.Now.Ticks;
+        long keysToObserversTimeLastClean = DateTime.Now.Ticks;
 
         // Minimum amount of time between cleanings of keysToObservers (in ticks)
         readonly long keysToObserversTimeBetweenCleans = TimeSpan.FromSeconds(MIN_SECS_BETWEEN_KEYS_TO_OBSERVERS_CLEANS).Ticks;
@@ -134,7 +134,7 @@ namespace Garnet.server
             StartMainLoop();
 
             // Add a new observer event to the event queue
-            brokerEventsQueue.Enqueue(new CollectionItemBrokerEvent(observer, keys));
+            brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateNewObserverEvent(observer, keys));
 
             var timeout = timeoutInSeconds == 0
                 ? TimeSpan.FromMilliseconds(-1)
@@ -181,7 +181,8 @@ namespace Garnet.server
             keysToObserversLock.ReadLock();
             try
             {
-                if (!keysToObservers.TryGetValue(key, out observers)) return;
+                if (!keysToObservers.TryGetValue(key, out observers)) 
+                    return;
             }
             finally
             {
@@ -194,7 +195,8 @@ namespace Garnet.server
                 keysToObserversLock.WriteLock();
                 try
                 {
-                    if (!keysToObservers.TryGetValue(key, out observers)) return;
+                    if (!keysToObservers.TryGetValue(key, out observers)) 
+                        return;
 
                     if (observers.IsEmpty)
                     {
@@ -209,7 +211,7 @@ namespace Garnet.server
             }
 
             // Add collection updated event to queue
-            brokerEventsQueue.Enqueue(new CollectionItemBrokerEvent(key));
+            brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(key));
         }
 
         /// <summary>
@@ -265,7 +267,8 @@ namespace Garnet.server
 
                     // The key has an empty observer queue, try to retrieve next available item
                     if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result)) continue;
+                            out _, out var result)) 
+                        continue;
 
                     // An item was found - set the observer result and return
                     sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
@@ -334,7 +337,8 @@ namespace Garnet.server
                             {
                                 // If unsuccessful getting next item but there is at least one item in the collection,
                                 // continue to next observer in the queue, otherwise return
-                                if (currCount > 0) continue;
+                                if (currCount > 0) 
+                                    continue;
                                 return false;
                             }
 
@@ -390,7 +394,8 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (listObj.LnkList.Count == 0) return false;
+            if (listObj.LnkList.Count == 0) 
+                return false;
 
             // Get the next object according to operation type
             switch (command)
@@ -418,7 +423,8 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (srcListObj.LnkList.Count == 0) return false;
+            if (srcListObj.LnkList.Count == 0) 
+                return false;
 
             // Get the next object according to source direction
             switch (srcDirection)
@@ -464,7 +470,8 @@ namespace Garnet.server
         {
             result = default;
 
-            if (count == 0) return false;
+            if (count == 0) 
+                return false;
 
             switch (command)
             {
@@ -541,7 +548,8 @@ namespace Garnet.server
             {
                 // Get the object stored at key
                 var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
-                if (statusOp == GarnetStatus.NOTFOUND) return false;
+                if (statusOp == GarnetStatus.NOTFOUND) 
+                    return false;
 
                 // Check for type match between the observer and the source object type
                 if ((GarnetObjectType)osObject.GarnetObject.Type != objectType)
@@ -581,7 +589,8 @@ namespace Garnet.server
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
-                        if (currCount == 0) return false;
+                        if (currCount == 0) 
+                            return false;
 
                         switch (command)
                         {
@@ -602,7 +611,8 @@ namespace Garnet.server
                                 {
                                     dstList = tmpDstList;
                                 }
-                                else return false;
+                                else 
+                                    return false;
 
                                 isSuccessful = TryMoveNextListItem(listObj, dstList,
                                     (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
@@ -692,16 +702,14 @@ namespace Garnet.server
                         }
                         catch (OperationCanceledException)
                         {
-                            // Ignored
+                            continue;
                         }
                     }
-
-                    if (nextEvent.IsDefault()) continue;
 
                     HandleBrokerEvent(ref nextEvent);
 
                     // Check if keysToObservers requires cleaning
-                    if (keysToObserversLastClean + keysToObserversTimeBetweenCleans < DateTime.Now.Ticks)
+                    if (keysToObserversTimeLastClean + keysToObserversTimeBetweenCleans < DateTime.Now.Ticks)
                         CleanKeysToObservers();
                 }
             }
@@ -728,7 +736,7 @@ namespace Garnet.server
                 }
 
                 // Update last cleaned time
-                keysToObserversLastClean = DateTime.Now.Ticks;
+                keysToObserversTimeLastClean = DateTime.Now.Ticks;
             }
             finally
             {
