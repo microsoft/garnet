@@ -296,7 +296,8 @@ namespace Garnet.server
             GrowIndexesIfNeeded(defaultDatabase);
 
         /// <inheritdoc/>
-        public override void ExecuteObjectCollection(CancellationToken token = default) => throw new NotImplementedException();
+        public override void ExecuteObjectCollection(CancellationToken token = default) =>
+            ExecuteObjectCollection(defaultDatabase, Logger);
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>

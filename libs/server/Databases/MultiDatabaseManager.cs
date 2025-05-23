@@ -506,7 +506,19 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void ExecuteObjectCollection(CancellationToken token = default) => throw new NotImplementedException();
+        public override void ExecuteObjectCollection(CancellationToken token = default)
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                ExecuteObjectCollection(databasesMapSnapshot[dbId], Logger);
+            }
+        }
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default)
