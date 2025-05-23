@@ -33,5 +33,24 @@ namespace Garnet.server
             objectCheckpointCoveredAofAddress = long.MaxValue;
             objectStorePrimaryReplId = null;
         }
+
+        /// <summary>
+        /// ToString implementation
+        /// </summary>
+        /// <returns></returns>
+        public override string ToString()
+        {
+            return
+                $"storeVersion={storeVersion}," +
+                $"storeHlogToken={storeHlogToken}," +
+                $"storeIndexToken={storeIndexToken}," +
+                $"storeCheckpointCoveredAofAddress={storeCheckpointCoveredAofAddress}," +
+                $"storePrimaryReplId={storePrimaryReplId ?? "(empty)"}," +
+                $"objectStoreVersion={objectStoreVersion}," +
+                $"objectStoreHlogToken={objectStoreHlogToken}," +
+                $"objectStoreIndexToken={objectStoreIndexToken}," +
+                $"objectCheckpointCoveredAofAddress={objectCheckpointCoveredAofAddress}," +
+                $"objectStorePrimaryReplId={objectStorePrimaryReplId ?? "(empty)"}";
+        }
     }
 }
