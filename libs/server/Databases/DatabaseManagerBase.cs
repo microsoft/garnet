@@ -410,7 +410,7 @@ namespace Garnet.server
             {
                 var scratchBufferManager = new ScratchBufferManager();
                 db.DatabaseStorageSession =
-                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, Logger);
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
             ExecuteHashCollect(db.DatabaseStorageSession);
