@@ -46,7 +46,7 @@ jobs:
             password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Build and push
-        if: github.event_name != 'pull_request'
+        if: ${{ (github.ref_name == 'main' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v'))) && github.event_name != 'pull_request' }}
         run: |
           docker build -f Dockerfile.nanoserver `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[0] }} `
