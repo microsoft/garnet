@@ -291,8 +291,12 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(defaultDatabase);
 
+        /// <inheritdoc/>
         public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
             GrowIndexesIfNeeded(defaultDatabase);
+
+        /// <inheritdoc/>
+        public override void ExecuteObjectCollection(CancellationToken token = default) => throw new NotImplementedException();
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>

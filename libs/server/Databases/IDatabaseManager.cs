@@ -180,6 +180,11 @@ namespace Garnet.server
         public bool GrowIndexesIfNeeded(CancellationToken token = default);
 
         /// <summary>
+        /// Executes a store-wide object collect operation
+        /// </summary>
+        public void ExecuteObjectCollection(CancellationToken token = default);
+
+        /// <summary>
         /// Start object size trackers for all active databases
         /// </summary>
         public void StartObjectSizeTrackers(CancellationToken token = default);

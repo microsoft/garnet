@@ -506,6 +506,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public override void ExecuteObjectCollection(CancellationToken token = default) => throw new NotImplementedException();
+
+        /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default)
         {
             sizeTrackersStarted = true;

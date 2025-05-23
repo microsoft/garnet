@@ -673,7 +673,7 @@ namespace Garnet.server
             {
                 var scratchBufferManager = new ScratchBufferManager();
                 using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
-
+                
                 if (serverOptions.DisableObjects)
                 {
                     logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");

@@ -77,6 +77,9 @@ namespace Garnet.server
         public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
 
         /// <inheritdoc/>
+        public abstract void ExecuteObjectCollection(CancellationToken token = default);
+
+        /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <inheritdoc/>
