@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -11,10 +12,11 @@ namespace Tsavorite.core
     internal sealed unsafe class BlittableAllocatorImpl<TKey, TValue, TStoreFunctions> : AllocatorBase<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
     {
-        // Circular buffer definition
-        private readonly byte[][] values;
-        private readonly long[] pointers;
-        private readonly long* nativePointers;
+        /// <summary>
+        /// Circular buffer of <see cref="AllocatorBase{TKey, TValue, TStoreFunctions, TAllocator}.BufferSize"/> memory buffers 
+        /// with each memory buffer being size of <see cref="AllocatorBase{TKey, TValue, TStoreFunctions, TAllocator}.PageSize"/>
+        /// </summary>
+        private readonly byte** pointers;
 
         private static int KeySize => Unsafe.SizeOf<TKey>();
         private static int ValueSize => Unsafe.SizeOf<TValue>();
@@ -28,13 +30,15 @@ namespace Tsavorite.core
             if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
                 throw new TsavoriteException($"BlittableAllocator requires blittlable Key ({typeof(TKey)}) and Value ({typeof(TValue)})");
 
-            overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
+            overflowPagePool = new OverflowPool<PageUnit>(4, static p =>
+            {
+                NativeMemory.AlignedFree(p.Pointer);
+                GC.RemoveMemoryPressure(p.Size);
+            });
 
             if (BufferSize > 0)
             {
-                values = new byte[BufferSize][];
-                pointers = GC.AllocateArray<long>(BufferSize, true);
-                nativePointers = (long*)Unsafe.AsPointer(ref pointers[0]);
+                pointers = (byte**)NativeMemory.AllocZeroed((uint)BufferSize, (uint)sizeof(byte*));
             }
         }
 
@@ -52,15 +56,16 @@ namespace Tsavorite.core
         void ReturnPage(int index)
         {
             Debug.Assert(index < BufferSize);
-            if (values[index] != null)
+            var pagePtr = pointers[index];
+            if (pagePtr != null)
             {
                 _ = overflowPagePool.TryAdd(new PageUnit
                 {
-                    pointer = pointers[index],
-                    value = values[index]
+                    Pointer = pagePtr,
+                    Size = PageSize
                 });
-                values[index] = null;
-                pointers[index] = 0;
+                pointers[index] = null;
+
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
             }
         }
@@ -123,6 +128,7 @@ namespace Tsavorite.core
         {
             base.Dispose();
             overflowPagePool.Dispose();
+            DeleteFromMemory();
         }
 
         /// <summary>
@@ -135,17 +141,13 @@ namespace Tsavorite.core
 
             if (overflowPagePool.TryGet(out var item))
             {
-                pointers[index] = item.pointer;
-                values[index] = item.value;
+                pointers[index] = item.Pointer;
                 return;
             }
 
-            var adjustedSize = PageSize + 2 * sectorSize;
-
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-            values[index] = tmp;
+            pointers[index] = (byte*)NativeMemory.AlignedAlloc((uint)PageSize, alignment: (uint)sectorSize);
+            GC.AddMemoryPressure(PageSize);
+            ClearPage(index, 0);
         }
 
         internal int OverflowPageCount => overflowPagePool.Count;
@@ -158,10 +160,12 @@ namespace Tsavorite.core
 
             // Index of page within the circular buffer
             var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-            return *(nativePointers + pageIndex) + offset;
+
+            Debug.Assert(IsAllocated(pageIndex));
+            return (long)(pointers[pageIndex] + offset);
         }
 
-        internal bool IsAllocated(int pageIndex) => values[pageIndex] != null;
+        internal bool IsAllocated(int pageIndex) => pointers[pageIndex] != null;
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
@@ -202,21 +206,20 @@ namespace Tsavorite.core
 
         internal void ClearPage(long page, int offset)
         {
-            if (offset == 0)
-                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
-            else
-            {
-                // Adjust array offset for cache alignment
-                offset += (int)(pointers[page % BufferSize] - (long)Unsafe.AsPointer(ref values[page % BufferSize][0]));
-                Array.Clear(values[page % BufferSize], offset, values[page % BufferSize].Length - offset);
-            }
+            Debug.Assert(offset < PageSize);
+            Debug.Assert(IsAllocated(GetPageIndexForPage(page)));
+
+            var ptr = pointers[page % BufferSize] + offset;
+            var length = (uint)(PageSize - offset);
+
+            NativeMemory.Clear(ptr, length);
         }
 
         internal void FreePage(long page)
         {
             ClearPage(page, 0);
             if (EmptyPageCount > 0)
-                ReturnPage((int)(page % BufferSize));
+                ReturnPage(GetPageIndexForPage(page));
         }
 
         /// <summary>
@@ -224,8 +227,16 @@ namespace Tsavorite.core
         /// </summary>
         internal override void DeleteFromMemory()
         {
-            for (int i = 0; i < values.Length; i++)
-                values[i] = null;
+            for (var i = 0; i < BufferSize; i++)
+            {
+                var pagePtr = pointers[i];
+                if (pagePtr != null)
+                {
+                    NativeMemory.AlignedFree(pagePtr);
+                    GC.RemoveMemoryPressure(PageSize);
+                    pointers[i] = null;
+                }
+            }
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
@@ -321,7 +332,7 @@ namespace Tsavorite.core
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
+                if (!frame.IsAllocated(pageIndex))
                     frame.Allocate(pageIndex);
                 else
                     frame.Clear(pageIndex);

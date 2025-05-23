@@ -665,7 +665,7 @@ namespace Tsavorite.core
                 if (result.freeBuffer1 != null)
                 {
                     if (errorCode == 0)
-                        allocator._wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                        allocator._wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.RequiredBytes, result.page);
                     result.freeBuffer1.Return();
                     result.freeBuffer1 = null;
                 }
