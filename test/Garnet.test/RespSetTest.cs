@@ -1007,61 +1007,39 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoSRANDMEMBERWithCountCommandLC()
+        public async Task CanDoSRANDMEMBERWithCountCommandLC()
         {
             var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
 
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
             // Check SRANDMEMBER with non-existing key
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("SRANDMEMBER myset");
-            var expectedResponse = "$-1\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            var response = await c.ExecuteAsync("SRANDMEMBER", "myset");
+            ClassicAssert.AreEqual("$-1\r\n", response);
 
             // Check SRANDMEMBER with non-existing key and count
-            response = lightClientRequest.SendCommand("SRANDMEMBER myset 3");
-            expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            response = await c.ExecuteAsync("SRANDMEMBER", "myset", "3");
+            ClassicAssert.AreEqual("*0\r\n", response);
 
             CreateLongSet();
 
-            response = lightClientRequest.SendCommand("SRANDMEMBER myset", 1);
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-            var item = Encoding.ASCII.GetString(response).Substring(4, Int32.Parse(strLen));
+            c.RawResult = false;
+            var item = await c.ExecuteAsync("SRANDMEMBER", "myset");
             ClassicAssert.IsTrue(myset.Contains(item));
 
             // Get three random members
-            response = lightClientRequest.SendCommand("SRANDMEMBER myset 3", 3);
-            TestUtils.AssertEqualUpToExpectedLength("*", response);
-
-            var strResponse = Encoding.ASCII.GetString(response);
-            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-            ClassicAssert.IsTrue(arrLenEndIdx > 1);
-
-            var strArrLen = strResponse.AsSpan().Slice(1, arrLenEndIdx - 1);
-            ClassicAssert.IsTrue(int.TryParse(strArrLen, out var arrLen));
-            ClassicAssert.AreEqual(3, arrLen);
+            var results = await c.ExecuteForArrayAsync("SRANDMEMBER", "myset", "3");
+            ClassicAssert.AreEqual(3, results.Length);
+            ClassicAssert.IsTrue(results.All(myset.Contains));
 
             // Get 6 random members and verify that at least two elements are the same
-            response = lightClientRequest.SendCommand("SRANDMEMBER myset -6", 6);
-            var strReponse = Encoding.ASCII.GetString(response);
-            arrLenEndIdx = strReponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-            strArrLen = strReponse.AsSpan().Slice(1, arrLenEndIdx - 1);
-            ClassicAssert.IsTrue(int.TryParse(strArrLen, out arrLen));
+            results = await c.ExecuteForArrayAsync("SRANDMEMBER", "myset", "-6");
+            ClassicAssert.AreEqual(6, results.Length);
+            ClassicAssert.IsTrue(results.All(myset.Contains));
 
-            var members = new HashSet<string>();
-            var repeatedMembers = false;
-            for (var i = 0; i < arrLen; i++)
-            {
-                var member = strReponse.Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
-                if (members.Contains(member))
-                {
-                    repeatedMembers = true;
-                    break;
-                }
-                members.Add(member);
-            }
-
-            ClassicAssert.IsTrue(repeatedMembers, "At least two members are repeated.");
+            ClassicAssert.IsTrue(results.Distinct().Count() != results.Length,
+                                 "At least two members are repeated.");
         }
 
         [Test]

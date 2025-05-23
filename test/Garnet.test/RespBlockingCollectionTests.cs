@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
@@ -444,8 +443,7 @@ namespace Garnet.test
             using var lcr = TestUtils.CreateRequest();
             var response = lcr.SendCommand($"BZMPOP 1 1 {key} {mode}");
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -551,8 +549,7 @@ namespace Garnet.test
             using var lcr = TestUtils.CreateRequest();
             var response = lcr.SendCommand($"{command} {key} 1");
             var expectedResponse = "$-1\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            ClassicAssert.AreEqual(expectedResponse, actualValue);
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
