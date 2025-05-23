@@ -9,7 +9,7 @@ WORKDIR /src
 COPY . .
 
 # Set protected mode to no for Docker images
-RUN powershell -Command "(Get-Content '/src/libs/host/defaults.conf' -Raw -Encoding UTF8) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content '/src/libs/host/defaults.conf' -Encoding UTF8"
+RUN pwsh -Command "(Get-Content '/src/libs/host/defaults.conf' -Raw -Encoding UTF8) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content '/src/libs/host/defaults.conf' -Encoding UTF8"
 
 WORKDIR /src/main/GarnetServer
 
