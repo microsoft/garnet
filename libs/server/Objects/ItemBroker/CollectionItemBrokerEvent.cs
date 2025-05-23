@@ -47,7 +47,7 @@ namespace Garnet.server
 
         public CollectionItemBrokerEvent()
         {
-            
+
         }
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace Garnet.server
         {
             return new CollectionItemBrokerEvent
             {
-                EventType = CollectionItemBrokerEventType.CollectionUpdated, 
+                EventType = CollectionItemBrokerEventType.CollectionUpdated,
                 Key = key
             };
         }

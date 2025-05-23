@@ -181,7 +181,7 @@ namespace Garnet.server
             keysToObserversLock.ReadLock();
             try
             {
-                if (!keysToObservers.TryGetValue(key, out observers)) 
+                if (!keysToObservers.TryGetValue(key, out observers))
                     return;
             }
             finally
@@ -195,7 +195,7 @@ namespace Garnet.server
                 keysToObserversLock.WriteLock();
                 try
                 {
-                    if (!keysToObservers.TryGetValue(key, out observers)) 
+                    if (!keysToObservers.TryGetValue(key, out observers))
                         return;
 
                     if (observers.IsEmpty)
@@ -267,7 +267,7 @@ namespace Garnet.server
 
                     // The key has an empty observer queue, try to retrieve next available item
                     if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result)) 
+                            out _, out var result))
                         continue;
 
                     // An item was found - set the observer result and return
@@ -337,7 +337,7 @@ namespace Garnet.server
                             {
                                 // If unsuccessful getting next item but there is at least one item in the collection,
                                 // continue to next observer in the queue, otherwise return
-                                if (currCount > 0) 
+                                if (currCount > 0)
                                     continue;
                                 return false;
                             }
@@ -394,7 +394,7 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (listObj.LnkList.Count == 0) 
+            if (listObj.LnkList.Count == 0)
                 return false;
 
             // Get the next object according to operation type
@@ -423,7 +423,7 @@ namespace Garnet.server
             nextItem = default;
 
             // If object has no items, return
-            if (srcListObj.LnkList.Count == 0) 
+            if (srcListObj.LnkList.Count == 0)
                 return false;
 
             // Get the next object according to source direction
@@ -470,7 +470,7 @@ namespace Garnet.server
         {
             result = default;
 
-            if (count == 0) 
+            if (count == 0)
                 return false;
 
             switch (command)
@@ -548,7 +548,7 @@ namespace Garnet.server
             {
                 // Get the object stored at key
                 var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
-                if (statusOp == GarnetStatus.NOTFOUND) 
+                if (statusOp == GarnetStatus.NOTFOUND)
                     return false;
 
                 // Check for type match between the observer and the source object type
@@ -589,7 +589,7 @@ namespace Garnet.server
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
-                        if (currCount == 0) 
+                        if (currCount == 0)
                             return false;
 
                         switch (command)
@@ -611,7 +611,7 @@ namespace Garnet.server
                                 {
                                     dstList = tmpDstList;
                                 }
-                                else 
+                                else
                                     return false;
 
                                 isSuccessful = TryMoveNextListItem(listObj, dstList,
