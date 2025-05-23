@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -61,12 +60,18 @@ namespace Garnet.server
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (dst.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Reader(key, ref input, value, ref outp, ref readInfo);
-                        dst.SpanByteAndMemory.Memory = outp.Memory;
-                        dst.SpanByteAndMemory.Length = outp.Length;
-                        return result;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref dst.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Reader(key, ref input, value, ref writer, ref readInfo);
+                            return result;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
+
                 }
             }
 

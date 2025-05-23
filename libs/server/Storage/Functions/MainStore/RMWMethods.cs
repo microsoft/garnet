@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -54,12 +53,17 @@ namespace Garnet.server
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref outp);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
+                                .NeedInitialUpdate(key.AsReadOnlySpan(), ref input, ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
 
                     return true;
@@ -142,7 +146,7 @@ namespace Garnet.server
                         // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                         value.SetEtagInPayload(EtagConstants.NoETag + 1);
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
-                        // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX 
+                        // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX
                         CopyRespNumber(EtagConstants.NoETag + 1, ref output);
                     }
 
@@ -267,10 +271,15 @@ namespace Garnet.server
                         if (expiration > 0)
                             value.ExtraMetadata = expiration;
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        functions.InitialUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref outp, ref rmwInfo);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            functions.InitialUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref writer, ref rmwInfo);
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                         break;
                     }
 
@@ -759,7 +768,7 @@ namespace Garnet.server
                     {
                         // reset etag state that may have been initialized earlier
                         EtagState.ResetState(ref functionsState.etagState);
-                        //InvalidType                                                
+                        //InvalidType
                         *(long*)output.SpanByte.ToPointer() = -1;
                         return true;
                     }
@@ -883,21 +892,27 @@ namespace Garnet.server
                         }
 
                         var valueLength = value.LengthWithoutMetadata;
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref outp, ref rmwInfo);
-                        Debug.Assert(valueLength <= value.LengthWithoutMetadata);
 
-                        // Adjust value length if user shrinks it
-                        if (valueLength < value.LengthWithoutMetadata)
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
                         {
-                            rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                            value.ShrinkSerializedLength(valueLength + value.MetadataSize);
-                            rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
-                        }
+                            var ret = functions.InPlaceUpdater(key.AsReadOnlySpan(), ref input, value.AsSpan(), ref valueLength, ref writer, ref rmwInfo);
+                            Debug.Assert(valueLength <= value.LengthWithoutMetadata);
 
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+                            // Adjust value length if user shrinks it
+                            if (valueLength < value.LengthWithoutMetadata)
+                            {
+                                rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+                                value.ShrinkSerializedLength(valueLength + value.MetadataSize);
+                                rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+                            }
+
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
                     throw new GarnetException("Unsupported operation on input");
             }
@@ -1035,12 +1050,18 @@ namespace Garnet.server
                             EtagState.ResetState(ref functionsState.etagState);
                             return false;
                         }
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(functionsState.etagState.etagSkippedStart), ref outp);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
+                                .NeedCopyUpdate(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(functionsState.etagState.etagSkippedStart), ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
                     return true;
             }
@@ -1425,13 +1446,17 @@ namespace Garnet.server
                             newValue.ExtraMetadata = expiration;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-
-                        var ret = functions
-                            .CopyUpdater(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(functionsState.etagState.etagSkippedStart), newValue.AsSpan(functionsState.etagState.etagSkippedStart), ref outp, ref rmwInfo);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            var ret = functions
+                                .CopyUpdater(key.AsReadOnlySpan(), ref input, oldValue.AsReadOnlySpan(functionsState.etagState.etagSkippedStart), newValue.AsSpan(functionsState.etagState.etagSkippedStart), ref writer, ref rmwInfo);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
                     throw new GarnetException("Unsupported operation on input");
             }

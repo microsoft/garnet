@@ -4,7 +4,7 @@ sidebar_label: Roadmap
 title: Garnet Roadmap
 ---
 
-We would love to get feedback on what features are most important to add to Garnet. Currently. the areas we would like to
+We would love to get feedback on what features are most important to add to Garnet. Currently, the areas we would like to
 investigate include the following.
 
 ## Short Term
