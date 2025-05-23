@@ -22,4 +22,10 @@ namespace Garnet.server
         NX,
         XX
     }
+
+    internal enum StoreOptions : byte
+    {
+        MAIN,
+        OBJ
+    }
 }

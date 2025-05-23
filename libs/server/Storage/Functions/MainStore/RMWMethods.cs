@@ -25,6 +25,7 @@ namespace Garnet.server
                 case RespCommand.EXPIREAT:
                 case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
+                case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
                     return false;
@@ -841,6 +842,20 @@ namespace Garnet.server
                     }
 
                     return false;
+                case RespCommand.DELIFEXPIM:
+                    // HK TODO: We know this command is used by active backgorund collection thread after it knows something is expired, why do this double check? I think I need this because sometimes we do ExpireAndResume.
+                    // We would also benefit from branchless programming here potentially. Can check against VTUNE
+                    // Only if the key has expired, will we delete it.
+                    if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
+                    {
+                        // setting the action and returning false will tombstone this record
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        // reset etag state that may have been initialized earlier,
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+                    shouldUpdateEtag = false;
+                    break;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -923,6 +938,14 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
+                case RespCommand.DELIFEXPIM:
+                    // HK TODO: We know this command is used by active backgorund collection thread after it knows something is expired, why do this double check?
+                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                    }
+
+                    return false;
                 case RespCommand.DELIFGREATER:
                     if (rmwInfo.RecordInfo.ETag)
                         EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref oldValue);

@@ -46,7 +46,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetMinRevivifiableAddress(long tailAddress, long readOnlyAddress)
+        public long GetMinRevivifiableAddress(long tailAddress, long readOnlyAddress)
             => tailAddress - (long)((tailAddress - readOnlyAddress) * revivifiableFraction);
 
         // Method redirectors
