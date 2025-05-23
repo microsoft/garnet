@@ -8,15 +8,10 @@ WORKDIR /src
 # Copy files
 COPY . .
 
-WORKDIR /src/libs/host
+#WORKDIR /src/libs/host
 
 # Set protected mode to no for Docker images
-RUN icacls 'defaults.conf'
-
-RUN if (Test-Path 'defaults.conf') { \
-    (Get-Content 'defaults.conf' -Raw -Encoding UTF8) -replace '"ProtectedMode": "yes",', '"ProtectedMode": "no",' | \
-    Set-Content 'defaults.conf' -Encoding UTF8 \
-} else { Write-Host "File not found: defaults.conf" }
+#RUN icacls 'defaults.conf'
 
 #RUN pwsh -Command "(Get-Content 'defaults.conf' -Raw -Encoding UTF8) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content 'defaults.conf' -Encoding UTF8"
 
