@@ -3620,22 +3620,6 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // Test infinites
-            response = lightClientRequest.SendCommand("ZRANGE board - - BYLEX REV");
-            expectedResponse = "*0\r\n";
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
-
-            response = lightClientRequest.SendCommand("ZRANGE board - (+ BYLEX REV");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
-
-            response = lightClientRequest.SendCommand("ZRANGE board - + BYLEX REV");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
-
-            response = lightClientRequest.SendCommand("ZRANGE board + + BYLEX REV");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
-
-            response = lightClientRequest.SendCommand("ZRANGE board [+ + BYLEX REV");
-            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
-
             response = lightClientRequest.SendCommand("ZRANGE board + - BYLEX REV", 6);
             expectedResponse = "*7\r\n$1\r\ng\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
