@@ -506,7 +506,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void ExecuteObjectCollection(CancellationToken token = default)
+        public override void ExecuteObjectCollection()
         {
             var databasesMapSnapshot = databases.Map;
 

@@ -681,7 +681,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.ExecuteObjectCollection(token);
+                    databaseManager.ExecuteObjectCollection();
 
                     await Task.Delay(TimeSpan.FromSeconds(objectCollectFrequencySecs), token);
                 }

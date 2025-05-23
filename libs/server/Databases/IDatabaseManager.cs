@@ -182,7 +182,7 @@ namespace Garnet.server
         /// <summary>
         /// Executes a store-wide object collect operation
         /// </summary>
-        public void ExecuteObjectCollection(CancellationToken token = default);
+        public void ExecuteObjectCollection();
 
         /// <summary>
         /// Start object size trackers for all active databases
