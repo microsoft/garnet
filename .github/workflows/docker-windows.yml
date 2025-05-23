@@ -46,16 +46,17 @@ jobs:
             password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Build
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ (github.ref_name == 'main' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v'))) && github.event_name != 'pull_request' }}
         run: |
           docker build -f Dockerfile.nanoserver `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[0] }} `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[1] }} `
             --tag ${{ fromJSON(steps.meta.outputs.json).tags[2] }} .
-
-      - name: Push
-        if: ${{ (github.ref_name == 'main' || (github.ref_type == 'tag' && startsWith(github.ref_name, 'v'))) && github.event_name != 'pull_request' }}
-        run: |
           docker push ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           docker push ${{ fromJSON(steps.meta.outputs.json).tags[1] }}
           docker push ${{ fromJSON(steps.meta.outputs.json).tags[2] }}
+
+      - name: Push
+        if: ${{ (github.ref_name != 'main' && (github.ref_type != 'tag' || !startsWith(github.ref_name, 'v'))) || github.event_name == 'pull_request' }}
+        run: |
+          docker build -f Dockerfile.nanoserver .
