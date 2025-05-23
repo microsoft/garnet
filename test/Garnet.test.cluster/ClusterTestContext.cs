@@ -597,5 +597,19 @@ namespace Garnet.test.cluster
                     ValidateNodeObjects(ref kvPairsObj, i);
             }
         }
+
+        public List<byte[]> GenerateKeysWithPrefix(string prefix, int keyCount, int suffixLength)
+        {
+            var keyBuffer = new byte[2 + prefix.Length + suffixLength];
+            Encoding.ASCII.GetBytes("{" + prefix + "}").CopyTo(keyBuffer, 0);
+
+            var keys = new List<byte[]>();
+            for (var i = 0; i < keyCount; i++)
+            {
+                clusterTestUtils.RandomBytes(ref keyBuffer, 2 + prefix.Length);
+                keys.Add(keyBuffer.ToArray());
+            }
+            return keys;
+        }
     }
 }

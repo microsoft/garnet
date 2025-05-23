@@ -732,7 +732,7 @@ namespace Garnet.test.cluster
         {
             startOffset = startOffset == -1 ? 0 : startOffset;
             endOffset = endOffset == -1 ? data.Length : endOffset;
-            for (int i = startOffset; i < endOffset; i++)
+            for (var i = startOffset; i < endOffset; i++)
                 data[i] = ascii_chars[r.Next(ascii_chars.Length)];
         }
 
