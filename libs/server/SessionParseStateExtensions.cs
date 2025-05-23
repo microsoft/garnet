@@ -57,6 +57,8 @@ namespace Garnet.server
                 value = InfoMetricsType.MODULES;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("BPSTATS"u8))
                 value = InfoMetricsType.BPSTATS;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("CINFO"u8))
+                value = InfoMetricsType.CINFO;
             else return false;
 
             return true;
