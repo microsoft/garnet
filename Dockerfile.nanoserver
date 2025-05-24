@@ -5,13 +5,11 @@ ENV NUGET_PACKAGES=/src/pkg
 
 WORKDIR /src
 
+# Set protected mode to no for Docker images
+RUN pwsh -Command "(Get-Content libs/host/defaults.conf) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content libs/host/defaults.conf"
+
 # Copy files
 COPY . .
-
-RUN pwsh -Command "Write-Host '--- Contents of /src ---'; Get-ChildItem -Path /src -Recurse; Write-Host '--- End contents of /src ---'"
-
-# Set protected mode to no for Docker images
-RUN pwsh -Command "(Get-Content /src/libs/host/defaults.conf) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content /src/libs/host/defaults.conf"
 
 WORKDIR /src/main/GarnetServer
 
