@@ -9,8 +9,8 @@ WORKDIR /src
 COPY . .
 
 # Set protected mode to no for Docker images
-RUN attrib -r /src/libs/host/defaults.conf
-RUN pwsh -Command "(Get-Content /src/libs/host/defaults.conf) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content /src/libs/host/defaults.conf"
+RUN attrib -r C:\src\libs\host\defaults.conf
+RUN pwsh -Command "(Get-Content C:\src\libs\host\defaults.conf) -replace '\""ProtectedMode\"": \"yes\",', '\""ProtectedMode\"": \"no\",' | Set-Content C:\src\libs\host\defaults.conf"
 
 WORKDIR /src/main/GarnetServer
 
