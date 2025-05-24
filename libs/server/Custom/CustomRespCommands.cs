@@ -32,8 +32,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteOK();
             }
             else
             {
@@ -41,8 +40,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteError($"ERR Transaction failed.", ref dcurr, dend))
-                        SendAndReset();
+                    WriteError($"ERR Transaction failed.");
             }
             LatencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
 
@@ -68,16 +66,14 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteOK();
             }
             else
             {
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteError($"ERR Command failed.", ref dcurr, dend))
-                        SendAndReset();
+                    WriteError($"ERR Command failed.");
             }
         }
 
@@ -102,8 +98,7 @@ namespace Garnet.server
                 if (output.Memory != null)
                     SendAndReset(output.Memory, output.Length);
                 else
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteOK();
             }
             else
             {
@@ -115,8 +110,7 @@ namespace Garnet.server
                     if (output.Memory != null)
                         SendAndReset(output.Memory, output.Length);
                     else
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
+                        WriteOK();
                 }
                 else
                 {
@@ -153,15 +147,13 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                     default:
                         if (output.SpanByteAndMemory.Memory != null)
                             SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            WriteOK();
                         break;
                 }
             }
@@ -176,16 +168,14 @@ namespace Garnet.server
                         if (output.SpanByteAndMemory.Memory != null)
                             SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
                         else
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
+                            WriteOK();
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(output.SpanByteAndMemory.Memory == null);
                         WriteNull();
                         break;
                     case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                         break;
                 }
             }

@@ -54,9 +54,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetManagerType(0, out var managerType))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
 
             try
@@ -74,23 +72,20 @@ namespace Garnet.server
                         break;
                     default:
                         success = false;
-                        while (!RespWriteUtils.TryWriteError($"ERR Could not purge {managerType}.", ref dcurr, dend))
-                            SendAndReset();
+                        WriteError($"ERR Could not purge {managerType}.");
                         break;
                 }
 
                 if (success)
                 {
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
-                    while (!RespWriteUtils.TryWriteSimpleString(managerType.ToReadOnlySpan(), ref dcurr, dend))
-                        SendAndReset();
+                    WriteSimpleString(managerType.ToReadOnlySpan());
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PURGEBP {type}:{managerType}", managerType, managerType.ToString());
-                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR {ex.Message}");
                 return true;
             }
 
@@ -98,8 +93,7 @@ namespace Garnet.server
             {
                 if (clusterSession == null)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
                     return false;
                 }
                 storeWrapper.clusterProvider.PurgeBufferPool(managerType);

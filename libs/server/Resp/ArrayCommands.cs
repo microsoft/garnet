@@ -23,9 +23,7 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(ref storageApi);
 
-            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
-                SendAndReset();
-
+            WriteArrayLength(parseState.Count);
             RawStringInput input = default;
 
             for (var c = 0; c < parseState.Count; c++)
@@ -61,8 +59,7 @@ namespace Garnet.server
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
 
             // Write array length header
-            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(parseState.Count);
 
             RawStringInput input = default;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
@@ -165,8 +162,8 @@ namespace Garnet.server
                 var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
                 _ = storageApi.SET(ref key, ref val);
             }
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+
+            WriteOK();
             return true;
         }
 
@@ -185,8 +182,7 @@ namespace Garnet.server
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
-            while (!RespWriteUtils.TryWriteInt32(status == GarnetStatus.NOTFOUND ? 1 : 0, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(status == GarnetStatus.NOTFOUND ? 1 : 0);
             return true;
         }
 
@@ -204,8 +200,7 @@ namespace Garnet.server
                     keysDeleted++;
             }
 
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(keysDeleted);
             return true;
         }
 
@@ -223,37 +218,32 @@ namespace Garnet.server
             // Validate index
             if (!parseState.TryGetInt(0, out var index))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return true;
             }
 
             if (index != 0 && storeWrapper.serverOptions.EnableCluster)
             {
                 // Cluster mode does not allow non-zero DBID to be selected
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE);
                 return true;
             }
 
             if (index < 0 || index >= storeWrapper.serverOptions.MaxDatabases)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
                 return true;
             }
 
             if (index == this.activeDbId || this.TrySwitchActiveDatabaseSession(index))
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteOK();
             }
             else
             {
                 // Should never reach here
                 Debug.Fail("Database SELECT should have succeeded.");
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_SELECT_UNSUCCESSFUL, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_SELECT_UNSUCCESSFUL);
             }
 
             return true;
@@ -273,22 +263,19 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 // Cluster mode does not allow SWAPDB
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE);
             }
 
             // Validate index
             if (!parseState.TryGetInt(0, out var index1))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_FIRST_DB_INDEX, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_INVALID_FIRST_DB_INDEX);
                 return true;
             }
 
             if (!parseState.TryGetInt(1, out var index2))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SECOND_DB_INDEX, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_INVALID_SECOND_DB_INDEX);
                 return true;
             }
 
@@ -297,20 +284,17 @@ namespace Garnet.server
                 index1 >= storeWrapper.serverOptions.MaxDatabases ||
                 index2 >= storeWrapper.serverOptions.MaxDatabases)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
                 return true;
             }
 
             if (storeWrapper.TrySwapDatabases(index1, index2))
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteOK();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_SWAPDB_UNSUPPORTED);
             }
 
             return true;
@@ -324,9 +308,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE));
             }
 
-            while (!RespWriteUtils.TryWriteInt32(storageApi.GetDbSize(), ref dcurr, dend))
-                SendAndReset();
-
+            WriteInt32(storageApi.GetDbSize());
             return true;
         }
 
@@ -346,20 +328,16 @@ namespace Garnet.server
             if (keys.Count > 0)
             {
                 // Write size of the array
-                while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteArrayLength(keys.Count);
                 // Write the keys matching the pattern
                 foreach (var item in keys)
                 {
-                    while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(item);
                 }
             }
             else
             {
-                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
+                WriteEmptyArray();
             }
 
             return true;
@@ -374,8 +352,7 @@ namespace Garnet.server
             // Validate scan cursor
             if (!parseState.TryGetLong(0, out var cursorFromInput))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
                 return true;
             }
 
@@ -403,8 +380,7 @@ namespace Garnet.server
                     // Validate count
                     if (!parseState.TryGetLong(tokenIdx++, out countValue))
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                            SendAndReset();
+                        WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                         return true;
                     }
                 }
@@ -420,22 +396,18 @@ namespace Garnet.server
             // Prepare values for output
             if (keys.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                    SendAndReset();
+                WriteArrayLength(2);
 
                 // Number of keys "0"
-                while (!RespWriteUtils.TryWriteInt32AsBulkString(0, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32AsBulkString(0);
 
                 // Empty array
-                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
+                WriteEmptyArray();
             }
             else
             {
                 // The response is two elements: the value of the cursor and the array of keys found matching the pattern
-                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                    SendAndReset();
+                WriteArrayLength(2);
 
                 if (keys.Count > 0)
                     WriteOutputForScan(cursor, keys);
@@ -457,13 +429,11 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteSimpleString(typeName, ref dcurr, dend))
-                    SendAndReset();
+                WriteSimpleString(typeName);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteSimpleString("none"u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteSimpleString("none"u8);
             }
 
             return true;
@@ -478,12 +448,10 @@ namespace Garnet.server
         {
             // The output is an array of two elements: cursor value and an array of keys
             // Note the cursor value should be formatted as bulk string ('$')
-            while (!RespWriteUtils.TryWriteInt64AsBulkString(cursorValue, ref dcurr, dend, out _))
-                SendAndReset();
+            WriteInt64AsBulkString(cursorValue);
 
             // Write size of the array
-            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(keys.Count);
 
             // Write the keys matching the pattern
             for (int i = 0; i < keys.Count; i++)

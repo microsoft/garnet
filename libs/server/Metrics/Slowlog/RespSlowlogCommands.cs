@@ -4,7 +4,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using HdrHistogram;
 
 namespace Garnet.server
@@ -24,13 +23,11 @@ namespace Garnet.server
             }
 
             List<string> slowLogCommands = RespSlowLogHelp.GetSlowLogCommands();
-            while (!RespWriteUtils.TryWriteArrayLength(slowLogCommands.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(slowLogCommands.Count);
 
             foreach (string command in slowLogCommands)
             {
-                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
-                    SendAndReset();
+                WriteSimpleString(command);
             }
 
             return true;
@@ -52,39 +49,29 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(0, out count))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
             }
 
             if (storeWrapper.slowLogContainer == null)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
-                    SendAndReset();
+                WriteEmptyArray();
                 return true;
             }
             var entries = storeWrapper.slowLogContainer.GetEntries(count);
-            while (!RespWriteUtils.TryWriteArrayLength(entries.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(entries.Count);
 
             SessionParseState sps = default;
             foreach (var entry in entries)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.TryWriteInt32(entry.Id, ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.TryWriteInt32(entry.Timestamp, ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.TryWriteInt32(entry.Duration, ref dcurr, dend))
-                    SendAndReset();
+                WriteArrayLength(6);
+                WriteInt32(entry.Id);
+                WriteInt32(entry.Timestamp);
+                WriteInt32(entry.Duration);
                 if (entry.Arguments == null)
                 {
-                    while (!RespWriteUtils.TryWriteArrayLength(1, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(entry.Command.ToString(), ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(1);
+                    WriteAsciiBulkString(entry.Command.ToString());
                 }
                 else
                 {
@@ -93,21 +80,18 @@ namespace Garnet.server
                     {
                         sps.DeserializeFrom(ptr);
                     }
-                    while (!RespWriteUtils.TryWriteArrayLength(sps.Count + 1, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(entry.Command.ToString(), ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(sps.Count + 1);
+                    WriteAsciiBulkString(entry.Command.ToString());
                     for (int i = 0; i < sps.Count; i++)
                     {
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(sps.GetString(i), ref dcurr, dend))
-                            SendAndReset();
+                        WriteAsciiBulkString(sps.GetString(i));
                     }
                 }
-                while (!RespWriteUtils.TryWriteAsciiBulkString(entry.ClientIpPort, ref dcurr, dend))
-                    SendAndReset();
-                while (!RespWriteUtils.TryWriteAsciiBulkString(entry.ClientName, ref dcurr, dend))
-                    SendAndReset();
+                
+                WriteAsciiBulkString(entry.ClientIpPort);
+                WriteAsciiBulkString(entry.ClientName);
             }
+
             return true;
         }
 
@@ -121,8 +105,8 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_LEN));
             }
-            while (!RespWriteUtils.TryWriteInt32(storeWrapper.slowLogContainer?.Count ?? 0, ref dcurr, dend))
-                SendAndReset();
+            
+            WriteInt32(storeWrapper.slowLogContainer?.Count ?? 0);
             return true;
         }
 
@@ -137,8 +121,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_RESET));
             }
             storeWrapper.slowLogContainer?.Clear();
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+
+            WriteOK();
             return true;
         }
 

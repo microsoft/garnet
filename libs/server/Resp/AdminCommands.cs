@@ -31,8 +31,7 @@ namespace Garnet.server
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_NOAUTH);
             }
 
             var cmdFound = true;
@@ -84,8 +83,7 @@ namespace Garnet.server
                 return;
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
         }
 
         /// <summary>
@@ -176,8 +174,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MONITOR));
             }
 
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
 
             return true;
         }
@@ -503,13 +500,11 @@ namespace Garnet.server
             if (errorMsg.IsEmpty &&
                 TryRegisterCustomCommands(binaryPaths, cmdInfoPath, cmdDocsPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteOK();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
 
             return true;
@@ -544,8 +539,7 @@ namespace Garnet.server
             {
                 if (!errorMsg.IsEmpty)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(errorMsg);
                 }
 
                 return true;
@@ -561,15 +555,13 @@ namespace Garnet.server
 
                 if (ModuleRegistrar.Instance.LoadModule(customCommandManager, assembliesList[0], moduleArgs, logger, out errorMsg))
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteOK();
                 }
             }
 
             if (!errorMsg.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
 
             return true;
@@ -597,8 +589,7 @@ namespace Garnet.server
             }
 
             CommitAof(dbId);
-            while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
-                SendAndReset();
+            WriteSimpleString("AOF file committed"u8);
 
             return true;
         }
@@ -615,15 +606,13 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError("ERR Invalid GC generation."u8);
                     return true;
                 }
             }
 
             GC.Collect(generation, GCCollectionMode.Forced, true);
-            while (!RespWriteUtils.TryWriteSimpleString("GC completed"u8, ref dcurr, dend))
-                SendAndReset();
+            WriteSimpleString("GC completed"u8);
 
             return true;
         }
@@ -646,12 +635,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteOK();
                     break;
                 default:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_HCOLLECT_ALREADY_IN_PROGRESS);
                     break;
             }
 
@@ -676,12 +663,10 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    WriteOK();
                     break;
                 default:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_ZCOLLECT_ALREADY_IN_PROGRESS);
                     break;
             }
 
@@ -692,8 +677,7 @@ namespace Garnet.server
         {
             if (clusterSession == null)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
                 return true;
             }
 
@@ -705,9 +689,7 @@ namespace Garnet.server
         {
             if (parseState.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS);
                 return true;
             }
 
@@ -719,9 +701,7 @@ namespace Garnet.server
                     )
                )
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED);
                 return true;
             }
 
@@ -735,14 +715,11 @@ namespace Garnet.server
             {
                 if (parseState.Count != 2)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
-                        SendAndReset();
-
+                    WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS);
                     return true;
                 }
 
-                while (!RespWriteUtils.TryWriteError(parseState.GetString(1), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(parseState.GetString(1));
                 return true;
             }
 
@@ -760,21 +737,17 @@ namespace Garnet.server
                     "\tPrints this help"
                 };
 
-                while (!RespWriteUtils.TryWriteArrayLength(help.Count, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteArrayLength(help.Count);
                 foreach (var line in help)
                 {
-                    while (!RespWriteUtils.TryWriteSimpleString(line, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSimpleString(line);
                 }
 
                 return true;
             }
 
             var error = string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG));
-            while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
-                SendAndReset();
+            WriteError(error);
 
             return true;
         }
@@ -788,17 +761,10 @@ namespace Garnet.server
 
             if (!storeWrapper.serverOptions.EnableCluster)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
-                    SendAndReset();
-
-                while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
-                    SendAndReset();
-
-                while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                    SendAndReset();
-
-                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
+                WriteArrayLength(3);
+                WriteAsciiBulkString("master");
+                WriteInt32(0);
+                WriteEmptyArray();
             }
             else
             {
@@ -806,51 +772,30 @@ namespace Garnet.server
                 {
                     var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(3);
+                    WriteAsciiBulkString("master");
+                    WriteInt64(replication_offset);
 
-                    while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteInt64(replication_offset, ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(replicaInfo.Count);
 
                     foreach (var replice in replicaInfo)
                     {
-                        while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
-                            SendAndReset();
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(replice.address, ref dcurr, dend))
-                            SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt32(replice.port, ref dcurr, dend))
-                            SendAndReset();
-                        while (!RespWriteUtils.TryWriteInt64(replice.replication_offset, ref dcurr, dend))
-                            SendAndReset();
+                        WriteArrayLength(3);
+                        WriteAsciiBulkString(replice.address);
+                        WriteInt32(replice.port);
+                        WriteInt64(replice.replication_offset);
                     }
                 }
                 else
                 {
                     var role = storeWrapper.clusterProvider.GetReplicaInfo();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.address, ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteInt32(role.port, ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset, ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(5);
+                    WriteAsciiBulkString("slave");
+                    WriteAsciiBulkString(role.address);
+                    WriteInt32(role.port);
+                    WriteAsciiBulkString(role.replication_state);
+                    WriteInt64(role.replication_offset);
                 }
             }
 
@@ -880,13 +825,11 @@ namespace Garnet.server
 
             if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
-                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR checkpoint already in progress"u8);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteOK();
             }
 
             return true;
@@ -960,8 +903,7 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             var seconds = db.LastSaveTime.ToUnixTimeSeconds();
-            while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
-                SendAndReset();
+            WriteInt64(seconds);
 
             return true;
         }
@@ -998,13 +940,11 @@ namespace Garnet.server
             var success = storeWrapper.TakeCheckpoint(true, dbId: dbId, logger: logger);
             if (success)
             {
-                while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteSimpleString("Background saving started"u8);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR checkpoint already in progress"u8);
             }
 
             return true;
@@ -1015,23 +955,20 @@ namespace Garnet.server
             dbId = -1;
             if (!parseState.TryGetInt(tokenIdx, out dbId))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 return false;
             }
 
             if (dbId > 0 && storeWrapper.serverOptions.EnableCluster)
             {
                 // Cluster mode does not allow DBID specification
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_DB_ID_CLUSTER_MODE);
                 return false;
             }
 
             if (dbId >= storeWrapper.serverOptions.MaxDatabases || dbId < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
                 return false;
             }
 
