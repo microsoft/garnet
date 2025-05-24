@@ -3558,6 +3558,27 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("ZRANGEBYLEX board - [c", 4);
             //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Test infinites
+            response = lightClientRequest.SendCommand("ZRANGE board - - BYLEX");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("ZRANGE board - (+ BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("ZRANGE board + - BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("ZRANGE board + + BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("ZRANGE board - + BYLEX");
+            expectedResponse = "*7\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$1\r\nf\r\n$1\r\ng\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("ZRANGE board [+ + BYLEX");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3585,7 +3606,7 @@ namespace Garnet.test
 
             //by lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [g (aaa BYLEX REV", 6);
-            expectedResponse = "*5\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n";
+            expectedResponse = "*6\r\n$1\r\ng\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //by lex with different range
@@ -3596,6 +3617,11 @@ namespace Garnet.test
             // ZREVRANGEBYLEX Synonym
             response = lightClientRequest.SendCommand("ZREVRANGEBYLEX board [c - REV", 4);
             //expectedResponse = "*3\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Test infinites
+            response = lightClientRequest.SendCommand("ZRANGE board + - BYLEX REV", 6);
+            expectedResponse = "*7\r\n$1\r\ng\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
