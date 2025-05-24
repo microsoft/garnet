@@ -17,18 +17,15 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.");
             }
 
             List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
-            while (!RespWriteUtils.TryWriteArrayLength(latencyCommands.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(latencyCommands.Count);
 
             foreach (string command in latencyCommands)
             {
-                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
-                    SendAndReset();
+                WriteSimpleString(command);
             }
 
             return true;
@@ -66,15 +63,13 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP");
             }
             else
             {
                 var garnetLatencyMetrics = storeWrapper.monitor?.GlobalMetrics.globalLatencyMetrics;
                 string response = garnetLatencyMetrics != null ? garnetLatencyMetrics.GetRespHistograms(events) : "*0\r\n";
-                while (!RespWriteUtils.TryWriteAsciiDirect(response, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiDirect(response);
             }
 
             return true;
@@ -112,8 +107,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Invalid type {invalidEvent}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ERR Invalid type {invalidEvent}");
             }
             else
             {
@@ -123,8 +117,7 @@ namespace Garnet.server
                         storeWrapper.monitor.resetLatencyMetrics[e] = true;
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(events.Count, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(events.Count);
             }
 
             return true;

@@ -72,8 +72,7 @@ namespace Garnet.server
 
             if (runner == null)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_NO_SCRIPT);
             }
             else
             {
@@ -129,8 +128,7 @@ namespace Garnet.server
 
             if (runner == null)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_NO_SCRIPT);
             }
             else
             {
@@ -165,8 +163,7 @@ namespace Garnet.server
 
             // Returns an array where each element is a 0 if the script does not exist, and a 1 if it does
 
-            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
-                SendAndReset();
+            WriteArrayLength(parseState.Count);
 
             for (var shaIx = 0; shaIx < parseState.Count; shaIx++)
             {
@@ -183,8 +180,7 @@ namespace Garnet.server
                     exists = storeWrapper.storeScriptCache.ContainsKey(sha1Arg) ? 1 : 0;
                 }
 
-                while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
-                    SendAndReset();
+                WriteInt32(exists);
             }
 
             return true;
@@ -225,9 +221,7 @@ namespace Garnet.server
             // Flush session script cache
             sessionScriptCache.Clear();
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
+            WriteOK();
             return true;
         }
 
@@ -267,8 +261,7 @@ namespace Garnet.server
                     _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, compiledSource);
                 }
 
-                while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(digest);
             }
 
             return true;
@@ -283,9 +276,7 @@ namespace Garnet.server
         {
             if (!storeWrapper.serverOptions.EnableLua)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteError(CmdStrings.RESP_ERR_LUA_DISABLED);
                 return false;
             }
 
@@ -307,8 +298,7 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error executing Lua script");
-                while (!RespWriteUtils.TryWriteError("ERR " + ex.Message, ref dcurr, dend))
-                    SendAndReset();
+                WriteError("ERR " + ex.Message);
 
                 // Exceptions shouldn't happen, so if they did the runner is probably in a bad state
                 return false;

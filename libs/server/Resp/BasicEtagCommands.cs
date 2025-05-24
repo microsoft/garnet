@@ -90,9 +90,7 @@ namespace Garnet.server
             SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
             if (!parseState.TryGetLong(1, out long givenEtag) || givenEtag < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_ETAG, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_ETAG);
             }
 
             // Conditional delete is not natively supported for records in the stable region.
@@ -103,10 +101,9 @@ namespace Garnet.server
 
             GarnetStatus status = storageApi.DEL_Conditional(ref key, ref input);
 
-            int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
+            var keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(keysDeleted);
 
             return true;
         }
@@ -210,8 +207,7 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMessage);
                 return true;
             }
 

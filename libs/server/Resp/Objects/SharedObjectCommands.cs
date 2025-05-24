@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Garnet.common;
-
 namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
@@ -40,9 +38,7 @@ namespace Garnet.server
             // Get cursor value
             if (!parseState.TryGetLong(1, out var cursorValue) || cursorValue < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
             var header = new RespInputHeader(objectType);
@@ -79,16 +75,12 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteInt32AsBulkString(0, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(2);
+                    WriteInt32AsBulkString(0);
+                    WriteEmptyArray();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 
