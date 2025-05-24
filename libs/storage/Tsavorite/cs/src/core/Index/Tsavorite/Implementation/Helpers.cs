@@ -65,7 +65,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="entry">the last entry of a bucket</param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]  // Called only if in PREPARE, so don't inline for the usual case
         private bool IsEntryVersionNew(ref HashBucketEntry entry)
         {
             // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.

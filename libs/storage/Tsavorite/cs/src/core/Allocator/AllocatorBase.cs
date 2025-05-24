@@ -213,6 +213,7 @@ namespace Tsavorite.core
         protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
 
         /// <summary>Flush checkpoint Delta to the Device</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal virtual unsafe void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
@@ -320,6 +321,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Reset the hybrid log. WARNING: assumes that threads have drained out at this point.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public virtual void Reset()
         {
             var newBeginAddress = GetTailAddress();
@@ -418,6 +420,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Allocator with sector size {sectorSize} cannot flush to device with sector size {device.SectorSize}");
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
         {
             if (log == null) return;
@@ -500,6 +503,7 @@ namespace Tsavorite.core
             MonotonicUpdate(ref PageStatusIndicator[pageIndex].Dirty, version, out _);
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                 DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                 IDevice device)
@@ -518,8 +522,8 @@ namespace Tsavorite.core
             }
             else
             {
-                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress,
-                    numBytesToWrite, callback, asyncResult);
+                // Write the whole page
+                device.WriteAsync(alignedSourceAddress, alignedDestinationAddress, numBytesToWrite, callback, asyncResult);
             }
         }
 
@@ -530,6 +534,7 @@ namespace Tsavorite.core
         protected readonly ILogger logger;
 
         /// <summary>Instantiate base allocator implementation</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private protected AllocatorBase(LogSettings settings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback, LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null)
         {
             this.storeFunctions = storeFunctions;
@@ -632,6 +637,7 @@ namespace Tsavorite.core
             AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
         {
             // Note: trimLog is unused right now. Can be used to trim the log to the minimum
@@ -691,6 +697,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Initialize allocator</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         protected void Initialize(long firstValidAddress)
         {
             Debug.Assert(AbsoluteAddress(firstValidAddress) <= PageSize, $"AbsoluteAddress(firstValidAddress) {AbsoluteAddress(firstValidAddress)} should be <= PageSize {PageSize}");
@@ -1444,6 +1451,7 @@ namespace Tsavorite.core
         public SemaphoreSlim notifyFlushedUntilAddressSemaphore;
 
         /// <summary>Reset for recovery</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public void RecoveryReset(long tailAddress, long headAddress, long beginAddress, long readonlyAddress)
         {
             long tailPage = GetPage(tailAddress);
@@ -1485,6 +1493,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Invoked by users to obtain a record from disk. It uses sector aligned memory to read the record efficiently into memory.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
@@ -1515,6 +1524,7 @@ namespace Tsavorite.core
         /// <param name="numBytes"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
@@ -1547,6 +1557,7 @@ namespace Tsavorite.core
             => AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
 
         /// <summary>Read pages from specified device</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesFromDevice<TContext>(
                                         long readPageStart,
                                         int numPages,
@@ -1603,6 +1614,7 @@ namespace Tsavorite.core
         /// <param name="fromAddress"></param>
         /// <param name="untilAddress"></param>
         /// <param name="noFlush"></param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public void AsyncFlushPages(long fromAddress, long untilAddress, bool noFlush = false)
         {
             long startPage = GetPage(fromAddress);
@@ -1735,6 +1747,7 @@ namespace Tsavorite.core
         /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
@@ -1808,6 +1821,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Read pages from specified device
         /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
@@ -1855,6 +1869,7 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
@@ -1924,6 +1939,7 @@ namespace Tsavorite.core
         /// <param name="errorCode"></param>
         /// <param name="numBytes"></param>
         /// <param name="context"></param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncFlushPageCallback(uint errorCode, uint numBytes, object context)
         {
             try

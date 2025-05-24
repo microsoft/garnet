@@ -58,25 +58,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Return whether the <see cref="HashBucketEntry"/> has been updated
-        /// </summary>
-        internal readonly bool IsCurrent => CurrentAddress == Address;
-
-        /// <summary>
         /// Whether the original address for this hash entry (at the time of FindTag, etc.) is a readcache address.
         /// </summary>
-        internal readonly bool IsReadCache => entry.IsReadCache;
-
-        /// <summary>
-        /// Whether the current address for this hash entry (possibly modified after FindTag, etc.) is a readcache address.
-        /// </summary>
-        internal readonly bool IsCurrentReadCache => IsReadCache(CurrentAddress);
+        internal readonly bool IsReadCache
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => entry.IsReadCache;
+        }
 
         /// <summary>
         /// Set members to the current entry (which may have been updated (via CAS) in the bucket after FindTag, etc.)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetToCurrent() => entry = new() { word = bucket->bucket_entries[slot] };
+        internal void SetToCurrent() => entry.word = bucket->bucket_entries[slot];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryCAS(long newLogicalAddress)

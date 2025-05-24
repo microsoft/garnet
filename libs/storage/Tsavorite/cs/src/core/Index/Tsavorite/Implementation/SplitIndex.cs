@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -32,6 +33,7 @@ namespace Tsavorite.core
             overflowBucketsAllocatorResize = null;
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;

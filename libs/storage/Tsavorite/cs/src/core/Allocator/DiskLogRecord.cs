@@ -238,6 +238,7 @@ namespace Tsavorite.core
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void WriteVarBytes(long value, int len, ref byte* ptr)
         {
             for (; len > 0; --len)
@@ -248,6 +249,7 @@ namespace Tsavorite.core
             Debug.Assert(value == 0, "len too short");
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static long ReadVarBytes(int len, ref byte* ptr)
         {
             long value = 0;

@@ -31,6 +31,7 @@ namespace Tsavorite.core
 
         [FieldOffset(0)]
         public long word;
+
         public long Address
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

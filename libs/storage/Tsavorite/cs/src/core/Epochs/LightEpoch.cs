@@ -152,15 +152,11 @@ namespace Tsavorite.core
         /// Check whether current epoch instance is protected on this thread
         /// </summary>
         /// <returns>Result of the check</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ThisInstanceProtected()
         {
-            int entry = Metadata.threadEntryIndex;
-            if (kInvalidIndex != entry)
-            {
-                if ((*(tableAligned + entry)).threadId == entry)
-                    return true;
-            }
-            return false;
+            var entry = Metadata.threadEntryIndex;
+            return kInvalidIndex != entry && (*(tableAligned + entry)).threadId == entry;
         }
 
         /// <summary>
@@ -170,16 +166,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ProtectAndDrain()
         {
-            int entry = Metadata.threadEntryIndex;
+            var entry = Metadata.threadEntryIndex;
 
             // Protect CurrentEpoch by making an entry for it in the non-static epoch table so ComputeNewSafeToReclaimEpoch() will see it.
             (*(tableAligned + entry)).threadId = Metadata.threadEntryIndex;
             (*(tableAligned + entry)).localCurrentEpoch = CurrentEpoch;
 
             if (drainCount > 0)
-            {
                 Drain((*(tableAligned + entry)).localCurrentEpoch);
-            }
         }
 
         /// <summary>

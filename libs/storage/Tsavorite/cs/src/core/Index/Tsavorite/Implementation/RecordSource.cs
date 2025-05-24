@@ -152,13 +152,14 @@ namespace Tsavorite.core
         internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly ref RecordInfo GetInfoRef() => ref LogRecord.GetInfoRef(PhysicalAddress);
-        internal readonly RecordInfo GetInfo() => LogRecord.GetInfoRef(PhysicalAddress);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly RecordInfo GetInfo() => LogRecord.GetInfo(PhysicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly LogRecord CreateLogRecord()
         {
+            // If we have a physical address we must be in the in-memory log.
             Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
-            Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log or readcache memory");
             return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
         }
 

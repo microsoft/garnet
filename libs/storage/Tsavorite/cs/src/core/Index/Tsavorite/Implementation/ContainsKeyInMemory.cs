@@ -30,7 +30,7 @@ namespace Tsavorite.core
                 if (fromAddress < hlogBase.HeadAddress)
                     fromAddress = hlogBase.HeadAddress;
 
-                if (TryFindRecordInMainLog(key, ref stackCtx, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
+                if (TraceBackForKeyMatch(key, ref stackCtx.recSrc, fromAddress) && !stackCtx.recSrc.GetInfo().Tombstone)
                 {
                     logicalAddress = stackCtx.recSrc.LogicalAddress;
                     return new(StatusCode.Found);

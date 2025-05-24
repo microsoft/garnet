@@ -74,10 +74,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress, objectIdMap);
+        public readonly ReadOnlySpan<byte> Key
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => GetKey(physicalAddress, objectIdMap);
+        }
 
         /// <inheritdoc/>
-        public bool IsPinnedKey => Info.KeyIsInline;
+        public readonly bool IsPinnedKey => Info.KeyIsInline;
 
         /// <inheritdoc/>
         public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)LogField.GetInlineDataAddress(KeyAddress) : null;

@@ -17,6 +17,7 @@ namespace BenchmarkDotNetTests
 #pragma warning disable IDE0065 // Misplaced using directive
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
+    //[InProcess]
     [InliningDiagnoser(logFailuresOnly: true, allowedNamespaces: ["Tsavorite.core"])]
     [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory, BenchmarkLogicalGroupRule.ByParams)]
     public class InliningTests
