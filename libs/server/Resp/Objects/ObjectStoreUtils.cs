@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using Garnet.common;
 
 namespace Garnet.server
 {
@@ -33,9 +32,7 @@ namespace Garnet.server
         private bool AbortWithErrorMessage(ReadOnlySpan<byte> errorMessage)
         {
             // Print error message to result stream
-            while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                SendAndReset();
-
+            WriteError(errorMessage);
             return true;
         }
 

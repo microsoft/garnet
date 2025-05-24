@@ -20,8 +20,7 @@ namespace Garnet.server
         {
             if (txnManager.state != TxnState.None)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NESTED_MULTI, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_NESTED_MULTI);
                 txnManager.Abort();
                 return true;
             }
@@ -31,8 +30,7 @@ namespace Garnet.server
             //Keep track of ptr for key verification when cluster mode is enabled
             txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteOK();
             return true;
         }
 
@@ -48,8 +46,7 @@ namespace Garnet.server
             // Abort and reset the transaction 
             else if (txnManager.state == TxnState.Aborted)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_EXEC_ABORT, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_EXEC_ABORT);
                 txnManager.Reset(false);
                 return true;
             }
@@ -73,8 +70,7 @@ namespace Garnet.server
 
                 if (startTxn)
                 {
-                    while (!RespWriteUtils.TryWriteArrayLength(txnManager.operationCntTxn, ref dcurr, dend))
-                        SendAndReset();
+                    WriteArrayLength(txnManager.operationCntTxn);
                 }
                 else
                 {
@@ -85,9 +81,9 @@ namespace Garnet.server
 
                 return true;
             }
+
             // EXEC without MULTI command
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_EXEC_WO_MULTI, ref dcurr, dend))
-                SendAndReset();
+            WriteError(CmdStrings.RESP_ERR_GENERIC_EXEC_WO_MULTI);
             return true;
 
         }
@@ -102,8 +98,7 @@ namespace Garnet.server
             cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
                 txnManager.Abort();
                 return true;
             }
@@ -126,16 +121,14 @@ namespace Garnet.server
             {
                 if (isWatch)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI);
                     return true;
                 }
 
                 if (invalidNumArgs)
                 {
                     var err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.Name);
-                    while (!RespWriteUtils.TryWriteError(err, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(err);
                     txnManager.Abort();
                     return true;
                 }
@@ -159,8 +152,7 @@ namespace Garnet.server
 
                 if (abort)
                 {
-                    while (!RespWriteUtils.TryWriteError(errMsg, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(errMsg);
                     txnManager.Abort();
                     return true;
                 }
@@ -175,16 +167,14 @@ namespace Garnet.server
                 if (skipped == -2) return false;
 
                 // We found an unsupported command, abort
-                while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(error);
 
                 txnManager.Abort();
 
                 return true;
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
-                SendAndReset();
+            WriteDirect(CmdStrings.RESP_QUEUED);
 
             txnManager.operationCntTxn++;
             return true;
@@ -197,12 +187,10 @@ namespace Garnet.server
         {
             if (txnManager.state == TxnState.None)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI);
             }
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+
+            WriteOK();
             txnManager.Reset(false);
             return true;
         }
@@ -218,10 +206,7 @@ namespace Garnet.server
             // Have to provide at least one key
             if (count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.GenericErrWrongNumArgs);
             }
 
             List<ArgSlice> keys = [];
@@ -237,8 +222,7 @@ namespace Garnet.server
                 txnManager.Watch(toWatch, type);
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteOK();
 
             return true;
         }
@@ -270,8 +254,8 @@ namespace Garnet.server
             {
                 txnManager.watchContainer.Reset();
             }
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            
+            WriteOK();
             return true;
         }
 
@@ -289,9 +273,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetInt(0, out var txId))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             CustomTransactionProcedure proc;
@@ -304,9 +286,7 @@ namespace Garnet.server
             catch (Exception e)
             {
                 logger?.LogError(e, "Getting customer transaction in RUNTXP failed");
-
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_TRANSACTION_PROCEDURE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_NO_TRANSACTION_PROCEDURE);
 
                 return true;
             }
@@ -314,10 +294,7 @@ namespace Garnet.server
             if ((arity > 0 && count != arity) || (arity < 0 && count < -arity))
             {
                 var expectedParams = arity > 0 ? arity - 1 : -arity - 1;
-                while (!RespWriteUtils.TryWriteError(
-                       string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1), ref dcurr,
-                       dend))
-                    SendAndReset();
+                WriteError(string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, expectedParams, count - 1));
             }
             else
                 TryTransactionProc((byte)txId, proc, 1);
