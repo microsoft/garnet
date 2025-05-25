@@ -222,7 +222,7 @@ namespace Garnet.common
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
+                while (!RespWriteUtils.TryWriteZero(ref curr, end))
                     ReallocateOutput();
             }
         }
@@ -391,7 +391,7 @@ namespace Garnet.common
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt32(1, ref curr, end))
+                while (!RespWriteUtils.TryWriteOne(ref curr, end))
                     ReallocateOutput();
             }
         }
@@ -407,7 +407,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write Verbatim "txt" string to memory.
+        /// Write Verbatim string to memory.
         /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
         /// </summary>
         /// <param name="item"></param>
@@ -425,6 +425,24 @@ namespace Garnet.common
                 while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
                     ReallocateOutput();
             }
+        }
+
+        /// <summary>
+        /// Write zero as integer to memory.
+        /// </summary>
+        public void WriteZero()
+        {
+            while (!RespWriteUtils.TryWriteZero(ref curr, end))
+                ReallocateOutput();
+        }
+
+        /// <summary>
+        /// Write one as integer to memory.
+        /// </summary>
+        public void WriteOne()
+        {
+            while (!RespWriteUtils.TryWriteOne(ref curr, end))
+                ReallocateOutput();
         }
 
         /// <summary>

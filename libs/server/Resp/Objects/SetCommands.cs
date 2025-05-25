@@ -319,7 +319,7 @@ namespace Garnet.server
                     WriteInt32(output.result1);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -360,7 +360,7 @@ namespace Garnet.server
                     WriteInt32(output.result1);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -457,7 +457,7 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     if (isSingle)
                     {
-                        WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                        WriteZero();
                     }
                     else
                     {
@@ -466,7 +466,7 @@ namespace Garnet.server
                         WriteArrayLength(count);
                         for (var i = 0; i < count; i++)
                         {
-                            WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                            WriteZero();
                         }
                     }
                     break;
@@ -570,7 +570,7 @@ namespace Garnet.server
                     WriteInt32(output);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
