@@ -4,7 +4,6 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -50,8 +49,7 @@ namespace Garnet.server
         {
             unsafe
             {
-                while (!RespWriteUtils.TryWriteError($"ASYNC {asyncStarted}", ref dcurr, dend))
-                    SendAndReset();
+                WriteError($"ASYNC {asyncStarted}");
             }
 
             if (++asyncStarted == 1) // first async operation on the session, create the IO continuation processor
@@ -104,12 +102,10 @@ namespace Garnet.server
                                 var o = completedOutputs.Current.Output;
 
                                 // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
-                                while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
-                                    SendAndReset();
-                                while (!RespWriteUtils.TryWriteBulkString(CmdStrings.async, ref dcurr, dend))
-                                    SendAndReset();
-                                while (!RespWriteUtils.TryWriteInt32AsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend))
-                                    SendAndReset();
+                                WritePushLength(3);
+                                WriteBulkString(CmdStrings.async);
+                                WriteInt32AsBulkString((int)completedOutputs.Current.Context);
+
                                 if (completedOutputs.Current.Status.Found)
                                 {
                                     Debug.Assert(!o.IsSpanByte);
@@ -122,6 +118,7 @@ namespace Garnet.server
                                     WriteNull();
                                 }
                             }
+
                             if (dcurr > networkSender.GetResponseObjectHead())
                                 Send(networkSender.GetResponseObjectHead());
                         }
