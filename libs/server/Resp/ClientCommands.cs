@@ -159,7 +159,7 @@ namespace Garnet.server
                     }
 
                     var result = resultSb.ToString();
-                    WriteUtf8BulkString(result);
+                    WriteVerbatimUtf8TxtString(result);
 
                     return true;
                 }
@@ -192,7 +192,7 @@ namespace Garnet.server
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
             var result = resultSb.ToString();
-            WriteSimpleString(result);
+            WriteVerbatimASCIITxtString(result);
 
             return true;
         }

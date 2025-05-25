@@ -1686,6 +1686,7 @@ namespace Garnet.server
             into.Append($" resp={resp}");
             into.Append($" lib-name={targetSession.clientLibName}");
             into.Append($" lib-ver={targetSession.clientLibVersion}");
+            into.AppendLine();
         }
 
         bool ParseGETAndKey(ref SpanByte key)

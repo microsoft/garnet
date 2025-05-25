@@ -443,5 +443,50 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteUtf8BulkString(chars, ref dcurr, dend))
                 SendAndReset();
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteVerbatimASCIITxtString(ReadOnlySpan<char> item)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimASCIIString(item, "txt"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteAsciiBulkString(item, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteVerbatimTxtString(scoped ReadOnlySpan<byte> item)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimString(item, "txt"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteBulkString(item, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteVerbatimUtf8TxtString(ReadOnlySpan<char> item)
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimUtf8String(item, "txt"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteUtf8BulkString(item, ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
     }
 }
