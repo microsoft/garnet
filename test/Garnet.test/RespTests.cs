@@ -4438,7 +4438,7 @@ namespace Garnet.test
             var result = (string)db.Execute("CLIENT", "SETINFO", option, value);
             ClassicAssert.AreEqual("OK", result);
 
-            var actual = ((string)db.Execute("CLIENT", "INFO")).Split(" ").First(x => x.StartsWith(option, StringComparison.OrdinalIgnoreCase)).Substring(option.Length + 1).TrimEnd(['\r', '\n']);
+            var actual = ((string)db.Execute("CLIENT", "INFO")).Split(" ").First(x => x.StartsWith(option, StringComparison.OrdinalIgnoreCase)).Substring(option.Length + 1).TrimEnd('\n');
             ClassicAssert.AreEqual(value, actual);
         }
 
