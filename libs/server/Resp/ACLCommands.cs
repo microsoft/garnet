@@ -277,7 +277,7 @@ namespace Garnet.server
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUserHandle()?.User != null);
 
-                WriteSimpleString(aclAuthenticator.GetUserHandle().User.Name);
+                WriteAsciiBulkString(aclAuthenticator.GetUserHandle().User.Name);
             }
 
             return true;

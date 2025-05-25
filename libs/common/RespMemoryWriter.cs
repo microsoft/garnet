@@ -57,7 +57,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array str to memory.
+        /// Writes an array item to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteArrayItem(long item)

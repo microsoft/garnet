@@ -108,7 +108,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array str
+        /// Writes an array item
         /// </summary>
         public static bool TryWriteArrayItem(long integer, ref byte* curr, byte* end)
         {
