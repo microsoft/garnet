@@ -1500,15 +1500,13 @@ namespace Garnet.server
 
             if (result.IsForceUnblocked)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK);
                 return true;
             }
 
             if (result.IsTypeMismatch)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 
@@ -1611,15 +1609,13 @@ namespace Garnet.server
 
             if (result.IsForceUnblocked)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK);
                 return true;
             }
 
             if (result.IsTypeMismatch)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 
