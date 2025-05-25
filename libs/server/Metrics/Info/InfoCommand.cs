@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -65,7 +66,7 @@ namespace Garnet.server
                 var info = garnetInfo.GetRespInfo(sectionsArr, activeDbId, storeWrapper);
                 if (!string.IsNullOrEmpty(info))
                 {
-                    WriteVerbatimASCIITxtString(info);
+                    WriteVerbatimString(Encoding.ASCII.GetBytes(info));
                 }
                 else
                 {
