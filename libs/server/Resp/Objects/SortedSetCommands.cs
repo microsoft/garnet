@@ -1096,8 +1096,7 @@ namespace Garnet.server
 
                         if (includeWithScores)
                         {
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDoubleNumeric(score);
                         }
                     }
                     break;
@@ -1369,8 +1368,7 @@ namespace Garnet.server
 
                         if (includeWithScores)
                         {
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDoubleNumeric(score);
                         }
                     }
                     break;
@@ -1640,8 +1638,7 @@ namespace Garnet.server
             {
                 WriteArrayLength(2);
                 WriteBulkString(result.Items[i]);
-                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
-                    SendAndReset();
+                WriteDoubleNumeric(result.Scores[i]);
             }
 
             return true;
