@@ -763,7 +763,7 @@ namespace Garnet.server
             {
                 WriteArrayLength(3);
                 WriteAsciiBulkString("master");
-                WriteInt32(0);
+                WriteZero();
                 WriteEmptyArray();
             }
             else

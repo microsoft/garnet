@@ -81,7 +81,7 @@ namespace Garnet.server
                     WriteInt32(rmwOutput.result1);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -120,7 +120,7 @@ namespace Garnet.server
                     WriteInt32(output.result1);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -528,7 +528,7 @@ namespace Garnet.server
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -592,7 +592,7 @@ namespace Garnet.server
                         WriteInt32(output.result1);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -756,7 +756,7 @@ namespace Garnet.server
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                    WriteZero();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);

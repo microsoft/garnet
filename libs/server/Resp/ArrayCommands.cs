@@ -182,7 +182,11 @@ namespace Garnet.server
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
-            WriteInt32(status == GarnetStatus.NOTFOUND ? 1 : 0);
+            if (status == GarnetStatus.NOTFOUND)
+                WriteOne();
+            else
+                WriteZero();
+
             return true;
         }
 

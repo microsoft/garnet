@@ -780,6 +780,30 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write integer zero
+        /// </summary>
+        public static bool TryWriteZero(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, ":0\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
+        /// Write integer one
+        /// </summary>
+        public static bool TryWriteOne(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, ":1\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
         /// Writes an array consisting of an ETag followed by a Bulk string value into the buffer.
         /// NOTE: Caller should make sure there is enough space in the buffer for sending the etag, and value array. Otherwise, this will quietly fail.
         /// </summary>

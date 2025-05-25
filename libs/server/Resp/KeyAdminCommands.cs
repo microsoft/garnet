@@ -425,11 +425,11 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
+                WriteOne();
             }
             else
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                WriteZero();
             }
 
             return true;
@@ -501,11 +501,11 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
+                WriteOne();
             }
             else
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                WriteZero();
             }
 
             return true;
@@ -530,12 +530,13 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
+                WriteOne();
             }
             else
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                WriteZero();
             }
+
             return true;
         }
 

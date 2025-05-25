@@ -184,7 +184,7 @@ namespace Garnet.server
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.NOTFOUND)
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                WriteZero();
             else
                 dcurr += o.Length;
 
@@ -231,7 +231,7 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                WriteZero();
             }
 
             return true;
@@ -295,8 +295,10 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
-                var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
-                WriteDirect(resp);
+                if (bSetValSlice[0] == '0')
+                    WriteZero();
+                else
+                    WriteDirect(CmdStrings.RESP_RETURN_VAL_N1);
             }
 
             return true;
@@ -510,7 +512,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {
-                    WriteInt32(0);
+                    WriteZero();
                 }
                 else
                 {
