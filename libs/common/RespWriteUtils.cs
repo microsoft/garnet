@@ -731,37 +731,10 @@ namespace Garnet.common
         /// <summary>
         /// Write verbatim string
         /// </summary>
-        public static bool TryWriteVerbatimASCIIString(ReadOnlySpan<char> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
-        {
-            Debug.Assert(ext.Length == 3);
-
-            // Calculate the amount of bytes it takes to encoded the UTF16 string as ASCII
-            var encodedByteCount = Encoding.ASCII.GetByteCount(str);
-            var actualLength = 3 + 1 + encodedByteCount;
-            var itemDigits = NumUtils.CountDigits(actualLength);
-            var totalLen = 1 + itemDigits + 2 + actualLength + 2;
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            *curr++ = (byte)'=';
-            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
-            WriteNewline(ref curr);
-            ext.CopyTo(new Span<byte>(curr, 3));
-            curr += 3;
-
-            *curr++ = (byte)':';
-            var bytesWritten = Encoding.ASCII.GetBytes(str, new Span<byte>(curr, encodedByteCount));
-            curr += bytesWritten;
-            WriteNewline(ref curr);
-            return true;
-        }
-
-        /// <summary>
-        /// Write verbatim string
-        /// </summary>
         public static bool TryWriteVerbatimString(ReadOnlySpan<byte> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
         {
             Debug.Assert(ext.Length == 3);
+
             var actualLength = 3 + 1 + str.Length;
             var itemDigits = NumUtils.CountDigits(actualLength);
             var totalLen = 1 + itemDigits + 2 + actualLength + 2;
@@ -773,39 +746,12 @@ namespace Garnet.common
             WriteNewline(ref curr);
             ext.CopyTo(new Span<byte>(curr, 3));
             curr += 3;
-
             *curr++ = (byte)':';
+
             str.CopyTo(new Span<byte>(curr, str.Length));
             curr += str.Length;
             WriteNewline(ref curr);
-            return true;
-        }
 
-        /// <summary>
-        /// Write verbatim string
-        /// </summary>
-        public static bool TryWriteVerbatimUtf8String(ReadOnlySpan<char> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
-        {
-            Debug.Assert(ext.Length == 3);
-
-            // Calculate the amount of bytes it takes to encoded the UTF16 string as UTF8
-            var encodedByteCount = Encoding.UTF8.GetByteCount(str);
-            var actualLength = 3 + 1 + encodedByteCount;
-            var itemDigits = NumUtils.CountDigits(actualLength);
-            var totalLen = 1 + itemDigits + 2 + actualLength + 2;
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            *curr++ = (byte)'=';
-            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
-            WriteNewline(ref curr);
-            ext.CopyTo(new Span<byte>(curr, 3));
-            curr += 3;
-
-            *curr++ = (byte)':';
-            var bytesWritten = Encoding.UTF8.GetBytes(str, new Span<byte>(curr, encodedByteCount));
-            curr += bytesWritten;
-            WriteNewline(ref curr);
             return true;
         }
 

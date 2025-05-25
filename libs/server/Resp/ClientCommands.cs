@@ -158,9 +158,9 @@ namespace Garnet.server
                         first = false;
                     }
 
-                    resultSb.AppendLine();
+                    resultSb.Append("\n");
                     var result = resultSb.ToString();
-                    WriteVerbatimUtf8TxtString(result);
+                    WriteVerbatimString(Encoding.UTF8.GetBytes(result));
 
                     return true;
                 }
@@ -192,9 +192,9 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
-            resultSb.AppendLine();
+            resultSb.Append("\n");
             var result = resultSb.ToString();
-            WriteVerbatimASCIITxtString(result);
+            WriteVerbatimString(Encoding.UTF8.GetBytes(result));
 
             return true;
         }
