@@ -735,7 +735,9 @@ namespace Garnet.common
         {
             Debug.Assert(ext.Length == 3);
 
-            var actualLength = 3 + 1 + str.Length;
+            // Calculate the amount of bytes it takes to encoded the UTF16 string as ASCII
+            var encodedByteCount = Encoding.ASCII.GetByteCount(str);
+            var actualLength = 3 + 1 + encodedByteCount;
             var itemDigits = NumUtils.CountDigits(actualLength);
             var totalLen = 1 + itemDigits + 2 + actualLength + 2;
             if (totalLen > (int)(end - curr))
@@ -748,7 +750,7 @@ namespace Garnet.common
             curr += 3;
 
             *curr++ = (byte)':';
-            var bytesWritten = Encoding.ASCII.GetBytes(str, new Span<byte>(curr, str.Length));
+            var bytesWritten = Encoding.ASCII.GetBytes(str, new Span<byte>(curr, encodedByteCount));
             curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
@@ -785,7 +787,10 @@ namespace Garnet.common
         public static bool TryWriteVerbatimUtf8String(ReadOnlySpan<char> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
         {
             Debug.Assert(ext.Length == 3);
-            var actualLength = 3 + 1 + str.Length;
+
+            // Calculate the amount of bytes it takes to encoded the UTF16 string as UTF8
+            var encodedByteCount = Encoding.UTF8.GetByteCount(str);
+            var actualLength = 3 + 1 + encodedByteCount;
             var itemDigits = NumUtils.CountDigits(actualLength);
             var totalLen = 1 + itemDigits + 2 + actualLength + 2;
             if (totalLen > (int)(end - curr))
@@ -798,7 +803,7 @@ namespace Garnet.common
             curr += 3;
 
             *curr++ = (byte)':';
-            var bytesWritten = Encoding.UTF8.GetBytes(str, new Span<byte>(curr, str.Length));
+            var bytesWritten = Encoding.UTF8.GetBytes(str, new Span<byte>(curr, encodedByteCount));
             curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
