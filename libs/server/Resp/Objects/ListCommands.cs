@@ -321,8 +321,8 @@ namespace Garnet.server
             else
             {
                 WriteArrayLength(2);
-                WriteBulkString(new Span<byte>(result.Key));
-                WriteBulkString(new Span<byte>(result.Item));
+                WriteBulkString(result.Key);
+                WriteBulkString(result.Item);
             }
 
             return true;
@@ -418,7 +418,7 @@ namespace Garnet.server
             }
             else
             {
-                WriteBulkString(new Span<byte>(result.Item));
+                WriteBulkString(result.Item);
             }
 
             return true;
