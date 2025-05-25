@@ -192,7 +192,7 @@ namespace Garnet.server
 
                 WriteBulkString("psubscribe"u8);
                 WriteBulkString(key.ReadOnlySpan);
-                
+
                 if (subscribeBroker.PatternSubscribe(key, this))
                     numActiveChannels++;
 
@@ -224,7 +224,7 @@ namespace Garnet.server
                 foreach (var channel in channels)
                 {
                     WriteArrayLength(3);
-                    
+
                     WriteBulkString("unsubscribe"u8);
                     WriteBulkString(channel.ReadOnlySpan);
 

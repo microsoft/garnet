@@ -423,7 +423,7 @@ namespace Garnet.server
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
             var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
-            
+
             WriteInt32(retVal);
             return true;
         }

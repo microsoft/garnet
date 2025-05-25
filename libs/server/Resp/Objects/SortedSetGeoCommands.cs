@@ -182,7 +182,7 @@ namespace Garnet.server
                             break;
                         default:
                             var inputCount = parseState.Count - 1;
-                            
+
                             WriteArrayLength(inputCount);
                             for (var i = 0; i < inputCount; i++)
                             {

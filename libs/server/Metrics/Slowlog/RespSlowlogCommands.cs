@@ -87,7 +87,7 @@ namespace Garnet.server
                         WriteAsciiBulkString(sps.GetString(i));
                     }
                 }
-                
+
                 WriteAsciiBulkString(entry.ClientIpPort);
                 WriteAsciiBulkString(entry.ClientName);
             }
@@ -105,7 +105,7 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_LEN));
             }
-            
+
             WriteInt32(storeWrapper.slowLogContainer?.Count ?? 0);
             return true;
         }
