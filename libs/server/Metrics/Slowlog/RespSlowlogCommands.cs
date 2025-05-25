@@ -47,9 +47,9 @@ namespace Garnet.server
             int count = 10;
             if (parseState.Count == 1)
             {
-                if (!parseState.TryGetInt(0, out count))
+                if (!parseState.TryGetInt(0, out count) || (count < -1))
                 {
-                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_COUNT_IS_OUT_OF_RANGE_N1);
                 }
             }
 

@@ -2799,14 +2799,12 @@ namespace Garnet.server
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
-                    while (!RespWriteUtils.TryWriteError(specificErrorMessage, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(specificErrorMessage);
                 }
                 else
                 {
                     // Return "Unknown RESP Command" message
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD);
                 }
             }
             return cmd;
