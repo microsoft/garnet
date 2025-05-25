@@ -268,8 +268,7 @@ namespace Garnet.server
 
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
@@ -319,8 +318,7 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                    SendAndReset();
+                WriteNullArray();
             }
             else
             {

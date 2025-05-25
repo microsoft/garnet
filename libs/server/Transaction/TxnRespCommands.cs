@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -75,8 +74,7 @@ namespace Garnet.server
                 else
                 {
                     endReadHead = _origReadHead;
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                 }
 
                 return true;
