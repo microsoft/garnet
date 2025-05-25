@@ -321,13 +321,21 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes a null array to memory.
+        /// Writes a null array to memory, using proper protocol representation.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteNullArray()
         {
-            while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
-                ReallocateOutput();
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
+                    ReallocateOutput();
+            }
         }
 
         /// <summary>

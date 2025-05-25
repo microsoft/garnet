@@ -186,8 +186,7 @@ namespace Garnet.server
                             WriteArrayLength(inputCount);
                             for (var i = 0; i < inputCount; i++)
                             {
-                                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                                    SendAndReset();
+                                WriteNullArray();
                             }
                             break;
                     }
