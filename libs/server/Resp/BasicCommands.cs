@@ -1541,7 +1541,7 @@ namespace Garnet.server
             }
 
             WriteAsciiBulkString("modules");
-            WriteArrayLength(0);
+            WriteEmptyArray();
         }
 
         /// <summary>
