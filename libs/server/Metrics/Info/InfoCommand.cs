@@ -79,7 +79,7 @@ namespace Garnet.server
         private void GetHelpMessage()
         {
             List<string> sectionsHelp = InfoHelp.GetInfoTypeHelpMessage();
-            
+
             WriteArrayLength(sectionsHelp.Count);
             foreach (var sectionInfo in sectionsHelp)
             {

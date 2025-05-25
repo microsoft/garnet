@@ -252,7 +252,7 @@ namespace Garnet.server
             {
                 txnManager.watchContainer.Reset();
             }
-            
+
             WriteOK();
             return true;
         }
