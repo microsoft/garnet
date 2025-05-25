@@ -407,27 +407,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write Verbatim string to memory.
-        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with given type.
-        /// </summary>
-        /// <param name="str">Input string</param>
-        /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteVerbatimASCIIString(ReadOnlySpan<char> str, scoped ReadOnlySpan<byte> ext = default)
-        {
-            if (resp3)
-            {
-                while (!RespWriteUtils.TryWriteVerbatimASCIIString(str, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
-                    ReallocateOutput();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(str, ref curr, end))
-                    ReallocateOutput();
-            }
-        }
-
-        /// <summary>
         /// Write Verbatim "txt" string to memory.
         /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
         /// </summary>
@@ -444,27 +423,6 @@ namespace Garnet.common
             else
             {
                 while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
-                    ReallocateOutput();
-            }
-        }
-
-        /// <summary>
-        /// Write Verbatim "txt" string to memory.
-        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
-        /// </summary>
-        /// <param name="str"></param>
-        /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteVerbatimUtf8TxtString(ReadOnlySpan<char> str, scoped ReadOnlySpan<byte> ext = default)
-        {
-            if (resp3)
-            {
-                while (!RespWriteUtils.TryWriteVerbatimUtf8String(str, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
-                    ReallocateOutput();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteUtf8BulkString(str, ref curr, end))
                     ReallocateOutput();
             }
         }
