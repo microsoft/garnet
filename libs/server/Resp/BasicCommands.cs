@@ -380,14 +380,12 @@ namespace Garnet.server
             // Validate expiry
             if (!parseState.TryGetInt(1, out var expiry))
             {
-                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             if (expiry <= 0)
             {
-                WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET);
             }
 
             var valMetadata = DateTimeOffset.UtcNow.Ticks +
@@ -933,7 +931,7 @@ namespace Garnet.server
                     WriteInt32(value.Length);
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteInt32(0);
+                    WriteZero();
                     break;
             }
 

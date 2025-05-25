@@ -48,12 +48,13 @@ namespace Garnet.server
 
             if (pfaddUpdated > 0)
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_1);
+                WriteOne();
             }
             else
             {
-                WriteDirect(CmdStrings.RESP_RETURN_VAL_0);
+                WriteZero();
             }
+
             return true;
         }
 

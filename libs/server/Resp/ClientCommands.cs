@@ -595,7 +595,7 @@ namespace Garnet.server
 
                 if (session is null)
                 {
-                    WriteInt32(0);
+                    WriteZero();
                     return true;
                 }
 
@@ -605,17 +605,20 @@ namespace Garnet.server
 
                     if (!isBlocked)
                     {
-                        WriteInt32(0);
+                        WriteZero();
                         return true;
                     }
 
                     var result = observer.TryForceUnblock(toThrowError);
 
-                    WriteInt32(result ? 1 : 0);
+                    if (result)
+                        WriteOne();
+                    else
+                        WriteZero();
                 }
                 else
                 {
-                    WriteInt32(0);
+                    WriteZero();
                 }
             }
             else
