@@ -306,7 +306,7 @@ namespace Garnet.server
                     WriteArrayLength(3);
                     WriteBulkString("punsubscribe"u8);
                     WriteNull();
-                    WriteInt32(0);
+                    WriteZero();
                 }
 
                 if (numActiveChannels == 0)

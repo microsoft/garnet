@@ -176,6 +176,20 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteZero()
+        {
+            while (!RespWriteUtils.TryWriteZero(ref dcurr, dend))
+                SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteOne()
+        {
+            while (!RespWriteUtils.TryWriteOne(ref dcurr, dend))
+                SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteOK()
         {
             WriteDirect(CmdStrings.RESP_OK);
