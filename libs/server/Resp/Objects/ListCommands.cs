@@ -82,10 +82,9 @@ namespace Garnet.server
             if (parseState.Count == 2)
             {
                 // Read count
-                if (!parseState.TryGetInt(1, out popCount))
+                if (!parseState.TryGetInt(1, out popCount) || (popCount < 0))
                 {
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
                 }
             }
 
@@ -311,8 +310,7 @@ namespace Garnet.server
 
             if (result.IsTypeMismatch)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 
@@ -404,15 +402,13 @@ namespace Garnet.server
 
             if (result.IsForceUnblocked)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK);
                 return true;
             }
 
             if (result.IsTypeMismatch)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 
@@ -968,8 +964,7 @@ namespace Garnet.server
 
             if (result.IsTypeMismatch)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                 return true;
             }
 

@@ -1390,15 +1390,18 @@ namespace Garnet.server
                 // Calculations for nested types do not apply to garnet, but we are checking syntax for API compatibility
                 if (!parseState.GetArgSliceByRef(1).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SAMPLES))
                 {
-                    WriteError(CmdStrings.RESP_SYNTAX_ERROR);
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
 
                 // Validate samples count
-                if (!parseState.TryGetInt(2, out _))
+                if (!parseState.TryGetInt(2, out var samples))
                 {
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                }
+
+                if (samples < 0)
+                {
+                    return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                 }
             }
 
