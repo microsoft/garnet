@@ -108,7 +108,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array item
+        /// Writes an array str
         /// </summary>
         public static bool TryWriteArrayItem(long integer, ref byte* curr, byte* end)
         {
@@ -705,6 +705,18 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write empty map
+        /// </summary>
+        public static bool TryWriteEmptyMap(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, "%0\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
         /// Write empty set
         /// </summary>
         public static bool TryWriteEmptySet(ref byte* curr, byte* end)
@@ -713,6 +725,82 @@ namespace Garnet.common
                 return false;
 
             WriteBytes<uint>(ref curr, "~0\r\n"u8);
+            return true;
+        }
+
+        /// <summary>
+        /// Write verbatim string
+        /// </summary>
+        public static bool TryWriteVerbatimASCIIString(ReadOnlySpan<char> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
+        {
+            Debug.Assert(ext.Length == 3);
+
+            var actualLength = 3 + 1 + str.Length;
+            var itemDigits = NumUtils.CountDigits(actualLength);
+            var totalLen = 1 + itemDigits + 2 + actualLength + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'=';
+            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            ext.CopyTo(new Span<byte>(curr, 3));
+            curr += 3;
+
+            *curr++ = (byte)':';
+            var bytesWritten = Encoding.ASCII.GetBytes(str, new Span<byte>(curr, str.Length));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write verbatim string
+        /// </summary>
+        public static bool TryWriteVerbatimString(ReadOnlySpan<byte> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
+        {
+            Debug.Assert(ext.Length == 3);
+            var actualLength = 3 + 1 + str.Length;
+            var itemDigits = NumUtils.CountDigits(actualLength);
+            var totalLen = 1 + itemDigits + 2 + actualLength + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'=';
+            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            ext.CopyTo(new Span<byte>(curr, 3));
+            curr += 3;
+
+            *curr++ = (byte)':';
+            str.CopyTo(new Span<byte>(curr, str.Length));
+            curr += str.Length;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write verbatim string
+        /// </summary>
+        public static bool TryWriteVerbatimUtf8String(ReadOnlySpan<char> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
+        {
+            Debug.Assert(ext.Length == 3);
+            var actualLength = 3 + 1 + str.Length;
+            var itemDigits = NumUtils.CountDigits(actualLength);
+            var totalLen = 1 + itemDigits + 2 + actualLength + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'=';
+            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            ext.CopyTo(new Span<byte>(curr, 3));
+            curr += 3;
+
+            *curr++ = (byte)':';
+            var bytesWritten = Encoding.UTF8.GetBytes(str, new Span<byte>(curr, str.Length));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
             return true;
         }
 

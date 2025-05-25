@@ -57,7 +57,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array item to memory.
+        /// Writes an array str to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteArrayItem(long item)
@@ -178,7 +178,7 @@ namespace Garnet.common
         {
             if (resp3)
             {
-                while (!RespWriteUtils.TryWriteMapLength(0, ref curr, end))
+                while (!RespWriteUtils.TryWriteEmptyMap(ref curr, end))
                     ReallocateOutput();
             }
             else
@@ -404,6 +404,69 @@ namespace Garnet.common
         {
             while (!RespWriteUtils.TryWriteUtf8BulkString(chars, ref curr, end))
                 ReallocateOutput();
+        }
+
+        /// <summary>
+        /// Write Verbatim string to memory.
+        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with given type.
+        /// </summary>
+        /// <param name="str">Input string</param>
+        /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteVerbatimASCIIString(ReadOnlySpan<char> str, scoped ReadOnlySpan<byte> ext = default)
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimASCIIString(str, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteAsciiBulkString(str, ref curr, end))
+                    ReallocateOutput();
+            }
+        }
+
+        /// <summary>
+        /// Write Verbatim "txt" string to memory.
+        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteVerbatimTxtString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimString(item, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
+                    ReallocateOutput();
+            }
+        }
+
+        /// <summary>
+        /// Write Verbatim "txt" string to memory.
+        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
+        /// </summary>
+        /// <param name="str"></param>
+        /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteVerbatimUtf8TxtString(ReadOnlySpan<char> str, scoped ReadOnlySpan<byte> ext = default)
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimUtf8String(str, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteUtf8BulkString(str, ref curr, end))
+                    ReallocateOutput();
+            }
         }
 
         /// <summary>
