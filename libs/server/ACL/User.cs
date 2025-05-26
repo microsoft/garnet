@@ -138,13 +138,16 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
+                    bool useDeepRationalization = false;
+
                     updated = oldPerms.Copy();
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
+                        useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                         updated.AddCommand(cmd);
                     }
 
-                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -189,15 +192,16 @@ namespace Garnet.server.ACL
             CommandPermissionSet updated;
             do
             {
+                bool useDeepRationalization = false;
                 oldPerms = prev;
-
                 updated = oldPerms.Copy();
                 foreach (RespCommand cmd in toAdd)
                 {
+                    useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                     updated.AddCommand(cmd);
                 }
 
-                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
@@ -260,13 +264,15 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
+                    bool useDeepRationalization = false;
                     updated = oldPerms.Copy();
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
+                        useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                         updated.RemoveCommand(cmd);
                     }
 
-                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -311,15 +317,16 @@ namespace Garnet.server.ACL
             CommandPermissionSet updated;
             do
             {
+                bool useDeepRationalization = false;
                 oldPerms = prev;
-
                 updated = oldPerms.Copy();
                 foreach (RespCommand cmd in toRemove)
                 {
+                    useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                     updated.RemoveCommand(cmd);
                 }
 
-                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
@@ -487,10 +494,10 @@ namespace Garnet.server.ACL
         /// 
         /// This is an expensive method, but ACL modifications are rare enough it's hopefully not a problem.
         /// </summary>
-        private static string RationalizeACLDescription(CommandPermissionSet set, string description)
+        private static string RationalizeACLDescription(CommandPermissionSet set, string description, bool useDeepRationalization)
         {
             List<string> parts = [.. description.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-            while (true)
+            while (useDeepRationalization)
             {
                 bool shrunk = false;
 
