@@ -244,5 +244,39 @@ namespace Garnet.test.cluster
             }
             ClassicAssert.AreEqual("failover-completed", infoItem[0].Item2);
         }
+
+#if DEBUG
+        [Test, Order(5)]
+        public void ClusterCheckpointAcquireTest()
+        {
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition);
+
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+
+            // Take a checkpoint to create an in-memory entry
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            // Try to attach to trigger checkpoint acquire condition
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+        }
+#endif
     }
 }

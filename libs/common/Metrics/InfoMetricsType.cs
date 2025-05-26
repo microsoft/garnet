@@ -78,6 +78,10 @@ namespace Garnet.common
         /// Shared buffer pool stats
         /// </summary>
         BPSTATS,
+        /// <summary>
+        /// Checkpoint information used for cluster
+        /// </summary>
+        CINFO
     }
 
     /// <summary>

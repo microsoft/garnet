@@ -23,16 +23,9 @@ namespace Garnet.server
             try
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                if (respProtocolVersion == 2)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
-                        SendAndReset();
-                }
+
+                WritePushLength(3);
+
                 while (!RespWriteUtils.TryWriteBulkString("message"u8, ref dcurr, dend))
                     SendAndReset();
 
@@ -60,16 +53,9 @@ namespace Garnet.server
             try
             {
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                if (respProtocolVersion == 2)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(4, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWritePushLength(4, ref dcurr, dend))
-                        SendAndReset();
-                }
+
+                WritePushLength(4);
+
                 while (!RespWriteUtils.TryWriteBulkString("pmessage"u8, ref dcurr, dend))
                     SendAndReset();
 
@@ -284,8 +270,9 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                        SendAndReset();
+
+                    WriteNull();
+
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
                         SendAndReset();
                 }
@@ -357,6 +344,20 @@ namespace Garnet.server
                         numActiveChannels--;
 
                     while (!RespWriteUtils.TryWriteInt32(numActiveChannels, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                if (channels.Count == 0)
+                {
+                    while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+
+                    while (!RespWriteUtils.TryWriteBulkString("punsubscribe"u8, ref dcurr, dend))
+                        SendAndReset();
+
+                    WriteNull();
+
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
                         SendAndReset();
                 }
 

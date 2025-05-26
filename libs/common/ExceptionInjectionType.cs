@@ -19,6 +19,10 @@ namespace Garnet.common
         /// <summary>
         /// Primary replication sync orchestration failure right before background aof stream starts
         /// </summary>
-        Replication_Fail_Before_Background_AOF_Stream_Task_Start
+        Replication_Fail_Before_Background_AOF_Stream_Task_Start,
+        /// <summary>
+        /// Acquire checkpoint entry from memory entries
+        /// </summary>
+        Replication_Acquire_Checkpoint_Entry_Fail_Condition
     }
 }

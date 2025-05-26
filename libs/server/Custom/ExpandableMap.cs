@@ -82,7 +82,40 @@ namespace Garnet.server
         /// <param name="id">Item ID</param>
         /// <param name="value">Item value</param>
         /// <returns>True if assignment succeeded</returns>
-        public bool TrySetValue(int id, ref T value)
+        public bool TrySetValueByRef(int id, ref T value)
+        {
+            // Try to perform set without taking a write lock first
+            mapLock.ReadLock();
+            try
+            {
+                // Try to set value without expanding map
+                if (this.TrySetValueUnsafe(id, ref value, noExpansion: true))
+                    return true;
+            }
+            finally
+            {
+                mapLock.ReadUnlock();
+            }
+
+            mapLock.WriteLock();
+            try
+            {
+                // Try to set value with expanding the map, if needed
+                return this.TrySetValueUnsafe(id, ref value, noExpansion: false);
+            }
+            finally
+            {
+                mapLock.WriteUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Try to set item by ID
+        /// </summary>
+        /// <param name="id">Item ID</param>
+        /// <param name="value">Item value</param>
+        /// <returns>True if assignment succeeded</returns>
+        public bool TrySetValue(int id, T value)
         {
             // Try to perform set without taking a write lock first
             mapLock.ReadLock();
@@ -195,7 +228,7 @@ namespace Garnet.server
         /// <param name="value">Item value</param>
         /// <param name="noExpansion">True if should not attempt to expand the underlying array</param>
         /// <returns>True if assignment succeeded</returns>
-        private bool TrySetValueUnsafe(int id, ref T value, bool noExpansion)
+        internal bool TrySetValueUnsafe(int id, ref T value, bool noExpansion)
         {
             var idx = id - minId;
             if (idx < 0 || idx >= maxSize) return false;

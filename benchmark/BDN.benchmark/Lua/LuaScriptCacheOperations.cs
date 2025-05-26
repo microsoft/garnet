@@ -81,9 +81,9 @@ namespace BDN.benchmark.Lua
             sessionScriptCache.Clear();
 
             // Make outer hit available for every iteration
-            if (!sessionScriptCache.TryLoad(session, "return 1"u8, new(outerHitDigest), out _, out _, out var error))
+            if (!sessionScriptCache.TryLoad(session, "return 1"u8, new(outerHitDigest), out _, out _, out _))
             {
-                throw new InvalidOperationException($"Should have been able to load: {error}");
+                throw new InvalidOperationException("Should have been able to load");
             }
         }
 
@@ -146,7 +146,7 @@ namespace BDN.benchmark.Lua
             {
                 if (storeWrapper.storeScriptCache.TryGetValue(digestKey, out var source))
                 {
-                    if (!sessionScriptCache.TryLoad(session, source, digestKey, out runner, out _, out var error))
+                    if (!sessionScriptCache.TryLoad(session, source, digestKey, out runner, out _, out _))
                     {
                         // TryLoad will have written an error out, it any
 

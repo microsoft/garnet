@@ -17,7 +17,7 @@ Garnet uses Redis' RESP as its primary wire protocol. Thus, one can use Garnet w
 [available](https://redis.io/docs/latest/develop/connect/clients/) in most programming languages, for example, with [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis)
 in C#. Compared to other open-source cache-stores, you get much better performance, latency, extensibility, and durability features.
 
-Note that Garnet is a research project from Microsoft Research, and the project should be treated as such. That said, we are bunch 
+Note that Garnet is a research project from Microsoft Research, and the project should be treated as such. That said, we are a bunch 
 of highly passionate researchers and developers working on it full-time at the moment to make it as stable and efficient as we 
 can. Our goal is to create a vibrant community around Garnet. In fact, Garnet has been of sufficiently high quality that several 
 first-party and platform teams at Microsoft have deployed versions of Garnet internally for many months now.
@@ -46,12 +46,12 @@ Garnet supports a large (and growing) [API surface](../commands/api-compatibilit
 
 * Raw string operations such as GET, SET, MGET, MSET, GETSET, SETEX, DEL, EXISTS, RENAME, EXPIRE, SET variants (set if exists, set if not exists).
 * Numeric operations such as INCR, INCRBY, DECR, DECRBY.
-* Checkpoint/recovery ops such as SAVE, LASTSAVE, BGSAVE.
-* Basic admin ops such as PING, QUIT, CONFIG, RESET, TIME.
-* Advanced data structures such as List, Hash, Set, Sorted Set, and Geo.
+* Remote data structures such as List, Hash, Set, Sorted Set, and Geo.
 * Analytics APIs such as Hyperloglog and Bitmap.
-* Publish/subscribe.
-* Transactions.
+* Checkpoint/recovery ops such as SAVE, LASTSAVE, BGSAVE.
+* Admin ops such as PING, QUIT, CONFIG, RESET, TIME.
+* ACL support.
+* Publish/subscribe, transactions, and Lua scripting support.
 
 The list is growing over time, and we would love to hear from you on what APIs you want the most!
 

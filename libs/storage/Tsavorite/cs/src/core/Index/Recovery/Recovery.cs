@@ -168,11 +168,35 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="hlogToken"></param>
         /// <param name="indexToken"></param>
-        public void GetLatestCheckpointTokens(out Guid hlogToken, out Guid indexToken)
+        /// <param name="storeVersion"></param>
+        public void GetLatestCheckpointTokens(out Guid hlogToken, out Guid indexToken, out long storeVersion)
         {
             GetClosestHybridLogCheckpointInfo(-1, out hlogToken, out var recoveredHlcInfo, out var _);
-            GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out var _);
-            recoveredHlcInfo.Dispose();
+            try
+            {
+                if (hlogToken == default)
+                {
+                    indexToken = default;
+                    storeVersion = -1;
+                    return;
+                }
+                using var current = new HybridLogCheckpointInfo();
+
+                // Make sure we consider delta log in order to compute latest checkpoint version
+                current.Recover(hlogToken, checkpointManager, hlogBase.LogPageSizeBits,
+                    out var _, true);
+                storeVersion = current.info.nextVersion;
+
+                GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out var recoveredICInfo);
+                if (recoveredICInfo.IsDefault())
+                {
+                    logger?.LogInformation("No index checkpoint found, returning default index token in GetLatestCheckpointTokens");
+                }
+            }
+            finally
+            {
+                recoveredHlcInfo.Dispose();
+            }
         }
 
         /// <summary>

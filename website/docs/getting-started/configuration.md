@@ -6,7 +6,7 @@ title: Garnet Configuration
 
 ## How to Configure Garnet
 
-The Garnet server (GarnetServer.exe) can be configured using a configuration file (e.g. `garnet.conf` or `redis.conf`), while command line arguments can be used to override any settings specified in the file. /
+The Garnet server (GarnetServer.exe) can be configured using a configuration file (e.g. `garnet.conf` or `redis.conf`), while command line arguments can be used to override any settings specified in the file. 
 Any settings not specified in either configuration file or command line arguments are set to default valued specified in the [defaults.conf](https://github.com/microsoft/garnet/blob/main/libs/host/defaults.conf) file (path to this file can be overridden via the command line arguments).
 
 Garnet currently supports two configuration file formats:
@@ -15,10 +15,10 @@ Garnet currently supports two configuration file formats:
     ```
     keyword argument1 argument2 argument3 ... argumentN
     ```
-    See Redis [docs](https://redis.io/docs/management/config/) for reference./
+    See Redis [docs](https://redis.io/docs/management/config/) for reference.
     **Important:** Not all redis.conf keywords are supported in Garnet. In order to have full configuration settings coverage, use the `garnet.conf` format.
 
-Specifying a configuration file path (and a default file path) can be done via the command line parameters./
+Specifying a configuration file path (and a default file path) can be done via the command line parameters.
 1) For `garnet.conf`:
     ```
     GarnetServer.exe --config-import-path <file-path>
@@ -32,7 +32,7 @@ Specifying a configuration file path (and a default file path) can be done via t
 
 ## garnet.conf
 
-The default configuration file format for Garnet, which supports the full-range of configurable Garnet settings./
+The default configuration file format for Garnet, which supports the full-range of configurable Garnet settings.
 `garnet.conf` is a JSON-formatted file containing a collection of configuration settings. For all the available settings, see the `defaults.conf` file or refer to the complete Garnet settings [list](#configurable-settings).
 
 ## redis.conf
@@ -61,8 +61,8 @@ Garnet supports the `redis.conf` file format as a configuration file. Note that 
 
 ## Command line arguments
 
-Any setting in Garnet can be also configured by specifying a command line argument. /
-If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. /
+Any setting in Garnet can be also configured by specifying a command line argument. 
+If the setting is also specified in the configuration file, it will be overridden by the value specified in the command line. 
 For all available command line settings, run `GarnetServer.exe -h` or `GarnetServer.exe -help`, or refer to the complete Garnet settings [list](#configurable-settings).
 
 ## Configurable Settings
@@ -119,7 +119,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **WaitForCommit** | ```--aof-commit-wait``` | ```bool``` |  | Wait for AOF to flush the commit before returning results to client. Warning: will greatly increase operation latency. |
 | **AofSizeLimit** | ```--aof-size-limit``` | ```string``` | Memory size | Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken |
 | **CompactionFrequencySecs** | ```--compaction-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead) |
-| **HashCollectFrequencySecs** | ```--hcollect-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency in seconds for the background task to perform Hash collection. 0 = disabled. Hash collect is used to delete expired fields from hash without waiting for a write operation. Use the HCOLLECT API to collect on-demand. |
+| **ExpiredObjectCollectionFrequencySecs** | ```--expired-object-collection-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand. |
 | **CompactionType** | ```--compaction-type``` | ```LogCompactionType``` | None, Shift, Scan, Lookup | Hybrid log compaction type. Value options: None - No compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss) |
 | **CompactionForceDelete** | ```--compaction-force-delete``` | ```bool``` |  | Forcefully delete the inactive segments immediately after the compaction strategy (type) is applied. If false, take a checkpoint to actually delete the older data files from disk. |
 | **CompactionMaxSegments** | ```--compaction-max-segments``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Number of log segments created on disk before compaction triggers. |
@@ -146,6 +146,8 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ThreadPoolMaxThreads** | ```--maxthreads``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Maximum worker and completion threads in thread pool, 0 uses the system default. |
 | **UseAzureStorage** | ```--use-azure-storage``` | ```bool``` |  | Use Azure Page Blobs for storage instead of local storage. |
 | **AzureStorageConnectionString** | ```--storage-string``` | ```string``` |  | The connection string to use when establishing connection to Azure Blobs Storage. |
+| **AzureStorageServiceUri** | ```--storage-service-uri``` | ```string``` |  | The service URI to use when establishing connection to Azure Blobs Storage. |
+| **AzureStorageManagedIdentity** | ```--storage-managed-identity``` | ```string``` |  | The managed identity to use when establishing connection to Azure Blobs Storage. |
 | **CheckpointThrottleFlushDelayMs** | ```--checkpoint-throttle-delay``` | ```int``` | Integer in range:<br/>[-1, MaxValue] | Whether and by how much should we throttle the disk IO for checkpoints: -1 - disable throttling; >= 0 - run checkpoint flush in separate task, sleep for specified time after each WriteAsync |
 | **EnableFastCommit** | ```--fast-commit``` | ```bool``` |  | Use FastCommit when writing AOF. |
 | **FastCommitThrottleFreq** | ```--fast-commit-throttle``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Throttle FastCommit to write metadata once every K commits. |

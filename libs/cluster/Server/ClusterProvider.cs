@@ -149,31 +149,25 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(StoreType storeType, bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
+        public void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
         {
             var entry = new CheckpointEntry();
 
-            if (storeType is StoreType.Main or StoreType.All)
-            {
-                entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
-                entry.metadata.storeHlogToken = storeCheckpointToken;
-                entry.metadata.storeIndexToken = storeCheckpointToken;
-                entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
-            }
+            entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
+            entry.metadata.storeHlogToken = storeCheckpointToken;
+            entry.metadata.storeIndexToken = storeCheckpointToken;
+            entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+            entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
 
-            if (storeType is StoreType.Object or StoreType.All)
-            {
-                entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
-                entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
-            }
+            entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
+            entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+            entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+            entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+            entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
 
             // Keep track of checkpoints for replica
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
-            replicationManager.AddCheckpointEntry(entry, storeType, full);
+            replicationManager.AddCheckpointEntry(entry, full);
 
             // Truncate AOF
             SafeTruncateAOF(CheckpointCoveredAofAddress);
@@ -270,6 +264,10 @@ namespace Garnet.cluster
             }
             return [.. replicationInfo];
         }
+
+        public MetricsItem[] GetCheckpointInfo()
+            => [new("memory_checkpoint_entry", replicationManager.GetLatestCheckpointFromMemoryInfo()),
+                new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo())];
 
         /// <inheritdoc />
         public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
@@ -439,23 +437,25 @@ namespace Garnet.cluster
         /// <returns></returns>
         internal bool BumpAndWaitForEpochTransition()
         {
-            var server = storeWrapper.TcpServer;
             BumpCurrentEpoch();
-            while (true)
+            foreach (var server in storeWrapper.Servers)
             {
-            retry:
-                Thread.Yield();
-                // Acquire latest bumped epoch
-                var currentEpoch = GarnetCurrentEpoch;
-                var sessions = server.ActiveClusterSessions();
-                foreach (var s in sessions)
+                while (true)
                 {
-                    var entryEpoch = s.LocalCurrentEpoch;
-                    // Retry if at least one session has not yet caught up to the current epoch.
-                    if (entryEpoch != 0 && entryEpoch < currentEpoch)
-                        goto retry;
+                retry:
+                    Thread.Yield();
+                    // Acquire latest bumped epoch
+                    var currentEpoch = GarnetCurrentEpoch;
+                    var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
+                    foreach (var s in sessions)
+                    {
+                        var entryEpoch = s.LocalCurrentEpoch;
+                        // Retry if at least one session has not yet caught up to the current epoch.
+                        if (entryEpoch != 0 && entryEpoch < currentEpoch)
+                            goto retry;
+                    }
+                    break;
                 }
-                break;
             }
             return true;
         }

@@ -39,6 +39,11 @@ namespace Garnet.server
         GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input);
 
         /// <summary>
+        /// DEL Conditional
+        /// </summary>
+        GarnetStatus DEL_Conditional(ref SpanByte key, ref RawStringInput input);
+
+        /// <summary>
         /// SET Conditional
         /// </summary>
         GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
@@ -415,9 +420,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Removes and returns multiple elements from a sorted set.
@@ -446,9 +451,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
@@ -469,9 +474,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRemoveRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Removes all elements in the range specified by min and max, having the same score.
@@ -517,18 +522,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus GeoAdd(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Geospatial search and store in destination key.
         /// </summary>
         /// <param name="key"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="opts"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref ObjectInput input, ref SpanByteAndMemory output);
+        GarnetStatus GeoSearchStore(ArgSlice key, ArgSlice destinationKey, ref GeoSearchOptions opts,
+                                    ref ObjectInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Intersects multiple sorted sets and stores the result in the destination key.
@@ -551,6 +559,65 @@ namespace Garnet.server
         /// <param name="aggregateType">The type of aggregation to perform (e.g., Sum, Min, Max).</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
         GarnetStatus SortedSetUnionStore(ArgSlice destinationKey, ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
+
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="output">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+        /// <summary>
+        /// Sets an expiration time on a sorted set member.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to set expiration for.</param>
+        /// <param name="expireAt">The expiration time.</param>
+        /// <param name="expireOption">The expiration option to apply.</param>
+        /// <param name="results">The results of the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetExpire(ArgSlice key, ReadOnlySpan<ArgSlice> members, DateTimeOffset expireAt, ExpireOption expireOption, out int[] results);
+
+        /// <summary>
+        /// Persists the specified sorted set member, removing any expiration time set on it.
+        /// </summary>
+        /// <param name="key">The key of the sorted set to persist.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="output">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+        /// <summary>
+        /// Persists the specified sorted set members, removing any expiration time set on them.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to persist.</param>
+        /// <param name="results">The results of the operation.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetPersist(ArgSlice key, ReadOnlySpan<ArgSlice> members, out int[] results);
+
+        /// <summary>
+        /// Deletes already expired members from the sorted set.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted set members to check for expiration.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys, ref ObjectInput input);
+
+        /// <summary>
+        /// Collects expired elements from the sorted set.
+        /// </summary>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect();
+
+        /// <summary>
+        /// Collects expired elements from the sorted set for the specified keys.
+        /// </summary>
+        /// <param name="keys">The keys of the sorted sets to collect expired elements from.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetCollect(ReadOnlySpan<ArgSlice> keys);
 
         #endregion
 
@@ -643,9 +710,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Moves a member from a source set to a destination set.
@@ -668,9 +735,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
@@ -713,9 +780,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListPosition(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// ListLeftPush ArgSlice version with ObjectOutputHeader output
@@ -784,9 +851,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListLeftPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// ListLeftPop ArgSlice version, one element
@@ -820,9 +887,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListRightPop(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// ListRightPop ArgSlice version, one element
@@ -1000,9 +1067,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashIncrement(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Sets an expiration time on a hash field.
@@ -1011,18 +1078,18 @@ namespace Garnet.server
         /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
         /// <param name="expireOption">The expiration option to apply.</param>
         /// <param name="input">The input object containing additional parameters.</param>
-        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Persists the specified hash key, removing any expiration time set on it.
         /// </summary>
         /// <param name="key">The key of the hash to persist.</param>
         /// <param name="input">The input object containing additional parameters.</param>
-        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Deletes already expired fields from the hash.
@@ -1256,9 +1323,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the score of member in the sorted set at key.
@@ -1266,9 +1333,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetScore(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the scores associated with the specified members in the sorted set stored at key.
@@ -1276,9 +1343,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetScores(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
@@ -1316,9 +1383,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRank(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1336,9 +1403,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SortedSetRandomMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key, using byscore, bylex and rev modifiers.
@@ -1406,6 +1473,24 @@ namespace Garnet.server
         /// <returns>Operation status</returns>
         GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);
 
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="input">The input object containing additional parameters.</param>
+        /// <param name="output">The output object to store the result.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+        /// <summary>
+        /// Returns the time to live for a sorted set members.
+        /// </summary>
+        /// <param name="key">The key of the sorted set.</param>
+        /// <param name="members">The members to get the time to live for.</param>
+        /// <param name="expireIn">The output array containing the time to live for each member.</param>
+        /// <returns>The status of the operation.</returns>
+        GarnetStatus SortedSetTimeToLive(ArgSlice key, ReadOnlySpan<ArgSlice> members, out TimeSpan[] expireIn);
+
         #endregion
 
         #region Geospatial Methods
@@ -1414,13 +1499,27 @@ namespace Garnet.server
         /// GEOHASH: Returns valid Geohash strings representing the position of one or more elements in a geospatial data of the sorted set.
         /// GEODIST: Returns the distance between two members in the geospatial index represented by the sorted set.
         /// GEOPOS: Returns the positions (longitude,latitude) of all the specified members in the sorted set.
-        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus GeoCommands(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+        /// <summary>
+        /// GEORADIUS (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUS_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center and radius.
+        /// GEORADIUSBYMEMBER (read variant): Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEORADIUSBYMEMBER_RO: Return the members of a sorted set populated with geospatial data, which are inside the circular area delimited by center (derived from member) and radius.
+        /// GEOSEARCH: Returns the members of a sorted set populated with geospatial data, which are within the borders of the area specified by a given shape.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="opts"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus GeoSearchReadOnly(ArgSlice key, ref GeoSearchOptions opts,
+                                       ref ObjectInput input, ref SpanByteAndMemory output);
 
         #endregion
 
@@ -1448,18 +1547,18 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListRange(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the element at index.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus ListIndex(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         #endregion
 
@@ -1495,18 +1594,18 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetMembers(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns if member is a member of the set stored at key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus SetIsMember(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns whether each member is a member of the set stored at key.
@@ -1590,27 +1689,27 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input">The metadata input for the operation</param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGet(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns all fields and values of the hash stored at key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input">The metadata input for the operation</param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGetAll(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns the values associated with the specified fields in the hash stored at key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input">The metadata input for the operation</param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashGetMultiple(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns ALL the values in the hash stored at key.
@@ -1687,27 +1786,27 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashRandomField(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns all field names in the hash key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashKeys(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Returns all values in the hash key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashVals(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Iterates fields of Hash key and their associated values using a cursor,
@@ -1728,9 +1827,9 @@ namespace Garnet.server
         /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
         /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
         /// <param name="input">The input object containing additional parameters.</param>
-        /// <param name="outputFooter">The output object to store the result.</param>
+        /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        GarnetStatus HashTimeToLive(ArgSlice key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         #endregion
 
@@ -1887,8 +1986,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">The key of the sorted set</param>
         /// <param name="input"></param>
-        /// <param name="outputFooter"></param>
-        GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput outputFooter);
+        /// <param name="output"></param>
+        GarnetStatus ObjectScan(byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Retrieve the current scratch buffer offset.

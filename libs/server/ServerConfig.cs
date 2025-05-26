@@ -69,8 +69,7 @@ namespace Garnet.server
             // Generate response for matching parameters
             if (parameters.Count > 0)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(parameters.Count * 2, ref dcurr, dend))
-                    SendAndReset();
+                WriteMapLength(parameters.Count);
 
                 foreach (var parameter in parameters)
                 {
@@ -89,7 +88,7 @@ namespace Garnet.server
 
                     ReadOnlySpan<byte> GetDatabases()
                     {
-                        var databases = storeWrapper.databaseNum.ToString();
+                        var databases = storeWrapper.serverOptions.MaxDatabases.ToString();
                         return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
                     }
 

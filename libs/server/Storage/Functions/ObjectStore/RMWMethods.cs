@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -31,11 +30,17 @@ namespace Garnet.server
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return ret;
+
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
         }
@@ -47,7 +52,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                value.Operate(ref input, ref output, out _);
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                 return true;
             }
             else
@@ -57,11 +62,16 @@ namespace Garnet.server
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
 
-                (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
-                var result = customObjectCommand.InitialUpdater(key, ref input, value, ref outp, ref rmwInfo);
-                output.SpanByteAndMemory.Memory = outp.Memory;
-                output.SpanByteAndMemory.Length = outp.Length;
-                return result;
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                try
+                {
+                    var result = customObjectCommand.InitialUpdater(key, ref input, value, ref writer, ref rmwInfo);
+                    return result;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
             }
         }
 
@@ -141,7 +151,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = value.Operate(ref input, ref output, out sizeChange);
+                        var operateSuccessful = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
                         if (output.HasWrongType)
                             return true;
 
@@ -161,13 +171,18 @@ namespace Garnet.server
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return result;
-                        //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Updater(key, ref input, value, ref writer, ref rmwInfo);
+                            return result;
+                            //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
         }
@@ -191,7 +206,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool PostCopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
+            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
             // the record was CASed into the hash chain before it gets modified
             var oldValueSize = oldValue.Size;
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
@@ -238,7 +253,7 @@ namespace Garnet.server
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output, out _);
+                        value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                         if (output.HasWrongType)
                             return true;
 
@@ -259,12 +274,17 @@ namespace Garnet.server
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return result;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Updater(key, ref input, value, ref writer, ref rmwInfo);
+                            return result;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
 

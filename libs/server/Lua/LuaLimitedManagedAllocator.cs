@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
@@ -235,6 +236,9 @@ namespace Garnet.server
 
         private int debugAllocatedBytes;
 
+        private bool isInfallible;
+        private object infallibleAllocations;
+
         /// <summary>
         /// For testing purposes, how many bytes are allocated to Lua at the moment.
         /// 
@@ -310,6 +314,24 @@ namespace Garnet.server
             firstBlock.PrevFreeBlockRefRaw = 0;
         }
 
+        /// <inheritdoc/>
+        public void EnterInfallibleAllocationRegion()
+        {
+            Debug.Assert(!isInfallible, "Cannot recursively enter an infallible region");
+
+            isInfallible = true;
+        }
+
+        /// <inheritdoc/>
+        public bool TryExitInfallibleAllocationRegion()
+        {
+            Debug.Assert(isInfallible, "Cannot exit an infallible region that hasn't been entered");
+
+            isInfallible = false;
+
+            return infallibleAllocations == null;
+        }
+
         /// <summary>
         /// Allocate a new chunk which can fit at least <paramref name="sizeBytes"/> of data.
         /// 
@@ -382,6 +404,14 @@ namespace Garnet.server
             }
 
             // Even after compaction we failed to find a large enough block
+
+            if (isInfallible)
+            {
+                // If we're in an infallible region, just use the POH
+                failed = false;
+                return ref InfallibleAllocate(sizeBytes);
+            }
+
             failed = true;
             return ref Unsafe.NullRef<byte>();
         }
@@ -394,6 +424,12 @@ namespace Garnet.server
         /// <param name="sizeBytes">Size passed to last <see cref="AllocateNew"/> or <see cref="ResizeAllocation"/> call.</param>
         public void Free(ref byte start, int sizeBytes)
         {
+            if (infallibleAllocations != null && IsInfallibleAllocation(ref start))
+            {
+                // Ignore infallible allocations
+                return;
+            }
+
             ref var dataStartRef = ref GetDataStartRef();
 
             ref var blockRef = ref GetBlockRef(ref dataStartRef, ref start);
@@ -413,6 +449,17 @@ namespace Garnet.server
         /// </summary>
         public ref byte ResizeAllocation(ref byte start, int oldSizeBytes, int newSizeBytes, out bool failed)
         {
+            if (infallibleAllocations != null && IsInfallibleAllocation(ref start))
+            {
+                // Infallible allocations just go straight on the POH
+
+                failed = false;
+                ref var ret = ref InfallibleAllocate(newSizeBytes);
+                MemoryMarshal.CreateReadOnlySpan(ref start, Math.Min(newSizeBytes, oldSizeBytes)).CopyTo(MemoryMarshal.CreateSpan(ref ret, newSizeBytes));
+
+                return ref ret;
+            }
+
             ref var dataStartRef = ref GetDataStartRef();
 
             ref var curBlock = ref GetBlockRef(ref dataStartRef, ref start);
@@ -430,7 +477,7 @@ namespace Garnet.server
                 {
                     // Move the unused space into a new block
 
-                    SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
+                    _ = SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
 
                     // And try and coalesce that new block into the largest possible one
                     ref var nextBlock = ref curBlock.GetNextAdjacentBlockRef(ref dataStartRef, data.Length);
@@ -484,6 +531,15 @@ namespace Garnet.server
             ref var newAlloc = ref AllocateNew(newSizeBytes, out failed);
             if (failed)
             {
+                if (isInfallible)
+                {
+                    failed = false;
+                    ref var ret = ref InfallibleAllocate(newSizeBytes);
+                    MemoryMarshal.CreateReadOnlySpan(ref start, Math.Min(newSizeBytes, oldSizeBytes)).CopyTo(MemoryMarshal.CreateSpan(ref ret, newSizeBytes));
+
+                    return ref ret;
+                }
+
                 // Couldn't get a new allocation - per spec this leaves the old allocation alone
                 return ref Unsafe.NullRef<byte>();
             }
@@ -1084,5 +1140,55 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe bool IsValidBlockRef(ref BlockHeader blockRef)
         => Unsafe.AsPointer(ref blockRef) != (void*)0;
+
+        /// <summary>
+        /// Allocate a new pinned byte[] and root it in <see cref="infallibleAllocations"/>.
+        /// </summary>
+        private ref byte InfallibleAllocate(int sizeBytes)
+        {
+            var ret = GC.AllocateUninitializedArray<byte>(sizeBytes, pinned: true);
+            if (infallibleAllocations == null)
+            {
+                infallibleAllocations = ret;
+            }
+            else if (infallibleAllocations is byte[] firstAlloc)
+            {
+                var container = new List<byte[]>() { firstAlloc, ret };
+                infallibleAllocations = container;
+            }
+            else
+            {
+                var container = (List<byte[]>)infallibleAllocations;
+                container.Add(ret);
+            }
+
+            return ref MemoryMarshal.GetArrayDataReference(ret);
+        }
+
+        /// <summary>
+        /// Returns true if <paramref name="byteStart"/> points into an infallible allocations.
+        /// </summary>
+        private bool IsInfallibleAllocation(ref byte byteStart)
+        {
+            if (infallibleAllocations is byte[] arr)
+            {
+                ref var arrStart = ref MemoryMarshal.GetArrayDataReference(arr);
+                return Unsafe.AreSame(ref arrStart, ref byteStart);
+            }
+            else
+            {
+                var container = (List<byte[]>)infallibleAllocations;
+                foreach (var containedArr in container)
+                {
+                    ref var arrStart = ref MemoryMarshal.GetArrayDataReference(containedArr);
+                    if (Unsafe.AreSame(ref arrStart, ref byteStart))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
     }
 }

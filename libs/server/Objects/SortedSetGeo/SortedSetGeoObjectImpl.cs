@@ -2,10 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Text;
+using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -14,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Sorted Set - RESP specific operations for GEO Commands
     /// </summary>
-    public unsafe partial class SortedSetObject : GarnetObjectBase
+    public partial class SortedSetObject : GarnetObjectBase
     {
         /// <summary>
         /// Use this struct for the reply of GEOSEARCH command
@@ -23,532 +22,306 @@ namespace Garnet.server
         {
             public Byte[] Member;
             public double Distance;
+            public long GeoHash;
             public string GeoHashCode;
             public (double Latitude, double Longitude) Coordinates;
         }
 
-        /// <summary>
-        /// Small struct to store options for GEOSEARCH command
-        /// </summary>
-        private struct GeoSearchOptions
+        private void GeoAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            public bool FromMember { get; set; }
-            public bool FromLonLat { get; set; }
-            public bool ByRadius { get; set; }
-            public bool ByBox { get; set; }
-            public bool SortDescending { get; set; }
-            public bool WithCount { get; set; }
-            public int WithCountValue { get; set; }
-            public bool WithCountAny { get; set; }
-            public bool WithCoord { get; set; }
-            public bool WithDist { get; set; }
-            public bool WithHash { get; set; }
-        }
+            DeleteExpiredItems();
 
-        private void GeoAdd(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            // By default, add new elements but do not update the ones already in the set
-            var nx = true;
-            var ch = false;
+            // By default, add new elements and update the ones already in the set
+            var options = (GeoAddOptions)input.arg1;
 
             var count = input.parseState.Count;
             var currTokenIdx = 0;
 
-            ObjectOutputHeader _output = default;
-            try
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            // Read the members
+            var elementsAdded = 0;
+            var elementsChanged = 0;
+
+            while (currTokenIdx < count)
             {
-                // Read the options
-                var optsCount = count % 3;
-                if (optsCount > 0 && optsCount <= 2)
+                var res = input.parseState.TryGetGeoLonLat(currTokenIdx, out var longitude, out var latitude, out _);
+                Debug.Assert(res);
+                currTokenIdx += 2;
+                var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
+                var score = server.GeoHash.GeoToLongValue(latitude, longitude);
+                if (score != -1)
                 {
-                    // Is NX or XX, if not nx then use XX
-                    var byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
-                    if (optsCount == 2)
+                    var memberByteArray = member.ToArray();
+                    if (!sortedSetDict.TryGetValue(memberByteArray, out var scoreStored))
                     {
-                        // Read CH option
-                        byteOptions = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                        ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
-                    }
-                }
-
-                var elementsAdded = 0;
-                var elementsChanged = 0;
-
-                while (currTokenIdx < count)
-                {
-                    if (!input.parseState.TryGetDouble(currTokenIdx++, out var longitude) ||
-                        !input.parseState.TryGetDouble(currTokenIdx++, out var latitude))
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                                ref end);
-                        return;
-                    }
-
-                    var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-
-                    var score = server.GeoHash.GeoToLongValue(latitude, longitude);
-                    if (score != -1)
-                    {
-                        var memberByteArray = member.ToArray();
-                        if (!sortedSetDict.TryGetValue(memberByteArray, out var scoreStored))
+                        if ((options & GeoAddOptions.XX) == 0)
                         {
-                            if (nx)
-                            {
-                                sortedSetDict.Add(memberByteArray, score);
-                                sortedSet.Add((score, memberByteArray));
-                                elementsAdded++;
+                            sortedSetDict.Add(memberByteArray, score);
+                            sortedSet.Add((score, memberByteArray));
+                            elementsAdded++;
 
-                                this.UpdateSize(member);
-                                elementsChanged++;
-                            }
-                        }
-                        else if (!nx && scoreStored != score)
-                        {
-                            sortedSetDict[memberByteArray] = score;
-                            var success = sortedSet.Remove((scoreStored, memberByteArray));
-                            Debug.Assert(success);
-                            success = sortedSet.Add((score, memberByteArray));
-                            Debug.Assert(success);
+                            UpdateSize(member);
                             elementsChanged++;
                         }
                     }
-                }
-
-                while (!RespWriteUtils.TryWriteInt32(ch ? elementsChanged : elementsAdded, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
-        }
-
-        private void GeoHash(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
-            {
-                while (!RespWriteUtils.TryWriteArrayLength(input.parseState.Count, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                for (var i = 0; i < input.parseState.Count; i++)
-                {
-                    // Read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-
-                    if (sortedSetDict.TryGetValue(member, out var value52Int))
+                    else if (((options & GeoAddOptions.NX) == 0) && scoreStored != score)
                     {
-                        var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(geoHash, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        sortedSetDict[memberByteArray] = score;
+                        var success = sortedSet.Remove((scoreStored, memberByteArray));
+                        Debug.Assert(success);
+                        success = sortedSet.Add((score, memberByteArray));
+                        Debug.Assert(success);
+                        elementsChanged++;
                     }
                 }
             }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            writer.WriteInt32((options & GeoAddOptions.CH) == 0 ? elementsAdded : elementsChanged);
         }
 
-        private void GeoDistance(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void GeoHash(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            writer.WriteArrayLength(input.parseState.Count);
 
-            ObjectOutputHeader _output = default;
-            try
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                // Read 1st member
-                var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+                // Read member
+                var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                // Read 2nd member
-                var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
-
-                // Read units
-                var units = input.parseState.Count > 2
-                    ? input.parseState.GetArgSliceByRef(2).ReadOnlySpan
-                    : "M"u8;
-
-                if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
+                if (sortedSetDict.TryGetValue(member, out var value52Int))
                 {
-                    var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
-                    var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
-
-                    var distance = server.GeoHash.Distance(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
-
-                    var distanceValue = (units.Length == 1 && AsciiUtils.ToUpper(units[0]) == (byte)'M') ?
-                        distance : server.GeoHash.ConvertMetersToUnits(distance, units);
-
-                    while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    var geoHash = server.GeoHash.GetGeoHashCode((long)value52Int);
+                    writer.WriteAsciiBulkString(geoHash);
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteNull();
                 }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
             }
         }
 
-        private void GeoPosition(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void GeoDistance(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            // Read 1st member
+            var member1 = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            // Read 2nd member
+            var member2 = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
 
-            ObjectOutputHeader _output = default;
-            try
+            // Read units
+            var units = GeoDistanceUnitType.M;
+
+            if (input.parseState.Count > 2)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(input.parseState.Count, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                for (var i = 0; i < input.parseState.Count; i++)
-                {
-                    // read member
-                    var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-
-                    if (sortedSetDict.TryGetValue(member, out var scoreMember1))
-                    {
-                        var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
-
-                        // write array of 2 values
-                        while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        while (!RespWriteUtils.TryWriteDoubleBulkString(lon, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        while (!RespWriteUtils.TryWriteDoubleBulkString(lat, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                }
+                var validUnit = input.parseState.TryGetGeoDistanceUnit(2, out units);
+                Debug.Assert(validUnit);
             }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            if (sortedSetDict.TryGetValue(member1, out var scoreMember1) && sortedSetDict.TryGetValue(member2, out var scoreMember2))
+            {
+                var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
+                var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
+
+                var distance = server.GeoHash.Distance(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
+
+                var distanceValue = server.GeoHash.ConvertMetersToUnits(distance, units);
+
+                writer.WriteDoubleBulkString(distanceValue);
+            }
+            else
+            {
+                writer.WriteNull();
             }
         }
 
-        private void GeoSearch(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void GeoPosition(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            writer.WriteArrayLength(input.parseState.Count);
 
-            ObjectOutputHeader _output = default;
-            try
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                var opts = new GeoSearchOptions();
-                byte[] fromMember = null;
-                var byBoxUnits = "M"u8;
-                double width = 0, height = 0;
-                var countValue = 0;
+                // read member
+                var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
 
-                ReadOnlySpan<byte> errorMessage = default;
-                var argNumError = false;
-
-                var currTokenIdx = 0;
-
-                // Read the options
-                while (currTokenIdx < input.parseState.Count)
+                if (sortedSetDict.TryGetValue(member, out var scoreMember1))
                 {
-                    // Read token
-                    var tokenBytes = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                    var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
 
-                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
+                    // write array of 2 values
+                    writer.WriteArrayLength(2);
+                    writer.WriteDoubleNumeric(lon);
+                    writer.WriteDoubleNumeric(lat);
+                }
+                else
+                {
+                    writer.WriteNullArray();
+                }
+            }
+        }
+
+        internal void GeoSearch(ref ObjectInput input,
+                                ref SpanByteAndMemory spam,
+                                byte respProtocolVersion,
+                                ref GeoSearchOptions opts,
+                                bool readOnly)
+        {
+            Debug.Assert(opts.searchType != default);
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            // FROMMEMBER
+            if (opts.origin == GeoOriginType.FromMember)
+            {
+                if (!sortedSetDict.TryGetValue(opts.fromMember, out var centerPointScore))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_ZSET_MEMBER);
+                    return;
+                }
+
+                (opts.lat, opts.lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
+            }
+
+            // Get the results
+            var responseData = new List<GeoSearchData>(
+                opts.withCountAny && opts.countValue > 0 && opts.countValue < sortedSet.Count ?
+                opts.countValue :
+                sortedSet.Count);
+
+            foreach (var point in sortedSet)
+            {
+                var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Score);
+                double distance = 0;
+
+                if (opts.searchType == GeoSearchType.ByBox)
+                {
+                    if (!server.GeoHash.GetDistanceWhenInRectangle(
+                            server.GeoHash.ConvertValueToMeters(opts.boxWidth, opts.unit),
+                            server.GeoHash.ConvertValueToMeters(opts.boxHeight, opts.unit),
+                            opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
                     {
-                        if (input.parseState.Count - currTokenIdx == 0)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        fromMember = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
-                        opts.FromMember = true;
+                        continue;
                     }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
+                }
+                else /* byRadius == true */
+                {
+                    if (!server.GeoHash.IsPointWithinRadius(
+                            server.GeoHash.ConvertValueToMeters(opts.radius, opts.unit),
+                            opts.lat, opts.lon, coorInItem.Latitude, coorInItem.Longitude, ref distance))
                     {
-                        if (input.parseState.Count - currTokenIdx < 2)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        // Read coordinates
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out _) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out _))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                            break;
-                        }
-
-                        opts.FromLonLat = true;
+                        continue;
                     }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYRADIUS"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx < 2)
-                        {
-                            argNumError = true;
-                            break;
-                        }
+                }
 
-                        // Read radius and units
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out _))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                            break;
-                        }
+                // The item is inside the shape
+                responseData.Add(new GeoSearchData()
+                {
+                    Member = point.Element,
+                    Distance = distance,
+                    GeoHash = (long)point.Score,
+                    GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Score),
+                    Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Score)
+                });
 
-                        opts.ByRadius = true;
-                    }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYBOX"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx < 3)
-                        {
-                            argNumError = true;
-                            break;
-                        }
+                if (opts.withCountAny && (responseData.Count == opts.countValue))
+                    break;
+            }
 
-                        // Read width, height
-                        if (!input.parseState.TryGetDouble(currTokenIdx++, out width) ||
-                            !input.parseState.TryGetDouble(currTokenIdx++, out height))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
-                            break;
-                        }
+            if (responseData.Count == 0)
+            {
+                writer.WriteEmptyArray();
+            }
+            else
+            {
+                var innerArrayLength = 1;
+                if (opts.withDist)
+                {
+                    innerArrayLength++;
+                }
+                if (opts.withHash)
+                {
+                    innerArrayLength++;
+                }
+                if (opts.withCoord)
+                {
+                    innerArrayLength++;
+                }
 
-                        // Read units
-                        byBoxUnits = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-
-                        opts.ByBox = true;
-                    }
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ASC"u8)) opts.SortDescending = false;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("DESC"u8)) opts.SortDescending = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
-                    {
-                        if (input.parseState.Count - currTokenIdx == 0)
-                        {
-                            argNumError = true;
-                            break;
-                        }
-
-                        if (!input.parseState.TryGetInt(currTokenIdx++, out countValue))
-                        {
-                            errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
-                            break;
-                        }
-
-                        opts.WithCount = true;
-                    }
-                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
-                    else if ((input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) ||
-                             (input.header.SortedSetOp == SortedSetOperation.GEOSEARCHSTORE && tokenBytes.EqualsUpperCaseSpanIgnoringCase("STOREDIST"u8))) opts.WithDist = true;
-                    else if (input.header.SortedSetOp == SortedSetOperation.GEOSEARCH && tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
-                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
-                    else
-                    {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                var q = responseData.AsQueryable();
+                switch (opts.sort)
+                {
+                    case GeoOrder.Descending:
+                        q = q.OrderByDescending(i => i.Distance);
                         break;
-                    }
+                    case GeoOrder.Ascending:
+                        q = q.OrderBy(i => i.Distance);
+                        break;
+                    case GeoOrder.None:
+                        if (!opts.withCountAny && opts.countValue > 0)
+                            q = q.OrderBy(i => i.Distance);
+                        break;
                 }
 
-                // Check that we have the mandatory options
-                if (errorMessage.IsEmpty && !((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
-                    argNumError = true;
-
-                // Check if we have a wrong number of arguments
-                if (argNumError)
+                // Write results 
+                if (opts.countValue > 0 && opts.countValue < responseData.Count)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.GEOSEARCH)));
+                    q = q.Take(opts.countValue);
+                    writer.WriteArrayLength(opts.countValue);
+                }
+                else
+                {
+                    writer.WriteArrayLength(responseData.Count);
                 }
 
-                // Check if we encountered an error while checking the parse state
-                if (!errorMessage.IsEmpty)
+                foreach (var item in q)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                // Not supported options in Garnet: WITHHASH
-                if (opts.WithHash)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    return;
-                }
-
-                // Get the results
-                // FROMMEMBER
-                if (opts.FromMember && sortedSetDict.TryGetValue(fromMember, out var centerPointScore))
-                {
-                    var (lat, lon) = server.GeoHash.GetCoordinatesFromLong((long)centerPointScore);
-
-                    if (opts.ByRadius)
+                    if (innerArrayLength > 1)
                     {
-                        // Not supported in Garnet: ByRadius
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        writer.WriteArrayLength(innerArrayLength);
                     }
-                    else
+
+                    writer.WriteBulkString(item.Member);
+
+                    if (opts.withDist)
                     {
-                        var responseData = new List<GeoSearchData>();
-                        foreach (var point in sortedSet)
+                        var distanceValue = opts.searchType switch
                         {
-                            var coorInItem = server.GeoHash.GetCoordinatesFromLong((long)point.Item1);
-                            double distance = 0;
-                            if (opts.ByBox)
-                            {
-                                if (server.GeoHash.GetDistanceWhenInRectangle(server.GeoHash.ConvertValueToMeters(width, byBoxUnits), server.GeoHash.ConvertValueToMeters(height, byBoxUnits), lat, lon, coorInItem.Item1, coorInItem.Item2, ref distance))
-                                {
-                                    // The item is inside the shape
-                                    responseData.Add(new GeoSearchData()
-                                    {
-                                        Member = point.Item2,
-                                        Distance = distance,
-                                        GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Item1),
-                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Item1)
-                                    });
+                            GeoSearchType.ByBox => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
 
-                                    if (opts.WithCount && responseData.Count == countValue)
-                                        break;
-                                }
-                            }
-                        }
+                            // byRadius
+                            _ => server.GeoHash.ConvertMetersToUnits(item.Distance, opts.unit),
+                        };
 
-                        if (responseData.Count == 0)
+                        writer.WriteDoubleBulkString(distanceValue);
+                    }
+
+                    if (opts.withHash)
+                    {
+                        if (readOnly)
                         {
-                            while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            writer.WriteInt64(item.GeoHash);
                         }
                         else
                         {
-                            var innerArrayLength = 1;
-                            if (opts.WithDist)
-                            {
-                                innerArrayLength++;
-                            }
-                            if (opts.WithHash)
-                            {
-                                innerArrayLength++;
-                            }
-                            if (opts.WithCoord)
-                            {
-                                innerArrayLength++;
-                            }
-
-                            // Write results 
-                            while (!RespWriteUtils.TryWriteArrayLength(responseData.Count, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            foreach (var item in responseData)
-                            {
-                                if (innerArrayLength > 1)
-                                {
-                                    while (!RespWriteUtils.TryWriteArrayLength(innerArrayLength, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-
-                                while (!RespWriteUtils.TryWriteBulkString(item.Member, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                if (opts.WithDist)
-                                {
-                                    var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
-                                                        : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
-
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-
-                                if (opts.WithCoord)
-                                {
-                                    // Write array of 2 values
-                                    while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-                            }
+                            writer.WriteArrayItem(item.GeoHash);
                         }
                     }
-                }
 
-                // Not supported options in Garnet: FROMLONLAT BYBOX BYRADIUS 
-                if (opts.FromLonLat)
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    if (opts.withCoord)
+                    {
+                        // Write array of 2 values
+                        writer.WriteArrayLength(2);
+                        writer.WriteDoubleNumeric(item.Coordinates.Longitude);
+                        writer.WriteDoubleNumeric(item.Coordinates.Latitude);
+                    }
                 }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
             }
         }
     }

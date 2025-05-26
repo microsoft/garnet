@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -42,9 +41,9 @@ namespace Garnet.cluster
 
             if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1) head = tail = null;
 
-            //This purge does not check for active readers
-            //1. If primary is initializing then we will not have any active readers since not connections are established at recovery
-            //2. If replica is initializing during failover we do this before allowing other replicas to attach.
+            // This purge does not check for active readers
+            // 1. If primary is initializing then we will not have any active readers since not connections are established at recovery
+            // 2. If replica is initializing during failover we do this before allowing other replicas to attach.
             if (safelyRemoveOutdated)
                 PurgeAllCheckpointsExceptEntry(tail);
         }
@@ -71,7 +70,7 @@ namespace Garnet.cluster
         {
             entry ??= GetLatestCheckpointEntryFromDisk();
             if (entry == null) return;
-            LogCheckpointEntry("Purge all except", entry);
+            logger?.LogCheckpointEntry(LogLevel.Trace, nameof(PurgeAllCheckpointsExceptEntry), entry);
             PurgeAllCheckpointsExceptTokens(StoreType.Main, entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
             if (!clusterProvider.serverOptions.DisableObjects)
                 PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.metadata.objectStoreHlogToken, entry.metadata.objectStoreIndexToken);
@@ -114,48 +113,28 @@ namespace Garnet.cluster
         /// Since there can be not concurrent checkpoints this method is not thread safe.
         /// </summary>
         /// <param name="entry"></param>
-        /// <param name="storeType"></param>
         /// <param name="fullCheckpoint"></param>
-        public void AddCheckpointEntry(CheckpointEntry entry, StoreType storeType, bool fullCheckpoint = false)
+        public void AddCheckpointEntry(CheckpointEntry entry, bool fullCheckpoint = false)
         {
-            //If not full checkpoint index checkpoint will be the one of the previous checkpoint
+            // If not full checkpoint index checkpoint will be the one of the previous checkpoint
             if (!fullCheckpoint)
             {
-                var lastEntry = tail;
-                Debug.Assert(lastEntry != null);
-
+                var lastEntry = tail ?? throw new GarnetException($"Checkpoint history unavailable, need full checkpoint for {entry}");
                 entry.metadata.storeIndexToken = lastEntry.metadata.storeIndexToken;
                 entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
 
-            //Assume we don't have multiple writers so it is safe to update the tail directly
             if (tail == null)
                 head = tail = entry;
             else
             {
-                if (storeType == StoreType.Main)
-                {
-                    entry.metadata.objectStoreVersion = tail.metadata.objectStoreVersion;
-                    entry.metadata.objectStoreHlogToken = tail.metadata.objectStoreHlogToken;
-                    entry.metadata.objectStoreIndexToken = tail.metadata.objectStoreIndexToken;
-                    entry.metadata.objectCheckpointCoveredAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
-                    entry.metadata.objectStorePrimaryReplId = tail.metadata.objectStorePrimaryReplId;
-                }
-
-                if (storeType == StoreType.Object)
-                {
-                    entry.metadata.storeVersion = tail.metadata.storeVersion;
-                    entry.metadata.storeHlogToken = tail.metadata.storeHlogToken;
-                    entry.metadata.storeIndexToken = tail.metadata.storeIndexToken;
-                    entry.metadata.storeCheckpointCoveredAofAddress = tail.metadata.objectCheckpointCoveredAofAddress;
-                    entry.metadata.storePrimaryReplId = tail.metadata.storePrimaryReplId;
-                }
-
+                // We don't have multiple writers because this method is called under the CheckpointLock
+                // So it is safe to update in-place.
                 tail.next = entry;
-                tail = entry;
+                tail = tail.next;
             }
 
-            LogCheckpointEntry("Added new checkpoint entry in-memory", tail);
+            logger?.LogCheckpointEntry(LogLevel.Trace, nameof(AddCheckpointEntry), entry);
 
             if (safelyRemoveOutdated)
                 DeleteOutdatedCheckpoints();
@@ -166,18 +145,20 @@ namespace Garnet.cluster
         /// </summary>
         private void DeleteOutdatedCheckpoints()
         {
-            //If only one in-memory checkpoint return
+            // If only one in-memory checkpoint return
             if (head == tail) return;
 
             logger?.LogTrace("Try safe delete in-memory outdated checkpoints");
             var curr = head;
             while (curr != null && curr != tail)
             {
-                LogCheckpointEntry("Trying to suspend readers for checkpoint entry", curr);
+                logger?.LogCheckpointEntry(LogLevel.Trace, nameof(DeleteOutdatedCheckpoints), curr);
+
                 // If cannot suspend readers for this entry
                 if (!curr.TrySuspendReaders()) break;
 
-                LogCheckpointEntry("Deleting checkpoint entry", curr);
+                logger?.LogTrace("Suspended readers and deleting outdated checkpoint!");
+
                 // Below check each checkpoint token separately if it is eligible for deletion
                 if (CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
                     clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
@@ -194,45 +175,36 @@ namespace Garnet.cluster
                         clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
                 }
 
-                //At least one token can always be deleted thus invalidating the in-memory entry
+                // At least one token can always be deleted thus invalidating the in-memory entry
                 var next = curr.next;
                 curr.next = null;
                 curr = next;
             }
 
-            //Update head after delete
+            // Update head after delete
             head = curr;
-        }
+            logger?.LogCheckpointEntry(LogLevel.Trace, "Current Head", head);
 
-        /// <summary>
-        /// Check if specific token can be delete by scanning through the entries of the in memory checkpoint store.
-        /// If token is not shared we can return immediately and delete it
-        /// If token is shared try suspending the addition of new readers
-        ///     if failed suspending new readers cannot delete token
-        ///     else we need to move up the chain of entries and ensure the token is not shared with other entries
-        /// </summary>
-        /// <param name="toDelete"></param>
-        /// <param name="fileType"></param>
-        /// <returns></returns>
-        private bool CanDeleteToken(CheckpointEntry toDelete, CheckpointFileType fileType)
-        {
-            var curr = toDelete.next;
-            while (curr != null && curr != tail)
+            bool CanDeleteToken(CheckpointEntry toDelete, CheckpointFileType fileType)
             {
-                //Token can be deleted when curr entry and toDelete do not share it
-                if (!curr.ContainsSharedToken(toDelete, fileType))
-                    return true;
+                var curr = toDelete.next;
+                while (curr != null && curr != tail)
+                {
+                    // Token can be deleted when curr entry and toDelete do not share it
+                    if (!curr.ContainsSharedToken(toDelete, fileType))
+                        return true;
 
-                //If token is shared then try to suspend addition of new readers
-                if (!curr.TrySuspendReaders())
-                    return false;
+                    // If token is shared then try to suspend addition of new readers
+                    if (!curr.TrySuspendReaders())
+                        return false;
 
-                //If suspend new readers succeeds continue up the chain to find how far token is being used
-                curr = curr.next;
+                    // If suspend new readers succeeds continue up the chain to find how far token is being used
+                    curr = curr.next;
+                }
+
+                // Here we reached the tail so we can delete the token only if it is not shared with the tail
+                return !curr.ContainsSharedToken(toDelete, fileType);
             }
-
-            //Here we reached the tail so we can delete the token only if it is not shared with the tail
-            return !curr.ContainsSharedToken(toDelete, fileType);
         }
 
         /// <summary>
@@ -240,12 +212,13 @@ namespace Garnet.cluster
         /// Caller is responsible for releasing reader by calling removeReader on entry
         /// </summary>
         /// <returns></returns>
-        public CheckpointEntry GetLatestCheckpointEntryFromMemory()
+        public bool GetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
         {
+            cEntry = null;
             var _tail = tail;
             if (_tail == null)
             {
-                var cEntry = new CheckpointEntry()
+                cEntry = new CheckpointEntry()
                 {
                     metadata = new()
                     {
@@ -253,18 +226,15 @@ namespace Garnet.cluster
                         objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
                     }
                 };
-                cEntry.TryAddReader();
-                return cEntry;
+                _ = cEntry.TryAddReader();
+                return true;
             }
-            while (true)
-            {
-                //Attempt to TryAddReader to ref of tail entry and return if successful
-                if (_tail.TryAddReader()) return _tail;
-                Thread.Yield();
 
-                //Update reference to latest tail entry and continue trying to add a new reader
-                _tail = tail;
-            }
+            if (!_tail.TryAddReader())
+                return false;
+
+            cEntry = _tail;
+            return true;
         }
 
         /// <summary>
@@ -275,8 +245,9 @@ namespace Garnet.cluster
         {
             Guid objectStoreHLogToken = default;
             Guid objectStoreIndexToken = default;
-            storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken);
-            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken);
+            var objectStoreVersion = -1L;
+            storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken, out var storeVersion);
+            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken, out objectStoreVersion);
             var (storeCheckpointCoveredAofAddress, storePrimaryReplId) = GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken);
             var (objectCheckpointCoveredAofAddress, objectStorePrimaryReplId) = objectStoreHLogToken == default ? (long.MaxValue, null) : GetCheckpointCookieMetadata(StoreType.Object, objectStoreHLogToken);
 
@@ -284,13 +255,13 @@ namespace Garnet.cluster
             {
                 metadata = new()
                 {
-                    storeVersion = storeHLogToken == default ? -1 : storeWrapper.store.GetLatestCheckpointVersion(),
+                    storeVersion = storeVersion,
                     storeHlogToken = storeHLogToken,
                     storeIndexToken = storeIndexToken,
                     storeCheckpointCoveredAofAddress = storeCheckpointCoveredAofAddress,
                     storePrimaryReplId = storePrimaryReplId,
 
-                    objectStoreVersion = objectStoreHLogToken == default ? -1 : storeWrapper.objectStore.GetLatestCheckpointVersion(),
+                    objectStoreVersion = objectStoreVersion,
                     objectStoreHlogToken = objectStoreHLogToken,
                     objectStoreIndexToken = objectStoreIndexToken,
                     objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,
@@ -299,44 +270,66 @@ namespace Garnet.cluster
                 _lock = new SingleWriterMultiReaderLock()
             };
             return entry;
-        }
 
-        private (long, string) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
-        {
-            if (fileToken == default) return (0, null);
-            var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
-            var pageSizeBits = storeType == StoreType.Main ? clusterProvider.serverOptions.PageSizeBits() : clusterProvider.serverOptions.ObjectStorePageSizeBits();
-            using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
+            (long, string) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
             {
-                if (deltaFileDevice is not null)
+                if (fileToken == default) return (0, null);
+                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
+                var pageSizeBits = storeType == StoreType.Main ? clusterProvider.serverOptions.PageSizeBits() : clusterProvider.serverOptions.ObjectStorePageSizeBits();
+                using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
                 {
-                    deltaFileDevice.Initialize(-1);
-                    if (deltaFileDevice.GetFileSize(0) > 0)
+                    if (deltaFileDevice is not null)
                     {
-                        var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
-                        deltaLog.InitializeForReads();
-                        return ckptManager.GetCheckpointCookieMetadata(fileToken, deltaLog, true, -1);
+                        deltaFileDevice.Initialize(-1);
+                        if (deltaFileDevice.GetFileSize(0) > 0)
+                        {
+                            var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
+                            deltaLog.InitializeForReads();
+                            return ckptManager.GetCheckpointCookieMetadata(fileToken, deltaLog, true, -1);
+                        }
                     }
                 }
+                return ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1);
             }
-            return ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1);
         }
 
         /// <summary>
-        /// Logger wrapper for gathering CheckpointEntry data
+        /// Get latest checkpoint from memory info
         /// </summary>
-        /// <param name="msg"></param>
-        /// <param name="entry"></param>
-        public void LogCheckpointEntry(string msg, CheckpointEntry entry)
+        /// <returns></returns>
+        public string GetLatestCheckpointFromMemoryInfo()
         {
-            logger?.LogTrace("{msg} {storeVersion} {storeHlogToken} {storeIndexToken} {objectStoreVersion} {objectStoreHlogToken} {objectStoreIndexToken}",
-                msg,
-                entry.metadata.storeVersion,
-                entry.metadata.storeHlogToken,
-                entry.metadata.storeIndexToken,
-                entry.metadata.objectStoreVersion,
-                entry.metadata.objectStoreHlogToken,
-                entry.metadata.objectStoreIndexToken);
+            var _tail = tail;
+            if (_tail == null)
+                return "(empty)";
+
+            try
+            {
+                return _tail.ToString();
+            }
+            catch
+            {
+                return "(empty)";
+            }
+        }
+
+        /// <summary>
+        /// Get latest checkpoint from memory info
+        /// </summary>
+        /// <returns></returns>
+        public string GetLatestCheckpointFromDiskInfo()
+        {
+            var cEntry = GetLatestCheckpointEntryFromDisk();
+            if (cEntry == null)
+                return "(empty)";
+            try
+            {
+                return cEntry.ToString();
+            }
+            catch
+            {
+                return "(empty)";
+            }
         }
     }
 }
