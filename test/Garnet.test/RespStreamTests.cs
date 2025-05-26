@@ -3,17 +3,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Embedded.server;
-using Garnet.common;
-using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Tsavorite.core;
 
 namespace Garnet.test
 {

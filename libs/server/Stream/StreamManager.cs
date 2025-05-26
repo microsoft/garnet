@@ -36,7 +36,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
-        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, byte* value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream)
+        /// <param name="respProtocolVersion">RESP protocol version</param>
+        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, byte* value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
         {
             // copy key store this key in the dictionary
             byte[] key = new byte[keySlice.Length];
@@ -52,7 +53,7 @@ namespace Garnet.server
                 foundStream = streams.TryGetValue(key, out stream);
                 if (foundStream)
                 {
-                    stream.AddEntry(value, valueLength, idSlice, numPairs, ref output);
+                    stream.AddEntry(value, valueLength, idSlice, numPairs, ref output, respProtocolVersion);
                     // update last accessed stream key 
                     lastStream = stream;
                     streamKey = key;
@@ -76,14 +77,14 @@ namespace Garnet.server
                 {
                     // stream was not found with this key so create a new one 
                     StreamObject newStream = new StreamObject(null, defPageSize, defMemorySize, safeTailRefreshFreqMs);
-                    newStream.AddEntry(value, valueLength, idSlice, numPairs, ref output);
+                    newStream.AddEntry(value, valueLength, idSlice, numPairs, ref output, respProtocolVersion);
                     streams.TryAdd(key, newStream);
                     streamKey = key;
                     lastStream = newStream;
                 }
                 else
                 {
-                    stream.AddEntry(value, valueLength, idSlice, numPairs, ref output);
+                    stream.AddEntry(value, valueLength, idSlice, numPairs, ref output, respProtocolVersion);
                     lastStream = stream;
                     streamKey = key;
                 }
@@ -127,7 +128,8 @@ namespace Garnet.server
         /// <param name="end">end of range</param>
         /// <param name="count">threshold to limit scanning</param>
         /// <param name="output"></param>
-        public unsafe bool StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output)
+        /// <param name="respProtocolVersion">RESP protocol version</param>
+        public unsafe bool StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var key = keySlice.ToArray();
             if (streams != null && streams.Count > 0)
@@ -135,7 +137,7 @@ namespace Garnet.server
                 bool foundStream = streams.TryGetValue(key, out StreamObject stream);
                 if (foundStream)
                 {
-                    stream.ReadRange(start, end, count, ref output);
+                    stream.ReadRange(start, end, count, ref output, respProtocolVersion);
                     return true;
                 }
             }

@@ -13,7 +13,7 @@ namespace Garnet.server
         /// STREAMADD
         /// </summary>
         /// <returns></returns> 
-        private unsafe bool StreamAdd()
+        private unsafe bool StreamAdd(byte respProtocolVersion)
         {
             if (parseState.Count < 4)
             {
@@ -38,15 +38,16 @@ namespace Garnet.server
 
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                cachedStream.AddEntry(vPtr, vsize, idGiven, numPairs, ref _output);
+                cachedStream.AddEntry(vPtr, vsize, idGiven, numPairs, ref _output, respProtocolVersion);
             }
             else
             {
-                streamManager.StreamAdd(key, idGiven, vPtr, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream);
+                streamManager.StreamAdd(key, idGiven, vPtr, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
                 // since we added to a new stream that was not in the cache, try adding it to the cache
                 sessionStreamCache.TryAddStreamToCache(lastStreamKey, lastStream);
             }
-            _ = ProcessOutputWithHeader(_output);
+            // _ = ProcessOutputWithHeader(_output);
+            ProcessOutput(_output);
             return true;
         }
 
@@ -84,7 +85,7 @@ namespace Garnet.server
         ///  STREAMRANGE
         /// </summary>
         /// <returns></returns>
-        public unsafe bool StreamRange()
+        public unsafe bool StreamRange(byte respProtocolVersion)
         {
             // command is of format: XRANGE key start end [COUNT count]
             // we expect at least 3 arguments
@@ -118,16 +119,17 @@ namespace Garnet.server
             // check if the stream exists in cache
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                cachedStream.ReadRange(startId, endId, count, ref _output);
+                cachedStream.ReadRange(startId, endId, count, ref _output, respProtocolVersion);
                 success = true;
             }
             else
             {
-                success = streamManager.StreamRange(key, startId, endId, count, ref _output);
+                success = streamManager.StreamRange(key, startId, endId, count, ref _output, respProtocolVersion);
             }
             if (success)
             {
-                _ = ProcessOutputWithHeader(_output);
+                // _ = ProcessOutputWithHeader(_output);
+                ProcessOutput(_output);
             }
             else
             {
@@ -136,8 +138,6 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-
-            // _ = ProcessOutputWithHeader(_output);
 
             return true;
         }

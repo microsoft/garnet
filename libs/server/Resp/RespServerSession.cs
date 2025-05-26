@@ -902,10 +902,10 @@ namespace Garnet.server
                 RespCommand.SDIFF => SetDiff(ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
                 // Stream Commands
-                RespCommand.XADD => StreamAdd(),
+                RespCommand.XADD => StreamAdd(respProtocolVersion),
                 RespCommand.XLEN => StreamLength(),
                 RespCommand.XDEL => StreamDelete(),
-                RespCommand.XRANGE => StreamRange(),
+                RespCommand.XRANGE => StreamRange(respProtocolVersion),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;

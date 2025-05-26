@@ -216,7 +216,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value">byte array of the entry to store in the stream</param>
         /// <returns>True if entry is added successfully</returns>
-        public unsafe void AddEntry(byte* value, int valueLength, ArgSlice idSlice, int numPairs, ref SpanByteAndMemory output)
+        public unsafe void AddEntry(byte* value, int valueLength, ArgSlice idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             byte* ptr = output.SpanByte.ToPointer();
             var curr = ptr;
@@ -225,15 +225,19 @@ namespace Garnet.server
             bool isMemory = false;
             byte* tmpPtr = null;
             StreamID id = default;
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
             // take a lock to ensure thread safety
             _lock.WriteLock();
+
             try
             {
                 bool canParseID = parseIDString(idSlice, ref id);
                 if (!canParseID)
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR Syntax", ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    // while (!RespWriteUtils.TryWriteError("ERR Syntax", ref curr, end))
+                    //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteError("ERR Syntax");
+                    _lock.WriteUnlock();
                     return;
                 }
 
@@ -242,8 +246,10 @@ namespace Garnet.server
                     bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
                     if (!enqueueInLog)
                     {
-                        while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        // while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
+                        //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        writer.WriteError("ERR StreamAdd failed");
+                        _lock.WriteUnlock();
                         return;
                     }
 
@@ -253,8 +259,10 @@ namespace Garnet.server
                     // bool added = true;
                     if (!added)
                     {
-                        while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        // while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
+                        //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        writer.WriteError("ERR StreamAdd failed");
+                        _lock.WriteUnlock();
                         return;
                     }
                     // copy encoded ms and seq
@@ -264,8 +272,9 @@ namespace Garnet.server
                     totalEntriesAdded++;
                     // write back the decoded ID of the entry added
                     string idString = $"{id.getMS()}-{id.getSeq()}";
-                    while (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    // while (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
+                    //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    writer.WriteSimpleString(idString);
                 }
             }
             finally
@@ -376,8 +385,9 @@ namespace Garnet.server
         /// <param name="max">end of range</param>
         /// <param name="limit">threshold to scanning</param>
         /// <param name="output"></param>
-        public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output)
+        public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
             _lock.ReadLock();
             try
             {
@@ -431,8 +441,9 @@ namespace Garnet.server
                     {
 
                         // write length of how many entries we will print out 
-                        while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        // while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
+                        //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        writer.WriteArrayLength(count);
 
                         byte* e;
                         while (iter.GetNext(out var entry, out _, out long currentAddress, out long nextAddress))
@@ -468,16 +479,20 @@ namespace Garnet.server
                             Span<byte> value = entryBytes.Slice(20);
 
                             // we can already write back the ID that we read 
-                            while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            if (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
-                            {
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
+                            // while (!RespWriteUtils.TryWriteArrayLength(2, ref curr, end))
+                            //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            writer.WriteArrayLength(2);
+
+                            // if (!RespWriteUtils.TryWriteSimpleString(idString, ref curr, end))
+                            // {
+                            //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            // }
+                            writer.WriteSimpleString(idString);
 
                             // print array length for the number of key-value pairs in the entry
-                            while (!RespWriteUtils.TryWriteArrayLength(numPairs, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            // while (!RespWriteUtils.TryWriteArrayLength(numPairs, ref curr, end))
+                            //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            writer.WriteArrayLength(numPairs);
 
                             // write key-value pairs
                             fixed (byte* p = value)
@@ -493,8 +508,9 @@ namespace Garnet.server
                                         return;
                                     }
                                     var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
-                                    while (!RespWriteUtils.TryWriteBulkString(o, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                    // while (!RespWriteUtils.TryWriteBulkString(o, ref curr, end))
+                                    //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                    writer.WriteBulkString(o);
                                     read += (int)(e - orig);
                                 }
                             }
