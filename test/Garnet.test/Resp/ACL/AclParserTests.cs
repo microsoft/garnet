@@ -45,6 +45,7 @@ namespace Garnet.test.Resp.ACL
         [TestCase("user 25-multi-category-reduces on -@all +@keyspace +@hash -flushdb", "+@keyspace +@hash -flushdb")]
         [TestCase("user 26-multi-category-reduces on -@all +@keyspace -flushdb +@hash -flushdb", "+@keyspace -flushdb +@hash")]
         [TestCase("user 27-multi-category-reduces on -@all +set +get +incr +decr +@keyspace +@hash +incrby +decrby +script|exists +@pubsub +expire +ttl", "+set +get +incr +decr +@keyspace +@hash +incrby +decrby +script|exists +@pubsub")]
+        [TestCase("user 28-command-reversed-duplicates on -set +set", "+set")]
         public void ParseACLRuleDescriptionTest(string acl, string expectedDescription)
         {
             User user = ACLParser.ParseACLRule(acl);
