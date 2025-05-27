@@ -175,12 +175,13 @@ namespace Garnet.server
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             // Take lock to ensure no other task will be taking a checkpoint
-            var checkpointsPaused = TryPauseCheckpoints(dbId);
+            while (!TryPauseCheckpoints(dbId))
+                await Task.Yield();
 
             try
             {
                 // If an external task has taken a checkpoint beyond the provided entryTime return
-                if (!checkpointsPaused || defaultDatabase.LastSaveTime > entryTime)
+                if (defaultDatabase.LastSaveTime > entryTime)
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
@@ -291,8 +292,13 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void DoCompaction(CancellationToken token = default, ILogger logger = null) => DoCompaction(defaultDatabase);
 
+        /// <inheritdoc/>
         public override bool GrowIndexesIfNeeded(CancellationToken token = default) =>
             GrowIndexesIfNeeded(defaultDatabase);
+
+        /// <inheritdoc/>
+        public override void ExecuteObjectCollection() =>
+            ExecuteObjectCollection(defaultDatabase, Logger);
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>

@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers;
 using System.Diagnostics;
+using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
@@ -10,7 +10,7 @@ namespace Garnet
 {
     public class MyDictGet : CustomObjectFunctions
     {
-        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
             Debug.Assert(value is MyDict);
 
@@ -18,9 +18,9 @@ namespace Garnet
 
             var dictObject = (MyDict)value;
             if (dictObject.TryGetValue(entryKey.ToArray(), out var result))
-                WriteBulkString(ref output, result);
+                writer.WriteBulkString(result);
             else
-                WriteNullBulkString(ref output);
+                writer.WriteNull();
 
             return true;
         }

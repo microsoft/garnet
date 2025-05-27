@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers;
 using System.Diagnostics;
+using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
@@ -10,9 +10,9 @@ namespace Garnet
 {
     public class MyDictSet : CustomObjectFunctions
     {
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref (IMemoryOwner<byte>, int) output) => true;
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
 
-        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             Debug.Assert(value is MyDict);
 
