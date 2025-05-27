@@ -279,8 +279,8 @@ namespace Garnet
 
             if (opts.ExtensionBinPaths?.Length > 0)
             {
-                logger?.LogTrace($"Allowed extension binary paths: {string.Join("; ", opts.ExtensionBinPaths)}");
-                logger?.LogTrace($"Unsigned extension libraries {(opts.ExtensionAllowUnsignedAssemblies ? string.Empty : "dis")}allowed.");
+                logger?.LogTrace("Allowed extension binary paths: {binPaths}", string.Join("; ", opts.ExtensionBinPaths));
+                logger?.LogTrace("Unsigned extension libraries {dis}allowed.", opts.ExtensionAllowUnsignedAssemblies ? string.Empty : "dis");
             }
 
             // Create session provider for Garnet
