@@ -92,8 +92,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
@@ -183,20 +182,18 @@ namespace Garnet.server
                             break;
                         default:
                             var inputCount = parseState.Count - 1;
-                            while (!RespWriteUtils.TryWriteArrayLength(inputCount, ref dcurr, dend))
-                                SendAndReset();
+
+                            WriteArrayLength(inputCount);
                             for (var i = 0; i < inputCount; i++)
                             {
-                                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                                    SendAndReset();
+                                WriteNullArray();
                             }
                             break;
                     }
 
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 
@@ -263,9 +260,7 @@ namespace Garnet.server
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(errorMessage);
             }
 
             GarnetStatus status;
@@ -299,13 +294,11 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteEmptyArray();
                     break;
 
                 case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     break;
             }
 

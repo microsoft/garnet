@@ -92,14 +92,12 @@ namespace Garnet.server
                         return Encoding.ASCII.GetBytes($"$9\r\ndatabases\r\n${databases.Length}\r\n{databases}\r\n");
                     }
 
-                    while (!RespWriteUtils.TryWriteDirect(parameterValue, ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirect(parameterValue);
                 }
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
-                    SendAndReset();
+                WriteEmptyArray();
             }
 
             return true;
@@ -113,8 +111,7 @@ namespace Garnet.server
             }
 
             storeWrapper.clusterProvider?.FlushConfig();
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            WriteOK();
 
             return true;
         }
@@ -194,13 +191,11 @@ namespace Garnet.server
 
             if (errorMsg == null)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                WriteOK();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
 
             return true;

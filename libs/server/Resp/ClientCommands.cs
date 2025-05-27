@@ -158,9 +158,9 @@ namespace Garnet.server
                         first = false;
                     }
 
+                    resultSb.Append("\n");
                     var result = resultSb.ToString();
-                    while (!RespWriteUtils.TryWriteUtf8BulkString(result, ref dcurr, dend))
-                        SendAndReset();
+                    WriteVerbatimString(Encoding.UTF8.GetBytes(result));
 
                     return true;
                 }
@@ -192,9 +192,9 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
+            resultSb.Append("\n");
             var result = resultSb.ToString();
-            while (!RespWriteUtils.TryWriteSimpleString(result, ref dcurr, dend))
-                SendAndReset();
+            WriteVerbatimString(Encoding.UTF8.GetBytes(result));
 
             return true;
         }
@@ -226,17 +226,13 @@ namespace Garnet.server
                             {
                                 _ = session.TryKill();
 
-                                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                    SendAndReset();
-
+                                WriteOK();
                                 return true;
                             }
                         }
                     }
 
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT, ref dcurr, dend))
-                        SendAndReset();
-
+                    WriteError(CmdStrings.RESP_ERR_NO_SUCH_CLIENT);
                     return true;
                 }
                 else
@@ -401,9 +397,7 @@ namespace Garnet.server
                     }
 
                     // Hand back result, which is count of clients _actually_ killed
-                    while (!RespWriteUtils.TryWriteInt32(killed, ref dcurr, dend))
-                        SendAndReset();
-
+                    WriteInt32(killed);
                     return true;
                 }
             }
@@ -505,8 +499,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteUtf8BulkString(this.clientName, ref dcurr, dend))
-                    SendAndReset();
+                WriteUtf8BulkString(this.clientName);
             }
 
             return true;
@@ -530,9 +523,7 @@ namespace Garnet.server
 
             this.clientName = name;
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
+            WriteOK();
             return true;
         }
 
@@ -561,9 +552,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
+            WriteOK();
             return true;
         }
 
@@ -606,8 +595,7 @@ namespace Garnet.server
 
                 if (session is null)
                 {
-                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                        SendAndReset();
+                    WriteZero();
                     return true;
                 }
 
@@ -617,26 +605,25 @@ namespace Garnet.server
 
                     if (!isBlocked)
                     {
-                        while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                            SendAndReset();
+                        WriteZero();
                         return true;
                     }
 
                     var result = observer.TryForceUnblock(toThrowError);
 
-                    while (!RespWriteUtils.TryWriteInt32(result ? 1 : 0, ref dcurr, dend))
-                        SendAndReset();
+                    if (result)
+                        WriteOne();
+                    else
+                        WriteZero();
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                        SendAndReset();
+                    WriteZero();
                 }
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(CmdStrings.RESP_ERR_UBLOCKING_CLINET);
             }
 
             return true;

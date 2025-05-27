@@ -178,7 +178,7 @@ namespace Garnet.common
         {
             if (resp3)
             {
-                while (!RespWriteUtils.TryWriteMapLength(0, ref curr, end))
+                while (!RespWriteUtils.TryWriteEmptyMap(ref curr, end))
                     ReallocateOutput();
             }
             else
@@ -222,7 +222,7 @@ namespace Garnet.common
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt32(0, ref curr, end))
+                while (!RespWriteUtils.TryWriteZero(ref curr, end))
                     ReallocateOutput();
             }
         }
@@ -321,13 +321,21 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes a null array to memory.
+        /// Writes a null array to memory, using proper protocol representation.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteNullArray()
         {
-            while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
-                ReallocateOutput();
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteResp3Null(ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteNullArray(ref curr, end))
+                    ReallocateOutput();
+            }
         }
 
         /// <summary>
@@ -383,7 +391,7 @@ namespace Garnet.common
             }
             else
             {
-                while (!RespWriteUtils.TryWriteInt32(1, ref curr, end))
+                while (!RespWriteUtils.TryWriteOne(ref curr, end))
                     ReallocateOutput();
             }
         }
@@ -395,6 +403,45 @@ namespace Garnet.common
         public void WriteUtf8BulkString(ReadOnlySpan<char> chars)
         {
             while (!RespWriteUtils.TryWriteUtf8BulkString(chars, ref curr, end))
+                ReallocateOutput();
+        }
+
+        /// <summary>
+        /// Write Verbatim string to memory.
+        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteVerbatimTxtString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        {
+            if (resp3)
+            {
+                while (!RespWriteUtils.TryWriteVerbatimString(item, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
+                    ReallocateOutput();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
+                    ReallocateOutput();
+            }
+        }
+
+        /// <summary>
+        /// Write zero as integer to memory.
+        /// </summary>
+        public void WriteZero()
+        {
+            while (!RespWriteUtils.TryWriteZero(ref curr, end))
+                ReallocateOutput();
+        }
+
+        /// <summary>
+        /// Write one as integer to memory.
+        /// </summary>
+        public void WriteOne()
+        {
+            while (!RespWriteUtils.TryWriteOne(ref curr, end))
                 ReallocateOutput();
         }
 
