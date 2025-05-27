@@ -369,7 +369,7 @@ namespace Garnet.test
             {
                 tasks[i] = Task.Run(async () =>
                 {
-                    for (var ii = 0; ii < numIterations; ++ii)
+                    for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
@@ -385,7 +385,7 @@ namespace Garnet.test
             {
                 tasks[i] = Task.Run(async () =>
                 {
-                    for (var ii = 0; ii < numIterations; ++ii)
+                    for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));

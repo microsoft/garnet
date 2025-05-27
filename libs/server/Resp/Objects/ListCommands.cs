@@ -162,7 +162,7 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     var count = false;
-                    for (var i = 2; i < parseState.Count; ++i)
+                    for (var i = 2; i < parseState.Count; i++)
                     {
                         if (parseState.GetArgSliceByRef(i).Span.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                         {

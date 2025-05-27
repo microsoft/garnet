@@ -89,17 +89,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Next power of 2
         /// </summary>
-        internal static long NextPowerOf2(long v)
-        {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v + 1;
-        }
+        internal static long NextPowerOf2(long v) => (long)BitOperations.RoundUpToPowerOf2((nuint)v);
 
         /// <summary>
         /// Pretty print value
@@ -371,6 +361,6 @@ namespace Tsavorite.core
         /// Should only be called in Debug.Assert or other DEBUG-conditional code
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal static string GetCurrentMethodName() => new StackTrace().GetFrame(1).GetMethod().Name;
+        internal static string GetCurrentMethodName([CallerMemberName] string memberName = "") => memberName;
     }
 }

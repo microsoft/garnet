@@ -1241,7 +1241,7 @@ namespace Tsavorite.core
             if (MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _))
             {
                 // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
-                for (; ; Thread.Yield())
+                while (true)
                 {
                     long _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
 
@@ -1264,13 +1264,14 @@ namespace Tsavorite.core
                         }
                         return;
                     }
+                    _ = Thread.Yield();
                 }
             }
         }
 
         private void OnPagesClosedWorker()
         {
-            for (; ; Thread.Yield())
+            while (true)
             {
                 long closeStartAddress = ClosedUntilAddress;
                 long closeEndAddress = OngoingCloseUntilAddress;
@@ -1302,6 +1303,7 @@ namespace Tsavorite.core
                 // End if we have exhausted co-operative work
                 if (Interlocked.CompareExchange(ref OngoingCloseUntilAddress, 0, closeEndAddress) == closeEndAddress)
                     break;
+                _ = Thread.Yield();
             }
         }
 

@@ -191,7 +191,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteArrayLength(parseState.Count - 1, ref dcurr, dend))
                         SendAndReset();
 
-                    for (var i = 0; i < parseState.Count - 1; ++i)
+                    for (var i = 0; i < parseState.Count - 1; i++)
                         WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:

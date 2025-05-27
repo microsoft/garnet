@@ -1193,9 +1193,7 @@ namespace Garnet.server
         {
             if (k.Length > length)
                 return false;
-
-            k.
-            ReadOnlySpan.CopyTo(new Span<byte>(dst, length));
+            k.ReadOnlySpan.CopyTo(new Span<byte>(dst, length));
             return true;
         }
 

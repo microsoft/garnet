@@ -138,7 +138,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryResetModifiedAtomic()
         {
-            for (var spinCount = Constants.kMaxLockSpins; ; _ = Thread.Yield())
+            var spinCount = Constants.kMaxLockSpins;
+            while (true)
             {
                 var expected_word = word;
                 if (IsClosedWord(expected_word))
@@ -149,6 +150,7 @@ namespace Tsavorite.core
                     return true;
                 if (--spinCount <= 0)
                     return false;
+                _ = Thread.Yield();
             }
         }
 
@@ -191,11 +193,12 @@ namespace Tsavorite.core
 
         public void ClearDirtyAtomic()
         {
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 var expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kDirtyBitMask, expected_word))
                     break;
+                _ = Thread.Yield();
             }
         }
 
@@ -254,11 +257,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetInvalidAtomic()
         {
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 var expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kValidBitMask, expected_word))
                     return;
+                _ = Thread.Yield();
             }
         }
 

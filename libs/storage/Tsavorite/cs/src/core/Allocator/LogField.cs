@@ -63,10 +63,7 @@ namespace Tsavorite.core
                 return new((byte*)GetInlineDataAddress(fieldAddress), GetInlineLengthRef(fieldAddress));
             var objectId = GetObjectIdRef(fieldAddress);
             if (objectId != ObjectIdMap.InvalidObjectId)
-            {
-                var byteArrayObj = objectIdMap.Get(objectId);
-                return new Span<byte>(Unsafe.As<object, byte[]>(ref byteArrayObj));
-            }
+                return new Span<byte>(Unsafe.As<byte[]>(objectIdMap.Get(objectId)));
             return [];
         }
 

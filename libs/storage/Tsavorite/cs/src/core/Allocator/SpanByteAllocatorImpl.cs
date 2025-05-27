@@ -207,7 +207,7 @@ namespace Tsavorite.core
 
                 if (pagePointers is not null)
                 {
-                    for (var ii = 0; ii < BufferSize; ++ii)
+                    for (var ii = 0; ii < BufferSize; ii++)
                     {
                         if (pagePointers[ii] != 0)
                             NativeMemory.AlignedFree((void*)pagePointers[ii]);

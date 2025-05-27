@@ -91,7 +91,7 @@ namespace Tsavorite.core
         public void Push(TItem item)
         {
             if (GetNodeFromFreeList(out SimpleFreeStackNode node))
-                ++node.Version;
+                node.Version++;
             else
                 node = new(elementArray.Allocate(), version: 0);
 
@@ -99,7 +99,7 @@ namespace Tsavorite.core
             // We'll update the element's slot to the stack head inside the retry loop.
             var element = new ArrayElement { Item = item, Node = new(SimpleFreeStackNode.Nil, node.Version) };
 
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 // The element's slot is the 'next' pointer; update it to what is currently in 'head' to maintain the chain.
                 var head = stack;
@@ -108,6 +108,7 @@ namespace Tsavorite.core
 
                 if (Interlocked.CompareExchange(ref stack.word, node.word, head.word) == head.word)
                     return;
+                _ = Thread.Yield();
             }
         }
 
@@ -117,7 +118,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryPop(out TItem item)
         {
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 var current = stack;
                 if (current.IsNil)
@@ -139,6 +140,7 @@ namespace Tsavorite.core
                     AddNodeToFreeList(current);
                     return true;
                 }
+                _ = Thread.Yield();
             }
         }
 
@@ -151,7 +153,7 @@ namespace Tsavorite.core
             // We'll update the element's slot to the freeList head inside the retry loop.
             var element = new ArrayElement { Node = new(SimpleFreeStackNode.Nil, node.Version) };
 
-            for (; ; _ = Thread.Yield() )
+            while (true)
             {
                 // The element's slot is the 'next' pointer; update it to what is currently in 'head' to maintain the chain.
                 var head = freeNodes;
@@ -160,12 +162,13 @@ namespace Tsavorite.core
 
                 if (Interlocked.CompareExchange(ref freeNodes.word, node.word, head.word) == head.word)
                     return;
+                _ = Thread.Yield();
             }
         }
 
         bool GetNodeFromFreeList(out SimpleFreeStackNode node)
         {
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 node = freeNodes;
                 if (node.IsNil)
@@ -182,6 +185,7 @@ namespace Tsavorite.core
                 var head = new SimpleFreeStackNode(element.Node.Slot, version);
                 if (Interlocked.CompareExchange(ref freeNodes.word, head.word, node.word) == node.word)
                     return true;
+                _ = Thread.Yield();
             }
         }
 

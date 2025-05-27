@@ -4,9 +4,9 @@ sidebar_label: LogRecord
 title: LogRecord
 ---
 
-# LogRecord
+# `LogRecord`
 
-The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods (as well as endoding optional `ETag` and `Expirattion` into the Value) with a single LogRecord, which may be either `LogRecord` for in-memory log records, or `DiskLogRecord` for on-disk records. These LogRecords have properties for `Key` and `Value` as well as making `Etag` and `Expiration` first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.
+The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods (as well as endoding optional `ETag` and `Expirattion` into the Value) with a single `LogRecord`, which may be either `LogRecord` for in-memory log records, or `DiskLogRecord` for on-disk records. These `LogRecord` have properties for `Key` and `Value` as well as making `Etag` and `Expiration` first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.
 
 Much of the record-related logic of the allocators (e.g. `SpanByteAllocator`) has been moved into the `LogRecord` structs.
 
@@ -36,7 +36,7 @@ With the move to `SpanByte`-only keys we also created a new `ObjectAllocator` fo
 
 An object field's object must inherit from `IHeapObject`. The Garnet processing layer uses `IGarnetObject`, which inherits from `IHeapObject`). The Tsavorite Unit Tests use object types that implement `IHeapObject`.
 
-IHeapObject provides two basic properties:
+`IHeapObject` provides two basic properties:
 - MemorySize: The size the object takes in memory. This includes .NET object overhead as well as the size of the actual data. It is used in object size tracking.
 - DiskSize: The size the object will take when serialized to disk format. This usually includes a length prefix followed by the actual data.
 
@@ -64,7 +64,7 @@ The `MultiLevelPageArray` is a managed structure, because it is also used to hol
 
 In the initial implementation `MultiLevelPageArray` has fixed-size book (1024) and chapters (64k), but this can be made configurable.
 
-#### SimpleConcurrentStack
+#### `SimpleConcurrentStack`
 
 The `SimpleConcurrentStack` sits on top of the `MultiLevelPageArray` and provides a simple stack interface for the free lists.
 
@@ -72,7 +72,7 @@ The `SimpleConcurrentStack` sits on top of the `MultiLevelPageArray` and provide
 
 To keep the size of the main log record tractable, we provide an option for `ObjectAllocator` to have large `Span<byte>` keys and values "overflow"; rather than being stored inline in the log record, they are allocated separately as `byte[]`, and an integer `ObjectId` is stored in the log record (with the key or value having no explicit length, and the data being the `ObjectId` of size `sizeof(int)`). This redirection does incur some performance overhead. The initial reason for this was to keep `ObjectAllocator` pages small enough that the page-level object size tracking would be sufficiently granular; if those pages are large enough to support large keys, then it is possible there are a large number of records with small keys and large objects, making it impossible to control object space budgets with sufficient granularity. By providing this for `Span<byte>` values as well, it allows similar control of the number of records per page.
 
-## ISourceLogRecord
+## `ISourceLogRecord`
 
 In this revision of Tsavorite, the individual "ref key" and "ref value" (as well as "ref recordInfo") parameters to `ISessionFunctions` methods have been replaced by a single `LogRecord` parameter. Not only does this consolidate those record attributes, it also encapsulate the "optional" record attributes of `ETag` and `Expiration`, as well as managing the `FillerLength` that allows records to shrink and re-expand in place. Previously the `ISessionFunctions` implementation had to manage the "extra" length; that is now automatically handled by the `LogRecord`. Similarly, `ETag` and `Expiration` previously were encoded into the Value `SpanByte` or a field of the object and this required tracking additional metadata and shifting when these values were added/removed; these too are now managed by the `LogRecord` as first-class properties.
 
@@ -82,7 +82,7 @@ Although we have two allocators, there is only one `LogRecord` family; we do not
   - It would be more complex to maintain them, especially as we have multiple implementations of `ISourceLogRecord`.
   - Iterators would no longer be able to iterate both stores.
   - The `ObjectAllocator` can have `SpanByte`, overflow `byte[]`, or `IHeapObject` values, so the `LogRecord` must be able to handle both.
-This decision may be revisited in the future; for example, `SpanByteAllocator` currently cannot have overflow keys or values, so a much leaner implementation could be used for that case. This would require a `TLogRecord` generic type in place of the `TKey` and `TValue` types that have been removed in this revision.
+This decision may be revisited in the future; for example, `SpanByteAllocator` currently cannot have overflow keys or values, so a much leaner implementation could be used for that case. This would require a `TLogRecord` generic type in place of the earlier `TKey` and `TValue` types that have been removed in this revision.
 
 `ISourceLogRecord` defines the common operations among a number of `LogRecord` implementations. These common operations are summarized here, and the implementations are described below.
   - Obtaining the RecordInfo header. There is both a "ref" (mutable) and non-"ref" (readonly) form.
@@ -98,7 +98,7 @@ This decision may be revisited in the future; for example, `SpanByteAllocator` c
 
 For operations that take an input log record, such as `ISessionFunctions.CopyUpdater`, the input log record is of type `TSourceLogRecord`, which may be either `LogRecord` or `DiskLogRecord`. No code outside Tsavorite should need to know the actual type. Within Tsavorite, it is sometimes useful to call `AsLogRecord` or `AsDiskLogRecord` and operate accordingly.
 
-### LogRecord struct
+### `LogRecord` struct
 
 This is the primary implementation which wraps a log record. It carries the log record's physical address and, if this is an `ObjectAllocator` record, an `ObjectIdMap` for that log record's log page. See `LogRecord.cs` for more details, including the record layout and comments.
 

@@ -68,7 +68,7 @@ namespace Garnet.cluster
                 payloadPtr += 4;
                 TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
 
-                for (var ii = 0; ii < keyCount; ++ii)
+                for (var ii = 0; ii < keyCount; ii++)
                 {
                     if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
                         return false;
@@ -96,7 +96,7 @@ namespace Garnet.cluster
                 payloadPtr += 4;
                 TrackImportProgress(keyCount, isMainStore: false, keyCount == 0);
 
-                for (var ii = 0; ii < keyCount; ++ii)
+                for (var ii = 0; ii < keyCount; ii++)
                 {
                     if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
                         return false;

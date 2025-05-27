@@ -159,7 +159,7 @@ namespace Tsavorite.core
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
             this.baseDir = baseDir;
-            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/TsavoriteLog.log", deleteOnClose: deleteDirOnDispose);
+            LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/tsavoritelog.log", deleteOnClose: deleteDirOnDispose);
             LogCommitDir = baseDir;
         }
 

@@ -44,7 +44,7 @@ namespace Tsavorite.core
 
         public int Allocate()
         {
-            for (; tail == -1; _ = Thread.Yield())
+            while (tail == -1)
             {
                 // Two-step process in case the element allocation throws; book will still be null.
                 var newBook = new TElement[MultiLevelPageArray.InitialBookSize][];
@@ -54,6 +54,7 @@ namespace Tsavorite.core
                 // others will just drop through to normal handling as book will have been set by that one thread.
                 if (Interlocked.CompareExchange(ref book, newBook, null) == null)
                     return tail = 0;
+                _ = Thread.Yield();
             }
 
             while (true)
@@ -179,10 +180,10 @@ namespace Tsavorite.core
                 return;
             var lastChapterIndex = tail >> MultiLevelPageArray.ChapterSizeBits;
             var lastPageIndex = tail & MultiLevelPageArray.PageIndexMask;
-            for (int chapter = 0; chapter <= lastChapterIndex; ++chapter)
+            for (int chapter = 0; chapter <= lastChapterIndex; chapter++)
             {
                 var maxPage = chapter < lastChapterIndex ? MultiLevelPageArray.ChapterSize : lastPageIndex;
-                for (int page = 0; page < maxPage; ++page)
+                for (int page = 0; page < maxPage; page++)
                 {
                     // Note: 'action' must check for null/default.
                     action(book[chapter][page]);

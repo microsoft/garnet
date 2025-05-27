@@ -642,12 +642,12 @@ namespace Tsavorite.core
             long total_entry_count = 0;
             long beginAddress = hlogBase.BeginAddress;
 
-            for (long bucket = 0; bucket < table_size_; ++bucket)
+            for (long bucket = 0; bucket < table_size_; bucket++)
             {
                 HashBucket b = *(ptable_ + bucket);
                 while (true)
                 {
-                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
+                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; bucket_entry++)
                         if (b.bucket_entries[bucket_entry] >= beginAddress)
                             ++total_entry_count;
                     if ((b.bucket_entries[Constants.kOverflowBucketIndex] & kAddressBitMask) == 0) break;
@@ -674,7 +674,7 @@ namespace Tsavorite.core
             Dictionary<int, long> slots_unused_by_nonofb_buckets_histogram = new();
             Dictionary<int, long> slots_unused_by_ofb_buckets_histogram = new();
 
-            for (long bucket = 0; bucket < table_size_; ++bucket)
+            for (long bucket = 0; bucket < table_size_; bucket++)
             {
                 bool is_bucket_in_ofb_table = false;
                 List<int> tags = new();
@@ -685,7 +685,7 @@ namespace Tsavorite.core
                 {
                     // per bucket calculate the number of zero'd out slots
                     int zeroed_out_slots = 0;
-                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
+                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; bucket_entry++)
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];

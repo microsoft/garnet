@@ -132,7 +132,7 @@ namespace Resp.benchmark
                     redis = Program.redis;
                 }
             }
-            for (int idx = 0; idx < NumThreads; ++idx)
+            for (int idx = 0; idx < NumThreads; idx++)
             {
                 int x = idx;
 

@@ -138,7 +138,7 @@ namespace Tsavorite.core
             do
             {
                 // Search through the bucket looking for our key. Last entry is reserved for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                 {
                     target_entry_word = *(((long*)hei.bucket) + index);
                     if (0 == target_entry_word)
@@ -222,7 +222,7 @@ namespace Tsavorite.core
             do
             {
                 // Search through the bucket looking for our key. Last entry is reserved for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                 {
                     target_entry_word = *(((long*)hei.bucket) + index);
                     if (0 == target_entry_word)
@@ -317,7 +317,7 @@ namespace Tsavorite.core
             do
             {
                 // Search through the bucket looking for our key. Last entry is reserved for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                 {
                     target_entry_word = *(((long*)bucket) + index);
                     if (0 == target_entry_word)

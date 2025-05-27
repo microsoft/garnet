@@ -93,7 +93,7 @@ namespace Garnet.server
             }
 
             var slice = PinnedSpanByte.FromPinnedPointer(watchBufferPtr, key.Length);
-            key.            ReadOnlySpan.CopyTo(slice.Span);
+            key.ReadOnlySpan.CopyTo(slice.Span);
 
             keySlices[sliceCount].slice = slice;
             keySlices[sliceCount].type = type;

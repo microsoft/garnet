@@ -307,7 +307,7 @@ namespace Resp.benchmark
             Thread[] workers = new Thread[NumThreads];
 
             // Run the experiment.
-            for (int idx = 0; idx < NumThreads; ++idx)
+            for (int idx = 0; idx < NumThreads; idx++)
             {
                 int x = idx;
                 workers[idx] = opts.Client switch

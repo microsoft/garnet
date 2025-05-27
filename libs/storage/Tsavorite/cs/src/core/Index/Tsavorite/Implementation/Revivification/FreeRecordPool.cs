@@ -292,7 +292,7 @@ namespace Tsavorite.core
         {
             var segmentStart = GetSegmentStart(recordSize);
 
-            for (var ii = 0; ii < recordCount; ++ii)
+            for (var ii = 0; ii < recordCount; ii++)
             {
                 FreeRecord* record = GetRecord(segmentStart + ii);
                 if (record->Set(logicalAddress, recordSize, minAddress))
@@ -338,7 +338,7 @@ namespace Tsavorite.core
             FreeRecord.TakeResult takeResult = new();
             while (true)
             {
-                for (var ii = 0; ii < recordCount; ++ii)
+                for (var ii = 0; ii < recordCount; ii++)
                 {
                     FreeRecord* record = GetRecord(segmentStart + ii);
                     if (oversize ? record->TryTakeOversize(ref sizeInfo, minAddress, store, out address, ref takeResult) : record->TryTake(ref sizeInfo, minAddress, out address, ref takeResult))
@@ -373,7 +373,7 @@ namespace Tsavorite.core
                 int firstFitIndex = int.MaxValue;       // Subtracted from loop control var and tested for >= bestFitScanLimit; int.MaxValue produces a negative result
 
                 FreeRecord* record;
-                for (var ii = 0; ii < recordCount; ++ii)
+                for (var ii = 0; ii < recordCount; ii++)
                 {
                     // For best-fit we must peek first without taking.
                     record = GetRecord(segmentStart + ii);
@@ -422,7 +422,7 @@ namespace Tsavorite.core
         {
             // Add() always sets isEmpty to false and we do not clear isEmpty on Take() because that could lead to more lost "isEmpty = false".
             // So this routine is called only if the bin is marked not-empty.
-            for (var ii = 0; ii < recordCount; ++ii)
+            for (var ii = 0; ii < recordCount; ii++)
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
@@ -479,7 +479,7 @@ namespace Tsavorite.core
             // Create the bins.
             List<FreeRecordBin> binList = new();
             int prevBinRecordSize = RevivificationBin.MinRecordSize - 8;      // The minimum record size increment is 8, so the first bin will set this to MinRecordSize or more
-            for (var ii = 0; ii < settings.FreeRecordBins.Length; ++ii)
+            for (var ii = 0; ii < settings.FreeRecordBins.Length; ii++)
             {
                 if (prevBinRecordSize >= settings.FreeRecordBins[ii].RecordSize)
                     continue;
@@ -497,7 +497,7 @@ namespace Tsavorite.core
         internal bool GetBinIndex(int size, out int binIndex)
         {
             // Sequential search in the sizeIndex for the requested size.
-            for (var ii = 0; ii < numBins; ++ii)
+            for (var ii = 0; ii < numBins; ii++)
             {
                 if (sizeIndex[ii] >= size)
                 {
@@ -552,7 +552,7 @@ namespace Tsavorite.core
             {
                 // Try to Take from the initial bin and if unsuccessful, try the next-highest bin if requested.
                 result = bins[index].TryTake(ref sizeInfo, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
-                for (int ii = 0; !result && ii < numberOfBinsToSearch && index < numBins - 1; ++ii)
+                for (int ii = 0; !result && ii < numberOfBinsToSearch && index < numBins - 1; ii++)
                     result = bins[++index].TryTake(ref sizeInfo, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
             }
 

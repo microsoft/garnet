@@ -112,7 +112,7 @@ namespace Tsavorite.core
         internal long GetMinRevivifiableAddress()
             => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -144,7 +144,7 @@ namespace Tsavorite.core
             return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
         }
 
-        // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
+        [MethodImpl(MethodImplOptions.NoInlining)]      // Do not try to inline this, to keep TryAllocateRecord lean
         bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref RecordSizeInfo sizeInfo, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress, out int allocatedSize)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -293,6 +293,7 @@ namespace Tsavorite.core
         // Note: We do not currently consider this reuse for mid-chain records (records past the HashBucket), because TracebackForKeyMatch would need
         //  to return the next-higher record whose .PreviousAddress points to this one, *and* we'd need to make sure that record was not revivified out.
         //  Also, we do not consider this in-chain reuse for records with different keys, because we don't get here if the keys don't match.
+        [MethodImpl(MethodImplOptions.NoInlining)]  // Do not inline, to keep caller lean
         private void HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord srcLogRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>

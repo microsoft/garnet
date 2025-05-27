@@ -652,7 +652,7 @@ namespace Garnet.server
                     FreeRecordBins = new RevivificationBin[RevivBinRecordSizes.Length],
                     RevivifiableFraction = RevivifiableFraction
                 };
-                for (var ii = 0; ii < RevivBinRecordSizes.Length; ++ii)
+                for (var ii = 0; ii < RevivBinRecordSizes.Length; ii++)
                 {
                     var recordCount = RevivBinRecordCounts?.Length switch
                     {

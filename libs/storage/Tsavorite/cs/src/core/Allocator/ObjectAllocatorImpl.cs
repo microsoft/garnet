@@ -52,14 +52,14 @@ namespace Tsavorite.core
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
 
-            freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, p => { });
+            freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
 
             var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
             pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
             NativeMemory.Clear(pagePointers, bufferSizeInBytes);
 
             values = new ObjectPage[BufferSize];
-            for (var ii = 0; ii < BufferSize; ++ii)
+            for (var ii = 0; ii < BufferSize; ii++)
                 values[ii] = new();
 
             // For LogField conversions between inline and heap fields, we assume the inline field size prefix is the same size as objectId size
@@ -279,7 +279,7 @@ namespace Tsavorite.core
 
                 if (pagePointers is not null)
                 {
-                    for (var ii = 0; ii < BufferSize; ++ii)
+                    for (var ii = 0; ii < BufferSize; ii++)
                     {
                         if (pagePointers[ii] != 0)
                             NativeMemory.AlignedFree((void*)pagePointers[ii]);

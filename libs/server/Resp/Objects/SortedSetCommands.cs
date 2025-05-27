@@ -318,7 +318,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteArrayLength(parseState.Count - 1, ref dcurr, dend))
                         SendAndReset();
 
-                    for (var i = 0; i < parseState.Count - 1; ++i)
+                    for (var i = 0; i < parseState.Count - 1; i++)
                         WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
@@ -1693,7 +1693,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(result.Items.Length, ref dcurr, dend))
                 SendAndReset();
 
-            for (var i = 0; i < result.Items.Length; ++i)
+            for (var i = 0; i < result.Items.Length; i++)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();

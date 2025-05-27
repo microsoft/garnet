@@ -398,7 +398,7 @@ namespace Garnet.server
                         }
                         return true;
                     default:
-                        throw new GarnetException($"EvaluateExpireCopyUpdate exception expiryExists:{expiryExists}, optionType{optionType}");
+                        throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is false: optionType{optionType}");
                 }
             }
             else
@@ -422,7 +422,7 @@ namespace Garnet.server
                     case ExpireOption.XXLT:
                         return true;
                     default:
-                        throw new GarnetException($"EvaluateExpireCopyUpdate exception expiryExists:{expiryExists}, optionType{optionType}");
+                        throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is true: optionType{optionType}");
                 }
             }
         }

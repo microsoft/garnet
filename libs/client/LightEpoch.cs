@@ -282,7 +282,7 @@ namespace Garnet.client
         public bool CheckIsComplete(int markerIdx, long version)
         {
             // check if all threads have reported complete
-            for (int index = 1; index <= kTableSize; ++index)
+            for (int index = 1; index <= kTableSize; index++)
             {
                 int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 int fc_version = (*(tableAligned + index)).markers[markerIdx];
@@ -320,7 +320,7 @@ namespace Garnet.client
         {
             int oldestOngoingCall = currentEpoch;
 
-            for (int index = 1; index <= kTableSize; ++index)
+            for (int index = 1; index <= kTableSize; index++)
             {
                 int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entry_epoch)
@@ -349,7 +349,7 @@ namespace Garnet.client
                 // Barrier ensures we see the latest epoch table entries. Ensures
                 // that the last suspended thread drains all pending actions.
                 Thread.MemoryBarrier();
-                for (int index = 1; index <= kTableSize; ++index)
+                for (int index = 1; index <= kTableSize; index++)
                 {
                     int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entry_epoch)

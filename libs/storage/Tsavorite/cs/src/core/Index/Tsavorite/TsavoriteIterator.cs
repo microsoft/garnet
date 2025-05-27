@@ -45,7 +45,7 @@ namespace Tsavorite.core
 
             long numRecords = 1;
             var stop = false;
-            for (; !stop && iter.PushNext(ref scanFunctions, numRecords, out stop); ++numRecords)
+            for (; !stop && iter.PushNext(ref scanFunctions, numRecords, out stop); numRecords++)
                 ;
 
             scanFunctions.OnStop(!stop, numRecords);

@@ -73,7 +73,7 @@ namespace Tsavorite.core
         Retry:
             long prevBucketIndex = -1;
 
-            for (int keyIdx = start; keyIdx <= end; ++keyIdx)
+            for (int keyIdx = start; keyIdx <= end; keyIdx++)
             {
                 ref var key = ref keys[keyIdx];
                 long currBucketIndex = clientSession.store.LockTable.GetBucketIndex(key.KeyHash);
@@ -119,7 +119,7 @@ namespace Tsavorite.core
         Retry:
             long prevBucketIndex = -1;
 
-            for (int keyIdx = start; keyIdx <= end; ++keyIdx)
+            for (int keyIdx = start; keyIdx <= end; keyIdx++)
             {
                 ref var key = ref keys[keyIdx];
                 long currBucketIndex = clientSession.store.LockTable.GetBucketIndex(key.KeyHash);

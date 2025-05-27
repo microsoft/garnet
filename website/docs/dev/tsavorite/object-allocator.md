@@ -7,7 +7,7 @@ title: ObjectAllocator
 # ObjectAllocator
 
 The `ObjectAllocator` replaces the `GenericAllocator` to provide two important improvements:
-- It supports `SpanByte` keys. Tsavorite now uses only `SpanByte` keys, and the `GenericAllocator` does not support variable-length keys.
+- It supports `ReadOnlySpan<byte>` keys. With this change Tsavorite now uses only `ReadOnlySpan<byte>` keys; the Garnet processing layer uses `PinnedSpanByte` keys initially, which are converted to `ReadOnlySpan<byte>` at the GarnetApi/StorageSession boundary. (The `GenericAllocator` did not support `SpanByte` keys.)
 - It replaces the "two log file" approach of `GenericAllocator` with an "expand inline when flushing" approach:
     - If the key or value is inline, it remains so
     - If the key or value is overflow, it is written inline into the main log record on flush, and addresses are modified.

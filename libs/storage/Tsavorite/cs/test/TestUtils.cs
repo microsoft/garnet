@@ -63,7 +63,7 @@ namespace Tsavorite.test
                 }
             }
 
-            for (; ; Thread.Yield())
+            while (true)
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
                 try
@@ -76,6 +76,7 @@ namespace Tsavorite.test
                 }
                 if (!wait || !Directory.Exists(path))
                     break;
+                _ = Thread.Yield();
             }
         }
 

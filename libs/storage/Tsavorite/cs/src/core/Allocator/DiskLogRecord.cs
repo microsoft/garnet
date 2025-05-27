@@ -31,7 +31,7 @@ namespace Tsavorite.core
         /// <summary>The initial size to IO from disk when reading a record; by default a single page. If we don't get the full record,
         /// at least we'll likely get the full Key and value length, and can read the full record using that.</summary>
         /// <remarks>Must be a power of 2</remarks>
-        public static int InitialIOSize => 4 * 1024;
+        public const int InitialIOSize = 4 * 1024;
 
         /// <summary>The physicalAddress in the log.</summary>
         internal long physicalAddress;
@@ -233,7 +233,7 @@ namespace Tsavorite.core
             do
             {
                 num >>= 8;
-                ++result;
+                result++;
             } while (num > 0);
             return result;
         }
@@ -241,7 +241,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void WriteVarBytes(long value, int len, ref byte* ptr)
         {
-            for (; len > 0; --len)
+            for (; len > 0; len--)
             {
                 *ptr++ = (byte)(value & 0xFF);
                 value >>= 8;
@@ -253,7 +253,7 @@ namespace Tsavorite.core
         static long ReadVarBytes(int len, ref byte* ptr)
         {
             long value = 0;
-            for (var ii = 0; ii < len; ++ii)
+            for (var ii = 0; ii < len; ii++)
                 value |= (long)*ptr++ << (ii * 8);
             return value;
         }

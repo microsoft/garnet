@@ -155,7 +155,7 @@ namespace Tsavorite.core
         // Called during checkpointing; we create a copy of the hash table page, eliminate read cache pointers from this copy, then write this copy to disk.
         private void SkipReadCacheBucket(HashBucket* bucket)
         {
-            for (var index = 0; index < Constants.kOverflowBucketIndex; ++index)
+            for (var index = 0; index < Constants.kOverflowBucketIndex; index++)
             {
                 var entry = (HashBucketEntry*)&bucket->bucket_entries[index];
                 if (0 == entry->word)

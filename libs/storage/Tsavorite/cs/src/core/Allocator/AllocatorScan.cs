@@ -66,7 +66,7 @@ namespace Tsavorite.core
 
             long numRecords = 1;
             var stop = false;
-            for (; !stop && iter.GetNext(); ++numRecords)
+            for (; !stop && iter.GetNext(); numRecords++)
             {
                 try
                 {
@@ -100,7 +100,7 @@ namespace Tsavorite.core
 
             long numRecords = 1;
             bool stop = false, continueOnDisk = false;
-            for (; !stop && iter.BeginGetPrevInMemory(key, out var logRecord, out continueOnDisk); ++numRecords)
+            for (; !stop && iter.BeginGetPrevInMemory(key, out var logRecord, out continueOnDisk); numRecords++)
             {
                 OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                 try

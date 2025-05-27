@@ -283,7 +283,7 @@ namespace Tsavorite.core
         {
             long oldestOngoingCall = currentEpoch;
 
-            for (int index = 1; index <= kTableSize; ++index)
+            for (int index = 1; index <= kTableSize; index++)
             {
                 long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entry_epoch)
@@ -311,7 +311,7 @@ namespace Tsavorite.core
                 // Barrier ensures we see the latest epoch table entries. Ensures
                 // that the last suspended thread drains all pending actions.
                 Thread.MemoryBarrier();
-                for (int index = 1; index <= kTableSize; ++index)
+                for (int index = 1; index <= kTableSize; index++)
                 {
                     long entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entry_epoch)

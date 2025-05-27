@@ -79,7 +79,7 @@ namespace Tsavorite.core
             }
 
             // Spin to make sure newLogicalAddress is > recSrc.LatestLogicalAddress (the .PreviousAddress and CAS comparison value).
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 if (!TryBlockAllocate(hlogBase, sizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
@@ -104,10 +104,11 @@ namespace Tsavorite.core
                             continue;
                     }
                     LogRecord.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
+                    _ = Thread.Yield();
                     continue;
                 }
 
-                // In-memory source dropped below HeadAddress during BlockAllocate. Save the record for retry if we can.
+                // The in-memory source dropped below HeadAddress during BlockAllocate. Save the record for retry if we can and return RETRY_LATER.
                 if (options.recycle)
                 {
                     var logRecord = new LogRecord(newPhysicalAddress);
@@ -130,7 +131,7 @@ namespace Tsavorite.core
                                                        ref RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
-            for (; ; _ = Thread.Yield())
+            while (true)
             {
                 if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
@@ -146,10 +147,11 @@ namespace Tsavorite.core
 
                     // This allocation is below the necessary address so abandon it and repeat the loop.
                     ReadCacheAbandonRecord(newPhysicalAddress);
+                    _ = Thread.Yield();
                     continue;
                 }
 
-                // In-memory source dropped below HeadAddress during BlockAllocate.
+                // The in-memory source dropped below HeadAddress during BlockAllocate. Abandon the record (TODO: reuse readcache records) and return RETRY_LATER.
                 ReadCacheAbandonRecord(newPhysicalAddress);
                 status = OperationStatus.RETRY_LATER;
                 break;
@@ -160,7 +162,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        // Do not inline, to keep CreateNewRecord* lean
+        [MethodImpl(MethodImplOptions.NoInlining)]  // Do not inline, to keep CreateNewRecord* lean
         void SaveAllocationForRetry<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, long logicalAddress, long physicalAddress)
         {
             ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
@@ -174,7 +176,7 @@ namespace Tsavorite.core
             pendingContext.retryNewLogicalAddress = logicalAddress < hlogBase.HeadAddress ? kInvalidAddress : logicalAddress;
         }
 
-        // Do not inline, to keep TryAllocateRecord lean
+        [MethodImpl(MethodImplOptions.NoInlining)]  // Do not inline, to keep TryAllocateRecord lean
         bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, long minAddress,
                 ref RecordSizeInfo sizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>

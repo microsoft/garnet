@@ -31,10 +31,10 @@ namespace Garnet.server
 
         #region ITransactionalKey
         /// <inheritdoc/>
-        public readonly long KeyHash { get => keyHash; }
+        public readonly long KeyHash => keyHash;
 
         /// <inheritdoc/>
-        public readonly LockType LockType { get => lockType; }
+        public readonly LockType LockType => lockType;
         #endregion ITransactionalKey
 
         /// <inheritdoc />

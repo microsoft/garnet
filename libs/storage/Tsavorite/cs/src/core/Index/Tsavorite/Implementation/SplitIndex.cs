@@ -118,7 +118,7 @@ namespace Tsavorite.core
                 HashBucketEntry entry = default;
                 do
                 {
-                    for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                    for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                     {
                         entry.word = *(((long*)src_start) + index);
                         if (Constants.kInvalidEntry == entry.word)

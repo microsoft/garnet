@@ -92,7 +92,7 @@ namespace Garnet.test
 
             // set 10_000 strings
             const int KeyCount = 10_000;
-            for (int i = 0; i < KeyCount; ++i)
+            for (int i = 0; i < KeyCount; i++)
                 db.StringSet($"try:{i}", i);
 
             // get and count keys using SE Redis, using the default pageSize of 250

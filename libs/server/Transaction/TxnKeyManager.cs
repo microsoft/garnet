@@ -233,7 +233,7 @@ namespace Garnet.server
                 case RespCommand.GEORADIUS:
                 case RespCommand.GEORADIUSBYMEMBER:
                     // These commands may or may not store a result
-                    for (var i = idx; i < inputCount - 1; ++i)
+                    for (var i = idx; i < inputCount - 1; i++)
                     {
                         var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
