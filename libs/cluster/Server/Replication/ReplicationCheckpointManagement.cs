@@ -11,12 +11,16 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         #region manageInMemoryCheckpointStore
-        public void InitializeCheckpointStore()
+        public bool InitializeCheckpointStore()
         {
             checkpointStore.Initialize();
-            _ = checkpointStore.GetLatestCheckpointEntryFromMemory(out var cEntry);
-            aofTaskStore.UpdateTruncatedUntil(cEntry.GetMinAofCoveredAddress());
-            cEntry.RemoveReader();
+            if (checkpointStore.GetLatestCheckpointEntryFromMemory(out var cEntry))
+            {
+                aofTaskStore.UpdateTruncatedUntil(cEntry.GetMinAofCoveredAddress());
+                cEntry.RemoveReader();
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
