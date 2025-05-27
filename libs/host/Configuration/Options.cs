@@ -533,6 +533,10 @@ namespace Garnet
         [Option("enable-debug-command", Required = false, HelpText = "Enable DEBUG command for 'no', 'local' or 'all' connections")]
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
+        [OptionValidation]
+        [Option("protected-mode", Required = false, HelpText = "Enable protected mode.")]
+        public CommandLineBooleanOption ProtectedMode { get; set; }
+
         [DirectoryPathsValidation(true, false)]
         [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
@@ -682,7 +686,8 @@ namespace Garnet
             var checkpointDir = CheckpointDir;
             if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
-            if (!Format.TryParseAddressList(Address, Port, out var endpoints, out _) || endpoints.Length == 0)
+            if (!Format.TryParseAddressList(Address, Port, out var endpoints, out _, ProtectedMode == CommandLineBooleanOption.True)
+              || endpoints.Length == 0)
                 throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
 
             EndPoint[] clusterAnnounceEndpoint = null;

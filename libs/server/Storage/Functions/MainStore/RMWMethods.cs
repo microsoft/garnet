@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -48,12 +47,17 @@ namespace Garnet.server
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedInitialUpdate(key, ref input, ref outp);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
+                                .NeedInitialUpdate(key, ref input, ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
 
                     return true;
@@ -345,12 +349,16 @@ namespace Garnet.server
                             return false;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        value = logRecord.ValueSpan;
-                        if (!functions.InitialUpdater(logRecord.Key, ref input, value, ref outp, ref rmwInfo))
-                            return false;
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            functions.InitialUpdater(logRecord.Key, ref input, logRecord.ValueSpan, ref writer, ref rmwInfo);
+                            Debug.Assert(sizeInfo.FieldInfo.ValueDataSize == logRecord.ValueSpan.Length, $"Inconsistency in initial updater value length: expected {sizeInfo.FieldInfo.ValueDataSize}, actual {logRecord.ValueSpan.Length}");
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                         break;
                     }
 
@@ -884,20 +892,22 @@ namespace Garnet.server
                         }
                         shouldCheckExpiration = false;
 
-                        var valueLength = logRecord.ValueSpan.Length;
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                        var ret = functions.InPlaceUpdater(logRecord.Key, ref input, logRecord.ValueSpan, ref valueLength, ref outp, ref rmwInfo);
-                        Debug.Assert(valueLength <= logRecord.ValueSpan.Length);
+                        var value = logRecord.ValueSpan;
+                        var valueLength = value.Length;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            var ret = functions.InPlaceUpdater(logRecord.Key, ref input, value, ref valueLength, ref writer, ref rmwInfo);
 
-                        // Adjust value length if user shrinks it
-                        if (valueLength < logRecord.ValueSpan.Length)
-                            _ = logRecord.TrySetValueLength(valueLength, ref sizeInfo);
-
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        if (!ret)
-                            return false;
-                        break;
+                            // Adjust value length if user shrinks it
+                            if (valueLength < logRecord.ValueSpan.Length)
+                                _ = logRecord.TrySetValueLength(valueLength, ref sizeInfo);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
                     throw new GarnetException("Unsupported operation on input");
             }
@@ -929,10 +939,10 @@ namespace Garnet.server
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
                     long etagFromClient = input.parseState.GetLong(0);
-                    if (etagFromClient > functionsState.etagState.etag)
+                    if (etagFromClient > functionsState.etagState.ETag)
                         rmwInfo.Action = RMWAction.ExpireAndStop;
 
-                    EtagState.ResetState(ref functionsState.etagState);
+                    ETagState.ResetState(ref functionsState.etagState);
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
                     // If we want to delete the object setting the Action to ExpireAndStop will add the tombstone in hybrid log for us.
@@ -1023,13 +1033,18 @@ namespace Garnet.server
                             ETagState.ResetState(ref functionsState.etagState);
                             return false;
                         }
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
 
-                        var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
-                            .NeedCopyUpdate(srcLogRecord.Key, ref input, srcLogRecord.ValueSpan, ref outp);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
+                                .NeedCopyUpdate(srcLogRecord.Key, ref input, srcLogRecord.ValueSpan, ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
                     return true;
             }
@@ -1531,12 +1546,15 @@ namespace Garnet.server
                                 return false;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-
-                        var ret = functions.CopyUpdater(dstLogRecord.Key, ref input, oldValue, dstLogRecord.ValueSpan, ref outp, ref rmwInfo);
-                        output.Memory = outp.Memory;
-                        output.Length = outp.Length;
-                        return ret;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        try
+                        {
+                            return functions.CopyUpdater(srcLogRecord.Key, ref input, oldValue, dstLogRecord.ValueSpan, ref writer, ref rmwInfo);
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
                     throw new GarnetException("Unsupported operation on input");
             }

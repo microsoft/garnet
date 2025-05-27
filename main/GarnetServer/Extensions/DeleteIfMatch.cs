@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers;
 using System.Diagnostics;
+using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
 
@@ -10,30 +10,30 @@ namespace Garnet
 {
     /// <summary>
     /// Functions to implement custom command DELIFMATCH - del if value matches exactly (used for unlocking)
-    /// 
+    ///
     /// Format: DELIFMATCH key value
-    /// 
-    /// Description: Delete key only if the given value matches the 
-    /// existing value for that key. If it does not match (or there is no existing value), 
+    ///
+    /// Description: Delete key only if the given value matches the
+    /// existing value for that key. If it does not match (or there is no existing value),
     /// then do nothing.
     /// </summary>
     sealed class DeleteIfMatchCustomCommand : CustomRawStringFunctions
     {
         /// <inheritdoc />
-        public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, ref (IMemoryOwner<byte>, int) output, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ref (IMemoryOwner<byte>, int) output)
+        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ref RespMemoryWriter writer)
             => false;
         /// <inheritdoc />
         public override int GetInitialLength(ref RawStringInput input)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
             => throw new InvalidOperationException();
 
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref int valueLength, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref int valueLength, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             var expectedVal = GetFirstArg(ref input);
             if (value.SequenceEqual(expectedVal))
@@ -46,7 +46,7 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, ref (IMemoryOwner<byte>, int) output)
+        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, ref RespMemoryWriter writer)
         {
             var expectedVal = GetFirstArg(ref input);
             return oldValue.SequenceEqual(expectedVal);
@@ -57,7 +57,7 @@ namespace Garnet
             => value.Length;
 
         /// <inheritdoc />
-        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             rmwInfo.Action = RMWAction.ExpireAndStop;
             Debug.Assert(oldValue.Length == newValue.Length);

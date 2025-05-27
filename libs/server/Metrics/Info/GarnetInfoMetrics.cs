@@ -37,6 +37,7 @@ namespace Garnet.server
         MetricsItem[] clientsInfo = null;
         MetricsItem[] keyspaceInfo = null;
         MetricsItem[] bufferPoolStats = null;
+        MetricsItem[] checkpointStats = null;
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
@@ -379,6 +380,11 @@ namespace Garnet.server
                 bufferPoolStats = [.. bufferPoolStats, .. storeWrapper.clusterProvider.GetBufferPoolStats()];
         }
 
+        private void PopulateCheckpointInfo(StoreWrapper storeWrapper)
+        {
+            checkpointStats = storeWrapper.clusterProvider == null ? null : storeWrapper.clusterProvider.GetCheckpointInfo();
+        }
+
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
         {
             // No word separators inside section names, some clients will then fail to process INFO output.
@@ -401,6 +407,7 @@ namespace Garnet.server
                 InfoMetricsType.KEYSPACE => "Keyspace",
                 InfoMetricsType.MODULES => "Modules",
                 InfoMetricsType.BPSTATS => "BufferPoolStats",
+                InfoMetricsType.CINFO => "CheckpointInfo",
                 _ => "Default",
             };
         }
@@ -482,6 +489,9 @@ namespace Garnet.server
                 case InfoMetricsType.BPSTATS:
                     PopulateClusterBufferPoolStats(storeWrapper);
                     return GetSectionRespInfo(header, bufferPoolStats);
+                case InfoMetricsType.CINFO:
+                    PopulateCheckpointInfo(storeWrapper);
+                    return GetSectionRespInfo(header, checkpointStats);
                 default:
                     return "";
             }

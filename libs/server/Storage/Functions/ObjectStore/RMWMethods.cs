@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -31,11 +31,17 @@ namespace Garnet.server
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return ret;
+
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
         }
@@ -60,14 +66,19 @@ namespace Garnet.server
             var customObjectCommand = GetCustomObjectCommand(ref input, type);
             value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
 
-            (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.SpanByteAndMemory.Memory, 0);
-            var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref memoryAndLength, ref rmwInfo);
-            _ = logRecord.TrySetValueObject(value, ref sizeInfo);
-            output.SpanByteAndMemory.Memory = memoryAndLength.Memory;
-            output.SpanByteAndMemory.Length = memoryAndLength.Length;
-            if (result)
-                sizeInfo.AssertOptionals(logRecord.Info);
-            return result;
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            try
+            {
+                var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref writer, ref rmwInfo);
+                _ = logRecord.TrySetValueObject(value, ref sizeInfo);
+                if (result)
+                    sizeInfo.AssertOptionals(logRecord.Info);
+                return result;
+            }
+            finally
+            {
+                writer.Dispose();
+            }
         }
 
         /// <inheritdoc />
@@ -162,20 +173,26 @@ namespace Garnet.server
                     }
                     else
                     {
-                        if (IncorrectObjectType(ref input, ((IGarnetObject)logRecord.ValueObject), ref output.SpanByteAndMemory))
+                        var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
+                        if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
                         {
                             output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(logRecord.Key, ref input, ((IGarnetObject)logRecord.ValueObject), ref memoryAndLength, ref rmwInfo);
-                        output.SpanByteAndMemory.Memory = memoryAndLength.Memory;
-                        output.SpanByteAndMemory.Length = memoryAndLength.Length;
-                        if (!result)
-                            return false;
-                        break;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
+                            if (!result)
+                                return false;
+                            break;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
             sizeInfo.AssertOptionals(logRecord.Info);
@@ -204,7 +221,7 @@ namespace Garnet.server
         public bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
+            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
             // the record was CASed into the hash chain before it gets modified
             var oldValueSize = srcLogRecord.ValueObject.MemorySize;
             var value = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
@@ -281,12 +298,17 @@ namespace Garnet.server
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref outp, ref rmwInfo);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return result;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
+                            return result;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
             sizeInfo.AssertOptionals(dstLogRecord.Info);

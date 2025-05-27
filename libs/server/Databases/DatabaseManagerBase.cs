@@ -77,6 +77,9 @@ namespace Garnet.server
         public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
 
         /// <inheritdoc/>
+        public abstract void ExecuteObjectCollection();
+
+        /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <inheritdoc/>
@@ -397,6 +400,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Executes a store-wide object collect operation for the specified database
+        /// </summary>
+        /// <param name="db">Database for object collection</param>
+        /// <param name="logger">Logger</param>
+        protected void ExecuteObjectCollection(GarnetDatabase db, ILogger logger = null)
+        {
+            if (db.DatabaseStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                db.DatabaseStorageSession =
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            ExecuteHashCollect(db.DatabaseStorageSession);
+            ExecuteSortedSetCollect(db.DatabaseStorageSession);
+        }
+
+        /// <summary>
         /// Run compaction on specified database
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
@@ -628,7 +649,7 @@ namespace Garnet.server
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
-                StoreWrapper.clusterProvider.SafeTruncateAOF(StoreType.All, full, checkpointCoveredAofAddress,
+                StoreWrapper.clusterProvider.SafeTruncateAOF(full, checkpointCoveredAofAddress,
                     checkpointResult.token, checkpointResult.token);
             }
             else
@@ -652,6 +673,22 @@ namespace Garnet.server
             }
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);
+        }
+
+        private static void ExecuteHashCollect(StorageSession storageSession)
+        {
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+            var input = new ObjectInput(header);
+
+            ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
+            storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+            storageSession.scratchBufferManager.Reset();
+        }
+
+        private static void ExecuteSortedSetCollect(StorageSession storageSession)
+        {
+            storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
+            storageSession.scratchBufferManager.Reset();
         }
     }
 }

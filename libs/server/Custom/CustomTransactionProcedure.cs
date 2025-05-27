@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Base class for transaction definition
     /// </summary>
-    public abstract class CustomTransactionProcedure : CustomFunctions
+    public abstract class CustomTransactionProcedure : CustomProcedureBase
     {
         internal ScratchBufferManager scratchBufferManager;
         internal TransactionManager txnManager;

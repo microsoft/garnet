@@ -39,7 +39,7 @@ Tests that use Azure cloud storage are skipped, unless you set the environment v
 
 # Deploy Garnet Server
 
-Now, you are ready to deploy the Garnet server. This is simple, run the below::
+Now, you are ready to deploy the Garnet server. This is simple, run the below:
 
 ```bash
 cd main/GarnetServer
@@ -69,7 +69,7 @@ dotnet run -c Release -f net8.0 -- -i 512m
 
 Garnet uses the RESP protocol, so you can use any Redis client in your favorite client language to talk to the Garnet server. For C# applications, you can either use StackExchange.Redis or our own C# client, called GarnetClient.
 
-On Windows, Yon use <a href="https://github.com/RedisInsight/RedisInsight" target="_blank">RedisInsight</a> which has a graphical interface and a cli, or install <a href="https://www.memurai.com/" target="_blank">Memurai</a> 
+On Windows, You can use <a href="https://github.com/RedisInsight/RedisInsight" target="_blank">RedisInsight</a> which has a graphical interface and a cli, or install <a href="https://www.memurai.com/" target="_blank">Memurai</a> 
 (which offers Redis on Windows) and use their **memurai-cli** command line tool. You can also use **redis-cli** on WSL with the below configuration.
 
 - Start GarnetServer in Windows, listening to `0.0.0.0` (IPAddress.Any). Use the argument `--bind 0.0.0.0` if necessary.

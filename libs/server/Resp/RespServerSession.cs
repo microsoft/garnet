@@ -1593,7 +1593,7 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId, respProtocolVersion);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession, dbStorageSession.transactionalContext, dbStorageSession.objectStoreTransactionalContext);
 

@@ -130,6 +130,7 @@ namespace Garnet.cluster
 
                     var nodeId = current.LocalNodeId;
                     cEntry = GetLatestCheckpointEntryFromDisk();
+                    logger?.LogCheckpointEntry(LogLevel.Information, nameof(ReplicaSyncAttachTask), cEntry);
 
                     storeWrapper.RecoverAOF();
                     logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);

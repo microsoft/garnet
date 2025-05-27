@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -36,18 +35,25 @@ namespace Garnet.server
                 }
 
                 var valueLength = value.Length;
-                (IMemoryOwner<byte> Memory, int Length) memoryAndLength = (output.Memory, 0);
-                var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                    .Reader(srcLogRecord.Key, ref input, value, ref memoryAndLength, ref readInfo);
-                Debug.Assert(valueLength <= value.Length);
-                (output.Memory, output.Length) = memoryAndLength;
-                return ret;
+
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                try
+                {
+                    var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
+                        .Reader(srcLogRecord.Key, ref input, value, ref writer, ref readInfo);
+                    Debug.Assert(valueLength <= value.Length);
+                    return ret;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
             }
 
             if (srcLogRecord.Info.HasETag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
 
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
             if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
             {
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);

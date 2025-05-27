@@ -11,8 +11,8 @@ namespace Tsavorite.core
     public static class LogAddress
     {
         // Address is 50 bits, with the top 2 being the address type.
-        internal const int kAddressBits = 50;
-        internal const long kAddressBitMask = (1L << kAddressBits) - 1;
+        public const int kAddressBits = 50;
+        public const long kAddressBitMask = (1L << kAddressBits) - 1;
 
         internal const int kAddressTypeBits = 2; // Address type bits (2 bits for 4 types, 1 currently reserved)
         internal const int kAddressTypeBitOffset = kAddressBits - kAddressTypeBits;

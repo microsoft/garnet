@@ -39,7 +39,7 @@ namespace Garnet.server
         /// <returns></returns>
         internal unsafe bool DbScan(PinnedSpanByte patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
         {
-            const long IsObjectStoreCursor = 1L << 49;
+            const long IsObjectStoreCursor = 1L << LogAddress.kAddressBits;
             Keys ??= new();
             Keys.Clear();
 
