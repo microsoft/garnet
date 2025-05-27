@@ -514,6 +514,9 @@ namespace Garnet.server
         public string GetAppendOnlyFileDirectory(int dbId) =>
             Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
 
+        // Enable STREAMS on server
+        public bool EnableStreams = false;
+
         /// <summary>
         /// Page size for BTree index for STREAM
         /// </summary>

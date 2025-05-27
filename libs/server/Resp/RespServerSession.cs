@@ -274,8 +274,11 @@ namespace Garnet.server
             }
 
             // grab stream manager from storeWrapper
-            this.streamManager = storeWrapper.streamManager;
-            sessionStreamCache = new SessionStreamCache();
+            if (storeWrapper.serverOptions.EnableStreams)
+            {
+                this.streamManager = storeWrapper.streamManager;
+                sessionStreamCache = new SessionStreamCache();
+            }
         }
 
         /// <summary>

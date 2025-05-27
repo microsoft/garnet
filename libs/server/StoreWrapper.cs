@@ -260,9 +260,11 @@ namespace Garnet.server
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
-
             // initialize stream manager
-            this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
+            if (serverOptions.EnableStreams)
+            {
+                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
+            }
         }
 
         /// <summary>
