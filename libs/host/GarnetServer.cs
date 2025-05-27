@@ -283,6 +283,8 @@ namespace Garnet
                 logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", opts.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
             }
 
+            logger?.LogTrace("Logging frequency: {loggingFrequency} seconds.", opts.LoggingFrequency);
+
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 
