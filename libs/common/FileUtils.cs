@@ -163,9 +163,7 @@ namespace Garnet.common
                         using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
                         assembly = AssemblyLoadContext.Default.LoadFromStream(fileStream);
                     }
-                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException ||
-                                               ex is NotSupportedException || ex is BadImageFormatException ||
-                                               ex is SecurityException)
+                    catch (Exception ex)
                     {
                         if (ex is FileLoadException && ex.Message.Contains("Assembly with same name is already loaded"))
                         {
