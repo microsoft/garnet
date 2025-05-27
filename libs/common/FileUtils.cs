@@ -200,7 +200,7 @@ namespace Garnet.common
             foreach (var path in paths)
             {
                 var currPath = path;
-                if (currPath.StartsWith("~"))
+                if (currPath.StartsWith('~'))
                 {
                     var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                     currPath = Path.Combine(home, path.Substring(1).TrimStart(Path.DirectorySeparatorChar));
