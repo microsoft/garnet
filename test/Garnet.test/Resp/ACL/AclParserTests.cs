@@ -11,7 +11,7 @@ namespace Garnet.test.Resp.ACL
     /// Tests for the <see cref="ACLParser"/>.
     /// </summary>
     [TestFixture]
-    class AclParserTests : AclTest
+    internal class AclParserTests : AclTest
     {
         /// <summary>
         /// Test cases for scenarios where ACLs reduce.
