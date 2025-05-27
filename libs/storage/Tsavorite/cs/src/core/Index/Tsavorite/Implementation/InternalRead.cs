@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -50,7 +52,6 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output,
                                     TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -77,12 +78,12 @@ namespace Tsavorite.core
             {
                 if (stackCtx.hei.IsReadCache)
                 {
-                    if (FindInReadCache(key, ref stackCtx, minAddress: Constants.kInvalidAddress, alwaysFindLatestLA: false))
+                    if (FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false))
                     {
                         // Note: When session is in PREPARE phase, a read-cache record cannot be new-version. This is because a new-version record
                         // insertion would have invalidated the read-cache entry, and before the new-version record can go to disk become eligible
                         // to enter the read-cache, the PREPARE phase for that session will be over due to an epoch refresh.
-                        readInfo.Address = Constants.kInvalidAddress;   // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
+                        readInfo.Address = kInvalidAddress;     // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
@@ -94,14 +95,10 @@ namespace Tsavorite.core
                     readInfo.Address = stackCtx.recSrc.LogicalAddress;
                 }
 
-                // recSrc.LogicalAddress is set and is not in the readcache. Traceback for key match.
-                if (!TryFindRecordForRead(key, ref stackCtx, hlogBase.HeadAddress, out status))
-                    return status;
-
-                // Track the latest searched-below addresses. They are the same if there are no readcache records.
-                pendingContext.initialEntryAddress = stackCtx.hei.Address;
-                pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                // recSrc.LogicalAddress is set and is not in the readcache. Try to traceback in main log for key match.
+                if (TraceBackForKeyMatch(key, ref stackCtx.recSrc, hlogBase.HeadAddress) && stackCtx.recSrc.GetInfo().IsClosed)
+                    return OperationStatus.RETRY_LATER;
+                status = OperationStatus.SUCCESS;
 
                 // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
@@ -118,6 +115,11 @@ namespace Tsavorite.core
                         ? OperationStatus.SUCCESS
                         : CheckFalseActionStatus(ref readInfo);
                 }
+
+                // Pending (and CopyFromImmutable may go pending) must track the latest searched-below addresses. They are the same if there are no readcache records.
+                pendingContext.initialEntryAddress = stackCtx.hei.Address;
+                pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
                 {
@@ -158,7 +160,7 @@ namespace Tsavorite.core
             }
         }
 
-        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private OperationStatus CopyFromImmutable<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
@@ -177,7 +179,7 @@ namespace Tsavorite.core
             return OperationStatus.SUCCESS;
         }
 
-        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private static OperationStatus CheckFalseActionStatus(ref ReadInfo readInfo)
         {
             if (readInfo.Action == ReadAction.CancelOperation)
@@ -227,7 +229,6 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalReadAtAddress<TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output,
                                     ref ReadOptions readOptions, TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -305,7 +306,7 @@ namespace Tsavorite.core
             return status;
         }
 
-        // No AggressiveInlining; this is called only for the pending case and may improve inlining of InternalRead in the normal case if the compiler decides not to inline this.
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private void CreatePendingReadContext<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>

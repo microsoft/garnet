@@ -2,10 +2,13 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -30,6 +33,7 @@ namespace Tsavorite.core
             overflowBucketsAllocatorResize = null;
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
@@ -120,19 +124,18 @@ namespace Tsavorite.core
                         if (Constants.kInvalidEntry == entry.word)
                             continue;
 
-                        var logicalAddress = entry.Address;
-                        long physicalAddress = 0;
-
                         LogRecord logRecord = default;
-                        if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
-                            logRecord = readcache.CreateLogRecord(entry.AbsoluteAddress);
-                        else if (logicalAddress >= hlogBase.HeadAddress)
-                            logRecord = hlog.CreateLogRecord(logicalAddress);
+                        if (entry.IsReadCache)
+                        {
+                            if (entry.Address >= readCacheBase.HeadAddress)
+                                logRecord = readcache.CreateLogRecord(entry.Address);
+                        }
+                        else if (entry.Address >= hlogBase.HeadAddress)
+                            logRecord = hlog.CreateLogRecord(entry.Address);
 
-                        // It is safe to always use hlog instead of readcache for some calls such
-                        // as GetKey and GetInfo
                         if (logRecord.IsSet)
                         {
+                            var physicalAddress = logRecord.physicalAddress;
                             var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
@@ -151,7 +154,7 @@ namespace Tsavorite.core
 
                                 // Insert previous address in right
                                 entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 1);
-                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
+                                if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
                                 {
                                     if (right == right_end)
                                     {
@@ -183,7 +186,7 @@ namespace Tsavorite.core
 
                                 // Insert previous address in left
                                 entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 0);
-                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
+                                if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
                                 {
                                     if (left == left_end)
                                     {
@@ -241,9 +244,8 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                HashBucketEntry entry = new() { Address = logicalAddress };
                 LogRecord logRecord;
-                if (entry.ReadCache)
+                if (IsReadCache(logicalAddress))
                 {
                     if (logicalAddress < readCacheBase.HeadAddress)
                         break;

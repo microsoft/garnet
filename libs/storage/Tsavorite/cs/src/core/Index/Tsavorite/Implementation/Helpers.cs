@@ -4,10 +4,11 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -64,7 +65,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="entry">the last entry of a bucket</param>
         /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]  // Called only if in PREPARE, so don't inline for the usual case
         private bool IsEntryVersionNew(ref HashBucketEntry entry)
         {
             // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
@@ -72,7 +73,7 @@ namespace Tsavorite.core
                 return false;
 
             // Read cache entries are not in new version
-            if (UseReadCache && entry.ReadCache)
+            if (UseReadCache && entry.IsReadCache)
                 return false;
 
             // If the record is in memory, check if it has the new version bit set
@@ -177,13 +178,13 @@ namespace Tsavorite.core
         {
             // This is called on exception recovery for a newly-inserted record.
             var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
-            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(AbsoluteAddress(logicalAddress))).SetInvalid();
+            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(logicalAddress)).SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CASRecordIntoChain(long newLogicalAddress, ref LogRecord newLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
+            var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
                 : SpliceIntoHashChainAtReadCacheBoundary(newLogRecord.Key, ref stackCtx, newLogicalAddress);
             if (result)
@@ -229,7 +230,7 @@ namespace Tsavorite.core
                 return false;
 
             // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == Constants.kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.HeadAddress)
+            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.HeadAddress)
                 return true;
 
             // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,
@@ -337,7 +338,7 @@ namespace Tsavorite.core
                     stackCtx.hei = new(stackCtx.hei.hash);
                     FindOrCreateTag(ref stackCtx.hei, hlogBase.BeginAddress);
 
-                    if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
+                    if (stackCtx.hei.entry.Address <= kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
                         srcLogRecord.InfoRef.UnsealAndValidate();
                     DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
                 }

@@ -32,128 +32,126 @@ namespace Tsavorite.core
                                                         ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            var diskRecord = new DiskLogRecord(ref request);
+            if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
+                goto NotFound;
 
+            var diskRecord = new DiskLogRecord(ref request);
             if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, diskRecord.Key))
                 goto NotFound;
 
-            if (request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress)
+            SpinWaitUntilClosed(request.logicalAddress);
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(diskRecord.Key));
+
+            while (true)
             {
-                SpinWaitUntilClosed(request.logicalAddress);
-
-                OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(diskRecord.Key));
-
-                while (true)
+                if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 {
-                    if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
-                    {
-                        Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
-                        if (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
-                            continue;
-                        return status;
-                    }
+                    Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
+                    if (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                        continue;
+                    return status;
+                }
 
-                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
-                    try
+                try
+                {
+                    // During the pending operation, a record for the key may have been added to the log or readcache. Don't look for this if we are reading at address (rather than key).
+                    LogRecord memoryRecord = default;
+                    if (!pendingContext.IsReadAtAddress)
                     {
-                        // During the pending operation, a record for the key may have been added to the log or readcache. Don't look for this if we are reading at address (rather than key).
-                        LogRecord memoryRecord = default;
-                        if (!pendingContext.IsReadAtAddress)
+                        if (TryFindRecordInMemory(diskRecord.Key, ref stackCtx, ref pendingContext))
                         {
-                            if (TryFindRecordInMemory(diskRecord.Key, ref stackCtx, ref pendingContext))
-                            {
-                                memoryRecord = stackCtx.recSrc.CreateLogRecord();
-                                if (memoryRecord.Info.Tombstone)
-                                    goto NotFound;
+                            memoryRecord = stackCtx.recSrc.CreateLogRecord();
+                            if (memoryRecord.Info.Tombstone)
+                                goto NotFound;
 
-                                // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
-                                if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
-                                    return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
-                            }
-                            else
+                            // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
+                            if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
+                                return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
+                        }
+                        else
+                        {
+                            // We didn't find a record for the key in memory, but if recSrc.LogicalAddress (which is the .PreviousAddress of the lowest record
+                            // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
+                            // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. Reissue the Read(),
+                            // using the LogicalAddress we just found as minAddress. We will either find an in-memory version of the key that was added after the
+                            // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress,
+                            // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
+                            // after our just-completed TryFindRecordInMemory.
+                            if (stackCtx.recSrc.LogicalAddress > pendingContext.initialLatestLogicalAddress
+                                && (!pendingContext.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingContext.minAddress))
                             {
-                                // We didn't find a record for the key in memory, but if recSrc.LogicalAddress (which is the .PreviousAddress of the lowest record
-                                // above InitialLatestLogicalAddress we could reach) is > InitialLatestLogicalAddress, then it means InitialLatestLogicalAddress is
-                                // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. Reissue the Read(),
-                                // using the LogicalAddress we just found as minAddress. We will either find an in-memory version of the key that was added after the
-                                // TryFindRecordInMemory we just did, or do IO and find the record we just found or one above it. Read() updates InitialLatestLogicalAddress,
-                                // so if we do IO, the next time we come to CompletePendingRead we will only search for a newer version of the key in any records added
-                                // after our just-completed TryFindRecordInMemory.
-                                if (stackCtx.recSrc.LogicalAddress > pendingContext.initialLatestLogicalAddress
-                                    && (!pendingContext.HasMinAddress || stackCtx.recSrc.LogicalAddress >= pendingContext.minAddress))
+                                OperationStatus internalStatus;
+                                do
                                 {
-                                    OperationStatus internalStatus;
-                                    do
-                                    {
-                                        internalStatus = InternalRead(diskRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
-                                            pendingContext.userContext, ref pendingContext, sessionFunctions);
-                                    }
-                                    while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
-                                    return internalStatus;
+                                    internalStatus = InternalRead(diskRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                        pendingContext.userContext, ref pendingContext, sessionFunctions);
                                 }
+                                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
+                                return internalStatus;
                             }
                         }
-
-                        if (!memoryRecord.IsSet && diskRecord.Info.Tombstone)
-                            goto NotFound;
-
-                        ReadInfo readInfo = new()
-                        {
-                            Version = sessionFunctions.Ctx.version,
-                            Address = request.logicalAddress,
-                            IsFromPending = pendingContext.type != OperationType.NONE,
-                        };
-
-                        var success = false;
-                        if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
-                        {
-                            // If this succeeds, we don't need to copy to tail or readcache, so return success.
-                            if (sessionFunctions.Reader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo))
-                                return OperationStatus.SUCCESS;
-                        }
-                        else if (memoryRecord.IsSet)
-                        {
-                            // This may be in the immutable region, which means it may be an updated version of the record.
-                            success = sessionFunctions.Reader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
-                        }
-                        else
-                            success = sessionFunctions.Reader(ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
-
-                        if (!success)
-                        {
-                            if (readInfo.Action == ReadAction.CancelOperation)
-                                return OperationStatus.CANCELED;
-                            if (readInfo.Action == ReadAction.Expire)
-                                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
-                            goto NotFound;
-                        }
-
-                        // See if we are copying to read cache or tail of log. If we already found the record in memory, we're done.
-                        if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
-                        {
-                            if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx);
-                            else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
-                                    && TryCopyToReadCache(ref diskRecord, sessionFunctions, ref pendingContext, ref stackCtx))
-                                status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
-                        }
-                        else
-                        {
-                            return OperationStatus.SUCCESS;
-                        }
                     }
-                    finally
+
+                    if (!memoryRecord.IsSet && diskRecord.Info.Tombstone)
+                        goto NotFound;
+
+                    ReadInfo readInfo = new()
                     {
-                        stackCtx.HandleNewRecordOnException(this);
-                        EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+                        Version = sessionFunctions.Ctx.version,
+                        Address = request.logicalAddress,
+                        IsFromPending = pendingContext.type != OperationType.NONE,
+                    };
+
+                    var success = false;
+                    if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
+                    {
+                        // If this succeeds, we don't need to copy to tail or readcache, so return success.
+                        if (sessionFunctions.Reader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo))
+                            return OperationStatus.SUCCESS;
+                    }
+                    else if (memoryRecord.IsSet)
+                    {
+                        // This may be in the immutable region, which means it may be an updated version of the record.
+                        success = sessionFunctions.Reader(ref memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                    }
+                    else
+                        success = sessionFunctions.Reader(ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+
+                    if (!success)
+                    {
+                        if (readInfo.Action == ReadAction.CancelOperation)
+                            return OperationStatus.CANCELED;
+                        if (readInfo.Action == ReadAction.Expire)
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                        goto NotFound;
                     }
 
-                    // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
-                    if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
-                        return status;
-                } // end while (true)
-            }
+                    // See if we are copying to read cache or tail of log. If we already found the record in memory, we're done.
+                    if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
+                    {
+                        if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
+                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx);
+                        else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
+                                && TryCopyToReadCache(ref diskRecord, sessionFunctions, ref pendingContext, ref stackCtx))
+                            status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
+                    }
+                    else
+                    {
+                        return OperationStatus.SUCCESS;
+                    }
+                }
+                finally
+                {
+                    stackCtx.HandleNewRecordOnException(this);
+                    EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+                }
+
+                // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
+                if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
+                    return status;
+            } // end while (true)
 
         NotFound:
             return OperationStatus.NOTFOUND;
@@ -185,10 +183,11 @@ namespace Tsavorite.core
                                                 ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            var keyFound = request.logicalAddress >= hlogBase.BeginAddress && request.logicalAddress >= pendingContext.minAddress;
+            if (keyFound)
+                SpinWaitUntilClosed(request.logicalAddress);
+
             var diskRecord = new DiskLogRecord(ref request);
-
-            SpinWaitUntilClosed(request.logicalAddress);
-
             OperationStatus status;
 
             while (true)
@@ -201,7 +200,7 @@ namespace Tsavorite.core
                 {
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
                     // the record in 'request' is stale. We only lock for tag-chain stability during search.
-                    if (TryFindRecordForPendingOperation(diskRecord.Key, ref stackCtx, out status, ref pendingContext))
+                    if (TryFindRecordForPendingOperation(pendingContext.Key, ref stackCtx, out status, ref pendingContext))
                     {
                         if (status != OperationStatus.SUCCESS)
                             goto CheckRetry;
@@ -219,10 +218,8 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-
-                    status = CreateNewRecordRMW(diskRecord.Key, ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
-                                                ref pendingContext, sessionFunctions, ref stackCtx,
-                                                doingCU: request.logicalAddress >= hlogBase.BeginAddress && !diskRecord.Info.Tombstone);
+                    status = CreateNewRecordRMW(pendingContext.Key, ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
+                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !diskRecord.Info.Tombstone);
                 }
                 finally
                 {

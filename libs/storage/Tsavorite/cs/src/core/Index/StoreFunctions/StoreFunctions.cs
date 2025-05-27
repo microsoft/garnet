@@ -46,7 +46,7 @@ namespace Tsavorite.core
 
         #region Value Serializer
         /// <inheritdoc/>
-        public readonly IObjectSerializer<IHeapObject> CreateValueObjectSerializer() => valueSerializerCreator();
+        public readonly IObjectSerializer<IHeapObject> CreateValueObjectSerializer() => valueSerializerCreator is null ? default : valueSerializerCreator();
 
         /// <inheritdoc/>
         public readonly bool HasValueSerializer => valueSerializerCreator is not null;

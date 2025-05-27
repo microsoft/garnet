@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using static Tsavorite.core.LogAddress;
 
 namespace Tsavorite.core
 {
@@ -649,8 +650,8 @@ namespace Tsavorite.core
                     for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
                         if (b.bucket_entries[bucket_entry] >= beginAddress)
                             ++total_entry_count;
-                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0) break;
-                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & kAddressBitMask) == 0) break;
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & kAddressBitMask);
                 }
             }
             return total_entry_count;
@@ -692,7 +693,7 @@ namespace Tsavorite.core
                         if (x.Tentative)
                             ++total_entries_with_tentative_bit_set;
 
-                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readCacheBase.HeadAddress)))
+                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (x.Address >= readCacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");
@@ -731,10 +732,10 @@ namespace Tsavorite.core
                         slots_unused_by_nonofb_buckets_histogram[zeroed_out_slots]++;
                     }
 
-                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask) == 0)
+                    if ((b.bucket_entries[Constants.kOverflowBucketIndex] & kAddressBitMask) == 0)
                         break;
 
-                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & Constants.kAddressMask);
+                    b = *(HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b.bucket_entries[Constants.kOverflowBucketIndex] & kAddressBitMask);
                     is_bucket_in_ofb_table = true;
                 }
 

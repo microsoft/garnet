@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
@@ -145,12 +147,17 @@ namespace Tsavorite.core
             {
                 var nextPage = currentPage + i;
 
-                var pageStartAddress = nextPage << logPageSizeBits;
+                // Convert to absolute addresses as we are going to disk. The LogAddress methods (GetPage, etc.) work with both absolute and AddressType-prefixed addresses.
+                currentAddress = AbsoluteAddress(currentAddress);
+                headAddress = AbsoluteAddress(headAddress);
+                endAddress = AbsoluteAddress(endAddress);
+
+                var pageStartAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage, logPageSizeBits);
                 // Cannot load page if it is entirely in memory or beyond the end address
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
                     continue;
 
-                var pageEndAddress = (nextPage + 1) << logPageSizeBits;
+                var pageEndAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage + 1, logPageSizeBits);
                 if (endAddress < pageEndAddress)
                     pageEndAddress = endAddress;
                 if (headAddress < pageEndAddress)
@@ -163,18 +170,18 @@ namespace Tsavorite.core
                 {
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPage[nextFrame], pageEndAddress, val) == val)
                     {
-                        var tmp_i = i;
+                        var tmp_page = i;
                         if (epoch != null)
                         {
                             epoch.BumpCurrentEpoch(() =>
                             {
-                                AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
+                                AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
                                 loadedPage[nextFrame] = pageEndAddress;
                             });
                         }
                         else
                         {
-                            AsyncReadPagesFromDeviceToFrame(tmp_i + (currentAddress >> logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
+                            AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loaded[nextFrame], 0, null, null, loadedCancel[nextFrame]);
                             loadedPage[nextFrame] = pageEndAddress;
                         }
                     }
@@ -194,13 +201,13 @@ namespace Tsavorite.core
             {
                 var nextPage = currentPage + i;
 
-                var pageStartAddress = nextPage << logPageSizeBits;
+                var pageStartAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage, logPageSizeBits);
 
                 // Cannot load page if it is entirely in memory or beyond the end address
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
                     continue;
 
-                var pageEndAddress = (nextPage + 1) << logPageSizeBits;
+                var pageEndAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage + 1, logPageSizeBits);
                 if (endAddress < pageEndAddress)
                     pageEndAddress = endAddress;
                 if (headAddress < pageEndAddress)
@@ -231,7 +238,7 @@ namespace Tsavorite.core
             {
                 loadedPage[currentFrame] = -1;
                 loadedCancel[currentFrame] = new CancellationTokenSource();
-                Utility.MonotonicUpdate(ref nextAddress, (1 + (currentAddress >> logPageSizeBits)) << logPageSizeBits, out _);
+                Utility.MonotonicUpdate(ref nextAddress, GetStartAbsoluteLogicalAddressOfPage(1 + GetPage(currentAddress, logPageSizeBits), logPageSizeBits), out _);
                 throw new TsavoriteException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
             }
             finally
@@ -283,6 +290,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"BA {BeginAddress}, EA {EndAddress}, CA {CurrentAddress}, NA {NextAddress}";
+        public override string ToString() => $"BA {AddressString(BeginAddress)}, EA {AddressString(EndAddress)}, CA {AddressString(CurrentAddress)}, NA {AddressString(NextAddress)}";
     }
 }

@@ -3,10 +3,11 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Carries various addresses and accompanying values corresponding to source records for the current InternalXxx or InternalContinuePendingR*
     /// operations, where "source" is a copy source for RMW and/or a locked record. This is passed to functions that create records, such as 
@@ -64,6 +65,7 @@ namespace Tsavorite.core
             internal const int EphemeralXLock = 0x0002;    // LockTable
             internal const int LockBits = EphemeralSLock | EphemeralXLock;
 
+            // These are separate from the AddressType in LogicalAddress because we need to know if that LogicalAddress matched the key.
             internal const int MainLogSrc = 0x0100;
             internal const int ReadCacheSrc = 0x0200;
             internal const int InMemSrcBits = MainLogSrc | ReadCacheSrc;
@@ -123,7 +125,12 @@ namespace Tsavorite.core
         /// </summary>
         internal readonly bool HasMainLogSrc => (internalState & InternalStates.MainLogSrc) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasMainLogSrc() => internalState |= InternalStates.MainLogSrc;
+        internal void SetHasMainLogSrc()
+        {
+            Debug.Assert(IsInLogMemory(LogicalAddress), "LogicalAddress must be a non-readcache in-mmeory address to set HasMainLogSrc");
+            internalState |= InternalStates.MainLogSrc;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasMainLogSrc() => internalState &= ~InternalStates.MainLogSrc;
 
@@ -132,7 +139,12 @@ namespace Tsavorite.core
         /// </summary>
         internal readonly bool HasReadCacheSrc => (internalState & InternalStates.ReadCacheSrc) != 0;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasReadCacheSrc() => internalState |= InternalStates.ReadCacheSrc;
+        internal void SetHasReadCacheSrc()
+        {
+            Debug.Assert(IsReadCache(LogicalAddress), "LogicalAddress must be a readcache address to set HasReadCacheSrc");
+            internalState |= InternalStates.ReadCacheSrc;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
@@ -140,13 +152,14 @@ namespace Tsavorite.core
         internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly ref RecordInfo GetInfoRef() => ref LogRecord.GetInfoRef(PhysicalAddress);
-        internal readonly RecordInfo GetInfo() => LogRecord.GetInfoRef(PhysicalAddress);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly RecordInfo GetInfo() => LogRecord.GetInfo(PhysicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly LogRecord CreateLogRecord()
         {
+            // If we have a physical address we must be in the in-memory log.
             Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
-            Debug.Assert(HasInMemorySrc, "Can only create a LogRecord for a record in main log memory");
             return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
         }
 
@@ -166,7 +179,7 @@ namespace Tsavorite.core
 
             // HasEphemeralLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
 
-            LatestLogicalAddress = LogicalAddress = AbsoluteAddress(latestLogicalAddress);
+            LatestLogicalAddress = LogicalAddress = latestLogicalAddress;
             SetAllocator(srcAllocatorBase);
         }
 
@@ -181,12 +194,7 @@ namespace Tsavorite.core
         internal readonly string LockStateString() => InternalStates.ToString(internalState & InternalStates.LockBits);
 
         public override readonly string ToString()
-        {
-            var isRC = "(rc)";
-            var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
-            var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
-            return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" hasInMemorySrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, hasLocks {LockStateString()}";
-        }
+            => $"lla {AddressString(LatestLogicalAddress)}, la {AddressString(LogicalAddress)}, lrcla {AddressString(LowestReadCacheLogicalAddress)},"
+             + $" inMemSrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, locks {LockStateString()}";
     }
 }

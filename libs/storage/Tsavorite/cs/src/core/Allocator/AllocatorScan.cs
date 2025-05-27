@@ -8,6 +8,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public abstract partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -92,7 +94,7 @@ namespace Tsavorite.core
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
-            if (!scanFunctions.OnStart(beginAddress, Constants.kInvalidAddress))
+            if (!scanFunctions.OnStart(beginAddress, kInvalidAddress))
                 return false;
             var readOnlyAddress = ReadOnlyAddress;
 

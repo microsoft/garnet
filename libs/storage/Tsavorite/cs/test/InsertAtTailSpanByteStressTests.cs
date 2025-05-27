@@ -220,7 +220,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
                                     // Note: do NOT overwrite 'key' here
                                     long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
 
-                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
+                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == LogAddress.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
 
                                     ClassicAssert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     ClassicAssert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");

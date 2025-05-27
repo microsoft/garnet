@@ -173,7 +173,7 @@ namespace Tsavorite.core
                             b->bucket_entries[bucket_entry] = 0;
                     }
                     // Reset any ephemeral bucket level locks
-                    b->bucket_entries[Constants.kOverflowBucketIndex] &= Constants.kAddressMask;
+                    b->bucket_entries[Constants.kOverflowBucketIndex] &= LogAddress.kAddressBitMask;
                     if (b->bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
                     b = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b->bucket_entries[Constants.kOverflowBucketIndex]);
                 }

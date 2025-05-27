@@ -3,6 +3,8 @@
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -28,7 +30,7 @@ namespace Tsavorite.core
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, ref sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out _))
                 return false;
             var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
-            stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);
+            stackCtx.SetNewRecord(newLogicalAddress);
 
             // Even though readcache records are immutable, we have to initialize the lengths
             readcache.InitializeValue(newPhysicalAddress, ref sizeInfo);
@@ -37,11 +39,11 @@ namespace Tsavorite.core
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
-            var success = stackCtx.hei.TryCAS(newLogicalAddress | Constants.kReadCacheBitMask);
+            var success = stackCtx.hei.TryCAS(newLogicalAddress);
             var casSuccess = success;
 
             var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
-            if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
+            if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != kInvalidAddress)
             {
                 // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
                 // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
@@ -52,14 +54,13 @@ namespace Tsavorite.core
                 //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
                 //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
                 //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
-                success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, stackCtx.recSrc, pendingContext.initialLatestLogicalAddress, ref failStatus);
+                success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
             }
 
             if (success)
             {
-                if (success)
-                    newLogRecord.InfoRef.UnsealAndValidate();
-                pendingContext.logicalAddress = Constants.kInvalidAddress;  // We aren't doing anything with this; and we never expose readcache addresses
+                newLogRecord.InfoRef.UnsealAndValidate();
+                pendingContext.logicalAddress = kInvalidAddress;  // We aren't doing anything with this; and we never expose readcache addresses
                 stackCtx.ClearNewRecord();
                 return true;
             }
@@ -69,7 +70,7 @@ namespace Tsavorite.core
             if (!casSuccess)
             {
                 DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
-                newLogRecord.InfoRef.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
+                newLogRecord.InfoRef.PreviousAddress = kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }
             return false;
         }

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using static Tsavorite.core.LogAddress;
 
 namespace Tsavorite.core
 {
@@ -12,11 +13,11 @@ namespace Tsavorite.core
     internal unsafe struct HashBucket
     {
         // We use the first overflow bucket for latching, reusing all bits after the address.
-        const int kSharedLatchBits = 63 - Constants.kAddressBits;
+        const int kSharedLatchBits = 63 - kAddressBits;
         const int kExclusiveLatchBits = 1;
 
         // Shift positions of latches in word
-        const int kSharedLatchBitOffset = Constants.kAddressBits;
+        const int kSharedLatchBitOffset = kAddressBits;
         const int kExclusiveLatchBitOffset = kSharedLatchBitOffset + kSharedLatchBits;
 
         // Shared latch constants

@@ -7,16 +7,17 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+    using static LogAddress;
+
     [StructLayout(LayoutKind.Explicit, Size = sizeof(long))]
     internal struct FreeRecord
     {
-        internal const int kSizeBits = 64 - RecordInfo.kPreviousAddressBits;        // 16
-
-        const int kSizeShiftInWord = RecordInfo.kPreviousAddressBits;
+        internal const int kSizeBits = 64 - kAddressBits;        // 14
+        const int kSizeShiftInWord = kAddressBits;
 
         const long kSizeMask = RevivificationBin.MaxInlineRecordSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
@@ -33,8 +34,8 @@ namespace Tsavorite.core
         /// <summary>LogicalAddress of the record.</summary>
         public long Address
         {
-            readonly get => word & RecordInfo.kPreviousAddressMaskInWord;
-            set => word = (word & ~RecordInfo.kPreviousAddressMaskInWord) | (value & RecordInfo.kPreviousAddressMaskInWord);
+            readonly get => word & kAddressBitMask;
+            set => word = (word & ~kAddressBitMask) | (value & kAddressBitMask);
         }
 
         /// <summary>Inline size of the record. May contain overflow allocations.</summary>
@@ -53,7 +54,7 @@ namespace Tsavorite.core
             if (oldRecord.IsSet && oldRecord.Address >= minAddress)
                 return false;
 
-            long newWord = (recordSize << kSizeShiftInWord) | (address & RecordInfo.kPreviousAddressMaskInWord);
+            long newWord = (recordSize << kSizeShiftInWord) | (address & kAddressBitMask);
             return Interlocked.CompareExchange(ref word, newWord, oldRecord.word) == oldRecord.word;
         }
 

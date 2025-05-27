@@ -90,7 +90,7 @@ namespace Tsavorite.core
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetSerializedLength()
-            => RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
+            => Info.IsNull ? RecordInfo.GetLength() : RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
         /// <summary>Called by IO to determine whether the record is complete (full serialized length has been read)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -238,6 +238,7 @@ namespace Tsavorite.core
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void WriteVarBytes(long value, int len, ref byte* ptr)
         {
             for (; len > 0; --len)
@@ -248,6 +249,7 @@ namespace Tsavorite.core
             Debug.Assert(value == 0, "len too short");
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static long ReadVarBytes(int len, ref byte* ptr)
         {
             long value = 0;
@@ -419,7 +421,11 @@ namespace Tsavorite.core
             // Value is a span so we can use RecordIsInline format, so both key and value are int length.
             recordSize = RecordInfo.GetLength() + key.TotalSize() + LogField.InlineLengthPrefixSize;
 
-            allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
+            if (allocatedRecord is not null)
+                allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
+            else
+                allocatedRecord = bufferPool.Get((int)recordSize);
+
             physicalAddress = (long)allocatedRecord.GetValidPointer();
             ptr = (byte*)physicalAddress;
 

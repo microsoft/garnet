@@ -6,10 +6,12 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+    using static LogAddress;
+
     // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
@@ -57,6 +59,7 @@ namespace Tsavorite.core
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
         }
 
         void ReturnPage(int index)
@@ -75,9 +78,6 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -86,7 +86,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize: int.MaxValue, objectIdMap: null);
 
-        public override void Initialize() => Initialize(Constants.kFirstValidAddress);
+        public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
@@ -221,36 +221,24 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
-            // Offset within page
-            var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
-
-            // Index of page within the circular buffer
-            var pageIndex = GetPageIndex(logicalAddress);
+            // Index of page within the circular buffer, and offset on the page. TODO move this (and pagePointers) to AllocatorBase)
+            var pageIndex = GetPageIndexForAddress(logicalAddress);
+            var offset = GetOffsetOnPage(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
 
         internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-        {
-            WriteAsync((IntPtr)pagePointers[flushPage % BufferSize],
-                    (ulong)(AlignedPageSizeBytes * flushPage),
-                    (uint)AlignedPageSizeBytes,
-                    callback,
-                    asyncResult, device);
-        }
+            => WriteAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
+                    (uint)AlignedPageSizeBytes, callback, asyncResult, device);
 
-        protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
-            var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
-
-            WriteAsync((IntPtr)pagePointers[flushPage % BufferSize],
-                        (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)alignedPageSize, callback, asyncResult,
-                        device);
+            WriteAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                        (uint)AlignedPageSizeBytes, callback, asyncResult, device);
         }
 
         internal void ClearPage(long page, int offset)
@@ -265,9 +253,7 @@ namespace Tsavorite.core
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
-        {
-            device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
-        }
+            => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 
         /// <summary>
         /// Invoked by users to obtain a record from disk. It uses sector aligned memory to read 
@@ -279,9 +265,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         /// <param name="result"></param>
         protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
-        {
-            throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
-        }
+            => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
 
         internal static long[] GetSegmentOffsets() => null;
 

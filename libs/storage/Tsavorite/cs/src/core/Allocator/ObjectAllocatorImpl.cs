@@ -10,10 +10,12 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+    using static LogAddress;
+
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, ObjectAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
     {
@@ -92,6 +94,7 @@ namespace Tsavorite.core
 
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
             values[index] = new();
         }
 
@@ -111,21 +114,18 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int GetPageIndex(long logicalAddress) => (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, values[GetPageIndex(logicalAddress)].objectIdMap);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, values[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndex(logicalAddress)].objectIdMap;
+        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, GetObjectIdMap(logicalAddress));
 
-        public override void Initialize() => Initialize(Constants.kFirstValidAddress);
+        public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo)
@@ -293,11 +293,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
-            // Offset within page
-            var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
-
-            // Index of page within the circular buffer
-            var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+            // Index of page within the circular buffer, and offset on the page
+            var pageIndex = GetPageIndexForAddress(logicalAddress);
+            var offset = GetOffsetOnPage(logicalAddress);
             return *(pagePointers + pageIndex) + offset;
         }
 

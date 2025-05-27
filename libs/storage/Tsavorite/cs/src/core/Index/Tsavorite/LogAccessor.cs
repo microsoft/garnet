@@ -84,7 +84,7 @@ namespace Tsavorite.core
             allocatorBase.EmptyPageCount = pageCount;
             if (wait)
             {
-                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadAddressLagOffset;
+                long newHeadAddress = allocatorBase.GetAddressOfStartOfPage(allocatorBase.GetTailAddress()) - allocatorBase.HeadAddressLagOffset;
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }
@@ -97,7 +97,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount)) << allocatorBase.LogPageSizeBits;
+        public long MemorySizeBytes => allocatorBase.GetStartLogicalAddressOfPage((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount));
 
         /// <summary>
         /// Maximum memory size in bytes
@@ -120,7 +120,7 @@ namespace Tsavorite.core
         public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (snapToPageStart)
-                untilAddress &= ~allocatorBase.PageSizeMask;
+                untilAddress = allocatorBase.GetAddressOfStartOfPage(untilAddress);
 
             var epochProtected = store.epoch.ThisInstanceProtected();
             try

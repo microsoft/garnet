@@ -1,12 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -20,17 +21,14 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
         {
             pendingContext.flushEvent = allocator.FlushEvent;
-            logicalAddress = allocator.TryAllocateRetryNow(recordSize);
-            if (logicalAddress > 0)
+            if (allocator.TryAllocateRetryNow(recordSize, out logicalAddress))
             {
                 pendingContext.flushEvent = default;
                 internalStatus = OperationStatus.SUCCESS;
                 return true;
             }
 
-            // logicalAddress less than 0 (RETRY_NOW) should already have been handled
-            Debug.Assert(logicalAddress == 0);
-            // We expect flushEvent to be signaled.
+            // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
             internalStatus = OperationStatus.ALLOCATE_FAILED;
             return false;
         }
@@ -57,7 +55,7 @@ namespace Tsavorite.core
             var minMutableAddress = GetMinRevivifiableAddress();
             var minRevivAddress = minMutableAddress;
 
-            if (options.recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress
+            if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
                     && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
             {
                 new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
@@ -87,6 +85,8 @@ namespace Tsavorite.core
                     break;
 
                 newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+
+                // If allocation had to flush and did it inline, then the epoch was refreshed and we need to check for address safety.
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
                     allocatedSize = sizeInfo.AllocatedInlineRecordSize;
@@ -130,15 +130,15 @@ namespace Tsavorite.core
                                                        ref RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
-            for (; ; Thread.Yield())
+            for (; ; _ = Thread.Yield())
             {
                 if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
-
                 newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
-                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.AbsoluteAddress)
+                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.Address)
                     {
                         allocatedSize = recordSizeInfo.AllocatedInlineRecordSize;
                         return true;
@@ -168,10 +168,10 @@ namespace Tsavorite.core
             // TryAllocateRecord may stash this before WriteRecordInfo is called, leaving .PreviousAddress set to kInvalidAddress.
             // This is zero, and setting Invalid will result in recordInfo.IsNull being true, which will cause log-scan problems.
             // We don't need whatever .PreviousAddress was there, so set it to kTempInvalidAddress (which is nonzero).
-            recordInfo.PreviousAddress = Constants.kTempInvalidAddress;
+            recordInfo.PreviousAddress = kTempInvalidAddress;
             recordInfo.SetInvalid();    // Skip on log scan
 
-            pendingContext.retryNewLogicalAddress = logicalAddress < hlogBase.HeadAddress ? Constants.kInvalidAddress : logicalAddress;
+            pendingContext.retryNewLogicalAddress = logicalAddress < hlogBase.HeadAddress ? kInvalidAddress : logicalAddress;
         }
 
         // Do not inline, to keep TryAllocateRecord lean

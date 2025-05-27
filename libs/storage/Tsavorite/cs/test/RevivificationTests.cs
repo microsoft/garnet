@@ -1502,6 +1502,7 @@ namespace Tsavorite.test.Revivification
                     input.Fill((byte)ii);
 
                     functions.expectedValueLengths.Enqueue(iter == 0 ? InitialLength : InitialLength);
+
                     var status = bContext.Delete(key);
                     ClassicAssert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
                 }
@@ -1514,8 +1515,10 @@ namespace Tsavorite.test.Revivification
                     functions.expectedValueLengths.Enqueue(InitialLength);
 
                     SpanByteAndMemory output = new();
-                    _ = updateOp == UpdateOp.Upsert ? bContext.Upsert(key, ref pinnedInputSpan, input, ref output) : bContext.RMW(key, ref pinnedInputSpan);
-                    output.Memory?.Dispose();
+                    _ = updateOp == UpdateOp.Upsert 
+                        ? bContext.Upsert(key, ref pinnedInputSpan, input, ref output) 
+                        : bContext.RMW(key, ref pinnedInputSpan);
+                    output.Dispose();
                 }
             }
         }

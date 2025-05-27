@@ -74,10 +74,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> Key => GetKey(physicalAddress, objectIdMap);
+        public readonly ReadOnlySpan<byte> Key
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => GetKey(physicalAddress, objectIdMap);
+        }
 
         /// <inheritdoc/>
-        public bool IsPinnedKey => Info.KeyIsInline;
+        public readonly bool IsPinnedKey => Info.KeyIsInline;
 
         /// <inheritdoc/>
         public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)LogField.GetInlineDataAddress(KeyAddress) : null;
@@ -470,6 +474,8 @@ namespace Tsavorite.core
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
         {
+            if (Info.IsNull)
+                return (RecordInfo.GetLength(), RecordInfo.GetLength());
             var actualSize = ActualRecordSize;
             return (actualSize, actualSize + GetFillerLength());
         }
@@ -530,7 +536,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeForReuse(ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(!Info.HasETag && Info.HasExpiration, "Record should not have ETag or Expiration here");
+            Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Record should not have ETag or Expiration here");
 
             // This assumes the record has just been allocated, so it's at the tail (or very close to it). The Key and Value have not been set.
             // The record does not need to be zeroinitialized if we are not doing that on initial allocation; the zero-length key and value

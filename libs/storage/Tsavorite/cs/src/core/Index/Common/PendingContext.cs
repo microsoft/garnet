@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -85,7 +87,7 @@ namespace Tsavorite.core
             internal readonly bool IsNoKey => (operationFlags & kIsNoKey) != 0;
             internal void SetIsNoKey() => operationFlags |= kIsNoKey;
 
-            internal readonly bool HasMinAddress => minAddress != Constants.kInvalidAddress;
+            internal readonly bool HasMinAddress => minAddress != kInvalidAddress;
 
             internal readonly bool IsReadAtAddress => (operationFlags & kIsReadAtAddress) != 0;
             internal void SetIsReadAtAddress() => operationFlags |= kIsReadAtAddress;
@@ -167,7 +169,12 @@ namespace Tsavorite.core
                     where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 if (this.input == default)
-                    this.input = new StandardHeapContainer<TInput>(ref input);
+                {
+                    if (typeof(TInput) == typeof(PinnedSpanByte))
+                        this.input = new SpanByteHeapContainer(Unsafe.As<TInput, PinnedSpanByte>(ref input), sessionFunctions.Store.hlogBase.bufferPool) as IHeapContainer<TInput>;
+                    else
+                        this.input = new StandardHeapContainer<TInput>(ref input);
+                }
                 this.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);
                 this.userContext = userContext;

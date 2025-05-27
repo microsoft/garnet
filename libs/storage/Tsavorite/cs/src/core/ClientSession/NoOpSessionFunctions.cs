@@ -11,6 +11,12 @@ namespace Tsavorite.core
     /// <see cref="ISessionFunctions{TInput, TOutput, TContext}"/> methods for record operations (Delete methods simply return true to let
     /// Tsavorite proceed with the delete).
     /// </summary>
+    /// <remarks>
+    /// Because this is used for copy operations, the <see cref="GetUpsertFieldInfo{TSourceLogRecord}(ReadOnlySpan{byte}, ref TSourceLogRecord, ref TInput)"/>,
+    /// <see cref="InitialWriter{TSourceLogRecord}(ref LogRecord, ref RecordSizeInfo, ref TInput, ref TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
+    /// <see cref="InPlaceWriter{TSourceLogRecord}(ref LogRecord, ref RecordSizeInfo, ref TInput, ref TSourceLogRecord, ref TOutput, ref UpsertInfo)"/>, and
+    /// methods are implemented to allow for copy of log records via Upsert, but no other methods are implemented.
+    /// </remarks>
     /// <typeparam name="TInput"></typeparam>
     /// <typeparam name="TOutput"></typeparam>
     /// <typeparam name="TContext"></typeparam>
@@ -22,13 +28,18 @@ namespace Tsavorite.core
 
         public readonly bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo) => true;
 
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+            => throw new NotImplementedException("InPlaceWriter(ReadOnlySpan<byte> value) is not supported in this ISessionFunctions implementation");
 
-        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo) => true;
+        public readonly bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
+            => throw new NotImplementedException("InPlaceWriter(IHeapObject value) is not supported in this ISessionFunctions implementation");
 
         public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-             => true;
+        {
+            // This includes ETag and Expiration
+            return dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
+        }
 
         public readonly bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -55,13 +66,16 @@ namespace Tsavorite.core
 
         public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord
-            => default;
-        public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) => default;
-        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input) => default;
-        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input) => default;
+             => throw new NotImplementedException("GetRMWModifiedFieldInfo is not supported in this ISessionFunctions implementation");
+        public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) 
+            => throw new NotImplementedException("GetRMWInitialFieldInfo is not supported in this ISessionFunctions implementation");
+        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input)
+            => throw new NotImplementedException("GetUpsertFieldInfo(ReadOnlySpan<byte> value) is not supported in this ISessionFunctions implementation");
+        public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input)
+            => throw new NotImplementedException("IHeapObject value) is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input)
         where TSourceLogRecord : ISourceLogRecord
-            => default;
+            => new() { KeyDataSize = key.Length, ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
 
         /// <summary>
         /// No reads during compaction
@@ -82,7 +96,10 @@ namespace Tsavorite.core
 
         public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => true;
+        {
+            // This includes ETag and Expiration
+            return dstLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
+        }
 
         public readonly void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }
         public readonly void PostInitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }

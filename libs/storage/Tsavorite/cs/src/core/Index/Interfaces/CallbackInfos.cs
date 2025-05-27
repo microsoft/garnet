@@ -100,7 +100,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// The logical address of the record being operated on. For CopyUpdater, this is the source address,
-        /// or <see cref="Constants.kInvalidAddress"/> if the source is the read cache.
+        /// or <see cref="LogAddress.kInvalidAddress"/> if the source is the read cache.
         /// </summary>
         public long Address { get; internal set; }
 

@@ -111,7 +111,8 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
             => throw new NotImplementedException("GetRMWModifiedFieldInfo requires knowledge of TInput");
         /// <inheritdoc/>
-        public virtual RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) => throw new NotImplementedException("GetRMWInitialFieldInfo requires knowledge of TInput");
+        public virtual RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input)
+            => throw new NotImplementedException("GetRMWInitialFieldInfo requires knowledge of TInput");
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input)
             => new() { KeyDataSize = key.Length, ValueDataSize = value.Length, ValueIsObject = false };

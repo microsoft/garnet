@@ -5,6 +5,8 @@ using System;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Result for records sent to the callback during ScanCursor.
     /// </summary>
@@ -39,7 +41,7 @@ namespace Tsavorite.core
     {
         /// <summary>Iteration is starting.</summary>
         /// <param name="beginAddress">Start address of the scan</param>
-        /// <param name="endAddress">End address of the scan; if iterating key versions, this is <see cref="Constants.kInvalidAddress"/></param>
+        /// <param name="endAddress">End address of the scan; if iterating key versions, this is <see cref="kInvalidAddress"/></param>
         /// <returns>True to continue iteration, else false</returns>
         bool OnStart(long beginAddress, long endAddress);
 
