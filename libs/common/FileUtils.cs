@@ -189,5 +189,25 @@ namespace Garnet.common
             loadedAssemblies = tmpAssemblies;
             return true;
         }
+
+        /// <summary>
+        /// Converts a list of paths to absolute paths
+        /// </summary>
+        /// <param name="paths">Paths to convert</param>
+        /// <returns>Converted paths</returns>
+        public static IEnumerable<string> ConvertToAbsolutePaths(IEnumerable<string> paths)
+        {
+            foreach (var path in paths)
+            {
+                var currPath = path;
+                if (currPath.StartsWith("~"))
+                {
+                    var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    currPath = Path.Combine(home, path.Substring(1).TrimStart(Path.DirectorySeparatorChar));
+                }
+
+                yield return Path.GetFullPath(currPath);
+            }
+        }
     }
 }
