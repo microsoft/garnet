@@ -379,16 +379,15 @@ namespace Garnet.cluster
                 if (clusterProvider.serverOptions.OnDemandCheckpoint &&
                     (startAofAddress < clusterProvider.replicationManager.AofTruncatedUntil || !validMetadata))
                 {
-                    logger?.LogWarning("Possible data loss detected startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}", startAofAddress, clusterProvider.replicationManager.AofTruncatedUntil);
-
                     if (numOdcAttempts >= maxOdcAttempts && clusterProvider.AllowDataLoss)
                     {
-                        logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts, giving up with acceptable data loss.", numOdcAttempts);
+                        logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts. Possible data loss, startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}.", numOdcAttempts, startAofAddress, clusterProvider.replicationManager.AofTruncatedUntil);
                     }
                     else
                     {
                         cEntry.RemoveReader();
                         numOdcAttempts++;
+                        logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
                         await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
                         await Task.Yield();
                         continue;
