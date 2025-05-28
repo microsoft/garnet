@@ -138,13 +138,17 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
+                    bool useDeepRationalization = false;
                     updated = oldPerms.Copy();
+
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
+                        // Perform deep rationalization when one instance of command overlap may exist.
+                        useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                         updated.AddCommand(cmd);
                     }
 
-                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -189,15 +193,18 @@ namespace Garnet.server.ACL
             CommandPermissionSet updated;
             do
             {
+                bool useDeepRationalization = false;
                 oldPerms = prev;
-
                 updated = oldPerms.Copy();
+
                 foreach (RespCommand cmd in toAdd)
                 {
+                    // Perform deep rationalization when one instance of command overlap may exist.
+                    useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                     updated.AddCommand(cmd);
                 }
 
-                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
@@ -260,13 +267,17 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
+                    bool useDeepRationalization = false;
                     updated = oldPerms.Copy();
+
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
+                        // Perform deep rationalization when one instance of command overlap may exist.
+                        useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                         updated.RemoveCommand(cmd);
                     }
 
-                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -311,15 +322,18 @@ namespace Garnet.server.ACL
             CommandPermissionSet updated;
             do
             {
+                bool useDeepRationalization = false;
                 oldPerms = prev;
-
                 updated = oldPerms.Copy();
+
                 foreach (RespCommand cmd in toRemove)
                 {
+                    // Perform deep rationalization when one instance of command overlap may exist.
+                    useDeepRationalization = useDeepRationalization || updated.CanRunCommand(cmd);
                     updated.RemoveCommand(cmd);
                 }
 
-                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}", useDeepRationalization);
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
@@ -485,12 +499,14 @@ namespace Garnet.server.ACL
         /// <summary>
         /// Check to see if any tokens from a description can be removed without modifying the effective permissions.
         /// 
-        /// This is an expensive method, but ACL modifications are rare enough it's hopefully not a problem.
+        /// This is an expensive method, but ACL modifications are rare enough it's hopefully not a problem. In situations
+        /// where it is known ahead of time that the CommandPermissionSet does not require reductions, set useDeepRationalization
+        /// to true to optimize the method execution by avoiding a deeper recursive analysis.
         /// </summary>
-        private static string RationalizeACLDescription(CommandPermissionSet set, string description)
+        private static string RationalizeACLDescription(CommandPermissionSet set, string description, bool useDeepRationalization)
         {
             List<string> parts = [.. description.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-            while (true)
+            while (useDeepRationalization)
             {
                 bool shrunk = false;
 

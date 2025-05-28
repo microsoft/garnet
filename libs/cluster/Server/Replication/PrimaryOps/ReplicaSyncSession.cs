@@ -330,14 +330,17 @@ namespace Garnet.cluster
             var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
                 (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
-            AofSyncTaskInfo aofSyncTaskInfo = null;
-            CheckpointEntry cEntry = default;
+            AofSyncTaskInfo aofSyncTaskInfo;
+            CheckpointEntry cEntry;
 
             // This loop tries to provide the following two guarantees
             // 1. Retrieve latest checkpoint and lock it to prevent deletion before it is send to the replica
             // 2. Guard against truncation of AOF in between the retrieval of the checkpoint metadata and start of the aofSyncTask
             while (true)
             {
+                aofSyncTaskInfo = null;
+                cEntry = default;
+
                 // Acquire startSaveTime to identify if an external task might have taken the checkpoint for us
                 // This is only useful for MainMemoryReplication where we might have multiple replicas attaching
                 // We want to share the on-demand checkpoint and ensure that only one replica should succeed when calling TakeOnDemandCheckpoint

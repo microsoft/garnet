@@ -97,6 +97,11 @@ namespace Garnet.server
         /// </summary>
         public SingleWriterMultiReaderLock CheckpointingLock;
 
+        /// <summary>
+        /// Storage session intended for store-wide object collection operations
+        /// </summary>
+        internal StorageSession DatabaseStorageSession;
+
         bool disposed = false;
 
         public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
@@ -160,6 +165,7 @@ namespace Garnet.server
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
+            DatabaseStorageSession?.Dispose();
 
             if (ObjectStoreSizeTracker != null)
             {

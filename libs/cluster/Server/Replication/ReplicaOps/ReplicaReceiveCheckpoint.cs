@@ -335,7 +335,8 @@ namespace Garnet.cluster
 
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 logger?.LogInformation("Initializing CheckpointStore");
-                InitializeCheckpointStore();
+                if (!InitializeCheckpointStore())
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(BeginReplicaRecover));
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
