@@ -78,18 +78,14 @@ namespace Garnet.common
         /// <returns></returns>
         public static async Task WaitOnCondition(ExceptionInjectionType exceptionType)
         {
-#if DEBUG
             var flag = ExceptionInjectionTypes[(int)exceptionType];
             if (flag)
             {
                 // Reset and wait to signaled to go forward
                 ExceptionInjectionTypes[(int)exceptionType] = false;
                 while (!ExceptionInjectionTypes[(int)exceptionType])
-                {
                     await Task.Yield();
-                }
             }
-#endif
         }
     }
 }

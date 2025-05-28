@@ -298,7 +298,8 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 OnDemandCheckpoint: true,
                 FastAofTruncate: true,
-                CommitFrequencyMs: -1);
+                CommitFrequencyMs: -1,
+                useAofNullDevice: true);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
