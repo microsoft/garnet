@@ -129,11 +129,12 @@ namespace Garnet.cluster
             {
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion} replicaObjectStoreVersion:{replicaObjectStoreVersion}",
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion, replicaCheckpointEntry.metadata.objectStoreVersion);
-                gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
 
                 logger?.LogInformation("Attempting to acquire checkpoint");
                 (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
                 logger?.LogInformation("Checkpoint search completed");
+
+                gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
 
                 long index_size = -1;
                 long obj_index_size = -1;
@@ -366,8 +367,10 @@ namespace Garnet.cluster
                     break;
                 }
 
+#if DEBUG
                 // Only on Debug mode
                 await ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+#endif
 
                 // Calculate the minimum start address covered by this checkpoint
                 var startAofAddress = cEntry.GetMinAofCoveredAddress();
@@ -394,8 +397,10 @@ namespace Garnet.cluster
                     startAofAddress = cEntry.GetMinAofCoveredAddress();
                 }
 
+#if DEBUG
                 // Only on Debug mode
                 await ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+#endif
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
