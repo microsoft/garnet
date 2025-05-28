@@ -65,6 +65,33 @@ namespace Garnet.test
         }
 
         [Test]
+        public void OptionsDefaultAttributeUsage()
+        {
+            // Verify that there are no usages of the OptionsAttribute.Default property (all default values should be set in defaults.conf)
+            // Note that this test will not fail if the user is setting the Default property to the type's default value (yet can still cause an issue if done).
+            var propUsages = new List<string>();
+
+            foreach (var prop in typeof(Options).GetProperties())
+            {
+                var ignoreAttr = prop.GetCustomAttributes(typeof(JsonIgnoreAttribute)).FirstOrDefault();
+                if (ignoreAttr != null)
+                    continue;
+
+                var optionAttr = (OptionAttribute)prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
+                if (optionAttr == null)
+                    continue;
+
+                if (optionAttr.Default != default)
+                {
+                    propUsages.Add(prop.Name);
+                }
+            }
+
+            ClassicAssert.IsEmpty(propUsages,
+                $"Properties in {typeof(Options)} should not use {nameof(OptionAttribute)}.{nameof(OptionAttribute.Default)}. All default values should be specified in defaults.conf.");
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
