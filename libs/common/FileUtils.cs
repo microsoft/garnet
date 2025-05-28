@@ -195,8 +195,11 @@ namespace Garnet.common
         /// </summary>
         /// <param name="paths">Paths to convert</param>
         /// <returns>Converted paths</returns>
-        public static IEnumerable<string> ConvertToAbsolutePaths(IEnumerable<string> paths)
+        public static string[] ConvertToAbsolutePaths(IEnumerable<string> paths)
         {
+            if (paths == null) return null;
+
+            var absPaths = new List<string>();
             foreach (var path in paths)
             {
                 var currPath = path;
@@ -208,8 +211,10 @@ namespace Garnet.common
                     currPath = Path.Combine(home, path.Substring(1).TrimStart(Path.DirectorySeparatorChar));
                 }
 
-                yield return Path.GetFullPath(currPath);
+                absPaths.Add(Path.GetFullPath(currPath));
             }
+
+            return absPaths.ToArray();
         }
     }
 }

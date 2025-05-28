@@ -873,7 +873,7 @@ namespace Garnet
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
-                ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths)?.ToArray(),
+                ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
