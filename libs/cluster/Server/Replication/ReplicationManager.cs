@@ -360,7 +360,8 @@ namespace Garnet.cluster
             }
 
             // First recover and then load latest checkpoint info in-memory
-            InitializeCheckpointStore();
+            if (!InitializeCheckpointStore())
+                logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(PrimaryRecover));
         }
 
         /// <summary>

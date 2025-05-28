@@ -59,8 +59,8 @@ namespace Garnet.server
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
+            int dbId,
             ILogger logger = null,
-            int dbId = 0,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.sessionMetrics = sessionMetrics;
