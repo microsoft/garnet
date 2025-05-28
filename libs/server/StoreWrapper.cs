@@ -27,7 +27,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   
-    public sealed partial class StoreWrapper
+    public sealed class StoreWrapper
     {
         internal readonly string version;
         internal readonly string redisProtocolVersion;
