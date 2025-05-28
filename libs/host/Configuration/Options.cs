@@ -620,8 +620,8 @@ namespace Garnet
         public int MainStoreExpiredKeyCollectionFrequencySecs { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
-        [Option("main-store-expired-key-max-records-per-round", Required = false, HelpText = "Max keys to expire in-memory per round of expired key collection for main store.")]
-        public int MainStoreExpiredKeyMaxRecordsPerRound { get; set; }
+        [Option("main-store-active-expiration-revivifiable-region-percentage", Required = false, HelpText = "Percentage of revivifiable region to scan for Main store active expiration")]
+        public int MainStoreActiveExpirationRevivifiableRegionPercentage { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser

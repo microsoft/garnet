@@ -929,7 +929,7 @@ namespace Garnet.server
             }
 
             // do GC collection and then respond with num keys expired and num keys scanned
-            (long recordsExpired, long recordsScanned) = storeWrapper.OnDemandCollectedExpiredMainStoreKeys(dbId, range);
+            (long recordsExpired, long recordsScanned) = storeWrapper.OnDemanMainStoreExpiredKeyColleciton(dbId, range);
 
             // *2\r\n$NUM1\r\n$NUM2\r\n
 
@@ -946,6 +946,8 @@ namespace Garnet.server
 
             while (!RespWriteUtils.TryWriteArrayItem(recordsScanned, ref dcurr, dend))
                 SendAndReset();
+
+            return true;
         }
 
         /// <summary>

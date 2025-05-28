@@ -843,8 +843,6 @@ namespace Garnet.server
 
                     return false;
                 case RespCommand.DELIFEXPIM:
-                    // HK TODO: We know this command is used by active backgorund collection thread after it knows something is expired, why do this double check? I think I need this because sometimes we do ExpireAndResume.
-                    // We would also benefit from branchless programming here potentially. Can check against VTUNE
                     // Only if the key has expired, will we delete it.
                     if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
                     {
@@ -939,7 +937,6 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFEXPIM:
-                    // HK TODO: We know this command is used by active backgorund collection thread after it knows something is expired, why do this double check?
                     if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
