@@ -341,12 +341,20 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
                 context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
-                // Re-enable to signal for thread to continue
+                // Re-enable to signal replica to continue
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
+                // Wait for replica to take a new checkpoint after detecting the simulated data loss
+                while (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition))
+                {
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for exception reset signal");
+                }
+
+                // Re-enable to signal replica to continue
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
 
                 context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
                 context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
-
             }
             finally
             {

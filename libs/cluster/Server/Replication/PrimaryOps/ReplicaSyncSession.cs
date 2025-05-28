@@ -394,6 +394,9 @@ namespace Garnet.cluster
                     startAofAddress = cEntry.GetMinAofCoveredAddress();
                 }
 
+                // Only on Debug mode
+                await ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
                 if (clusterProvider.replicationManager.TryAddReplicationTask(replicaNodeId, startAofAddress, out aofSyncTaskInfo))
