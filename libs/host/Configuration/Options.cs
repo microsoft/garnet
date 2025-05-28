@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -34,7 +35,7 @@ namespace Garnet
     /// 4. If needed, add a matching property in Garnet.server/Servers/GarnetServerOptions.cs and initialize it in Options.GetServerOptions()
     /// 5. If new setting has a matching setting in redis.conf, add the matching setting to RedisOptions.cs
     /// </summary>
-    internal sealed class Options
+    internal sealed class Options : ICloneable
     {
         [IntRangeValidation(0, 65535)]
         [Option("port", Required = false, HelpText = "Port to run server on")]
@@ -915,6 +916,54 @@ namespace Garnet
                 return true;
             }
             return FastAofTruncate.GetValueOrDefault();
+        }
+
+        /// <summary>
+        /// Creates a clone of the current Options object
+        /// This method creates a shallow copy of the values of properties decorated with the OptionAttribute
+        /// For IEnumerable types it creates a list containing a shallow copy of all the values in the original IEnumerable
+        /// </summary>
+        /// <returns>The cloned object</returns>
+        public object Clone()
+        {
+            var clone = new Options();
+            foreach (var prop in typeof(Options).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                if (!prop.CanRead || !prop.CanWrite)
+                    continue;
+
+                var optionAttr = (OptionAttribute)prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
+                if (optionAttr == null)
+                    continue;
+
+                var value = prop.GetValue(this);
+
+                if (value == null)
+                {
+                    prop.SetValue(clone, null);
+                    continue;
+                }
+
+                var type = prop.PropertyType;
+                if (type.IsGenericType &&
+                    type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                {
+                    var elementType = type.GetGenericArguments()[0];
+                    var listType = typeof(List<>).MakeGenericType(elementType);
+                    var list = (IList)Activator.CreateInstance(listType)!;
+
+                    foreach (var item in (IEnumerable)value)
+                        list.Add(item);
+
+                    prop.SetValue(clone, list);
+                }
+                else
+                {
+                    prop.SetValue(clone, value);
+                }
+            }
+
+            return clone;
         }
     }
 
