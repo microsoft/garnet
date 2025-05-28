@@ -696,6 +696,9 @@ namespace Garnet.server
             }
         }
 
+        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemanMainStoreExpiredKeyColleciton(int dbId, int scanningPercentafeOfRevivRegion)
+            => databaseManager.CollectExpiredMainStoreKeys(dbId, scanningPercentafeOfRevivRegion, logger);
+
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
         /// <param name="token"></param>
         private async void IndexAutoGrowTask(CancellationToken token)
@@ -748,7 +751,11 @@ namespace Garnet.server
 
             if (serverOptions.MainStoreExpiredKeyCollectionFrequencySecs > 0)
             {
-                Task.Run(async () => await CollectExpiredMainStoreKeys(serverOptions.MainStoreExpiredKeyCollectionFrequencySecs, serverOptions.MainStoreExpiredKeyMaxRecordsPerRound), ctsCommit.Token);
+                // Internally uses Task.Run to run background timer based loops that asynchronously wake up and run collection rounds
+                databaseManager.MainStoreCollectedExpiredKeysInBackgroundTask(
+                    serverOptions.MainStoreExpiredKeyCollectionFrequencySecs,
+                    serverOptions.MainStoreActiveExpirationRevivifiableRegionPercentage,
+                    logger, ctsCommit.Token);
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

@@ -118,7 +118,7 @@ namespace Garnet.server
         /// <summary>
         /// Max number of records to expire in-memory per round of expired key collection. 
         /// </summary>
-        public long MainStoreExpiredKeyMaxRecordsPerRound = 10_000;
+        public int MainStoreActiveExpirationRevivifiableRegionPercentage = 100;
 
         /// <summary>
         /// Index resize check frequency in seconds.

@@ -1039,5 +1039,29 @@ namespace Garnet.server
             databasesContentLock.CloseLock();
             activeDbIds.mapLock.CloseLock();
         }
+
+        // TODO: Probably want to give each DB an option to have it's own frequency
+        public override void MainStoreCollectedExpiredKeysInBackgroundTask(int frequency, int range, ILogger logger = null, CancellationToken cancellation = default)
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                GarnetDatabase db = databasesMapSnapshot[dbId];
+                Task.Run(async () => await MainStoreCollectedExpiredKeysForDbInBackgroundAsync(db, frequency, range, logger, cancellation));
+            }
+        }
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null) { 
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            var db = databasesMapSnapshot[dbId];
+            return CollectExpiredMainStoreKeys(db, range, logger);
+        }
     }
 }

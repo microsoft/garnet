@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -392,6 +393,15 @@ namespace Garnet.server
 
             return checkpointsPaused;
         }
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+            return CollectExpiredMainStoreKeys(DefaultDatabase, range, logger);
+        }
+
+        public override void MainStoreCollectedExpiredKeysInBackgroundTask(int frequency, int range, ILogger logger = null, CancellationToken cancellation = default)
+            => Task.Run(async () => await MainStoreCollectedExpiredKeysForDbInBackgroundAsync(DefaultDatabase, frequency, range, logger, cancellation));
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {

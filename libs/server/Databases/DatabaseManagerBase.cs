@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -211,7 +213,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
         /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation token</param>
+        /// <param name="token">Cancellation cancellationToken</param>
         /// <returns>Tuple of store tail address and object store tail address</returns>
         protected async Task<(long?, long?)> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
         {
@@ -690,6 +692,75 @@ namespace Garnet.server
         {
             storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
             storageSession.scratchBufferManager.Reset();
+        }
+
+        public abstract void MainStoreCollectedExpiredKeysInBackgroundTask(int frequency, int range, ILogger logger = null, CancellationToken cancellation = default);
+
+        protected async Task MainStoreCollectedExpiredKeysForDbInBackgroundAsync(GarnetDatabase db, int frequency, int range, ILogger logger = null, CancellationToken cancellationToken = default)
+        {
+            Debug.Assert(frequency > 0);
+            try
+            {
+                while (true)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+
+                    CollectExpiredMainStoreKeys(db, range, logger); 
+
+                    await Task.Delay(TimeSpan.FromSeconds(frequency), cancellationToken);
+                }
+            }
+            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+            {}
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background MainStore active key expiration. Task won't be resumed.");
+            }
+        }
+
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null);
+
+        /// <summary>
+        /// scan from the back to the tail address (expired records that have not had "RMW" called on them are bound to be towards the back of the mutable region.
+        /// if they had RMW called they are either having their expirations reset, or they got tombstoned via RMW.
+        /// </summary>
+        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(GarnetDatabase db, int range, ILogger logger = null)
+        {
+            if (db.DatabaseStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                db.DatabaseStorageSession =
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            long scanFrom = StoreWrapper.store.MinRevivifiableAddress;
+            long scanTill = StoreWrapper.store.MinRevivifiableAddress + (long)((StoreWrapper.store.Log.TailAddress - scanFrom) * (range / 100));
+
+            // HK TODO: get a confirmation from others on if there needs to be some sort of synchronziation here for scanning over a database storage session?
+            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.DatabaseStorageSession.ScanExpiredKeys(cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
+
+            long numExpiredKeysFound = keys.Count;
+
+            RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIM);
+            // If there is any sort of shift of the marker then a few of my scanned records will be from a redundant region.
+            // DELIFEXPIM will be noop for those records since they will early exit at NCU.
+            foreach (byte[] key in keys)
+            {
+                unsafe
+                {
+                    fixed (byte* keyPtr = key)
+                    {
+                        SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+                        // Use basic session for transient locking
+                        db.DatabaseStorageSession.DEL_Conditional(ref keySb, ref input, ref db.DatabaseStorageSession.basicContext);
+                    }
+                }
+                logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
+            }
+
+            logger?.LogDebug("Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
+
+            return (numExpiredKeysFound, totalRecordsScanned);
         }
     }
 }
