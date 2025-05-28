@@ -893,7 +893,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// ACTEXP OBJ|MAIN (0-100] [DBID]
+        /// ACTEXP MAIN [1-100] [DBID]
         /// Given Revivifiable region range to scan. Scan the region and add all expired keys in-memory to freelist.
         /// This is meant to be able to let users do on-demand active expiration, and even build their own schedulers
         /// for calling expiration based on their known workload patterns.
@@ -906,22 +906,23 @@ namespace Garnet.server
             }
 
             StoreOptions storeOption;
-            if (!parseState.TryGetStoreOption(0, out storeOption))
+            // TODO: We need to extend this to support on demand cleanup of object store: MAIN | OBJ should be allowed currently only MAIN is allowed
+            if (!parseState.TryGetStoreOption(0, out storeOption) || storeOption == StoreOptions.OBJ)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_INVALID_STORE_OPTION, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
-            
-            if(!parseState.TryGetInt(1, out int range) || range < 1 || range > 100)
+
+            if (!parseState.TryGetInt(1, out int range) || range < 1 || range > 100)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_INVALID_ACTIVE_EXP_RANGE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            // default to all databases
-            int dbId = -1;
+            // default database as default choice.
+            int dbId = 0;
             if (parseState.Count > 2)
             {
                 if (!TryParseDatabaseId(0, out dbId))
@@ -929,10 +930,9 @@ namespace Garnet.server
             }
 
             // do GC collection and then respond with num keys expired and num keys scanned
-            (long recordsExpired, long recordsScanned) = storeWrapper.OnDemanMainStoreExpiredKeyColleciton(dbId, range);
+            (long recordsExpired, long recordsScanned) = storeWrapper.OnDemandMainStoreExpiredKeyColleciton(dbId, range);
 
-            // *2\r\n$NUM1\r\n$NUM2\r\n
-
+            // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
             int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
 
             if (dcurr - dend < requiredSpace)

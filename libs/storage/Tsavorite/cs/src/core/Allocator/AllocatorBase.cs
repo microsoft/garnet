@@ -568,7 +568,7 @@ namespace Tsavorite.core
 
             LogMutableFraction = settings.MutableFraction;
 
-            MaxSizeOfMutableRegion = LogMutableFraction * LogTotalSizeBytes; 
+            MaxSizeOfMutableRegion = LogMutableFraction * LogTotalSizeBytes;
 
             // Segment size
             LogSegmentSizeBits = settings.SegmentSizeBits;

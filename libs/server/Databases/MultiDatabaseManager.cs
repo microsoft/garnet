@@ -1056,7 +1056,8 @@ namespace Garnet.server
             }
         }
 
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null) { 
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null)
+        {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);

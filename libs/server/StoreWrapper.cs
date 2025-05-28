@@ -696,7 +696,7 @@ namespace Garnet.server
             }
         }
 
-        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemanMainStoreExpiredKeyColleciton(int dbId, int scanningPercentageOfRevivRegion)
+        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandMainStoreExpiredKeyColleciton(int dbId, int scanningPercentageOfRevivRegion)
             => databaseManager.CollectExpiredMainStoreKeys(dbId, scanningPercentageOfRevivRegion, logger);
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>

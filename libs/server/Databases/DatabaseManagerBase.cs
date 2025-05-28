@@ -213,7 +213,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to checkpoint</param>
         /// <param name="logger">Logger</param>
-        /// <param name="token">Cancellation cancellationToken</param>
+        /// <param name="token">Cancellation token</param>
         /// <returns>Tuple of store tail address and object store tail address</returns>
         protected async Task<(long?, long?)> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
         {
@@ -705,13 +705,13 @@ namespace Garnet.server
                 {
                     if (cancellationToken.IsCancellationRequested) return;
 
-                    CollectExpiredMainStoreKeys(db, range, logger); 
+                    CollectExpiredMainStoreKeys(db, range, logger);
 
                     await Task.Delay(TimeSpan.FromSeconds(frequency), cancellationToken);
                 }
             }
             catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
-            {}
+            { }
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "Unknown exception received for background MainStore active key expiration. Task won't be resumed.");
