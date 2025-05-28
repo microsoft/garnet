@@ -892,7 +892,7 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 MainStoreExpiredKeyCollectionFrequencySecs = MainStoreExpiredKeyCollectionFrequencySecs,
-                MainStoreActiveExpirationRevivifiableRegionPercentage = MainStoreExpiredKeyMaxRecordsPerRound,
+                MainStoreActiveExpirationRevivifiableRegionPercentage = MainStoreActiveExpirationRevivifiableRegionPercentage,
             };
         }
 
