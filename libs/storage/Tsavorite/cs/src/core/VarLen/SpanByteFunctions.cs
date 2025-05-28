@@ -23,14 +23,14 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             srcLogRecord.ValueSpan.CopyTo(ref output, memoryPool);
             return true;
         }
 
         /// <inheritdoc/>
-        public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input)
+        public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input)
             => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = input.Length };
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref PinnedSpanByte input)

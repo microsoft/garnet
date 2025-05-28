@@ -86,7 +86,7 @@ namespace Tsavorite.core
                         readInfo.Address = kInvalidAddress;     // ReadCache addresses are not valid for indexing etc. so pass kInvalidAddress.
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
-                        if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
+                        if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
                             return OperationStatus.SUCCESS;
                         return CheckFalseActionStatus(ref readInfo);
                     }
@@ -111,7 +111,7 @@ namespace Tsavorite.core
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    return sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo)
+                    return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
                         ? OperationStatus.SUCCESS
                         : CheckFalseActionStatus(ref readInfo);
                 }
@@ -128,7 +128,7 @@ namespace Tsavorite.core
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
+                    if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
                     {
                         return pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
                             ? OperationStatus.SUCCESS
@@ -296,7 +296,7 @@ namespace Tsavorite.core
 
                 // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
                 status = OperationStatus.SUCCESS;
-                _ = sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo);
+                _ = sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo);
             }
             finally
             {

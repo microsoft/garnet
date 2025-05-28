@@ -25,7 +25,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref ObjectInput input)
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
             var fieldInfo = new RecordFieldInfo()
@@ -77,7 +77,7 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref ObjectInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref ObjectInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
             return new RecordFieldInfo()

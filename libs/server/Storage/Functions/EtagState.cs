@@ -20,7 +20,7 @@ namespace Garnet.server
         /// <summary>
         /// Sets the values to indicate the presence of an Etag as a part of the payload value
         /// </summary>
-        public static void SetValsForRecordWithEtag<TSourceLogRecord>(ref ETagState curr, ref TSourceLogRecord srcLogRecord)
+        public static void SetValsForRecordWithEtag<TSourceLogRecord>(ref ETagState curr, in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
             => curr.ETag = srcLogRecord.ETag;
 

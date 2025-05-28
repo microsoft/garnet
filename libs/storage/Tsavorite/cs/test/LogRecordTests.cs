@@ -8,7 +8,7 @@ using Tsavorite.core;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.LogRecordTests
 {
     /// <summary>
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
@@ -94,7 +94,7 @@ namespace Tsavorite.test
             // Shrink
             var offset = 12;
             sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
-            Assert.That(logRecord.TrySetValueLength(ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
@@ -105,7 +105,7 @@ namespace Tsavorite.test
             // Grow within range
             offset = 6;
             sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
-            Assert.That(logRecord.TrySetValueLength(ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
@@ -116,11 +116,11 @@ namespace Tsavorite.test
             // Grow beyond range
             offset = -10;
             sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
-            Assert.That(logRecord.TrySetValueLength(ref sizeInfo), Is.False);
+            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.False);
 
             // Restore to original
             sizeInfo.FieldInfo.ValueDataSize = initialValueLen;
-            Assert.That(logRecord.TrySetValueLength(ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
@@ -214,7 +214,7 @@ namespace Tsavorite.test
             var sizeInfo = new RecordSizeInfo();
             InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLengthAddress, out var expectedFillerLength, out long eTag, out long expiration);
             diskLogRecord = new();
-            diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
+            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
             Assert.That(diskLogRecord.Info.RecordIsInline);
             // verify inline copy by checking SerializedSize
             Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(RoundUp(logRecord.ActualRecordSize, Constants.kRecordAlignment)));
@@ -233,7 +233,7 @@ namespace Tsavorite.test
             var offset = value.Length;
             ConvertToOverflow(overflowValue, ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration, offset);
             diskLogRecord = new();
-            diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer, ref recordBuffer);
+            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
             Assert.That(!diskLogRecord.Info.RecordIsInline);
             // verify out-of-line copy by checking SerializedSize
             Assert.That(diskLogRecord.GetSerializedLength(), Is.GreaterThan(RoundUp(logRecord.ActualRecordSize, Constants.kRecordAlignment)));
@@ -265,7 +265,7 @@ namespace Tsavorite.test
                 sizeInfo.FieldInfo.ValueDataSize = ObjectIdMap.ObjectIdSize;
                 sizeInfo.FieldInfo.ValueIsObject = true;
                 UpdateRecordSizeInfo(ref sizeInfo);
-                Assert.That(logRecord.TrySetValueObject(valueObject, ref sizeInfo), Is.True);
+                Assert.That(logRecord.TrySetValueObject(valueObject, in sizeInfo), Is.True);
 
                 expectedValueLengthBytes = 1;  // Non-serialized object so only a 1-byte "0" length
                 var expectedKeyDataOffset = RecordInfo.GetLength() + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
@@ -275,7 +275,7 @@ namespace Tsavorite.test
                 // Serialize with a null object serializer to copy the object instance rather than serializing it into space in the record buffer.
                 /////////////////////////////
                 diskLogRecord = new();
-                diskLogRecord.Serialize(ref logRecord, bufferPool, valueSerializer: null, ref recordBuffer);
+                diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer: null, ref recordBuffer);
                 Assert.That(diskLogRecord.Version, Is.EqualTo(0));
                 expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
 
@@ -300,7 +300,7 @@ namespace Tsavorite.test
                 // Serialize with an object serializer to allocate space in the record buffer and serialize the object into it.
                 /////////////////////////////
                 diskLogRecord = new();
-                diskLogRecord.Serialize(ref logRecord, bufferPool, largeValueSerializer, ref recordBuffer);
+                diskLogRecord.Serialize(in logRecord, bufferPool, largeValueSerializer, ref recordBuffer);
                 Assert.That(diskLogRecord.Version, Is.EqualTo(0));
 
                 expectedValueLengthBytes = ii + 1;  // Serialized object so the value length is used
@@ -348,8 +348,7 @@ namespace Tsavorite.test
             nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
             long recordEndAddress = nativePointer + sizeInfo.AllocatedInlineRecordSize;
 
-            logRecord = new LogRecord(nativePointer, objectIdMap);
-            logRecord.InfoRef = default;
+            logRecord = new LogRecord(nativePointer, objectIdMap) { InfoRef = default };
             logRecord.InfoRef.SetKeyIsInline();
             logRecord.InfoRef.SetValueIsInline();
 
@@ -370,7 +369,7 @@ namespace Tsavorite.test
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
 
-            Assert.That(logRecord.TrySetValueSpan(value, ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueSpan(value, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.True);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
@@ -406,7 +405,7 @@ namespace Tsavorite.test
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 
-            Assert.That(logRecord.TrySetValueSpan(overflowValue, ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueSpan(overflowValue, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.False);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.True);
@@ -427,7 +426,7 @@ namespace Tsavorite.test
             UpdateRecordSizeInfo(ref sizeInfo);
 
             var valueObject = new TestObjectValue() { value = 0x63636363 };
-            Assert.That(logRecord.TrySetValueObject(valueObject, ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueObject(valueObject, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.False);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
@@ -447,7 +446,7 @@ namespace Tsavorite.test
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 
-            Assert.That(logRecord.TrySetValueSpan(value, ref sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueSpan(value, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.True);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);

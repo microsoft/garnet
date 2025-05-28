@@ -293,25 +293,25 @@ namespace Tsavorite.test
             byte[] pinnedValueOverflowBytes = GC.AllocateArray<byte>(OverflowValueSize, pinned: true);
             Span<byte> GetOverflowValueSpanByte() => new (pinnedValueOverflowBytes);
 
-            public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
                 Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
-                return DoWriter(ref logRecord, ref sizeInfo, ref input, srcValue: null, ref output);
+                return DoWriter(ref logRecord, in sizeInfo, ref input, srcValue: null, ref output);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
                 // Use the same record for source and dest; DoUpdater does not modify dest until all source info is processed.
-                return DoUpdater(ref logRecord, ref logRecord, ref sizeInfo, input, ref output);
+                return DoUpdater(in logRecord, ref logRecord, in sizeInfo, input, ref output);
             }
 
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
                 Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(dstLogRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({dstLogRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
-                return DoUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, input, ref output);
+                return DoUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, input, ref output);
             }
 
-            private bool DoUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, TestObjectInput input, ref TestObjectOutput output)
+            private bool DoUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord logRecord, in RecordSizeInfo sizeInfo, TestObjectInput input, ref TestObjectOutput output)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Set(ref output.srcValueStyle, srcLogRecord.Info);
@@ -336,26 +336,26 @@ namespace Tsavorite.test
                 {
                     case TestValueStyle.Inline:
                         ValueStruct valueStruct = new() { vfield1 = srcValue + input.value, vfield2 = (srcValue + input.value) * 100 };
-                        return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), ref sizeInfo);
+                        return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
                     case TestValueStyle.Overflow:
                         Span<byte> overflowValue = GetOverflowValueSpanByte();
                         overflowValue.AsRef<long>() = srcValue + input.value;
-                        return logRecord.TrySetValueSpan(overflowValue, ref sizeInfo);
+                        return logRecord.TrySetValueSpan(overflowValue, in sizeInfo);
                     case TestValueStyle.Object:
-                        return logRecord.TrySetValueObject(output.value, ref sizeInfo);
+                        return logRecord.TrySetValueObject(output.value, in sizeInfo);
                     default:
                         Assert.Fail("Unknown value style");
                         return false;
                 }
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Set(ref output.srcValueStyle, logRecord.Info);
-                return DoWriter(ref logRecord, ref sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
+                return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
             }
 
-            public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
             {
                 Set(ref output.srcValueStyle, srcLogRecord.Info);
 
@@ -368,17 +368,17 @@ namespace Tsavorite.test
                     unsafe { output.value = new TestObjectValue() { value = (int)srcLogRecord.ValueSpan.AsRef<long>() }; }
                 }
                 else
-                    output.value = ((TestObjectValue)srcLogRecord.ValueObject);
+                    output.value = (TestObjectValue)srcLogRecord.ValueObject;
                 return true;
             }
 
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
             {
                 Assert.That(sizeInfo.ValueIsInline, Is.EqualTo(logRecord.Info.ValueIsInline), $"Non-IPU mismatch in sizeInfo ({sizeInfo.ValueIsInline}) and dstLogRecord ({logRecord.Info.ValueIsInline}) ValueIsInline in {Utility.GetCurrentMethodName()}");
-                return DoWriter(ref logRecord, ref sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
+                return DoWriter(ref logRecord, in sizeInfo, ref input, (TestObjectValue)srcValue, ref output);
             }
 
-            private bool DoWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output)
+            private bool DoWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, TestObjectValue srcValue, ref TestObjectOutput output)
             {
                 Assert.That(srcValue, Is.Null, "srcValue should be null for these upsert tests; use Input instead");
                 output.srcValueStyle = TestValueStyle.None;
@@ -389,13 +389,13 @@ namespace Tsavorite.test
                 {
                     case TestValueStyle.Inline:
                         ValueStruct valueStruct = new() { vfield1 = input.value, vfield2 = input.value * 100 };
-                        return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), ref sizeInfo);
+                        return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
                     case TestValueStyle.Overflow:
                         Span<byte> overflowValue = GetOverflowValueSpanByte();
                         overflowValue.AsRef<long>() = input.value;
-                        return logRecord.TrySetValueSpan(overflowValue, ref sizeInfo);
+                        return logRecord.TrySetValueSpan(overflowValue, in sizeInfo);
                     case TestValueStyle.Object:
-                        return logRecord.TrySetValueObject(output.value, ref sizeInfo);
+                        return logRecord.TrySetValueObject(output.value, in sizeInfo);
                     default:
                         Assert.Fail("Unknown value style");
                         return false;
@@ -433,7 +433,7 @@ namespace Tsavorite.test
                     ValueIsObject = input.wantValueStyle == TestValueStyle.Object
                 };
 
-            public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TestObjectInput input)
+            public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
                 => GetFieldInfo(srcLogRecord.Key, ref input);
             public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
                 => GetFieldInfo(key, ref input);

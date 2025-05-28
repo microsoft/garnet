@@ -145,12 +145,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]      // Do not try to inline this, to keep TryAllocateRecord lean
-        bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref RecordSizeInfo sizeInfo, long minRevivAddress,
+        bool TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, in RecordSizeInfo sizeInfo, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress, out int allocatedSize)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
-            if (RevivificationManager.TryTake(ref sizeInfo, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
+            if (RevivificationManager.TryTake(in sizeInfo, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
             {
                 var logRecord = hlog.CreateLogRecord(logicalAddress);
                 Debug.Assert(logRecord.Info.IsSealed, "TryTakeFreeRecord: recordInfo should still have the revivification Seal");
@@ -193,12 +193,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+        private void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
             where TSourceLogRecord : ISourceLogRecord
-            => PostCopyToTail(ref srcLogRecord, ref stackCtx, stackCtx.hei.Address);
+            => PostCopyToTail(in srcLogRecord, ref stackCtx, stackCtx.hei.Address);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void PostCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
+        private void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestReadCacheAddressChecked)
             where TSourceLogRecord : ISourceLogRecord
         {
             // Nothing required here if not using ReadCache

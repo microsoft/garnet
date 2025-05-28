@@ -112,7 +112,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryTake(ref RecordSizeInfo sizeInfo, long minAddress, out long address, ref TakeResult takeResult)
+        internal bool TryTake(in RecordSizeInfo sizeInfo, long minAddress, out long address, ref TakeResult takeResult)
         {
             address = 0;
 
@@ -154,7 +154,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe bool TryTakeOversize<TStoreFunctions, TAllocator>(ref RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref TakeResult takeResult)
+        internal unsafe bool TryTakeOversize<TStoreFunctions, TAllocator>(in RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref TakeResult takeResult)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -307,13 +307,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake<TStoreFunctions, TAllocator>(ref RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
+        public bool TryTake<TStoreFunctions, TAllocator>(in RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, out long address, ref RevivificationStats revivStats)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
-            => TryTake(ref sizeInfo, minAddress, store, oversize: false, out address, ref revivStats);
+            => TryTake(in sizeInfo, minAddress, store, oversize: false, out address, ref revivStats);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake<TStoreFunctions, TAllocator>(ref RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+        public bool TryTake<TStoreFunctions, TAllocator>(in RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -323,12 +323,12 @@ namespace Tsavorite.core
                 return false;
             }
             return (bestFitScanLimit == RevivificationBin.UseFirstFit)
-                        ? TryTakeFirstFit(ref sizeInfo, minAddress, store, oversize, out address, ref revivStats)
-                        : TryTakeBestFit(ref sizeInfo, minAddress, store, oversize, out address, ref revivStats);
+                        ? TryTakeFirstFit(in sizeInfo, minAddress, store, oversize, out address, ref revivStats)
+                        : TryTakeBestFit(in sizeInfo, minAddress, store, oversize, out address, ref revivStats);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTakeFirstFit<TStoreFunctions, TAllocator>(ref RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+        public bool TryTakeFirstFit<TStoreFunctions, TAllocator>(in RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -341,7 +341,7 @@ namespace Tsavorite.core
                 for (var ii = 0; ii < recordCount; ii++)
                 {
                     FreeRecord* record = GetRecord(segmentStart + ii);
-                    if (oversize ? record->TryTakeOversize(ref sizeInfo, minAddress, store, out address, ref takeResult) : record->TryTake(ref sizeInfo, minAddress, out address, ref takeResult))
+                    if (oversize ? record->TryTakeOversize(in sizeInfo, minAddress, store, out address, ref takeResult) : record->TryTake(in sizeInfo, minAddress, out address, ref takeResult))
                     {
                         takeResult.MergeTo(ref revivStats);
                         return true;
@@ -357,7 +357,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTakeBestFit<TStoreFunctions, TAllocator>(ref RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
+        public bool TryTakeBestFit<TStoreFunctions, TAllocator>(in RecordSizeInfo sizeInfo, long minAddress, TsavoriteKV<TStoreFunctions, TAllocator> store, bool oversize, out long address, ref RevivificationStats revivStats)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -402,7 +402,7 @@ namespace Tsavorite.core
                 }
 
                 record = GetRecord(segmentStart + bestFitIndex);
-                if (oversize ? record->TryTakeOversize(ref sizeInfo, minAddress, store, out address, ref takeResult) : record->TryTake(ref sizeInfo, minAddress, out address, ref takeResult))
+                if (oversize ? record->TryTakeOversize(in sizeInfo, minAddress, store, out address, ref takeResult) : record->TryTake(in sizeInfo, minAddress, out address, ref takeResult))
                 {
                     takeResult.MergeTo(ref revivStats);
                     return true;
@@ -411,7 +411,7 @@ namespace Tsavorite.core
                 // We found a candidate but CAS failed. Reduce the best fit scan length and continue.
                 localBestFitScanLimit /= 2;
                 if (localBestFitScanLimit <= 1)
-                    return TryTakeFirstFit(ref sizeInfo, minAddress, store, oversize, out address, ref revivStats);
+                    return TryTakeFirstFit(in sizeInfo, minAddress, store, oversize, out address, ref revivStats);
             }
         }
 
@@ -544,16 +544,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake(ref RecordSizeInfo sizeInfo, long minAddress, out long address, ref RevivificationStats revivStats)
+        public bool TryTake(in RecordSizeInfo sizeInfo, long minAddress, out long address, ref RevivificationStats revivStats)
         {
             address = 0;
             bool result = false;
             if (GetBinIndex(sizeInfo.ActualInlineRecordSize, out int index))
             {
                 // Try to Take from the initial bin and if unsuccessful, try the next-highest bin if requested.
-                result = bins[index].TryTake(ref sizeInfo, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
+                result = bins[index].TryTake(in sizeInfo, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
                 for (int ii = 0; !result && ii < numberOfBinsToSearch && index < numBins - 1; ii++)
-                    result = bins[++index].TryTake(ref sizeInfo, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
+                    result = bins[++index].TryTake(in sizeInfo, minAddress, store, oversize: sizeIndex[index] > RevivificationBin.MaxInlineRecordSize, out address, ref revivStats);
             }
 
             if (result)

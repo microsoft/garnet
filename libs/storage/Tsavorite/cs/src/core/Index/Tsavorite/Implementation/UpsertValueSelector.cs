@@ -14,22 +14,22 @@ namespace Tsavorite.core
         internal interface IUpsertValueSelector
         {
             static abstract RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, ReadOnlySpan<byte> key, 
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>;
 
-            static abstract bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            static abstract bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>;
 
-            static abstract void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            static abstract void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>;
 
-            static abstract bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            static abstract bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>;
         }
@@ -37,82 +37,82 @@ namespace Tsavorite.core
         internal struct SpanUpsertValueSelector : IUpsertValueSelector
         {
             public static RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, ReadOnlySpan<byte> key,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>
                 => allocator.GetUpsertRecordSize(key, valueSpan, ref input, varlenInput);
 
-            public static bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
+                => sessionFunctions.InitialWriter(ref logRecord, in sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
 
-            public static void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
+                => sessionFunctions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
 
-            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
+                => sessionFunctions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, valueSpan, ref output, ref upsertInfo);
         }
 
         internal struct ObjectUpsertValueSelector : IUpsertValueSelector
         {
             public static RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, ReadOnlySpan<byte> key,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>
                 => allocator.GetUpsertRecordSize(key, valueObject, ref input, varlenInput);
 
-            public static bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
+                => sessionFunctions.InitialWriter(ref logRecord, in sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
 
-            public static void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
+                => sessionFunctions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
 
-            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
+                => sessionFunctions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, valueObject, ref output, ref upsertInfo);
         }
 
         internal struct LogRecordUpsertValueSelector : IUpsertValueSelector
         {
             public static RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, ReadOnlySpan<byte> key,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>
-                => allocator.GetUpsertRecordSize(key, ref inputLogRecord, ref input, varlenInput);
+                => allocator.GetUpsertRecordSize(key, in inputLogRecord, ref input, varlenInput);
 
-            public static bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static bool InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InitialWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
+                => sessionFunctions.InitialWriter(ref logRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
 
-            public static void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static void PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.PostInitialWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
+                => sessionFunctions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
 
-            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref TInput input,
-                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
+            public static bool InPlaceWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input,
+                    ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions)
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                => sessionFunctions.InPlaceWriter(ref logRecord, ref sizeInfo, ref input, ref inputLogRecord, ref output, ref upsertInfo);
+                => sessionFunctions.InPlaceWriter(ref logRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
         }
     }
 }

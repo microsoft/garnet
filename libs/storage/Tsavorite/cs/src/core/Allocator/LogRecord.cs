@@ -249,17 +249,17 @@ namespace Tsavorite.core
         /// Asserts that <paramref name="newValueSize"/> is the same size as the value data size in the <see cref="RecordSizeInfo"/> before setting the length.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueLength(int newValueSize, ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueLength(int newValueSize, in RecordSizeInfo sizeInfo)
         {
             Debug.Assert(newValueSize == sizeInfo.FieldInfo.ValueDataSize, $"Mismatched value size; expected {sizeInfo.FieldInfo.ValueDataSize}, actual {newValueSize}");
-            return TrySetValueLength(ref sizeInfo);
+            return TrySetValueLength(in sizeInfo);
         }
 
         /// <summary>
         /// Tries to set the length of the value field, with consideration to whether there is also space for the optionals (ETag and Expiration).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueLength(ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueLength(in RecordSizeInfo sizeInfo)
         {
             var valueAddress = ValueAddress;
             var oldTotalInlineValueSize = LogField.GetInlineTotalSizeOfField(valueAddress, Info.ValueIsInline);
@@ -420,11 +420,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpan(ReadOnlySpan<byte> value, ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo)
         {
-            RecordSizeInfo.AssertValueDataLength(value.Length, ref sizeInfo);
+            RecordSizeInfo.AssertValueDataLength(value.Length, in sizeInfo);
 
-            if (!TrySetValueLength(ref sizeInfo))
+            if (!TrySetValueLength(in sizeInfo))
                 return false;
 
             value.CopyTo(LogField.AsSpan(ValueAddress, Info.ValueIsInline, objectIdMap));
@@ -436,10 +436,10 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
-        public bool TrySetValueObject(IHeapObject value, ref RecordSizeInfo sizeInfo)
+        public bool TrySetValueObject(IHeapObject value, in RecordSizeInfo sizeInfo)
 #pragma warning restore IDE0251
         {
-            return TrySetValueLength(ref sizeInfo) && TrySetValueObject(value);
+            return TrySetValueLength(in sizeInfo) && TrySetValueObject(value);
         }
 
 
@@ -534,7 +534,7 @@ namespace Tsavorite.core
         /// Called during cleanup of a record allocation, before the key was copied.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeForReuse(ref RecordSizeInfo sizeInfo)
+        public void InitializeForReuse(in RecordSizeInfo sizeInfo)
         {
             Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Record should not have ETag or Expiration here");
 
@@ -730,31 +730,31 @@ namespace Tsavorite.core
         /// Copy the entire record values: Value and optionals (ETag, Expiration)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyFrom<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
+        public bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // This assumes the Key has been set and is not changed
             if (!srcLogRecord.Info.ValueIsObject)
             {
-                if (!TrySetValueLength(ref sizeInfo))
+                if (!TrySetValueLength(in sizeInfo))
                     return false;
                 srcLogRecord.ValueSpan.CopyTo(ValueSpan);
             }
             else
             {
                 Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
-                if (!TrySetValueObject(srcLogRecord.ValueObject, ref sizeInfo))
+                if (!TrySetValueObject(srcLogRecord.ValueObject, in sizeInfo))
                     return false;
             }
 
-            return TryCopyOptionals(ref srcLogRecord, ref sizeInfo);
+            return TryCopyOptionals(in srcLogRecord, in sizeInfo);
         }
 
         /// <summary>
         /// Copy the record optional values (ETag, Expiration)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyOptionals<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RecordSizeInfo sizeInfo)
+        public bool TryCopyOptionals<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             var srcRecordInfo = srcLogRecord.Info;
@@ -801,7 +801,7 @@ namespace Tsavorite.core
         /// For revivification or reuse: prepare the current record to be passed to initial updaters, based upon the sizeInfo's key and value lengths.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PrepareForRevivification(ref RecordSizeInfo sizeInfo, int allocatedSize)
+        public void PrepareForRevivification(in RecordSizeInfo sizeInfo, int allocatedSize)
         {
             var keyAddress = KeyAddress;
             var newKeySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;

@@ -231,25 +231,26 @@ namespace Tsavorite.test.recovery
                 if (useTimingFuzzing) fuzzer = new Random(thread_id);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Fuzz();
-                var ret = base.InPlaceUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
+                var ret = base.InPlaceUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 Fuzz();
                 return ret;
             }
 
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 Fuzz();
-                var ret = base.CopyUpdater(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
+                var ret = base.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 Fuzz();
                 return ret;
             }
 
             void Fuzz()
             {
-                if (fuzzer != null) Thread.Sleep(fuzzer.Next(30));
+                if (fuzzer != null)
+                    Thread.Sleep(fuzzer.Next(30));
             }
         }
     }

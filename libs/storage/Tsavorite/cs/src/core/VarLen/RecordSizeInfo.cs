@@ -61,7 +61,7 @@ namespace Tsavorite.core
         /// Usually called directly to save the cost of calculating actualDataSize twice (in Get*FieldInfo and the actual update methods).
         /// </summary>
         [Conditional("DEBUG")]
-        public static void AssertValueDataLength(int dataSize, ref RecordSizeInfo sizeInfo)
+        public static void AssertValueDataLength(int dataSize, in RecordSizeInfo sizeInfo)
         {
             Debug.Assert(sizeInfo.FieldInfo.ValueDataSize == dataSize, $"Mismatch between expected value size {sizeInfo.FieldInfo.ValueDataSize} and actual value size {dataSize}");
         }

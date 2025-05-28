@@ -134,8 +134,8 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    var sizeInfo = hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions);
-                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo, out status))
+                    var sizeInfo = hlog.GetRMWCopyRecordSize(in srcLogRecord, ref input, sessionFunctions);
+                    if (sessionFunctions.InPlaceUpdater(ref srcLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out status))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
@@ -252,11 +252,11 @@ namespace Tsavorite.core
             try
             {
                 var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
-                if (logRecord.TrySetValueLength(ref sizeInfo))
+                if (logRecord.TrySetValueLength(in sizeInfo))
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();
-                    if (sessionFunctions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                    if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
@@ -359,7 +359,7 @@ namespace Tsavorite.core
             // Perform Need*
             if (doingCU)
             {
-                if (!sessionFunctions.NeedCopyUpdate(ref srcLogRecord, ref input, ref output, ref rmwInfo))
+                if (!sessionFunctions.NeedCopyUpdate(in srcLogRecord, ref input, ref output, ref rmwInfo))
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
@@ -400,7 +400,7 @@ namespace Tsavorite.core
             if (!addTombstone)
             {
                 sizeInfo = doingCU
-                    ? hlog.GetRMWCopyRecordSize(ref srcLogRecord, ref input, sessionFunctions)
+                    ? hlog.GetRMWCopyRecordSize(in srcLogRecord, ref input, sessionFunctions)
                     : hlog.GetRMWInitialRecordSize(key, ref input, sessionFunctions);
             }
             else
@@ -410,7 +410,7 @@ namespace Tsavorite.core
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, in sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
@@ -420,12 +420,12 @@ namespace Tsavorite.core
 
             rmwInfo.Address = newLogicalAddress;
 
-            hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
+            hlog.InitializeValue(newPhysicalAddress, in sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
 
             if (!doingCU)
             {
-                if (sessionFunctions.InitialUpdater(ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                if (sessionFunctions.InitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
                     status = forExpiration
                         ? OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired)
@@ -440,7 +440,7 @@ namespace Tsavorite.core
             }
             else if (!addTombstone)
             {
-                if (sessionFunctions.CopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                if (sessionFunctions.CopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
 
@@ -512,19 +512,19 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
-                PostCopyToTail(ref srcLogRecord, ref stackCtx);
+                PostCopyToTail(in srcLogRecord, ref stackCtx);
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    sessionFunctions.PostInitialUpdater(ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
+                    sessionFunctions.PostInitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 }
                 else
                 {
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
-                    if (!addTombstone && !sessionFunctions.PostCopyUpdater(ref srcLogRecord, ref newLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                    if (!addTombstone && !sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                     {
                         if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
@@ -594,13 +594,13 @@ namespace Tsavorite.core
             var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
 
             logRecord.ClearOptionals();
-            if (logRecord.TrySetValueLength(ref sizeInfo))
+            if (logRecord.TrySetValueLength(in sizeInfo))
             {
-                if (sessionFunctions.InitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+                if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {
                     // If IPU path, we need to complete PostInitialUpdater as well
                     if (isIpu)
-                        sessionFunctions.PostInitialUpdater(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
+                        sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                     return true;

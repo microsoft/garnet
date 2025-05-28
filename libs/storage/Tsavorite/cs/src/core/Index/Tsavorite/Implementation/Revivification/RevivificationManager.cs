@@ -51,10 +51,10 @@ namespace Tsavorite.core
             => UseFreeRecordPool && FreeRecordPool.TryAdd(logicalAddress, ref logRecord, ref revivStats);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake(ref RecordSizeInfo sizeInfo, long minAddress, out long address, ref RevivificationStats revivStats)
+        public bool TryTake(in RecordSizeInfo sizeInfo, long minAddress, out long address, ref RevivificationStats revivStats)
         {
             if (UseFreeRecordPool)
-                return FreeRecordPool.TryTake(ref sizeInfo, minAddress, out address, ref revivStats);
+                return FreeRecordPool.TryTake(in sizeInfo, minAddress, out address, ref revivStats);
             address = 0;
             return false;
         }

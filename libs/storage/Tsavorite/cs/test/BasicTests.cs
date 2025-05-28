@@ -564,7 +564,7 @@ namespace Tsavorite.test
         {
             internal long expectedReadAddress;
 
-            public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
             {
                 output.value = logRecord.ValueSpan.AsRef<ValueStruct>();
                 ClassicAssert.AreEqual(expectedReadAddress, readInfo.Address);

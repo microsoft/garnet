@@ -31,14 +31,14 @@ namespace Tsavorite.core
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
             var allocOptions = new AllocateOptions() { recycle = true };
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, in sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
             var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, hlogBase, newLogicalAddress, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
 
-            hlog.InitializeValue(newPhysicalAddress, ref sizeInfo);
+            hlog.InitializeValue(newPhysicalAddress, in sizeInfo);
             newLogRecord.SetFillerLength(allocatedSize);
-            newLogRecord.TryCopyFrom(ref inputLogRecord, ref sizeInfo);
+            newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);

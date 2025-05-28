@@ -224,7 +224,7 @@ namespace Garnet.server
                 {
                     var key = logRecord.Key;
 
-                    if (MainSessionFunctions.CheckExpiry(ref logRecord))
+                    if (MainSessionFunctions.CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -327,7 +327,7 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!MainSessionFunctions.CheckExpiry(ref logRecord))
+                    if (!MainSessionFunctions.CheckExpiry(in logRecord))
                     {
                         ++info.count;
                     }

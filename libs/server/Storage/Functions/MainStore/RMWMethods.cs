@@ -65,7 +65,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
@@ -74,8 +74,8 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.PFADD:
-                    RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), ref sizeInfo);
-                    if (!logRecord.TrySetValueLength(ref sizeInfo))
+                    RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), in sizeInfo);
+                    if (!logRecord.TrySetValueLength(in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFADD");
                         return false;
@@ -95,7 +95,7 @@ namespace Garnet.server
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
                     var sbSrcHLL = input.parseState.GetArgSliceByRef(0);
 
-                    if (!logRecord.TrySetValueLength(sbSrcHLL.Length, ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(sbSrcHLL.Length, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFMERGE");
                         return false;
@@ -115,7 +115,7 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(newInputValue, ref sizeInfo))
+                    if (!logRecord.TrySetValueSpan(newInputValue, in sizeInfo))
                         return false;
                     if (sizeInfo.FieldInfo.HasExpiration)
                         _ = logRecord.TrySetExpiration(input.arg1);
@@ -123,7 +123,7 @@ namespace Garnet.server
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                     Debug.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
                     _ = logRecord.TrySetETag(input.parseState.GetLong(1) + (cmd == RespCommand.SETIFMATCH ? 1 : 0));
-                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
+                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
                     // write back array of the format [etag, nil]
                     var nilResponse = functionsState.nilResp;
@@ -141,7 +141,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(newInputValue, ref sizeInfo))
+                    if (!logRecord.TrySetValueSpan(newInputValue, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
                         return false;
@@ -153,7 +153,7 @@ namespace Garnet.server
                         functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
                         return false;
                     }
-                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
+                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
                     // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX. TODO: Is this condition satisfied here?
                     functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output);
 
@@ -167,7 +167,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.SETKEEPTTL:
                     // Copy input to value; do not change expiration
-                    _ = logRecord.TrySetValueSpan(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, ref sizeInfo);
+                    _ = logRecord.TrySetValueSpan(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo);
 
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                     if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
@@ -175,7 +175,7 @@ namespace Garnet.server
                         functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", "InitialUpdater", "SETKEEPTTL");
                         return false;
                     }
-                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
+                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
                     // Copy initial etag to output
                     functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output);
                     break;
@@ -195,7 +195,7 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETBIT");
                         return false;
@@ -216,7 +216,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
                         return false;
@@ -240,7 +240,7 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD_RO:
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
-                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs_RO), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs_RO), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
                         return false;
@@ -279,7 +279,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.INCR:
                     // This is InitialUpdater so set the value to 1 and the length to the # of digits in "1"
-                    if (!logRecord.TrySetValueLength(1, ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(1, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCR");
                         return false;
@@ -292,7 +292,7 @@ namespace Garnet.server
                     var incrBy = input.arg1;
 
                     var ndigits = NumUtils.CountDigits(incrBy, out var isNegative);
-                    if (!logRecord.TrySetValueLength(ndigits + (isNegative ? 1 : 0), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCRBY");
                         return false;
@@ -302,7 +302,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.DECR:
                     // This is InitialUpdater so set the value to -1 and the length to the # of digits in "-1"
-                    if (!logRecord.TrySetValueLength(2, ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(2, in sizeInfo))
                     {
                         Debug.Assert(logRecord.ValueSpan.Length >= 2, "Length overflow in DECR");
                         return false;
@@ -314,7 +314,7 @@ namespace Garnet.server
                     var decrBy = -input.arg1;
 
                     ndigits = NumUtils.CountDigits(decrBy, out isNegative);
-                    if (!logRecord.TrySetValueLength(ndigits + (isNegative ? 1 : 0), ref sizeInfo))
+                    if (!logRecord.TrySetValueLength(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "DECRBY");
                         return false;
@@ -338,7 +338,7 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), ref sizeInfo))
+                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), in sizeInfo))
                         {
                             functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
                             return false;
@@ -363,7 +363,7 @@ namespace Garnet.server
                     }
 
                     // Copy input to value
-                    if (!logRecord.TrySetValueSpan(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, ref sizeInfo))
+                    if (!logRecord.TrySetValueSpan(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Failed to set value in {methodName}.{caseName}", "InitialUpdater", "default");
                         return false;
@@ -380,7 +380,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly void PostInitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // reset etag state set at need initial update
             if (input.header.cmd is (RespCommand.SET or RespCommand.SETEXNX or RespCommand.SETKEEPTTL or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER))
@@ -395,9 +395,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
-            if (InPlaceUpdaterWorker(ref logRecord, ref sizeInfo, ref input, ref output, ref rmwInfo))
+            if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -410,7 +410,7 @@ namespace Garnet.server
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE,
         // you must make sure you must reset etagState in FunctionState
-        private readonly bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        private readonly bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
@@ -424,7 +424,7 @@ namespace Garnet.server
             bool hadETagPreMutation = logRecord.Info.HasETag;
             bool shouldUpdateEtag = hadETagPreMutation;
             if (shouldUpdateEtag)
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref logRecord);
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             bool shouldCheckExpiration = true;
 
             switch (cmd)
@@ -484,7 +484,7 @@ namespace Garnet.server
 
                     // If we're here we know we have a valid ETag for update. Get the value to update. We'll ned to return false for CopyUpdate if no space for new value.
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(inputValue, ref sizeInfo))
+                    if (!logRecord.TrySetValueSpan(inputValue, in sizeInfo))
                         return false;
                     long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.ETag + 1) : etagFromClient;
                     if (!logRecord.TrySetETag(newEtag))
@@ -517,7 +517,7 @@ namespace Garnet.server
                     bool inputHeaderHasEtag = input.header.CheckWithETagFlag();
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(setValue, ref sizeInfo))
+                    if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
                         return false;
 
                     if (inputHeaderHasEtag != shouldUpdateEtag)
@@ -551,7 +551,7 @@ namespace Garnet.server
                     }
 
                     setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(setValue, ref sizeInfo))
+                    if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
                         return false;
 
                     if (inputHeaderHasEtag != shouldUpdateEtag)
@@ -612,22 +612,22 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCR:
-                    if (!TryInPlaceUpdateNumber(ref logRecord, ref sizeInfo, ref output, ref rmwInfo, input: 1))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: 1))
                         return false;
                     break;
                 case RespCommand.DECR:
-                    if (!TryInPlaceUpdateNumber(ref logRecord, ref sizeInfo, ref output, ref rmwInfo, input: -1))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -1))
                         return false;
                     break;
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
                     var incrBy = input.arg1;
-                    if (!TryInPlaceUpdateNumber(ref logRecord, ref sizeInfo, ref output, ref rmwInfo, input: incrBy))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: incrBy))
                         return false;
                     break;
                 case RespCommand.DECRBY:
                     var decrBy = input.arg1;
-                    if (!TryInPlaceUpdateNumber(ref logRecord, ref sizeInfo, ref output, ref rmwInfo, input: -decrBy))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -decrBy))
                         return false;
                     break;
                 case RespCommand.INCRBYFLOAT:
@@ -641,7 +641,7 @@ namespace Garnet.server
                         shouldUpdateEtag = false;
                         break;
                     }
-                    if (!TryInPlaceUpdateNumber(ref logRecord, ref sizeInfo, ref output, ref rmwInfo, incrByFloat))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, incrByFloat))
                         return false;
                     break;
 
@@ -650,7 +650,7 @@ namespace Garnet.server
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset)
-                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), ref sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -670,7 +670,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length)
-                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), ref sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -700,7 +700,7 @@ namespace Garnet.server
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
 
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs_RO, logRecord.ValueSpan.Length)
-                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs_RO), ref sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs_RO), in sizeInfo))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -803,7 +803,7 @@ namespace Garnet.server
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                     if (newValue.Length + offset > logRecord.ValueSpan.Length
-                            && !logRecord.TrySetValueLength(newValue.Length + offset, ref sizeInfo))
+                            && !logRecord.TrySetValueLength(newValue.Length + offset, in sizeInfo))
                         return false;
 
                     newValue.CopyTo(logRecord.ValueSpan.Slice(offset));
@@ -850,7 +850,7 @@ namespace Garnet.server
                     {
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
-                        if (!logRecord.TrySetValueLength(originalLength + appendLength, ref sizeInfo))
+                        if (!logRecord.TrySetValueLength(originalLength + appendLength, in sizeInfo))
                             return false;
 
                         // Append the new value with the client input at the end of the old data
@@ -901,7 +901,7 @@ namespace Garnet.server
 
                             // Adjust value length if user shrinks it
                             if (valueLength < logRecord.ValueSpan.Length)
-                                _ = logRecord.TrySetValueLength(valueLength, ref sizeInfo);
+                                _ = logRecord.TrySetValueLength(valueLength, in sizeInfo);
                             return ret;
                         }
                         finally
@@ -930,14 +930,14 @@ namespace Garnet.server
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState
         /// <inheritdoc />
-        public readonly bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFGREATER:
                     if (srcLogRecord.Info.HasETag)
-                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
                     long etagFromClient = input.parseState.GetLong(0);
                     if (etagFromClient > functionsState.etagState.ETag)
                         rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -951,7 +951,7 @@ namespace Garnet.server
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     if (srcLogRecord.Info.HasETag)
-                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
                     long etagToCheckWith = input.parseState.GetLong(1);
 
@@ -1052,7 +1052,7 @@ namespace Garnet.server
 
         // NOTE: Before doing any return from this method, please make sure you are calling reset on etagState in functionsState.
         /// <inheritdoc />
-        public readonly bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // Expired data
@@ -1075,7 +1075,7 @@ namespace Garnet.server
             if (shouldUpdateEtag)
             {
                 // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
-                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref srcLogRecord);
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
             switch (cmd)
@@ -1086,7 +1086,7 @@ namespace Garnet.server
                     shouldUpdateEtag = true;
 
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!dstLogRecord.TrySetValueSpan(inputValue, ref sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpan(inputValue, in sizeInfo))
                         return false;
 
                     // change the current etag to the the etag sent from client since rest remains same
@@ -1123,7 +1123,7 @@ namespace Garnet.server
                     Debug.Assert(newInputValue.Length == dstLogRecord.ValueSpan.Length);
 
                     // Copy input to value, along with optionals from source record including Expiration.
-                    if (!dstLogRecord.TrySetValueSpan(newInputValue, ref sizeInfo) || !dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpan(newInputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                         return false;
 
                     if (inputHeaderHasEtag != shouldUpdateEtag)
@@ -1159,7 +1159,7 @@ namespace Garnet.server
                     }
 
                     inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!dstLogRecord.TrySetValueSpan(inputValue, ref sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpan(inputValue, in sizeInfo))
                         return false;
 
                     if (inputHeaderHasEtag != shouldUpdateEtag)
@@ -1187,10 +1187,10 @@ namespace Garnet.server
                     var expireOption = (ExpireOption)input.arg1;
 
                     // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
-                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
+                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
                         return false;
                     break;
 
@@ -1204,16 +1204,16 @@ namespace Garnet.server
                     expireOption = (ExpireOption)input.arg1;
 
                     // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
-                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
+                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expireOption, expiryTicks, dstLogRecord.ValueSpan, ref output))
                         return false;
                     break;
 
                 case RespCommand.PERSIST:
                     shouldUpdateEtag = false;
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
                     if (srcLogRecord.Info.HasExpiration)
                     {
@@ -1223,24 +1223,24 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCR:
-                    if (!TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref output, input: 1))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: 1))
                         return false;
                     break;
 
                 case RespCommand.DECR:
-                    if (!TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref output, input: -1))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: -1))
                         return false;
                     break;
 
                 case RespCommand.INCRBY:
                     var incrBy = input.arg1;
-                    if (!TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref output, input: incrBy))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrBy))
                         return false;
                     break;
 
                 case RespCommand.DECRBY:
                     var decrBy = input.arg1;
-                    if (!TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref output, input: -decrBy))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: -decrBy))
                         return false;
                     break;
 
@@ -1252,14 +1252,14 @@ namespace Garnet.server
                         oldValue.CopyTo(dstLogRecord.ValueSpan);
                         break;
                     }
-                    _ = TryCopyUpdateNumber(ref srcLogRecord, ref dstLogRecord, ref sizeInfo, ref output, input: incrByFloat);
+                    _ = TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat);
                     break;
 
                 case RespCommand.SETBIT:
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
                     // Some duplicate code to avoid "fixed" when possible
@@ -1314,7 +1314,7 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1335,7 +1335,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD_RO:
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
 
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1353,7 +1353,7 @@ namespace Garnet.server
                     var updated = false;
                     newValue = dstLogRecord.ValueSpan;
 
-                    if (!dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                         return false;
 
                     // Some duplicate code to avoid "fixed" when possible
@@ -1422,7 +1422,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.PFMERGE:
-                    if (!dstLogRecord.TryCopyOptionals(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                         return false;
 
                     // Explanation of variables:
@@ -1469,7 +1469,7 @@ namespace Garnet.server
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
 
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1492,7 +1492,7 @@ namespace Garnet.server
                     shouldUpdateEtag = false;
                     CopyRespTo(oldValue, ref output);
 
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
                     newValue = dstLogRecord.ValueSpan;
@@ -1502,7 +1502,7 @@ namespace Garnet.server
                         var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
                         var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
                         var newExpiry = input.arg1;
-                        if (!EvaluateExpireCopyUpdate(ref dstLogRecord, ref sizeInfo, ExpireOption.None, newExpiry, newValue, ref _output))
+                        if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, ExpireOption.None, newExpiry, newValue, ref _output))
                             return false;
                     }
 
@@ -1516,7 +1516,7 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     var appendValue = input.parseState.GetArgSliceByRef(0);
-                    if (!dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo))
+                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
 
                     // Append the new value with the client input at the end of the old data
@@ -1576,7 +1576,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool PostCopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);

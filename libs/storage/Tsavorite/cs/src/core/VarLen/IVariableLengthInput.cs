@@ -11,7 +11,7 @@ namespace Tsavorite.core
     public interface IVariableLengthInput<TInput>
     {
         /// <summary>Length of resulting value object when performing RMW modification of value using given input</summary>
-        RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input)
+        RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
@@ -24,7 +24,7 @@ namespace Tsavorite.core
         RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input);
 
         /// <summary>Length of value object, when populated by Upsert using given log record</summary>
-        RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input)
+        RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord;
     }
 }

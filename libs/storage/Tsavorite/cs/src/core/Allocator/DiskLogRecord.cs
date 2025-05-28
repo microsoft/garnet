@@ -452,7 +452,7 @@ namespace Tsavorite.core
         /// <param name="bufferPool">Allocator for backing storage</param>
         /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+        public void Serialize(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
             => Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
 
         /// <summary>
@@ -464,7 +464,7 @@ namespace Tsavorite.core
         /// <param name="allocatedRecord">The allocated record; may be owned by this instance, or owned by the caller for reuse</param>
         /// <remarks>This overload may be called either directly for a caller who owns the <paramref name="allocatedRecord"/>, or with this.allocatedRecord.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Serialize(ref readonly LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer, ref SectorAlignedMemory allocatedRecord)
+        public void Serialize(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer, ref SectorAlignedMemory allocatedRecord)
         {
             if (logRecord.Info.RecordIsInline)
             {
@@ -606,7 +606,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long SerializeVarbyteRecord<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, long srcPhysicalAddress, IObjectSerializer<IHeapObject> valueSerializer,
+        private static long SerializeVarbyteRecord<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcPhysicalAddress, IObjectSerializer<IHeapObject> valueSerializer,
                 ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -633,7 +633,7 @@ namespace Tsavorite.core
             {
                 var outPtr = output.SpanByte.ToPointer();
                 *(int*)outPtr = (int)recordSize;
-                serializedSize = SerializeVarbyteRecordToPinnedPointer(ref srcLogRecord, outPtr + sizeof(int), indicatorByte, keyLengthByteCount, valueLength, valueLengthByteCount, valueSerializer);
+                serializedSize = SerializeVarbyteRecordToPinnedPointer(in srcLogRecord, outPtr + sizeof(int), indicatorByte, keyLengthByteCount, valueLength, valueLengthByteCount, valueSerializer);
                 output.SpanByte.Length = (int)serializedSize;
             }
             else
@@ -642,7 +642,7 @@ namespace Tsavorite.core
                 output.EnsureHeapMemorySize((int)recordSize + sizeof(int), memoryPool);
                 fixed (byte* outPtr = output.MemorySpan)
                 {
-                    serializedSize = SerializeVarbyteRecordToPinnedPointer(ref srcLogRecord, outPtr, indicatorByte, keyLengthByteCount, valueLength, valueLengthByteCount, valueSerializer);
+                    serializedSize = SerializeVarbyteRecordToPinnedPointer(in srcLogRecord, outPtr, indicatorByte, keyLengthByteCount, valueLength, valueLengthByteCount, valueSerializer);
                     output.Length = (int)recordSize;
                 }
             }
@@ -651,7 +651,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long SerializeVarbyteRecordToPinnedPointer<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, byte* ptr, byte indicatorByte,
+        private static long SerializeVarbyteRecordToPinnedPointer<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, byte* ptr, byte indicatorByte,
                 int keyLengthByteCount, long valueLength, int valueLengthByteCount, IObjectSerializer<IHeapObject> valueSerializer)
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -803,7 +803,7 @@ namespace Tsavorite.core
         /// Allocates <see cref="SpanByteAndMemory.Memory"/> if needed. This is used for migration.
         /// </summary>
         /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
-        public static void Serialize<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueSerializer, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
+        public static void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueSerializer, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.AsLogRecord(out var logRecord))
@@ -811,7 +811,7 @@ namespace Tsavorite.core
                 if (logRecord.Info.RecordIsInline)
                     DirectCopyRecord(logRecord.physicalAddress, logRecord.ActualRecordSize, ref output, memoryPool);
                 else
-                    _ = SerializeVarbyteRecord(ref logRecord, logRecord.physicalAddress, valueSerializer, ref output, memoryPool);
+                    _ = SerializeVarbyteRecord(in logRecord, logRecord.physicalAddress, valueSerializer, ref output, memoryPool);
                 return;
             }
 
@@ -828,7 +828,7 @@ namespace Tsavorite.core
                 DirectCopyRecord(diskLogRecord.physicalAddress, diskLogRecord.GetSerializedLength(), ref output, memoryPool);
                 return;
             }
-            _ = SerializeVarbyteRecord(ref diskLogRecord, diskLogRecord.physicalAddress, valueSerializer, ref output, memoryPool);
+            _ = SerializeVarbyteRecord(in diskLogRecord, diskLogRecord.physicalAddress, valueSerializer, ref output, memoryPool);
         }
         #endregion //Serialized Record Creation
 

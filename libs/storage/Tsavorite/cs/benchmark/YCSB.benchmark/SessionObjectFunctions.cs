@@ -9,7 +9,7 @@ namespace Tsavorite.benchmark
     public sealed class SessionObjectFunctions : SpanByteFunctions<Empty>
     {
         /// <inheritdoc />
-        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             if (!srcLogRecord.Info.ValueIsObject)
                 srcLogRecord.ValueSpan.CopyTo(output.SpanByte.Span);
@@ -21,7 +21,7 @@ namespace Tsavorite.benchmark
         // Note: Currently, only the ReadOnlySpan<byte> form of InPlaceWriter value is used here.
 
         /// <inheritdoc/>
-        public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
             if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient
@@ -32,34 +32,34 @@ namespace Tsavorite.benchmark
         }
 
         /// <inheritdoc/>
-        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration
             if (dstLogRecord.Info.ValueIsInline && srcValue.Length <= dstLogRecord.ValueSpan.Length)
                 srcValue.CopyTo(dstLogRecord.ValueSpan);
             else if (!dstLogRecord.Info.ValueIsObject)  // process overflow
-                return dstLogRecord.TrySetValueSpan(srcValue, ref sizeInfo);
+                return dstLogRecord.TrySetValueSpan(srcValue, in sizeInfo);
             else                                        // Slice the input because it comes from a larger buffer
                 ((ObjectValue)dstLogRecord.ValueObject).value = srcValue.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
             return true;
         }
 
         /// <inheritdoc/>
-        public override bool InitialWriter(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration. It is called only during Setup.
-            return dstLogRecord.TrySetValueObject(srcValue, ref sizeInfo);
+            return dstLogRecord.TrySetValueObject(srcValue, in sizeInfo);
         }
 
         /// <inheritdoc/>
-        public override bool InitialUpdater(ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo) => throw new TsavoriteException("InitialUpdater not implemented for YCSB");
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo) => throw new TsavoriteException("InitialUpdater not implemented for YCSB");
 
         /// <inheritdoc/>
-        public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
-            => InPlaceUpdater(ref dstLogRecord, ref sizeInfo, ref input, ref output, ref rmwInfo);
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+            => InPlaceUpdater(ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
 
         /// <inheritdoc/>
-        public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // This does not try to set ETag or Expiration
             if (!logRecord.Info.ValueIsObject)      // If !ValueIsObject, the destination data length, either inline or out-of-line, should already be sufficient

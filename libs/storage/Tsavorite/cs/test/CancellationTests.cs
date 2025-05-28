@@ -45,7 +45,7 @@ namespace Tsavorite.test.Cancellation
                 return true;
             }
 
-            public override bool NeedCopyUpdate<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.NeedCopyUpdate;
                 if (cancelLocation == CancelLocation.NeedCopyUpdate)
@@ -57,7 +57,7 @@ namespace Tsavorite.test.Cancellation
             }
 
             /// <inheritdoc/>
-            public override bool CopyUpdater<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.CopyUpdater;
                 ClassicAssert.AreNotEqual(CancelLocation.NeedCopyUpdate, cancelLocation);
@@ -66,10 +66,10 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return dstLogRecord.TryCopyFrom(ref srcLogRecord, ref sizeInfo);
+                return dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo);
             }
 
-            public override bool InitialUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InitialUpdater;
                 ClassicAssert.AreNotEqual(CancelLocation.NeedInitialUpdate, cancelLocation);
@@ -79,10 +79,10 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), ref sizeInfo);
+                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
-            public override bool InPlaceUpdater(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 lastFunc = CancelLocation.InPlaceUpdater;
                 if (cancelLocation == CancelLocation.InPlaceUpdater)
@@ -90,11 +90,11 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), ref sizeInfo);
+                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
             // Upsert functions
-            public override bool InitialWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.InitialWriter;
                 if (cancelLocation == CancelLocation.InitialWriter)
@@ -102,10 +102,10 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
+                return logRecord.TrySetValueSpan(srcValue, in sizeInfo);
             }
 
-            public override bool InPlaceWriter(ref LogRecord logRecord, ref RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
             {
                 lastFunc = CancelLocation.InPlaceWriter;
                 if (cancelLocation == CancelLocation.InPlaceWriter)
@@ -113,11 +113,11 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(srcValue, ref sizeInfo);
+                return logRecord.TrySetValueSpan(srcValue, in sizeInfo);
             }
 
             /// <inheritdoc/>
-            public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref int input)
+            public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input)
                 => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(int) };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref int input)

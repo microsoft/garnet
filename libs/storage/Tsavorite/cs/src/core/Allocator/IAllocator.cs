@@ -19,10 +19,10 @@ namespace Tsavorite.core
         /// <summary>Initialize the value to span the address range.</summary>
         /// <param name="physicalAddress">The start of the record (address of its <see cref="RecordInfo"/>).</param>
         /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>
-        void InitializeValue(long physicalAddress, ref RecordSizeInfo sizeInfo);
+        void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo);
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
-        RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ref TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
@@ -39,7 +39,7 @@ namespace Tsavorite.core
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 
         /// <summary>Get record size required for the given <paramref name="key"/>, <paramref name="inputLogRecord"/>, and <paramref name="input"/></summary>
-        RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, ref TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
+        RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>;
 

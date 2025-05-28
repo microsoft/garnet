@@ -7,6 +7,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -51,7 +52,7 @@ namespace Garnet.cluster
         }
 
         public long GetMinAofCoveredAddress()
-            => Math.Max(Math.Min(metadata.storeCheckpointCoveredAofAddress, metadata.objectCheckpointCoveredAofAddress), 64);
+            => Math.Max(Math.Min(metadata.storeCheckpointCoveredAofAddress, metadata.objectCheckpointCoveredAofAddress), LogAddress.FirstValidAddress);
 
         /// <summary>
         /// Indicate addition of new reader by trying to increment reader counter

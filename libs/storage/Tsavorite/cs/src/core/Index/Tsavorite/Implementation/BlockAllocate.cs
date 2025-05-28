@@ -45,7 +45,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                                       ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
+                                                       ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, in RecordSizeInfo sizeInfo, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -56,9 +56,9 @@ namespace Tsavorite.core
             var minRevivAddress = minMutableAddress;
 
             if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
-                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
+                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
             {
-                new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
+                new LogRecord(newPhysicalAddress).PrepareForRevivification(in sizeInfo, allocatedSize);
                 return true;
             }
             if (RevivificationManager.UseFreeRecordPool)
@@ -71,9 +71,9 @@ namespace Tsavorite.core
                     if (fuzzyStartAddress > minRevivAddress)
                         minRevivAddress = fuzzyStartAddress;
                 }
-                if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
+                if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, in sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
                 {
-                    new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
+                    new LogRecord(newPhysicalAddress).PrepareForRevivification(in sizeInfo, allocatedSize);
                     return true;
                 }
             }
@@ -99,7 +99,7 @@ namespace Tsavorite.core
                         // Set up a simple LogRecord with specified key size and value size taking the entire non-key space (we don't have optionals now)
                         // so revivification can read the record size.
                         var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
-                        logRecord.InitializeForReuse(ref sizeInfo);
+                        logRecord.InitializeForReuse(in sizeInfo);
                         if (RevivificationManager.TryAdd(newLogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             continue;
                     }
@@ -112,7 +112,7 @@ namespace Tsavorite.core
                 if (options.recycle)
                 {
                     var logRecord = new LogRecord(newPhysicalAddress);
-                    logRecord.InitializeForReuse(ref sizeInfo);
+                    logRecord.InitializeForReuse(in sizeInfo);
                     SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
                 }
                 else
@@ -128,7 +128,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
-                                                       ref RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
+                                                       in RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             while (true)
@@ -178,7 +178,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.NoInlining)]  // Do not inline, to keep TryAllocateRecord lean
         bool GetAllocationForRetry<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext, long minAddress,
-                ref RecordSizeInfo sizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize)
+                in RecordSizeInfo sizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Use an earlier allocation from a failed operation, if possible.

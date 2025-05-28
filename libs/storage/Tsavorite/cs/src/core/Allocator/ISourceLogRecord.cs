@@ -28,7 +28,7 @@ namespace Tsavorite.core
         byte* PinnedKeyPointer { get; }
 
         /// <summary>The value <see cref="Span{_byte_}"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
-        /// <remarks>Not a ref return as it cannot be changed directly; use LogRecord.TrySetValueSpan(Span{_byte_}, ref RecordSizeInfo) instead.</remarks>
+        /// <remarks>Not a ref return as it cannot be changed directly; use <see cref="LogRecord.TrySetValueSpan(ReadOnlySpan{byte}, in RecordSizeInfo)"/> instead.</remarks>
         Span<byte> ValueSpan { get; }
 
         /// <summary>The value object, if the value in this record is an IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
