@@ -120,7 +120,7 @@ namespace Garnet.test
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var binPaths = new[] {GetFullExtensionBinPath("Garnet.test"), GetFullExtensionBinPath("Garnet.test.cluster")};
+            var binPaths = new[] { GetFullExtensionBinPath("Garnet.test"), GetFullExtensionBinPath("Garnet.test.cluster") };
             var modules = new[] { Assembly.GetExecutingAssembly().Location };
 
             var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
@@ -133,7 +133,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(53, options.Port);
             ClassicAssert.AreEqual(2, options.RevivObjBinRecordCount);
             ClassicAssert.AreEqual(0.5, options.RevivifiableFraction);
-            CollectionAssert.AreEqual(new [] {1,2,3}, options.RevivBinRecordCounts);
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, options.RevivBinRecordCounts);
             ClassicAssert.IsTrue(options.Recover);
             ClassicAssert.IsTrue(File.Exists(configPath));
             CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
@@ -153,7 +153,7 @@ namespace Garnet.test
 
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
-            binPaths = [ GetFullExtensionBinPath("Garnet.test") ];
+            binPaths = [GetFullExtensionBinPath("Garnet.test")];
             args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof", "--reviv-bin-record-counts", "4,5", "--extension-bin-paths", string.Join(',', binPaths)];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
