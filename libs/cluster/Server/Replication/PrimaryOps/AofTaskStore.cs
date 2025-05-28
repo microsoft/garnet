@@ -161,7 +161,7 @@ namespace Garnet.cluster
                 if (_disposed) return success;
 
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
-                bool possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
+                var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
                     (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
                 // Fail adding the task if truncation has happened, and we are not in possibleAofDataLoss mode

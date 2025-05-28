@@ -660,6 +660,7 @@ namespace Garnet.test
                 AofMemorySize = aofMemorySize,
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
+                UseAofNullDevice = commitFrequencyMs == -1,
                 EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,

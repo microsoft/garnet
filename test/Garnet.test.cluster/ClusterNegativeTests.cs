@@ -249,12 +249,56 @@ namespace Garnet.test.cluster
         [Test, Order(5)]
         public void ClusterCheckpointAcquireTest()
         {
-            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition);
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition);
 
+                var primaryIndex = 0;
+                var replicaIndex = 1;
+                var nodes_count = 2;
+                context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+                context.CreateConnection();
+
+                _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+                context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+                context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+                context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+                var keyLength = 32;
+                var kvpairCount = 32;
+                context.kvPairs = [];
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+
+                // Take a checkpoint to create an in-memory entry
+                var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+                context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+                // Try to attach to trigger checkpoint acquire condition
+                var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition);
+            }
+        }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterReplicaAttachIntenseWrite(CancellationToken cancellationToken)
+        {
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                timeout: timeout,
+                OnDemandCheckpoint: true,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -266,16 +310,48 @@ namespace Garnet.test.cluster
             var kvpairCount = 32;
             context.kvPairs = [];
             context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+            var primaryOffset1 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
 
             // Take a checkpoint to create an in-memory entry
-            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
 
-            // Try to attach to trigger checkpoint acquire condition
-            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+            try
+            {
+                // Set wait condition
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
+                // Issue replicate
+                var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, async: true, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                // Wait for replica to acquire previous checkpoint
+                while (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition))
+                {
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for exception reset signal");
+                }
+
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+                var primaryOffset2 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
+                ClassicAssert.Less(primaryOffset1, primaryOffset2);
+
+                // Take another checkpoin to truncate
+                primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+                context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+                // Re-enable to signal for thread to continue
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+                context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+            }
         }
 #endif
     }

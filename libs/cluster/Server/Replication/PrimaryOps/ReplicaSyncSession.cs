@@ -365,6 +365,8 @@ namespace Garnet.cluster
                     break;
                 }
 
+                await ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
                 // Calculate the minimum start address covered by this checkpoint
                 var startAofAddress = cEntry.GetMinAofCoveredAddress();
 
@@ -376,14 +378,24 @@ namespace Garnet.cluster
                     (startAofAddress < clusterProvider.replicationManager.AofTruncatedUntil || !ValidateMetadata(cEntry, out _, out _, out _, out _, out _, out _)))
                 {
                     cEntry.RemoveReader();
+                onDemandCheckpointRetry:
                     await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-                    continue; // Go back to re-acquire checkpoint
+                    if (!clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry))
+                    {
+                        Debug.Assert(cEntry == null);
+                        lastSaveTime = storeWrapper.lastSaveTime;
+                        goto onDemandCheckpointRetry;
+                    }
+                    startAofAddress = cEntry.GetMinAofCoveredAddress();
                 }
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
                 if (clusterProvider.replicationManager.TryAddReplicationTask(replicaNodeId, startAofAddress, out aofSyncTaskInfo))
                     break;
+
+
+
 
                 // Unlock last checkpoint because associated startAofAddress is no longer available
                 cEntry.RemoveReader();
