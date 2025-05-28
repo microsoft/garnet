@@ -14,7 +14,7 @@ namespace Garnet.cluster
         public bool InitializeCheckpointStore()
         {
             checkpointStore.Initialize();
-            if (checkpointStore.GetLatestCheckpointEntryFromMemory(out var cEntry))
+            if (checkpointStore.TryGetLatestCheckpointEntryFromMemory(out var cEntry))
             {
                 aofTaskStore.UpdateTruncatedUntil(cEntry.GetMinAofCoveredAddress());
                 cEntry.RemoveReader();
@@ -80,8 +80,8 @@ namespace Garnet.cluster
         public void PurgeAllCheckpointsExceptEntry(CheckpointEntry except)
             => checkpointStore.PurgeAllCheckpointsExceptEntry(except);
 
-        public bool GetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
-            => checkpointStore.GetLatestCheckpointEntryFromMemory(out cEntry);
+        public bool TryGetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
+            => checkpointStore.TryGetLatestCheckpointEntryFromMemory(out cEntry);
 
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()
             => checkpointStore.GetLatestCheckpointEntryFromDisk();

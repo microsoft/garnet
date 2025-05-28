@@ -160,12 +160,8 @@ namespace Garnet.cluster
             {
                 if (_disposed) return success;
 
-                // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
-                var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                    (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
-
-                // Fail adding the task if truncation has happened, and we are not in possibleAofDataLoss mode
-                if (startAddress < TruncatedUntil && !possibleAofDataLoss)
+                // Fail adding the task if truncation has happened, and we are not in AllowDataLoss mode
+                if (startAddress < TruncatedUntil && !clusterProvider.AllowDataLoss)
                 {
                     logger?.LogWarning("AOF sync task for {remoteNodeId}, with start address {startAddress}, could not be added, local AOF is truncated until {truncatedUntil}", remoteNodeId, startAddress, TruncatedUntil);
                     return success;

@@ -212,7 +212,7 @@ namespace Garnet.cluster
         /// Caller is responsible for releasing reader by calling removeReader on entry
         /// </summary>
         /// <returns></returns>
-        public bool GetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
+        public bool TryGetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
         {
             cEntry = null;
             var _tail = tail;

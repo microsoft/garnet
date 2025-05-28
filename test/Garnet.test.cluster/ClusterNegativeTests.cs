@@ -247,7 +247,7 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         [Test, Order(5)]
-        public void ClusterCheckpointAcquireTest()
+        public void ClusterCheckpointAcquireTest([Values] bool fastAofTruncate, [Values] bool onDemandCheckpoint)
         {
             try
             {
@@ -256,7 +256,7 @@ namespace Garnet.test.cluster
                 var primaryIndex = 0;
                 var replicaIndex = 1;
                 var nodes_count = 2;
-                context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+                context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, FastAofTruncate: fastAofTruncate, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: fastAofTruncate ? -1 : 0);
                 context.CreateConnection();
 
                 _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
