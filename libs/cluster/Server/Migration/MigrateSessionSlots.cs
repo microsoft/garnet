@@ -65,7 +65,7 @@ namespace Garnet.cluster
                 {
                     var current = cursor;
                     // Build Sketch
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.QUEUED);
+                    storeScanFunctions.SetKeysStatus(SketchStatus.BUILDING);
                     storeScanFunctions.SetPhase(MigratePhase.BuildSketch);
                     PerformScan(ref current, workerEndAddress);
 
@@ -76,7 +76,7 @@ namespace Garnet.cluster
                     logger?.LogTrace("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys", taskId, cursor, current, storeScanFunctions.Count);
 
                     // Transition EPSM to MIGRATING
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.MIGRATING);
+                    storeScanFunctions.SetKeysStatus(SketchStatus.TRANSMITTING);
                     WaitForConfigPropagation();
 
                     // Iterate main store
@@ -85,7 +85,7 @@ namespace Garnet.cluster
                     PerformScan(ref current, currentEnd);
 
                     // Transition EPSM to DELETING
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.DELETING);
+                    storeScanFunctions.SetKeysStatus(SketchStatus.DELETING);
                     WaitForConfigPropagation();
 
                     // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
@@ -97,7 +97,7 @@ namespace Garnet.cluster
                     foreach (var key in storeScanFunctions.keysToDelete)
                         _ = localServerSessions[taskId].BasicGarnetApi.DELETE(key);
                     storeScanFunctions.keysToDelete.Clear();
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.MIGRATED);
+                    storeScanFunctions.SetKeysStatus(SketchStatus.MIGRATED);
                     storeScanFunctions.sketch.Clear();
                     cursor = current;
                 }
