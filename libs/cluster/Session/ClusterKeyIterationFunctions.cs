@@ -32,11 +32,11 @@ namespace Garnet.cluster
 
                 internal MainStoreCountKeys(int slot) => info = new(slot);
 
-                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    if (HashSlotUtils.HashSlot(srcLogRecord.Key) == Slot && !Expired(ref srcLogRecord))
+                    if (HashSlotUtils.HashSlot(srcLogRecord.Key) == Slot && !Expired(in srcLogRecord))
                         KeyCount++;
                     return true;
                 }
@@ -56,11 +56,11 @@ namespace Garnet.cluster
 
                 internal ObjectStoreCountKeys(int slot) => info = new(slot);
 
-                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here , out CursorRecordResult cursorRecordResult
-                    if (HashSlotUtils.HashSlot(srcLogRecord.Key) == Slot && !Expired(ref srcLogRecord))
+                    if (HashSlotUtils.HashSlot(srcLogRecord.Key) == Slot && !Expired(in srcLogRecord))
                         KeyCount++;
                     return true;
                 }
@@ -82,12 +82,12 @@ namespace Garnet.cluster
                     this.maxKeyCount = maxKeyCount;
                 }
 
-                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here, out CursorRecordResult cursorRecordResult
                     var key = srcLogRecord.Key;
-                    if (HashSlotUtils.HashSlot(key) == slot && !Expired(ref srcLogRecord))
+                    if (HashSlotUtils.HashSlot(key) == slot && !Expired(in srcLogRecord))
                         keys.Add(key.ToArray());
                     return keys.Count < maxKeyCount;
                 }
@@ -108,12 +108,12 @@ namespace Garnet.cluster
                     this.slot = slot;
                 }
 
-                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                     var key = srcLogRecord.Key;
-                    if (HashSlotUtils.HashSlot(key) == slot && !Expired<TSourceLogRecord>(ref srcLogRecord))
+                    if (HashSlotUtils.HashSlot(key) == slot && !Expired(in srcLogRecord))
                         keys.Add(key.ToArray());
                     return true;
                 }

@@ -79,7 +79,7 @@ namespace Garnet.server
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }
 
-        internal static bool CheckExpiry<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord)
+        internal static bool CheckExpiry<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
             => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 

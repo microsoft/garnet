@@ -104,7 +104,7 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool StringReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool StringReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
@@ -156,7 +156,7 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool ObjectReader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool ObjectReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
@@ -241,9 +241,9 @@ namespace Garnet.cluster
             return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: true);
         }
 
-        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
-            => snapshotIteratorManager.StringReader(ref srcLogRecord, recordMetadata, numberOfRecords);
+            => snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)
             => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(MainStoreSnapshotIterator)}");
@@ -264,9 +264,9 @@ namespace Garnet.cluster
             return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: false);
         }
 
-        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
-            => snapshotIteratorManager.ObjectReader(ref srcLogRecord, recordMetadata, numberOfRecords);
+            => snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)
             => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(ObjectStoreSnapshotIterator)}");

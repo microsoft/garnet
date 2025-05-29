@@ -463,7 +463,7 @@ namespace Garnet.cluster
                         return false;
 
                     var diskLogRecord = new DiskLogRecord(startAddress, length);
-                    _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Main);
+                    _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
                     i++;
                 }
             }
@@ -477,7 +477,7 @@ namespace Garnet.cluster
 
                     var diskLogRecord = new DiskLogRecord(startAddress, length);
                     _ = diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);
-                    _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Object);
+                    _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
                     i++;
                 }
             }

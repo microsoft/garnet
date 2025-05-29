@@ -87,7 +87,7 @@ namespace Garnet.cluster
 
                     // Set if key replace flag is set or key does not exist
                     if (replaceOption || !Exists(PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key)))
-                        _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Main);
+                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
                 }
             }
             else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
@@ -117,7 +117,7 @@ namespace Garnet.cluster
                     if (replaceOption || !Exists(PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key)))
                     {
                         _ = diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);
-                        _ = basicGarnetApi.SET(ref diskLogRecord, StoreType.Object);
+                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
                     }
                 }
             }

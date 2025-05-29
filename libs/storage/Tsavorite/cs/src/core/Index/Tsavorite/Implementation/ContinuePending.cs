@@ -132,9 +132,9 @@ namespace Tsavorite.core
                     if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                     {
                         if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx);
+                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in diskRecord, ref stackCtx);
                         else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
-                                && TryCopyToReadCache(ref diskRecord, sessionFunctions, ref pendingContext, ref stackCtx))
+                                && TryCopyToReadCache(in diskRecord, sessionFunctions, ref pendingContext, ref stackCtx))
                             status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
                     }
                     else
@@ -218,7 +218,7 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-                    status = CreateNewRecordRMW(pendingContext.Key, ref diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
+                    status = CreateNewRecordRMW(pendingContext.Key, in diskRecord, ref pendingContext.input.Get(), ref pendingContext.output,
                                                 ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !diskRecord.Info.Tombstone);
                 }
                 finally
@@ -289,8 +289,8 @@ namespace Tsavorite.core
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(ref pendingContext, ref diskRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
-                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref diskRecord, ref stackCtx);
+                        ? PrepareIOForConditionalOperation(ref pendingContext, in diskRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
+                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, in diskRecord, ref stackCtx);
                 }
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
@@ -333,7 +333,7 @@ namespace Tsavorite.core
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
             _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, PendingContext<TInput, TOutput, TContext>>(sessionFunctions,
-                pendingContext.scanCursorState, ref pendingContext, currentAddress: request.logicalAddress, minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
+                pendingContext.scanCursorState, in pendingContext, currentAddress: request.logicalAddress, minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
             return OperationStatus.SUCCESS;

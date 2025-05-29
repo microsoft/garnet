@@ -37,7 +37,7 @@ namespace Garnet.server
             /// <param name="logRecord">Information about the record</param>
             /// <returns>The size of the record</returns>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public readonly long CalculateRecordSize<TSourceLogRecord>(ref TSourceLogRecord logRecord)
+            public readonly long CalculateRecordSize<TSourceLogRecord>(in TSourceLogRecord logRecord)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 long size = Utility.RoundUp(logRecord.Key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead;

@@ -36,11 +36,11 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc />
-            public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept;
-                return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
+                return streamingSnapshotIteratorFunctions.Reader(in srcLogRecord, recordMetadata, numberOfRecords);
             }
 
             /// <inheritdoc />
@@ -89,11 +89,11 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc />
-            public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept;
-                return streamingSnapshotIteratorFunctions.Reader(ref srcLogRecord, recordMetadata, numberOfRecords);
+                return streamingSnapshotIteratorFunctions.Reader(in srcLogRecord, recordMetadata, numberOfRecords);
             }
 
             /// <inheritdoc />

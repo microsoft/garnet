@@ -133,12 +133,12 @@ namespace Tsavorite.core
             /// <param name="valueSerializer">Serializer for value object (if any); if null, the object is to be held as an object (e.g. for Pending IO operations)
             ///     rather than serialized to a byte stream (e.g. for out-of-process operations)</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSessionFunctionsWrapper, TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions,
+            internal void Serialize<TSessionFunctionsWrapper, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions,
                     SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TSourceLogRecord : ISourceLogRecord
             {
-                Serialize(ref srcLogRecord, bufferPool, valueSerializer);
+                Serialize(in srcLogRecord, bufferPool, valueSerializer);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
@@ -147,7 +147,7 @@ namespace Tsavorite.core
             /// </summary>
             /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
+            internal void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");

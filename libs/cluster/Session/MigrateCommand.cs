@@ -13,7 +13,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        public static bool Expired<TSourceLogRecord>(ref TSourceLogRecord logRecord)
+        public static bool Expired<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
             => logRecord.Info.HasExpiration && logRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 

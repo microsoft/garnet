@@ -61,7 +61,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, StoreType storeType)
+        GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType)
             where TSourceLogRecord : ISourceLogRecord;
         #endregion
 

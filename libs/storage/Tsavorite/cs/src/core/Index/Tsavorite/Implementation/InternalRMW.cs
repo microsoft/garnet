@@ -199,7 +199,7 @@ namespace Tsavorite.core
             CreateNewRecord:
                 {
                     // Here, the input* data for 'doingCU' is the same as recSrc.
-                    status = CreateNewRecordRMW(key, ref srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx,
+                    status = CreateNewRecordRMW(key, in srcLogRecord, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx,
                                                 doingCU: stackCtx.recSrc.HasInMemorySrc && !srcLogRecord.Info.Tombstone);
 
                     // OperationStatus.SUCCESS is OK here even if !OperationStatusUtils.IsAppend(status); it means NeedCopyUpdate or NeedInitialUpdate returned false
@@ -331,7 +331,7 @@ namespace Tsavorite.core
         ///     this is populated from the data read from disk.</param>
         /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO.</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
+        private OperationStatus CreateNewRecordRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
                                                                                           ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool doingCU)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>

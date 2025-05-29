@@ -288,7 +288,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ref TSourceLogRecord diskLogRecord)
+        Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -297,7 +297,7 @@ namespace Tsavorite.core
         /// <param name="key">Key, which may be from <paramref name="diskLogRecord"/> or may be a modified key (e.g. prepending a prefix)</param>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord diskLogRecord)
+        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -305,7 +305,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ref TInput input, ref TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -313,7 +313,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
-        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, ref TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>

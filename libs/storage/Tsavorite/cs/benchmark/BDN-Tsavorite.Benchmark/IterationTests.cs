@@ -112,7 +112,7 @@ namespace BenchmarkDotNetTests
             public bool OnStart(long beginAddress, long endAddress) => true;
 
             /// <inheritdoc/>
-            public bool Reader<TSourceLogRecord>(ref TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 ++counter.count;

@@ -29,13 +29,13 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
                     // Do not send key if it is expired
-                    if (ClusterSession.Expired(ref srcLogRecord))
+                    if (ClusterSession.Expired(in srcLogRecord))
                         return true;
 
                     var key = srcLogRecord.Key;
@@ -66,13 +66,13 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
                     // Do not send key if it is expired
-                    if (ClusterSession.Expired(ref srcLogRecord))
+                    if (ClusterSession.Expired(in srcLogRecord))
                         return true;
 
                     var key = srcLogRecord.Key;

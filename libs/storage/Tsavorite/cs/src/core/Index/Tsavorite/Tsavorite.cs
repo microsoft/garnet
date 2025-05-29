@@ -528,7 +528,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalUpsert<SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
-                        key, keyHash, ref input, srcStringValue, srcObjectValue:null, ref emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+                        key, keyHash, ref input, srcStringValue, srcObjectValue:null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             recordMetadata = new(pcontext.logicalAddress);
@@ -546,7 +546,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalUpsert<ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
-                        key, keyHash, ref input, srcStringValue: default, srcObjectValue, ref emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+                        key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             recordMetadata = new(pcontext.logicalAddress);
@@ -555,7 +555,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(ReadOnlySpan<byte> key, long keyHash, ref TInput input,
-                ref TSourceLogRecord inputLogRecord, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
+                in TSourceLogRecord inputLogRecord, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -564,7 +564,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalUpsert<LogRecordUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
-                        key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, ref inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+                        key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             recordMetadata = new(pcontext.logicalAddress);

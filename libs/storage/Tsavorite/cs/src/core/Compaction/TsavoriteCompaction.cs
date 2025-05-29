@@ -48,7 +48,7 @@ namespace Tsavorite.core
                     if (!iter1.Info.Tombstone && !cf.IsDeleted(in iter1))
                     {
                         var iter1AsLogSource = iter1 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
-                        var status = storebContext.CompactionCopyToTail(ref iter1AsLogSource, iter1.CurrentAddress, iter1.NextAddress);
+                        var status = storebContext.CompactionCopyToTail(in iter1AsLogSource, iter1.CurrentAddress, iter1.NextAddress);
                         if (status.IsPending && ++numPending > 256)
                         {
                             _ = storebContext.CompletePending(wait: true);
@@ -97,7 +97,7 @@ namespace Tsavorite.core
                         else
                         {
                             var iterLogRecord = iter1 as ISourceLogRecord;      // Can't use 'ref' on a 'using' variable
-                            _ = tempbContext.Upsert(ref iterLogRecord);
+                            _ = tempbContext.Upsert(in iterLogRecord);
                         }
                     }
                     // Ensure address is at record boundary
@@ -128,7 +128,7 @@ namespace Tsavorite.core
                     // As long as there's no record of the same key whose address is >= untilAddress (scan boundary), we are safe to copy the old record
                     // to the tail. We don't know the actualAddress of the key in the main kv, but we it will not be below untilAddress.
                     var iter3AsLogSource = iter3 as ISourceLogRecord;   // Can't use 'ref' on a 'using' variable
-                    var status = storebContext.CompactionCopyToTail(ref iter3AsLogSource, iter3.CurrentAddress, untilAddress - 1);
+                    var status = storebContext.CompactionCopyToTail(in iter3AsLogSource, iter3.CurrentAddress, untilAddress - 1);
                     if (status.IsPending && ++numPending > 256)
                     {
                         _ = storebContext.CompletePending(wait: true);

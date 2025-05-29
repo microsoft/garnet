@@ -284,30 +284,30 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ref TSourceLogRecord diskLogRecord)
+        public Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => Upsert(diskLogRecord.Key, ref diskLogRecord);
+            => Upsert(diskLogRecord.Key, in diskLogRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TSourceLogRecord diskLogRecord)
+        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
             TInput input = default;
             TOutput output = default;
             UpsertOptions upsertOptions = default;
-            return Upsert(key, ref input, ref diskLogRecord, ref output, ref upsertOptions);
+            return Upsert(key, ref input, in diskLogRecord, ref output, ref upsertOptions);
         }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord
-            => Upsert(inputLogRecord.Key, ref input, ref inputLogRecord, ref output, ref upsertOptions, userContext);
+            => Upsert(inputLogRecord.Key, ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, ref TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
+        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord
         {
             var keyHash = upsertOptions.KeyHash ?? store.storeFunctions.GetKeyHashCode64(key);
@@ -315,7 +315,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextUpsert(key, keyHash, ref input, inputLogRecord: ref inputLogRecord, ref output, out _, userContext, sessionFunctions);
+                return store.ContextUpsert(key, keyHash, ref input, inputLogRecord: in inputLogRecord, ref output, out _, userContext, sessionFunctions);
             }
             finally
             {
@@ -420,7 +420,7 @@ namespace Tsavorite.core
         /// <param name="currentAddress">LogicalAddress of the record to be copied</param>
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionCopyToTail<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress)
+        internal Status CompactionCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress)
             where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
@@ -428,7 +428,7 @@ namespace Tsavorite.core
             {
                 return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions,
                         BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
-                    sessionFunctions, ref srcLogRecord, currentAddress, untilAddress);
+                    sessionFunctions, in srcLogRecord, currentAddress, untilAddress);
             }
             finally
             {
@@ -445,14 +445,14 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Lower-bound address (addresses are searched from tail (high) to head (low); do not search for "future records" earlier than this)</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState scanCursorState, ref TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress, long maxAddress)
+        internal Status ConditionalScanPush<TSourceLogRecord>(ScanCursorState scanCursorState, in TSourceLogRecord srcLogRecord, long currentAddress, long untilAddress, long maxAddress)
             where TSourceLogRecord : ISourceLogRecord
         {
             UnsafeResumeThread();
             try
             {
                 return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
-                        sessionFunctions, scanCursorState, ref srcLogRecord, currentAddress, untilAddress, maxAddress);
+                        sessionFunctions, scanCursorState, in srcLogRecord, currentAddress, untilAddress, maxAddress);
             }
             finally
             {

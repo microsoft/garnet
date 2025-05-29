@@ -482,15 +482,15 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus SET<TContext, TObjectContext, TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
+        public GarnetStatus SET<TContext, TObjectContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             if (storeType == StoreType.Main)
-                context.Upsert(ref srcLogRecord);
+                context.Upsert(in srcLogRecord);
             else
-                objectContext.Upsert(ref srcLogRecord);
+                objectContext.Upsert(in srcLogRecord);
             return GarnetStatus.OK;
         }
 
