@@ -29,7 +29,7 @@ namespace Garnet.cluster
             try
             {
                 // Transition keys to MIGRATING status
-                migrateScan[0].sketch.SetStatus(KeyMigrationStatus.MIGRATING);
+                migrateScan[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
                 WaitForConfigPropagation();
 
                 ////////////////
@@ -81,7 +81,7 @@ namespace Garnet.cluster
                     o.Memory.Dispose();
                 buffer.Dispose();
 
-                migrateScan[0].sketch.SetStatus(KeyMigrationStatus.QUEUED);
+                migrateScan[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
             return true;
         }
@@ -95,7 +95,7 @@ namespace Garnet.cluster
         {
             // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
             // Transition all QUEUED to MIGRATING state
-            migrateScan[0].sketch.SetStatus(KeyMigrationStatus.MIGRATING);
+            migrateScan[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
             WaitForConfigPropagation();
 
             var keys = migrateScan[0].sketch.Keys;
@@ -142,7 +142,7 @@ namespace Garnet.cluster
                 goto migrated;
 
             // Transition to deleting to block read requests
-            migrateScan[0].sketch.SetStatus(KeyMigrationStatus.DELETING);
+            migrateScan[0].sketch.SetStatus(SketchStatus.DELETING);
             WaitForConfigPropagation();
 
             foreach (var pair in migrateScan[0].sketch.Keys)
@@ -154,7 +154,7 @@ namespace Garnet.cluster
 
         migrated:
             // Transition to MIGRATED to release waiting operations
-            migrateScan[0].sketch.SetStatus(KeyMigrationStatus.MIGRATED);
+            migrateScan[0].sketch.SetStatus(SketchStatus.MIGRATED);
             WaitForConfigPropagation();
         }
 
@@ -177,7 +177,6 @@ namespace Garnet.cluster
                     _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
                     if (!MigrateKeysFromMainStore())
                         return false;
-
                 }
 
                 // Migrate object store keys

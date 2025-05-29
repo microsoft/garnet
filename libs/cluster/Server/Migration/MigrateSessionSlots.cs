@@ -65,8 +65,8 @@ namespace Garnet.cluster
                 {
                     var current = cursor;
                     // Build Sketch
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.QUEUED);
-                    storeScanFunctions.SetPhase(MigratePhase.BuildSketch);
+                    storeScanFunctions.SetSketchStatus(SketchStatus.INITIALIZING);
+                    storeScanFunctions.SetScanPhase(MigratePhase.BuildSketch);
                     PerformScan(ref current, workerEndAddress);
 
                     // Stop if no keys have been found
@@ -76,28 +76,28 @@ namespace Garnet.cluster
                     logger?.LogTrace("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys", taskId, cursor, current, storeScanFunctions.Count);
 
                     // Transition EPSM to MIGRATING
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.MIGRATING);
+                    storeScanFunctions.SetSketchStatus(SketchStatus.TRANSMITTING);
                     WaitForConfigPropagation();
 
                     // Iterate main store
                     current = cursor;
-                    storeScanFunctions.SetPhase(MigratePhase.TransmitData);
+                    storeScanFunctions.SetScanPhase(MigratePhase.TransmitData);
                     PerformScan(ref current, currentEnd);
 
                     // Transition EPSM to DELETING
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.DELETING);
+                    storeScanFunctions.SetSketchStatus(SketchStatus.DELETING);
                     WaitForConfigPropagation();
 
                     // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
                     current = cursor;
-                    storeScanFunctions.SetPhase(MigratePhase.DeletingData);
+                    storeScanFunctions.SetScanPhase(MigratePhase.DeletingData);
                     PerformScan(ref current, currentEnd);
 
                     // Delete gathered keys
                     foreach (var key in storeScanFunctions.keysToDelete)
                         _ = localServerSessions[taskId].BasicGarnetApi.DELETE(key);
                     storeScanFunctions.keysToDelete.Clear();
-                    storeScanFunctions.SetKeysStatus(KeyMigrationStatus.MIGRATED);
+                    storeScanFunctions.SetSketchStatus(SketchStatus.MIGRATED);
                     storeScanFunctions.sketch.Clear();
                     cursor = current;
                 }
