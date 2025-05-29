@@ -122,7 +122,7 @@ namespace Garnet.cluster
                 if (isLeader)
                 {
                     // Launch a background task to sync the attached replicas using streaming snapshot
-                    _ = Task.Run(() => MainStreamingSnapshotDriver());
+                    _ = Task.Run(MainStreamingSnapshotDriver);
                 }
 
                 // Wait for main sync driver to complete
