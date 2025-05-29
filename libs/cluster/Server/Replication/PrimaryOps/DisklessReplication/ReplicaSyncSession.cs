@@ -67,7 +67,7 @@ namespace Garnet.cluster
         public void InitializeIterationBuffer()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            AofSyncTask.garnetClient.InitializeIterationBuffer();
+            AofSyncTask.garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
         }
 
         /// <summary>

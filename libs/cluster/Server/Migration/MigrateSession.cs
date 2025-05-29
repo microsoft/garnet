@@ -26,7 +26,6 @@ namespace Garnet.cluster
 
         readonly ClusterSession clusterSession;
         readonly ClusterProvider clusterProvider;
-        readonly LocalServerSession localServerSession;
 
         /// <summary>
         /// Get/Set migration status
@@ -44,7 +43,6 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly MigratingKeysWorkingSet _keys;
         SingleWriterMultiReaderLock _disposed;
 
         readonly HashSet<int> _sslots;
@@ -96,6 +94,16 @@ namespace Garnet.cluster
         readonly TransferOption transferOption;
 
         /// <summary>
+        /// MigrateSlotsScan for background slot migrate tasks
+        /// </summary>
+        readonly MigrateScan[] migrateScan;
+
+        /// <summary>
+        /// LocalServerSessions for background slot migrate tasks
+        /// </summary>
+        readonly LocalServerSession[] localServerSessions;
+
+        /// <summary>
         /// MigrateSession Constructor
         /// </summary>
         /// <param name="clusterSession"></param>
@@ -110,7 +118,7 @@ namespace Garnet.cluster
         /// <param name="_replaceOption"></param>
         /// <param name="_timeout"></param>
         /// <param name="_slots"></param>
-        /// <param name="keys"></param>
+        /// <param name="sketch"></param>
         /// <param name="transferOption"></param>
         internal MigrateSession(
             ClusterSession clusterSession,
@@ -125,7 +133,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            MigratingKeysWorkingSet keys,
+            MigratingKeysSketch sketch,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
@@ -142,15 +150,34 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys ?? new MigratingKeysWorkingSet();
             this.transferOption = transferOption;
 
-            if (clusterProvider != null)
-                localServerSession = new LocalServerSession(clusterProvider.storeWrapper);
             Status = MigrateState.PENDING;
 
             // Single key value size + few bytes for command header and arguments
-            _gcs = new(
+            _gcs = GetGarnetClient();
+
+            if (transferOption == TransferOption.SLOTS)
+            {
+                migrateScan = new MigrateScan[clusterProvider.serverOptions.ParallelMigrateTasks];
+                localServerSessions = new LocalServerSession[clusterProvider.serverOptions.ParallelMigrateTasks];
+                for (var i = 0; i < migrateScan.Length; i++)
+                {
+                    migrateScan[i] = new MigrateScan(this, logger: logger);
+                    localServerSessions[i] = new LocalServerSession(clusterProvider.storeWrapper);
+                }
+            }
+            else
+            {
+                migrateScan = new MigrateScan[1];
+                migrateScan[0] = new MigrateScan(this, sketch: sketch, logger: logger);
+                localServerSessions = new LocalServerSession[1];
+                localServerSessions[0] = new LocalServerSession(clusterProvider.storeWrapper);
+            }
+        }
+
+        public GarnetClientSession GetGarnetClient()
+            => new(
                 new IPEndPoint(IPAddress.Parse(_targetAddress), _targetPort),
                 networkBufferSettings: GetNetworkBufferSettings,
                 networkPool: GetNetworkPool,
@@ -158,7 +185,6 @@ namespace Garnet.cluster
                 authUsername: _username,
                 authPassword: _passwd,
                 logger: logger);
-        }
 
         /// <summary>
         /// Dispose
@@ -169,7 +195,12 @@ namespace Garnet.cluster
             _cts?.Cancel();
             _cts?.Dispose();
             _gcs.Dispose();
-            localServerSession?.Dispose();
+
+            for (var i = 0; i < migrateScan.Length; i++)
+            {
+                migrateScan[i].Dispose();
+                localServerSessions[i].Dispose();
+            }
         }
 
         private bool CheckConnection()
