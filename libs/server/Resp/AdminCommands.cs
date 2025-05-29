@@ -925,7 +925,7 @@ namespace Garnet.server
             int dbId = 0;
             if (parseState.Count > 2)
             {
-                if (!TryParseDatabaseId(0, out dbId))
+                if (!TryParseDatabaseId(2, out dbId))
                     return true;
             }
 
@@ -934,9 +934,6 @@ namespace Garnet.server
 
             // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
             int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
-
-            if (dcurr - dend < requiredSpace)
-                SendAndReset();
 
             while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                 SendAndReset();

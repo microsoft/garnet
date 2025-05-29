@@ -2333,6 +2333,10 @@ namespace Garnet.server
             {
                 return RespCommand.SAVE;
             }
+            else if (command.SequenceEqual(CmdStrings.ACTEXP))
+            {
+                return RespCommand.ACTEXP;
+            }
             else if (command.SequenceEqual(CmdStrings.LASTSAVE))
             {
                 return RespCommand.LASTSAVE;
