@@ -295,10 +295,7 @@ namespace Garnet.cluster
                         throw new InvalidOperationException("Object store checkpoint stream failed!");
                 }
 
-                // Aggressively truncate AOF when MainMemoryReplication flag is set.
-                // Otherwise, we rely on background disk-based checkpoints to truncate the AOF
-                if (!ClusterProvider.serverOptions.FastAofTruncate)
-                    _ = ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
+                // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
 
                 async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
                 {
