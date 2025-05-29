@@ -300,12 +300,11 @@ namespace Garnet.cluster
         /// <returns></returns>
         public string GetLatestCheckpointFromMemoryInfo()
         {
-            var _tail = tail;
-            if (_tail == null)
-                return "(empty)";
-
             try
             {
+                var _tail = tail;
+                if (_tail == null)
+                    return "(empty)";
                 return _tail.ToString();
             }
             catch
@@ -320,11 +319,11 @@ namespace Garnet.cluster
         /// <returns></returns>
         public string GetLatestCheckpointFromDiskInfo()
         {
-            var cEntry = GetLatestCheckpointEntryFromDisk();
-            if (cEntry == null)
-                return "(empty)";
             try
             {
+                var cEntry = GetLatestCheckpointEntryFromDisk();
+                if (cEntry == null)
+                    return "(empty)";
                 return cEntry.ToString();
             }
             catch
