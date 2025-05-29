@@ -295,16 +295,23 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
+                var tasks = new Task[nodes.Length];
                 for (var i = 0; i < nodes.Length; i++)
+                    tasks[i] = DisposeNode(i);
+                Task.WaitAll(tasks);
+            }
+
+            Task DisposeNode(int i)
+            {
+                if (nodes[i] != null)
                 {
-                    if (nodes[i] != null)
-                    {
-                        logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
-                        nodes[i].Dispose();
-                        nodes[i] = null;
-                        logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
-                    }
+                    logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                    var node = nodes[i];
+                    nodes[i] = null;
+                    node.Dispose();
+                    logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                 }
+                return Task.CompletedTask; // Ensure all code paths return a Task
             }
         }
 
