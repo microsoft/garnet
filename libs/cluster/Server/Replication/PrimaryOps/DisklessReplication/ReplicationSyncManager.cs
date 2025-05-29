@@ -109,8 +109,10 @@ namespace Garnet.cluster
         {
             try
             {
+                var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
                 // Give opportunity to other replicas to attach for streaming sync
-                if (ClusterProvider.serverOptions.ReplicaDisklessSyncDelay > 0)
+                // Only leader waits because it is the one that initiates the sync driver, so everybody else will wait for it to complete.
+                if (ClusterProvider.serverOptions.ReplicaDisklessSyncDelay > 0 && isLeader)
                     Thread.Sleep(TimeSpan.FromSeconds(ClusterProvider.serverOptions.ReplicaDisklessSyncDelay));
 
                 // Signal syncing in-progress
@@ -118,7 +120,6 @@ namespace Garnet.cluster
 
                 // Only one thread should be the leader who initiates the sync driver.
                 // This will be the task added first in the replica sync session array.
-                var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
                 if (isLeader)
                 {
                     // Launch a background task to sync the attached replicas using streaming snapshot
