@@ -37,7 +37,7 @@ namespace Garnet.cluster
             if (!_sslots.Contains(slot))
                 return true;
 
-            var state = KeyMigrationStatus.QUEUED;
+            var state = SketchStatus.INITIALIZING;
             foreach (var migrateScan in migrateScan)
             {
                 if (migrateScan.Probe(ref key, out state))
@@ -52,9 +52,9 @@ namespace Garnet.cluster
             // Check definition of KeyMigrationStatus for more info
             return state switch
             {
-                KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,// Both reads and write commands can access key if it exists
-                KeyMigrationStatus.MIGRATING => readOnly, // If key exists read commands can access key but write commands will be delayed
-                KeyMigrationStatus.DELETING => false, // Neither read or write commands can access key
+                SketchStatus.INITIALIZING or SketchStatus.MIGRATED => true,// Both reads and write commands can access key if it exists
+                SketchStatus.TRANSMITTING => readOnly, // If key exists read commands can access key but write commands will be delayed
+                SketchStatus.DELETING => false, // Neither read or write commands can access key
                 _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
             };
         }
