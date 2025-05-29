@@ -64,17 +64,17 @@ namespace Garnet.cluster
                 gcs.Dispose();
             }
 
-            public void SetPhase(MigratePhase phase) => this.phase = phase;
+            public void SetScanPhase(MigratePhase phase) => this.phase = phase;
 
-            public bool Probe(ref ArgSlice key, out KeyMigrationStatus status)
+            public bool Probe(ref ArgSlice key, out SketchStatus status)
             {
                 var spanByte = key.SpanByte;
                 return Probe(ref spanByte, out status);
             }
 
-            public bool Probe(ref SpanByte key, out KeyMigrationStatus status) => sketch.Probe(ref key, out status);
+            public bool Probe(ref SpanByte key, out SketchStatus status) => sketch.Probe(ref key, out status);
 
-            public void SetKeysStatus(KeyMigrationStatus status) => sketch.SetStatus(status);
+            public void SetSketchStatus(SketchStatus status) => sketch.SetStatus(status);
 
             #region commonScanMethods
             public bool OnStart(long beginAddress, long endAddress, StoreType storeType)

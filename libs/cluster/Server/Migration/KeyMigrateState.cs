@@ -4,34 +4,35 @@
 namespace Garnet.cluster
 {
     /// <summary>
-    /// Used to mark the state of key owned by single given MigrateSession during key migration
+    /// Use to mark the status of the sketch that contains a collection of keys that need to be migrated
+    /// to a target node.
     /// </summary>
-    public enum KeyMigrationStatus : byte
+    public enum SketchStatus : byte
     {
         /// <summary>
-        /// Key owned by a specific MigrateSession but is not actively being migrated.
-        /// Reads and writes can be served if the keys exist
+        /// Sketch is being constructed by adding keys to be sent to the target node.
+        /// Reads and writes can be served if the keys exists in the database.
         /// </summary>
-        QUEUED,
+        INITIALIZING,
 
         /// <summary>
-        /// Key is actively being migrated by a specific MigrateSession.
-        /// Writes will be delayed until status goes back to QUEUED or MIGRATED
+        /// Keys previously added to the sketch are being actively send to the target node.
+        /// Writes to referenced keys will be delayed until sketch status reaches MIGRATED.
         /// Reads can be served without any restriction.
         /// </summary>
-        MIGRATING,
+        TRANSMITTING,
 
         /// <summary>
-        /// Key is being deleted after it was sent to the target node.
-        /// Reads and writes will be delayed.
-        /// We need to delay reads to avoid the scenario where a key exists during validation but was deleted before read executes.
+        /// Keys previously added to the sketch are being deleted, after being sent to the target node.
+        /// Reads and writes to referenced kesy will be delayed.
+        /// We need to delay reads to avoid the scenario where a key exists during validation but was deleted before the actual read operation executes.
         /// </summary>
         DELETING,
 
         /// <summary>
-        /// Key owned by a specific MigrateSession and has completed all the steps to be MIGRATED to target node.
-        /// This does not mean that key existed or has not expired, just that all the steps associated with MIGRATED have completed.
-        /// This can happen for a key that was provided as an argument in MIGRATE command but did not exist or expired for both main and object stores.
+        /// Keys added to the corresponding sketch are now migrated to the target node.
+        /// Read and writes are free to proceed.
+        /// Because keys were deleted earlier the operations will result in a -ASK redirection message.
         /// </summary>
         MIGRATED,
     }
