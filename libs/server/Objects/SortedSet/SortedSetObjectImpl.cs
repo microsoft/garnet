@@ -28,6 +28,13 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
+        private enum SpecialRanges : byte
+        {
+            None = 0,
+            InfiniteMin = 1,
+            InfiniteMax = 2
+        }
+
         bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, ref RespMemoryWriter writer)
         {
             options = SortedSetAddOption.None;
@@ -932,23 +939,32 @@ namespace Garnet.server
             var elementsInLex = new List<(double, byte[])>();
 
             // parse boundaries
-            if (!TryParseLexParameter(minParamByteArray, out var minValueChars, out bool minValueExclusive) ||
-                !TryParseLexParameter(maxParamByteArray, out var maxValueChars, out bool maxValueExclusive))
+            if (!TryParseLexParameter(minParamByteArray, out var minValueChars, out var minValueExclusive, out var minValueInfinity) ||
+                !TryParseLexParameter(maxParamByteArray, out var maxValueChars, out var maxValueExclusive, out var maxValueInfinity))
             {
                 errorCode = int.MaxValue;
                 return elementsInLex;
             }
 
+            if (doReverse)
+            {
+                var tmpMinValueChars = minValueChars;
+                minValueChars = maxValueChars;
+                maxValueChars = tmpMinValueChars;
+
+                (maxValueInfinity, minValueInfinity) = (minValueInfinity, maxValueInfinity);
+                (maxValueExclusive, minValueExclusive) = (minValueExclusive, maxValueExclusive);
+            }
+
+            if (minValueInfinity == SpecialRanges.InfiniteMax || maxValueInfinity == SpecialRanges.InfiniteMin)
+            {
+                errorCode = 0;
+                return elementsInLex;
+            }
+
             try
             {
-                if (doReverse)
-                {
-                    var tmpMinValueChars = minValueChars;
-                    minValueChars = maxValueChars;
-                    maxValueChars = tmpMinValueChars;
-                }
-
-                var iterator = sortedSet.GetViewBetween((sortedSet.Min.Item1, minValueChars.ToArray()), sortedSet.Max);
+                var iterator = sortedSet.GetViewBetween((sortedSet.Min.Score, minValueChars.ToArray()), sortedSet.Max);
 
                 // using ToList method so we avoid the Invalid operation ex. when removing
                 foreach (var item in iterator.ToList())
@@ -958,23 +974,29 @@ namespace Garnet.server
                         continue;
                     }
 
-                    var inRange = new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(minValueChars);
-                    if (inRange < 0 || (inRange == 0 && minValueExclusive))
-                        continue;
+                    if (minValueInfinity != SpecialRanges.InfiniteMin)
+                    {
+                        var inRange = new ReadOnlySpan<byte>(item.Element).SequenceCompareTo(minValueChars);
+                        if (inRange < 0 || (inRange == 0 && minValueExclusive))
+                            continue;
+                    }
 
-                    var outRange = maxValueChars.IsEmpty ? -1 : new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(maxValueChars);
-                    if (outRange > 0 || (outRange == 0 && maxValueExclusive))
-                        break;
+                    if (maxValueInfinity != SpecialRanges.InfiniteMax)
+                    {
+                        var outRange = new ReadOnlySpan<byte>(item.Element).SequenceCompareTo(maxValueChars);
+                        if (outRange > 0 || (outRange == 0 && maxValueExclusive))
+                            break;
+                    }
 
                     if (rem)
                     {
-                        if (sortedSetDict.TryGetValue(item.Item2, out var _key))
+                        if (sortedSetDict.TryGetValue(item.Element, out var _key))
                         {
-                            sortedSetDict.Remove(item.Item2);
-                            sortedSet.Remove((_key, item.Item2));
+                            sortedSetDict.Remove(item.Element);
+                            sortedSet.Remove((_key, item.Element));
                             TryRemoveExpiration(item.Element);
 
-                            this.UpdateSize(item.Item2, false);
+                            UpdateSize(item.Element, false);
                         }
                     }
                     elementsInLex.Add(item);
@@ -1102,27 +1124,46 @@ namespace Garnet.server
         /// <summary>
         /// Helper method to parse parameter when using Lexicographical ranges
         /// </summary>
-        private static bool TryParseLexParameter(ReadOnlySpan<byte> val, out ReadOnlySpan<byte> limitChars, out bool limitExclusive)
+        private bool TryParseLexParameter(ReadOnlySpan<byte> val,
+                                          out ReadOnlySpan<byte> limitChars,
+                                          out bool limitExclusive,
+                                          out SpecialRanges infinity)
         {
             limitChars = default;
             limitExclusive = false;
+            infinity = SpecialRanges.None;
 
             switch (val[0])
             {
-                case (byte)'+':
                 case (byte)'-':
+                    infinity = SpecialRanges.InfiniteMin;
+                    return true;
+                case (byte)'+':
+                    infinity = SpecialRanges.InfiniteMax;
                     return true;
                 case (byte)'[':
                     limitChars = val.Slice(1);
                     limitExclusive = false;
-                    return true;
+                    break;
                 case (byte)'(':
                     limitChars = val.Slice(1);
                     limitExclusive = true;
-                    return true;
+                    break;
                 default:
                     return false;
             }
+
+            if (limitChars.Length == 1)
+            {
+                if ((limitChars[0] == '-') || (limitChars[0] == '+'))
+                {
+                    // Redis accepts [+ yet in practice seems to treat it as a minimum.
+                    infinity = SpecialRanges.InfiniteMin;
+                    limitChars = default;
+                }
+            }
+
+            return true;
         }
 
         #endregion
