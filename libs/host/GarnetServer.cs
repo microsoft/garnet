@@ -94,15 +94,6 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (commandLineArgs != null && commandLineArgs.Length > 0)
-            {
-                initLogger.LogInformation("Server initialized with command line arguments: {args}", string.Join(" ", commandLineArgs));
-            }
-            else
-            {
-                initLogger.LogInformation("Server initialized with no command line arguments.");
-            }
-
             if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, logger: this.initLogger))
             {
                 if (exitGracefully)
