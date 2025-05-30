@@ -584,6 +584,8 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
@@ -602,22 +604,22 @@ namespace Garnet.test.cluster
 
             // Populate Primary
             if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
             else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
+                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
 
             // Wait for replication offsets to synchronize
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
 
             if (checkpoint)
             {
-                var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
-                var replicaLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
-                context.clusterTestUtils.Checkpoint(0);
-                context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
-                context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
-                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+                var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+                var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.Checkpoint(primaryIndex);
+                context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
             }
 
             #region InitiateFailover
@@ -631,15 +633,16 @@ namespace Garnet.test.cluster
             #endregion
 
             // Wait for attaching primary to finish
-            context.clusterTestUtils.WaitForNoFailover(1, logger: context.logger);
+            context.clusterTestUtils.WaitForNoFailover(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, logger: context.logger);
             // Enable when old primary becomes replica
-            context.clusterTestUtils.WaitForReplicaRecovery(0, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, logger: context.logger);
 
             // Check if allowed to write to new Primary
             if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0, slotMap: slotMap);
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, slotMap: slotMap);
             else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount, slotMap: slotMap);
+                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, addCount, slotMap: slotMap);
         }
 
         [Test, Order(12)]
