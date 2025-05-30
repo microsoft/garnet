@@ -745,7 +745,7 @@ namespace Garnet.server
             long scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
             long scanTill = StoreWrapper.store.Log.TailAddress;
 
-            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeys(
+            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(
                 cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
 
             long numExpiredKeysFound = keys.Count;
@@ -781,10 +781,10 @@ namespace Garnet.server
                 db.ObjStoreActiveExpDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            long scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
-            long scanTill = StoreWrapper.store.Log.TailAddress;
+            long scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
+            long scanTill = StoreWrapper.objectStore.Log.TailAddress;
 
-            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeys(
+            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(
                 cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
 
             long numExpiredKeysFound = keys.Count;

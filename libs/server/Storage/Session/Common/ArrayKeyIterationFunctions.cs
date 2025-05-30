@@ -17,6 +17,7 @@ namespace Garnet.server
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
         private ArrayKeyIterationFunctions.MainStoreGetExpiredKeys mainStoreDbExpiredScanFuncs;
+        private ArrayKeyIterationFunctions.ObjectStoreGetExpiredKeys objectStoreDbExpiredScanFuncs;
 
         // Iterators for KEYS command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
@@ -113,7 +114,7 @@ namespace Garnet.server
         /// <summary>
         /// Iterates over hybrid log collecting keys that point to live, expired records.
         /// </summary>
-        internal (bool, long) ScanExpiredKeys(long cursor, out long storeCursor, out List<byte[]> keys, long endAddress, ReadOnlySpan<byte> typeObject = default)
+        internal (bool, long) ScanExpiredKeysMainStore(long cursor, out long storeCursor, out List<byte[]> keys, long endAddress)
         {
             Keys ??= new();
             Keys.Clear();
@@ -125,6 +126,23 @@ namespace Garnet.server
 
             storeCursor = cursor;
             return (basicContext.Session.ScanCursor(ref storeCursor, count: int.MaxValue, mainStoreDbExpiredScanFuncs, endAddress, validateCursor: cursor != 0 && cursor != lastScanCursor), mainStoreDbExpiredScanFuncs.totalRecordsScanned);
+        }
+
+        /// <summary>
+        /// Iterates over hybrid log collecting keys that point to live, expired records.
+        /// </summary>
+        internal (bool, long) ScanExpiredKeysObjectStore(long cursor, out long storeCursor, out List<byte[]> keys, long endAddress)
+        {
+            Keys ??= new();
+            Keys.Clear();
+
+            keys = Keys;
+
+            objectStoreDbExpiredScanFuncs ??= new();
+            objectStoreDbExpiredScanFuncs.Initialize(keys);
+
+            storeCursor = cursor;
+            return (objectStoreBasicContext.Session.ScanCursor(ref storeCursor, count: int.MaxValue, objectStoreDbExpiredScanFuncs, endAddress, validateCursor: cursor != 0 && cursor != lastScanCursor), objectStoreDbExpiredScanFuncs.totalRecordsScanned);
         }
 
         /// <summary>
@@ -229,67 +247,47 @@ namespace Garnet.server
                 }
             }
 
-            internal sealed class ObjectStoreGetExpiredKeys : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal sealed class ObjectStoreGetExpiredKeys : ExpiredKeysBase<byte[], IGarnetObject>
             {
-                public long totalRecordsScanned;
-
-                private readonly GetDBKeysInfo info;
-
-                internal ObjectStoreGetExpiredKeys() => info = new();
-
-                internal void Initialize(List<byte[]> keys)
-                    => info.Initialize(keys, default, 0);
-
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords,out cursorRecordResult);
-
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                {
-                    totalRecordsScanned++;
-                    if (value.Expiration < 0 || !ObjectSessionFunctions.CheckExpiry(value))
-                        cursorRecordResult = CursorRecordResult.Skip;
-                    else
-                    {
-                        cursorRecordResult = CursorRecordResult.Accept;
-                        info.keys.Add(key);
-                    }
-
-                    return true;
-                }
-
-                public bool OnStart(long beginAddress, long endAddress)
-                {
-                    totalRecordsScanned = 0;
-                    return true;
-                }
-
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
+                protected override bool IsExpired(ref IGarnetObject value) => value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value);
+                protected override byte[] TransformKeyForSaving(byte[] key) => key;
             }
 
-            internal sealed class MainStoreGetExpiredKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed class MainStoreGetExpiredKeys : ExpiredKeysBase<SpanByte, SpanByte>
+            {
+                protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
+                protected override byte[] TransformKeyForSaving(SpanByte key) => key.ToByteArray();
+            }
+
+            internal abstract class ExpiredKeysBase<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
             {
                 public long totalRecordsScanned;
 
                 private readonly GetDBKeysInfo info;
 
-                internal MainStoreGetExpiredKeys() => info = new();
+                internal ExpiredKeysBase() => info = new();
 
                 internal void Initialize(List<byte[]> keys)
                     => info.Initialize(keys, default, 0);
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                protected abstract bool IsExpired(ref TValue value);
+
+                protected abstract byte[] TransformKeyForSaving(TKey key);
+
+                public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                         => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     totalRecordsScanned++;
-                    if (value.MetadataSize == 0 || !MainSessionFunctions.CheckExpiry(ref value))
-                        cursorRecordResult = CursorRecordResult.Skip;
-                    else
+                    if (IsExpired(ref value))
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        info.keys.Add(key.ToByteArray());
+                        info.keys.Add(TransformKeyForSaving(key));
+                    }
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Skip;
                     }
 
                     return true;
@@ -303,6 +301,7 @@ namespace Garnet.server
 
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
+
             }
 
             internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>
