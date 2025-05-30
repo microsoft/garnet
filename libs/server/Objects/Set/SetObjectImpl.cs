@@ -54,11 +54,7 @@ namespace Garnet.server
 #else
             var isMember = Set.Contains(member.ToArray());
 #endif
-            if (isMember)
-                writer.WriteOne();
-            else
-                writer.WriteZero();
-
+            writer.WriteInt32(isMember ? 1 : 0);
             output.Header.result1 = 1;
         }
 
@@ -76,10 +72,7 @@ namespace Garnet.server
 #else
                 var isMember = Set.Contains(member.ToArray());
 #endif
-                if (isMember)
-                    writer.WriteOne();
-                else
-                    writer.WriteZero();
+                writer.WriteInt32(isMember ? 1 : 0);
             }
 
             output.Header.result1 = input.parseState.Count;

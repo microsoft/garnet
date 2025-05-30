@@ -72,20 +72,23 @@ namespace Garnet.server
                         break;
                     default:
                         success = false;
-                        WriteError($"ERR Could not purge {managerType}.");
+                        while (!RespWriteUtils.TryWriteError($"ERR Could not purge {managerType}.", ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
 
                 if (success)
                 {
                     GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
-                    WriteSimpleString(managerType.ToReadOnlySpan());
+                    while (!RespWriteUtils.TryWriteSimpleString(managerType.ToReadOnlySpan(), ref dcurr, dend))
+                        SendAndReset();
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "PURGEBP {type}:{managerType}", managerType, managerType.ToString());
-                WriteError($"ERR {ex.Message}");
+                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
                 return true;
             }
 
@@ -93,7 +96,8 @@ namespace Garnet.server
             {
                 if (clusterSession == null)
                 {
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                        SendAndReset();
                     return false;
                 }
                 storeWrapper.clusterProvider.PurgeBufferPool(managerType);

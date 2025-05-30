@@ -21,11 +21,13 @@ namespace Garnet.server
             }
 
             List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
-            WriteArrayLength(latencyCommands.Count);
+            while (!RespWriteUtils.TryWriteArrayLength(latencyCommands.Count, ref dcurr, dend))
+                SendAndReset();
 
             foreach (string command in latencyCommands)
             {
-                WriteSimpleString(command);
+                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -63,13 +65,15 @@ namespace Garnet.server
 
             if (invalid)
             {
-                WriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP");
+                while (!RespWriteUtils.TryWriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
                 var garnetLatencyMetrics = storeWrapper.monitor?.GlobalMetrics.globalLatencyMetrics;
                 string response = garnetLatencyMetrics != null ? garnetLatencyMetrics.GetRespHistograms(events) : "*0\r\n";
-                WriteAsciiDirect(response);
+                while (!RespWriteUtils.TryWriteAsciiDirect(response, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -107,7 +111,8 @@ namespace Garnet.server
 
             if (invalid)
             {
-                WriteError($"ERR Invalid type {invalidEvent}");
+                while (!RespWriteUtils.TryWriteError($"ERR Invalid type {invalidEvent}", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -117,7 +122,8 @@ namespace Garnet.server
                         storeWrapper.monitor.resetLatencyMetrics[e] = true;
                 }
 
-                WriteInt32(events.Count);
+                while (!RespWriteUtils.TryWriteInt32(events.Count, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;

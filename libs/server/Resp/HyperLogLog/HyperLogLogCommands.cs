@@ -39,7 +39,8 @@ namespace Garnet.server
                 // Invalid HLL Type
                 if (*output == 0xFF)
                 {
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
+                        SendAndReset();
                     return true;
                 }
 
@@ -48,13 +49,14 @@ namespace Garnet.server
 
             if (pfaddUpdated > 0)
             {
-                WriteOne();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
-                WriteZero();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
             }
-
             return true;
         }
 
@@ -79,11 +81,13 @@ namespace Garnet.server
             storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
             {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL);
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
-                WriteInt64(cardinality);
+                while (!RespWriteUtils.TryWriteInt64(cardinality, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -108,13 +112,15 @@ namespace Garnet.server
             // Invalid Type
             if (error)
             {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL);
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
+                    SendAndReset();
                 return true;
             }
 
             if (status == GarnetStatus.OK)
             {
-                WriteOK();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
             }
             return true;
         }

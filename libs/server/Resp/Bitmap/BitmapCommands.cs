@@ -184,7 +184,8 @@ namespace Garnet.server
             var status = storageApi.StringGetBit(ref sbKey, ref input, ref o);
 
             if (status == GarnetStatus.NOTFOUND)
-                WriteZero();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
             else
                 dcurr += o.Length;
 
@@ -231,7 +232,8 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
-                WriteZero();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -295,10 +297,9 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
-                if (bSetValSlice[0] == '0')
-                    WriteZero();
-                else
-                    WriteDirect(CmdStrings.RESP_RETURN_VAL_N1);
+                var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
+                while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -324,7 +325,8 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.BITOP, ref parseState);
 
             _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
-            WriteInt64(result);
+            while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
@@ -467,7 +469,6 @@ namespace Garnet.server
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
                 }
-
                 var offsetSlice = parseState.GetArgSliceByRef(currTokenIdx++);
 
                 secondaryCommandArgs.Add((RespCommand.GET, [commandSlice, encodingSlice, offsetSlice]));
@@ -484,7 +485,8 @@ namespace Garnet.server
                                                       ArgSlice overflowTypeSlice = default)
             where TGarnetApi : IGarnetApi
         {
-            WriteArrayLength(secondaryCommandArgs.Count);
+            while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
+                SendAndReset();
 
             var input = new RawStringInput(cmd);
 
@@ -512,11 +514,15 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND && opCode == RespCommand.GET)
                 {
-                    WriteZero();
+                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
+                        SendAndReset();
                 }
                 else
                 {
-                    ProcessOutput(output);
+                    if (!output.IsSpanByte)
+                        SendAndReset(output.Memory, output.Length);
+                    else
+                        dcurr += output.Length;
                 }
             }
 
