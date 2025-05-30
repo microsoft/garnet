@@ -77,9 +77,6 @@ namespace Garnet.cluster
         public void AddCheckpointEntry(CheckpointEntry entry, bool fullCheckpoint)
             => checkpointStore.AddCheckpointEntry(entry, fullCheckpoint);
 
-        public void PurgeAllCheckpointsExceptEntry(CheckpointEntry except)
-            => checkpointStore.PurgeAllCheckpointsExceptEntry(except);
-
         public bool TryGetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
             => checkpointStore.TryGetLatestCheckpointEntryFromMemory(out cEntry);
 

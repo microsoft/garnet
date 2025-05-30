@@ -74,35 +74,29 @@ namespace Garnet.cluster
             PurgeAllCheckpointsExceptTokens(StoreType.Main, entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
             if (!clusterProvider.serverOptions.DisableObjects)
                 PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.metadata.objectStoreHlogToken, entry.metadata.objectStoreIndexToken);
-        }
 
-        /// <summary>
-        /// Used to purge all checkpoint tokens except the tokens provided.
-        /// </summary>
-        /// <param name="storeType">StoreType</param>
-        /// <param name="logToken">GUID token for log</param>
-        /// <param name="indexToken">GUID token for index</param>
-        public void PurgeAllCheckpointsExceptTokens(StoreType storeType, Guid logToken, Guid indexToken)
-        {
-            var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
-
-            // Delete log checkpoints
-            foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
+            void PurgeAllCheckpointsExceptTokens(StoreType storeType, Guid logToken, Guid indexToken)
             {
-                if (!toDeletelogToken.Equals(logToken))
+                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
+
+                // Delete log checkpoints
+                foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
                 {
-                    logger.LogTrace("Deleting log token {toDeletelogToken}", toDeletelogToken);
-                    ckptManager.DeleteLogCheckpoint(toDeletelogToken);
+                    if (!toDeletelogToken.Equals(logToken))
+                    {
+                        logger.LogTrace("Deleting log token {toDeletelogToken}", toDeletelogToken);
+                        ckptManager.DeleteLogCheckpoint(toDeletelogToken);
+                    }
                 }
-            }
 
-            // Delete index checkpoints
-            foreach (var toDeleteIndexToken in ckptManager.GetIndexCheckpointTokens())
-            {
-                if (!toDeleteIndexToken.Equals(indexToken))
+                // Delete index checkpoints
+                foreach (var toDeleteIndexToken in ckptManager.GetIndexCheckpointTokens())
                 {
-                    logger.LogTrace("Deleting index token {toDeleteIndexToken}", toDeleteIndexToken);
-                    ckptManager.DeleteIndexCheckpoint(toDeleteIndexToken);
+                    if (!toDeleteIndexToken.Equals(indexToken))
+                    {
+                        logger.LogTrace("Deleting index token {toDeleteIndexToken}", toDeleteIndexToken);
+                        ckptManager.DeleteIndexCheckpoint(toDeleteIndexToken);
+                    }
                 }
             }
         }
