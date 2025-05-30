@@ -101,9 +101,10 @@ namespace Garnet.server
 
             GarnetStatus status = storageApi.DEL_Conditional(ref key, ref input);
 
-            var keysDeleted = status == GarnetStatus.OK ? 1 : 0;
+            int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
-            WriteInt32(keysDeleted);
+            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
@@ -207,7 +208,8 @@ namespace Garnet.server
 
             if (!errorMessage.IsEmpty)
             {
-                WriteError(errorMessage);
+                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
+                    SendAndReset();
                 return true;
             }
 
