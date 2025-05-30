@@ -295,17 +295,20 @@ namespace Garnet.test.cluster
         /// </summary>
         public void DisposeCluster()
         {
-            _ = Parallel.For(0, nodes.Length, i =>
+            if (nodes != null)
             {
-                if (nodes[i] != null)
+                _ = Parallel.For(0, nodes.Length, i =>
                 {
-                    logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
-                    var node = nodes[i];
-                    nodes[i] = null;
-                    node.Dispose();
-                    logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
-                }
-            });
+                    if (nodes[i] != null)
+                    {
+                        logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                        var node = nodes[i];
+                        nodes[i] = null;
+                        node.Dispose();
+                        logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
+                    }
+                });
+            }
         }
 
         /// <summary>
