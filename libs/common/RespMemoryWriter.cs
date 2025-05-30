@@ -413,7 +413,7 @@ namespace Garnet.common
         /// <param name="item"></param>
         /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteVerbatimTxtString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        public void WriteVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
         {
             if (resp3)
             {
