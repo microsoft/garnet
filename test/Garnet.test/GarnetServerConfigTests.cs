@@ -65,6 +65,33 @@ namespace Garnet.test
         }
 
         [Test]
+        public void OptionsDefaultAttributeUsage()
+        {
+            // Verify that there are no usages of the OptionsAttribute.Default property (all default values should be set in defaults.conf)
+            // Note that this test will not fail if the user is setting the Default property to the type's default value (yet can still cause an issue if done).
+            var propUsages = new List<string>();
+
+            foreach (var prop in typeof(Options).GetProperties())
+            {
+                var ignoreAttr = prop.GetCustomAttributes(typeof(JsonIgnoreAttribute)).FirstOrDefault();
+                if (ignoreAttr != null)
+                    continue;
+
+                var optionAttr = (OptionAttribute)prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
+                if (optionAttr == null)
+                    continue;
+
+                if (optionAttr.Default != default)
+                {
+                    propUsages.Add(prop.Name);
+                }
+            }
+
+            ClassicAssert.IsEmpty(propUsages,
+                $"Properties in {typeof(Options)} should not use {nameof(OptionAttribute)}.{nameof(OptionAttribute.Default)}. All default values should be specified in defaults.conf.");
+        }
+
+        [Test]
         public void ImportExportConfigLocal()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -93,7 +120,10 @@ namespace Garnet.test
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}", "--loadmodulecs", $"{Assembly.GetExecutingAssembly().Location}" };
+            var binPaths = new[] { GetFullExtensionBinPath("Garnet.test"), GetFullExtensionBinPath("Garnet.test.cluster") };
+            var modules = new[] { Assembly.GetExecutingAssembly().Location };
+
+            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
@@ -103,11 +133,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual(53, options.Port);
             ClassicAssert.AreEqual(2, options.RevivObjBinRecordCount);
             ClassicAssert.AreEqual(0.5, options.RevivifiableFraction);
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, options.RevivBinRecordCounts);
             ClassicAssert.IsTrue(options.Recover);
             ClassicAssert.IsTrue(File.Exists(configPath));
-            ClassicAssert.AreEqual(2, options.ExtensionBinPaths.Count());
-            ClassicAssert.AreEqual(1, options.LoadModuleCS.Count());
-            ClassicAssert.AreEqual(Assembly.GetExecutingAssembly().Location, options.LoadModuleCS.First());
+            CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
+            CollectionAssert.AreEqual(modules, options.LoadModuleCS);
 
             // Import from previous export command, no command line args
             // Check values from import path override values from default.conf
@@ -117,10 +147,14 @@ namespace Garnet.test
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
             ClassicAssert.IsTrue(options.MemorySize == "128m");
+            CollectionAssert.AreEqual(new[] { 1, 2, 3 }, options.RevivBinRecordCounts);
+            CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
+            CollectionAssert.AreEqual(modules, options.LoadModuleCS);
 
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
-            args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof"];
+            binPaths = [GetFullExtensionBinPath("Garnet.test")];
+            args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof", "--reviv-bin-record-counts", "4,5", "--extension-bin-paths", string.Join(',', binPaths)];
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
@@ -131,6 +165,8 @@ namespace Garnet.test
             ClassicAssert.IsFalse(options.Recover);
             ClassicAssert.IsTrue(options.DisableObjects);
             ClassicAssert.IsTrue(options.EnableAOF);
+            CollectionAssert.AreEqual(new[] { 4, 5 }, options.RevivBinRecordCounts);
+            CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
 
             // No import path, include command line args
             // Check that all invalid options flagged
