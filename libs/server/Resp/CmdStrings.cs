@@ -219,6 +219,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "ERR one or more binary file are not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS => "ERR command info file is not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "ERR unable to load one or more assemblies."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ACCESSING_ASSEMBLIES => "ERR unable to access one or more assemblies to check if it's digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "ERR one or more assemblies loaded is not digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS => "ERR unable to register one or more unsupported classes."u8;
@@ -258,6 +259,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
         public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_NOT_POSITIVE => "ERR COUNT must be > 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_LOADED_TYPES => "ERR Unable to load types from module. Ensure that the module is compatible with the current runtime."u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_NO_INTERFACE => "ERR Module does not implement the required interface"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_MULTIPLE_INTERFACES => "ERR Multiple modules present"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
