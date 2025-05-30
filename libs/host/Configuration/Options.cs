@@ -184,12 +184,14 @@ namespace Garnet
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
 
+        [HiddenOption]
         [Option("password", Required = false, HelpText = "Authentication string for password authentication.")]
         public string Password { get; set; }
 
         [Option("cluster-username", Required = false, HelpText = "Username to authenticate intra-cluster communication with.")]
         public string ClusterUsername { get; set; }
 
+        [HiddenOption]
         [Option("cluster-password", Required = false, HelpText = "Password to authenticate intra-cluster communication with.")]
         public string ClusterPassword { get; set; }
 
@@ -302,6 +304,7 @@ namespace Garnet
         [Option("cert-file-name", Required = false, HelpText = "TLS certificate file name (example: testcert.pfx).")]
         public string CertFileName { get; set; }
 
+        [HiddenOption]
         [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder).")]
         public string CertPassword { get; set; }
 
@@ -388,6 +391,7 @@ namespace Garnet
         [Option("storage-managed-identity", Required = false, HelpText = "The managed identity to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageManagedIdentity { get; set; }
 
+        [HiddenOption]
         [Option("storage-string", Required = false, HelpText = "The connection string to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageConnectionString { get; set; }
 
@@ -465,6 +469,10 @@ namespace Garnet
         [FilePathValidation(false, false, false)]
         [Option("config-export-path", Required = false, HelpText = "Export (save) current configuration options to the provided path")]
         public string ConfigExportPath { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        [Option("dump-config", Required = false, HelpText = "Dump all non-default configuration options to the trace log")]
+        public bool? DumpConfig { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
         [OptionValidation]
@@ -981,5 +989,15 @@ namespace Garnet
     public sealed class InvalidAzureConfiguration : Exception
     {
         public InvalidAzureConfiguration(string message) : base(message) { }
+    }
+
+    /// <summary>
+    /// This attribute ensures that a decorated configuration option is not dumped into the log
+    /// when the DumpConfig flag is set.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    public class HiddenOptionAttribute : Attribute
+    {
+
     }
 }
