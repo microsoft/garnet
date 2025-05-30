@@ -298,7 +298,6 @@ namespace Garnet.test.cluster
             return new GarnetServer(opts, loggerFactory);
         }
 
-
         /// <summary>
         /// Dispose created instances
         /// </summary>
