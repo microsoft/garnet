@@ -616,8 +616,8 @@ namespace Garnet
         public int MaxDatabases { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
-        [Option("main-store-expired-collection-freq", Required = false, HelpText = "Main store's expired key collection frequency in seconds")]
-        public int MainStoreExpiredKeyCollectionFrequencySecs { get; set; }
+        [Option("active-expired-collection-freq", Required = false, HelpText = "expired key collection frequency in seconds")]
+        public int ActiveExpiredKeyCollectionFrequencySecs { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -887,7 +887,7 @@ namespace Garnet
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
-                MainStoreExpiredKeyCollectionFrequencySecs = MainStoreExpiredKeyCollectionFrequencySecs,
+                ActiveExpiredKeyCollectionFrequencySecs = ActiveExpiredKeyCollectionFrequencySecs,
             };
         }
 

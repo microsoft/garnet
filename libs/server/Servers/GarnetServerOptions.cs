@@ -113,7 +113,7 @@ namespace Garnet.server
         /// <summary>
         /// Frequency of background expired key collection in seconds.
         /// </summary>
-        public int MainStoreExpiredKeyCollectionFrequencySecs = -1;
+        public int ActiveExpiredKeyCollectionFrequencySecs = -1;
 
         /// <summary>
         /// Index resize check frequency in seconds.

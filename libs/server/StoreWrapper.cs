@@ -752,17 +752,17 @@ namespace Garnet.server
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
 
-            if (serverOptions.MainStoreExpiredKeyCollectionFrequencySecs > 0)
+            if (serverOptions.ActiveExpiredKeyCollectionFrequencySecs > 0)
             {
                 // Internally the below methods use Task.Run to run background tasks that loops asynchronously wake up and run collection rounds
                 databaseManager.MainStoreCollectExpiredKeysInBackgroundTask(
-                    serverOptions.MainStoreExpiredKeyCollectionFrequencySecs,
+                    serverOptions.ActiveExpiredKeyCollectionFrequencySecs,
                     logger, ctsCommit.Token);
                 
                 if (!serverOptions.DisableObjects)
                 {
                     databaseManager.ObjStoreCollectExpiredKeysInBackgroundTask(
-                        serverOptions.MainStoreExpiredKeyCollectionFrequencySecs,
+                        serverOptions.ActiveExpiredKeyCollectionFrequencySecs,
                         logger, ctsCommit.Token);
                 }
             }
