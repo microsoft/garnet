@@ -616,6 +616,10 @@ namespace Garnet
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
 
+        [OptionValidation]
+        [Option("streams", Required = false, HelpText = "Enable streams on server.")]
+        public bool? EnableStreams { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -884,6 +888,7 @@ namespace Garnet
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
+                EnableStreams = EnableStreams.GetValueOrDefault(),
             };
         }
 
