@@ -39,7 +39,7 @@ namespace Garnet
 
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                // Only write properties with the OptionsAttribute, and are not marked with the JsonIgnore or HiddenOption attributes
+                // Only write properties with the OptionAttribute, and are not marked with the JsonIgnore or HiddenOption attributes
                 var ignoreAttr = prop.GetCustomAttributes(typeof(JsonIgnoreAttribute)).FirstOrDefault();
                 if (ignoreAttr != null)
                     continue;
