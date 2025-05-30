@@ -295,15 +295,7 @@ namespace Garnet.test.cluster
         /// </summary>
         public void DisposeCluster()
         {
-            if (nodes != null)
-            {
-                var tasks = new Task[nodes.Length];
-                for (var i = 0; i < nodes.Length; i++)
-                    tasks[i] = DisposeNode(i);
-                Task.WaitAll(tasks);
-            }
-
-            Task DisposeNode(int i)
+            _ = Parallel.For(0, nodes.Length, i =>
             {
                 if (nodes[i] != null)
                 {
@@ -313,8 +305,7 @@ namespace Garnet.test.cluster
                     node.Dispose();
                     logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                 }
-                return Task.CompletedTask; // Ensure all code paths return a Task
-            }
+            });
         }
 
         /// <summary>
