@@ -161,6 +161,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
         public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
         public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
+        public static ReadOnlySpan<byte> MAIN => "MAIN"u8;
+        public static ReadOnlySpan<byte> OBJ => "OBJ"u8;
 
         /// <summary>
         /// Response strings
@@ -291,6 +293,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
+        public static ReadOnlySpan<byte> RESP_INVALID_ACTIVE_EXP_RANGE => "Invalid range argument. Range should be an integer between 0-100"u8;
+        public static ReadOnlySpan<byte> RESP_INVALID_STORE_OPTION => "Invalid store option. Options can only be MAIN or OBJ"u8;
+
         /// <summary>
         /// Response string templates
         /// </summary>
@@ -500,5 +505,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_NOT => "NOT"u8;
         public static ReadOnlySpan<byte> LUA_KEYS => "KEYS"u8;
         public static ReadOnlySpan<byte> LUA_ARGV => "ARGV"u8;
+        public static ReadOnlySpan<byte> ACTEXP => "ACTEXP"u8;
     }
 }

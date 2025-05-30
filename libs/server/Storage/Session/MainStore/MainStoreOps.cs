@@ -380,7 +380,7 @@ namespace Garnet.server
         public unsafe GarnetStatus DEL_Conditional<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            Debug.Assert(input.header.cmd == RespCommand.DELIFGREATER);
+            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER or RespCommand.DELIFEXPIM);
 
             byte* pbOutput = stackalloc byte[8];
             var o = new SpanByteAndMemory(pbOutput, 8);

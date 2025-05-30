@@ -100,7 +100,17 @@ namespace Garnet.server
         /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
-        internal StorageSession DatabaseStorageSession;
+        internal StorageSession ObjectStoreCollectionDatabaseStorageSession;
+
+        /// <summary>
+        /// Storage session intended for main-store expired key collection operations
+        /// </summary>
+        internal StorageSession MainStoreActiveExpDbStorageSession;
+
+        /// <summary>
+        /// Storage session intended for object-store expired key collection operations
+        /// </summary>
+        internal StorageSession ObjStoreActiveExpDbStorageSession;
 
         bool disposed = false;
 
@@ -165,7 +175,9 @@ namespace Garnet.server
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
-            DatabaseStorageSession?.Dispose();
+            ObjectStoreCollectionDatabaseStorageSession?.Dispose();
+            MainStoreActiveExpDbStorageSession?.Dispose();
+            ObjStoreActiveExpDbStorageSession?.Dispose();
 
             if (ObjectStoreSizeTracker != null)
             {
