@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
 using Garnet.server.Auth.Settings;
@@ -19,7 +20,8 @@ namespace Garnet.server
         {
             if (_authenticator is null or not GarnetACLAuthenticator)
             {
-                WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED);
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
+                    SendAndReset();
                 return false;
             }
             return true;
@@ -29,14 +31,16 @@ namespace Garnet.server
         {
             if (storeWrapper.serverOptions.AuthSettings is not AclAuthenticationSettings)
             {
-                WriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED);
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ACL_AUTH_DISABLED, ref dcurr, dend))
+                    SendAndReset();
                 return false;
             }
 
             var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
             if (aclAuthenticationSettings.AclConfigurationFile == null)
             {
-                WriteError(CmdStrings.RESP_ERR_ACL_AUTH_FILE_DISABLED);
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ACL_AUTH_FILE_DISABLED, ref dcurr, dend))
+                    SendAndReset();
                 return false;
             }
 
@@ -52,7 +56,8 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -61,11 +66,13 @@ namespace Garnet.server
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
                 var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
-                WriteArrayLength(userHandles.Count);
+                while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
+                    SendAndReset();
 
                 foreach (var userHandle in userHandles)
                 {
-                    WriteAsciiBulkString(userHandle.Value.User.DescribeUser());
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 
@@ -81,7 +88,8 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL USERS.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL USERS.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -90,11 +98,13 @@ namespace Garnet.server
 
                 var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
                 var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
-                WriteArrayLength(users.Count);
+                while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
+                    SendAndReset();
 
                 foreach (var user in users)
                 {
-                    WriteAsciiBulkString(user.Key);
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 
@@ -110,7 +120,8 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -118,11 +129,12 @@ namespace Garnet.server
                     return true;
 
                 var categories = ACLParser.ListCategories();
-                WriteArrayLength(categories.Count);
+                RespWriteUtils.TryWriteArrayLength(categories.Count, ref dcurr, dend);
 
                 foreach (var category in categories)
                 {
-                    WriteAsciiBulkString(category);
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(category, ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 
@@ -138,7 +150,8 @@ namespace Garnet.server
             // Have to have at least the username
             if (parseState.Count == 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SETUSER.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SETUSER.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -196,12 +209,14 @@ namespace Garnet.server
                 catch (ACLException exception)
                 {
                     // Abort command execution
-                    WriteError($"ERR {exception.Message}");
+                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                        SendAndReset();
 
                     return true;
                 }
 
-                WriteOK();
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -216,7 +231,8 @@ namespace Garnet.server
             // Have to have at least the username
             if (parseState.Count == 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -244,13 +260,15 @@ namespace Garnet.server
                     logger?.LogDebug("ACLException: {message}", exception.Message);
 
                     // Abort command execution
-                    WriteError($"ERR {exception.Message}");
+                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                        SendAndReset();
 
                     return true;
                 }
 
                 // Return the number of successful deletes
-                WriteInt32(successfulDeletes);
+                while (!RespWriteUtils.TryWriteInt32(successfulDeletes, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -265,7 +283,8 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -292,7 +311,8 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -313,11 +333,13 @@ namespace Garnet.server
                     logger?.LogInformation("Reading updated ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
                     storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
 
-                    WriteOK();
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
                 }
                 catch (ACLException exception)
                 {
-                    WriteError($"ERR {exception.Message}");
+                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 
@@ -332,7 +354,8 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.", ref dcurr, dend))
+                    SendAndReset();
             }
 
             if (!ValidateACLAuthenticator())
@@ -354,12 +377,15 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "ACL SAVE faulted");
-                WriteError($"ERR {ex.Message}");
+                while (!RespWriteUtils.TryWriteError($"ERR {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
 
                 return true;
             }
 
-            WriteOK();
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 
@@ -372,7 +398,8 @@ namespace Garnet.server
             // The username must be provided.
             if (parseState.Count != 1)
             {
-                WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL GETUSER.");
+                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL GETUSER.", ref dcurr, dend))
+                    SendAndReset();
             }
             else
             {
@@ -396,7 +423,8 @@ namespace Garnet.server
                 catch (ACLException exception)
                 {
                     // Abort command execution
-                    WriteError($"ERR {exception.Message}");
+                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                        SendAndReset();
 
                     return true;
                 }
@@ -409,25 +437,32 @@ namespace Garnet.server
                 {
                     WriteMapLength(3);
 
-                    WriteAsciiBulkString("flags");
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
+                        SendAndReset();
 
                     WriteSetLength(1);
 
-                    WriteAsciiBulkString(user.IsEnabled ? "on" : "off");
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
+                        SendAndReset();
 
                     var passwords = user.Passwords;
-                    WriteAsciiBulkString("passwords");
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("passwords", ref dcurr, dend))
+                        SendAndReset();
 
-                    WriteArrayLength(passwords.Count);
+                    while (!RespWriteUtils.TryWriteArrayLength(passwords.Count, ref dcurr, dend))
+                        SendAndReset();
 
                     foreach (var password in passwords)
                     {
-                        WriteAsciiBulkString($"#{password.ToString()}");
+                        while (!RespWriteUtils.TryWriteAsciiBulkString($"#{password.ToString()}", ref dcurr, dend))
+                            SendAndReset();
                     }
 
-                    WriteAsciiBulkString("commands");
+                    while (!RespWriteUtils.TryWriteAsciiBulkString("commands", ref dcurr, dend))
+                        SendAndReset();
 
-                    WriteAsciiBulkString(user.GetEnabledCommandsDescription());
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.GetEnabledCommandsDescription(), ref dcurr, dend))
+                        SendAndReset();
                 }
             }
 

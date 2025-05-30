@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
+
 namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
@@ -75,12 +77,16 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    WriteArrayLength(2);
-                    WriteInt32AsBulkString(0);
-                    WriteEmptyArray();
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteInt32AsBulkString(0, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                     break;
             }
 

@@ -92,7 +92,8 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                     break;
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
@@ -182,8 +183,8 @@ namespace Garnet.server
                             break;
                         default:
                             var inputCount = parseState.Count - 1;
-
-                            WriteArrayLength(inputCount);
+                            while (!RespWriteUtils.TryWriteArrayLength(inputCount, ref dcurr, dend))
+                                SendAndReset();
                             for (var i = 0; i < inputCount; i++)
                             {
                                 WriteNullArray();
@@ -193,7 +194,8 @@ namespace Garnet.server
 
                     break;
                 case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                     break;
             }
 
@@ -294,11 +296,13 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.NOTFOUND:
-                    WriteEmptyArray();
+                    while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
                     break;
 
                 case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                     break;
             }
 
