@@ -1710,8 +1710,10 @@ namespace Garnet.server
 
             for (var i = 0; i < result.Items.Length; ++i)
             {
-                WriteArrayLength(2);
-                WriteBulkString(result.Items[i]);
+                while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.TryWriteBulkString(result.Items[i], ref dcurr, dend))
+                    SendAndReset();
                 WriteDoubleNumeric(result.Scores[i]);
             }
 
