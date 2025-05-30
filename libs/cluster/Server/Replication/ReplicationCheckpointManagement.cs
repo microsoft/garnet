@@ -39,9 +39,9 @@ namespace Garnet.cluster
                 index_size = storeWrapper.store.GetIndexFileSize(entry.metadata.storeIndexToken);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
-                logger?.LogError("Waiting for main store metadata to settle");
+                logger?.LogError(ex, "Waiting for main store metadata to settle");
                 return false;
             }
         }
