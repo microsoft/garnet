@@ -14,7 +14,7 @@ namespace Garnet.cluster
         public bool InitializeCheckpointStore()
         {
             checkpointStore.Initialize();
-            if (checkpointStore.GetLatestCheckpointEntryFromMemory(out var cEntry))
+            if (checkpointStore.TryGetLatestCheckpointEntryFromMemory(out var cEntry))
             {
                 aofTaskStore.UpdateTruncatedUntil(cEntry.GetMinAofCoveredAddress());
                 cEntry.RemoveReader();
@@ -39,9 +39,9 @@ namespace Garnet.cluster
                 index_size = storeWrapper.store.GetIndexFileSize(entry.metadata.storeIndexToken);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
-                logger?.LogError("Waiting for main store metadata to settle");
+                logger?.LogError(ex, "Waiting for main store metadata to settle");
                 return false;
             }
         }
@@ -62,9 +62,9 @@ namespace Garnet.cluster
                 index_size = storeWrapper.objectStore.GetIndexFileSize(entry.metadata.objectStoreIndexToken);
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
-                logger?.LogError("Waiting for object store metadata to settle");
+                logger?.LogError(ex, "Waiting for object store metadata to settle");
                 return false;
             }
         }
@@ -77,11 +77,8 @@ namespace Garnet.cluster
         public void AddCheckpointEntry(CheckpointEntry entry, bool fullCheckpoint)
             => checkpointStore.AddCheckpointEntry(entry, fullCheckpoint);
 
-        public void PurgeAllCheckpointsExceptEntry(CheckpointEntry except)
-            => checkpointStore.PurgeAllCheckpointsExceptEntry(except);
-
-        public bool GetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
-            => checkpointStore.GetLatestCheckpointEntryFromMemory(out cEntry);
+        public bool TryGetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
+            => checkpointStore.TryGetLatestCheckpointEntryFromMemory(out cEntry);
 
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()
             => checkpointStore.GetLatestCheckpointEntryFromDisk();

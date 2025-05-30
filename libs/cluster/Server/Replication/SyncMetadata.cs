@@ -128,8 +128,8 @@ namespace Garnet.cluster
 
         public byte[] ToByteArray()
         {
-            var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms, Encoding.ASCII);
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms, Encoding.ASCII);
 
             writer.Write(fullSync);
             writer.Write((byte)originNodeRole);
@@ -154,16 +154,13 @@ namespace Garnet.cluster
                 writer.Write(0);
             }
 
-            var byteArray = ms.ToArray();
-            writer.Dispose();
-            ms.Dispose();
-            return byteArray;
+            return ms.ToArray();
         }
 
         public static SyncMetadata FromByteArray(byte[] serialized)
         {
-            var ms = new MemoryStream(serialized);
-            var reader = new BinaryReader(ms);
+            using var ms = new MemoryStream(serialized);
+            using var reader = new BinaryReader(ms);
             var syncMetadata = new SyncMetadata
             (
                 fullSync: reader.ReadBoolean(),
@@ -177,9 +174,6 @@ namespace Garnet.cluster
                 currentReplicationOffset: reader.ReadInt64(),
                 checkpointEntry: CheckpointEntry.FromByteArray(reader.ReadBytes(reader.ReadInt32()))
             );
-
-            reader.Dispose();
-            ms.Dispose();
             return syncMetadata;
         }
     }

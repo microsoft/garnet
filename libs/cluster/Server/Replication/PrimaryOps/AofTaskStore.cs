@@ -160,12 +160,8 @@ namespace Garnet.cluster
             {
                 if (_disposed) return success;
 
-                // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
-                bool possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                    (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
-
-                // Fail adding the task if truncation has happened, and we are not in possibleAofDataLoss mode
-                if (startAddress < TruncatedUntil && !possibleAofDataLoss)
+                // Fail adding the task if truncation has happened, and we are not in AllowDataLoss mode
+                if (startAddress < TruncatedUntil && !clusterProvider.AllowDataLoss)
                 {
                     logger?.LogWarning("AOF sync task for {remoteNodeId}, with start address {startAddress}, could not be added, local AOF is truncated until {truncatedUntil}", remoteNodeId, startAddress, TruncatedUntil);
                     return success;
@@ -262,7 +258,7 @@ namespace Garnet.cluster
                 if (_disposed) return false;
 
                 // Fail adding the task if truncation has happened
-                if (startAddress < TruncatedUntil)
+                if (startAddress < TruncatedUntil && !clusterProvider.AllowDataLoss)
                 {
                     logger?.LogWarning("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationTasks), startAddress, TruncatedUntil);
                     return false;
@@ -314,10 +310,7 @@ namespace Garnet.cluster
                     foreach (var rss in replicaSyncSessions)
                     {
                         if (rss == null) continue;
-                        if (rss.AofSyncTask != null)
-                        {
-                            rss.AofSyncTask.Dispose();
-                        }
+                        rss.AofSyncTask?.Dispose();
                     }
                 }
             }
@@ -330,12 +323,12 @@ namespace Garnet.cluster
             // Lock addition of new tasks
             _lock.WriteLock();
 
-            bool success = false;
+            var success = false;
             try
             {
                 if (_disposed) return success;
 
-                for (int i = 0; i < numTasks; i++)
+                for (var i = 0; i < numTasks; i++)
                 {
                     var t = tasks[i];
                     Debug.Assert(t != null);
@@ -389,12 +382,12 @@ namespace Garnet.cluster
                     TruncatedUntil = tasks[i].previousAddress;
             }
 
-            //Inform that we have logically truncatedUntil
-            Tsavorite.core.Utility.MonotonicUpdate(ref this.TruncatedUntil, TruncatedUntil, out _);
-            //Release lock early
+            // Inform that we have logically truncatedUntil
+            _ = Tsavorite.core.Utility.MonotonicUpdate(ref this.TruncatedUntil, TruncatedUntil, out _);
+            // Release lock early
             _lock.WriteUnlock();
 
-            if (TruncatedUntil > 0 && TruncatedUntil < long.MaxValue)
+            if (TruncatedUntil is > 0 and < long.MaxValue)
             {
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
@@ -411,13 +404,13 @@ namespace Garnet.cluster
 
         public int CountConnectedReplicas()
         {
-            int count = 0;
+            var count = 0;
             _lock.ReadLock();
             try
             {
                 if (_disposed) return 0;
 
-                for (int i = 0; i < numTasks; i++)
+                for (var i = 0; i < numTasks; i++)
                 {
                     var t = tasks[i];
                     count += t.garnetClient.IsConnected ? 1 : 0;

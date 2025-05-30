@@ -139,18 +139,19 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// Re-attach replica on disconnect after it has received some amount of data.
-        /// The replica should replay only the portion it missed without doing a full sync
+        /// The replica should replay only the portion it missed without doing a full sync,
+        /// unless force full sync by setting the full sync AOF threshold to a very low value (1k).
         /// </summary>
         /// <param name="disableObjects"></param>
         /// <param name="performRMW"></param>
         [Test, Order(2)]
         [Category("REPLICATION")]
-        public void ClusterAofReplayDisklessSync([Values] bool disableObjects, [Values] bool performRMW)
+        public void ClusterAofReplayDisklessSync([Values] bool disableObjects, [Values] bool performRMW, [Values] bool forceFullSync)
         {
             var nodes_count = 2;
             var primaryIndex = 0;
             var replicaIndex = 1;
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, replicaDisklessSyncFullSyncAofThreshold: forceFullSync ? "1k" : "64m");
             context.CreateConnection(useTLS: useTLS);
 
             // Setup primary and introduce it to future replica

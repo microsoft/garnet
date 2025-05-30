@@ -752,6 +752,9 @@ namespace Garnet.test.cluster
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true));
             var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primary_count, replica_count, disableObjects));
 
+            if (!context.checkpointTask.Wait(TimeSpan.FromSeconds(30)))
+                Assert.Fail("checkpointTask timeout");
+
             if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(30)))
                 Assert.Fail("attachReplicaTask timeout");
 
@@ -1066,6 +1069,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(22)]
+        [Category("REPLICATION")]
         public void ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
         {
             var replica_count = 1;// Per primary

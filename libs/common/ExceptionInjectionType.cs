@@ -23,6 +23,10 @@ namespace Garnet.common
         /// <summary>
         /// Acquire checkpoint entry from memory entries
         /// </summary>
-        Replication_Acquire_Checkpoint_Entry_Fail_Condition
+        Replication_Acquire_Checkpoint_Entry_Fail_Condition,
+        /// <summary>
+        /// Wait after checkpoint acquisition
+        /// </summary>
+        Replication_Wait_After_Checkpoint_Acquisition,
     }
 }
