@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using Garnet.server;
 using Tsavorite.core;
 
 namespace Garnet.cluster
@@ -14,7 +13,7 @@ namespace Garnet.cluster
     {
         internal sealed class MigrationKeyIterationFunctions
         {
-            internal sealed unsafe class MainStoreGetKeysInSlots : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed unsafe class MainStoreGetKeysInSlots : IScanIteratorFunctions
             {
                 MigrationScanIterator iterator;
 
@@ -30,34 +29,28 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
                     // Do not send key if it is expired
-                    if (ClusterSession.Expired(ref value))
+                    if (ClusterSession.Expired(in srcLogRecord))
                         return true;
 
-                    var s = HashSlotUtils.HashSlot(ref key);
-                    // Transfer key if it belongs to slot that is currently being migrated
-                    if (iterator.Contains(s))
-                    {
-                        var keySpan = key.AsSpan();
-                        if (!iterator.Consume(ref keySpan))
-                            return false;
-                    }
+                    var key = srcLogRecord.Key;
+                    var slot = HashSlotUtils.HashSlot(key);
 
-                    return true;
+                    // Transfer key if it belongs to slot that is currently being migrated
+                    return !iterator.Contains(slot) || iterator.Consume(key);
                 }
 
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal struct ObjectStoreGetKeysInSlots : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal struct ObjectStoreGetKeysInSlots : IScanIteratorFunctions
             {
                 MigrationScanIterator iterator;
 
@@ -73,28 +66,22 @@ namespace Garnet.cluster
 
                 public void AdvanceIterator() => iterator.AdvanceIterator();
 
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
                     // Do not send key if it is expired
-                    if (ClusterSession.Expired(ref value))
+                    if (ClusterSession.Expired(in srcLogRecord))
                         return true;
 
-                    var s = HashSlotUtils.HashSlot(key);
-                    // Transfer key if it belongs to slot that is currently being migrated
-                    if (iterator.Contains(s))
-                    {
-                        var keySpan = key.AsSpan();
-                        if (!iterator.Consume(ref keySpan))
-                            return false;
-                    }
+                    var key = srcLogRecord.Key;
+                    var slot = HashSlotUtils.HashSlot(key);
 
-                    return true;
+                    // Transfer key if it belongs to slot that is currently being migrated
+                    return !iterator.Contains(slot) || iterator.Consume(key);
                 }
 
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
@@ -154,7 +141,7 @@ namespace Garnet.cluster
                 /// </summary>
                 /// <param name="key"></param>
                 /// <returns></returns>
-                public bool Consume(ref Span<byte> key)
+                public bool Consume(ReadOnlySpan<byte> key)
                 {
                     // Check if key is within the current processing window only if _copyOption is set
                     // in order to skip keys that have been send over to target node but not deleted locally
@@ -165,13 +152,13 @@ namespace Garnet.cluster
                     }
 
                     // Create ArgSlice and check if there is enough space to copy current key
-                    var keySlice = new ArgSlice(currPtr, key.Length);
+                    var keySlice = PinnedSpanByte.FromPinnedPointer(currPtr, key.Length);
                     if (currPtr + keySlice.Length > endPtr)
                         return false;
 
                     // Copy key to buffer and add it to migrate session dictionary
                     key.CopyTo(keySlice.Span);
-                    if (!session.AddKey(ref keySlice))
+                    if (!session.AddKey(keySlice))
                         throw new GarnetException("Failed to add migrating key to working set!");
 
 

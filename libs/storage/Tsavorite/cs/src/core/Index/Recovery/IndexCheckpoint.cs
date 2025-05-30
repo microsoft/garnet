@@ -11,9 +11,9 @@ namespace Tsavorite.core
 {
     internal unsafe delegate void SkipReadCache(HashBucket* bucket);
 
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         // Derived class facing persistence API
         internal IndexCheckpointInfo _indexCheckpoint;

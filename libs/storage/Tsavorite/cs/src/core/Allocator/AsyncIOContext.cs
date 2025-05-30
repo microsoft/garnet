@@ -4,14 +4,15 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext<TKey, TValue>
+    public unsafe struct AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -19,19 +20,14 @@ namespace Tsavorite.core
         public long id;
 
         /// <summary>
-        /// Key
+        /// Key; this is a shallow copy of the key in pendingContext, pointing to its diskLogRecord
         /// </summary>
-        public IHeapContainer<TKey> request_key;
+        public PinnedSpanByte request_key;
 
         /// <summary>
-        /// Retrieved key
+        /// Deserialized ValueObject if RecordInfo.ValueIsObject, else null
         /// </summary>
-        public TKey key;
-
-        /// <summary>
-        /// Retrieved value
-        /// </summary>
-        public TValue value;
+        public IHeapObject ValueObject;
 
         /// <summary>
         /// Logical address
@@ -56,22 +52,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Callback queue
         /// </summary>
-        public AsyncQueue<AsyncIOContext<TKey, TValue>> callbackQueue;
-
-        /// <summary>
-        /// Async Operation ValueTask backer
-        /// </summary>
-        public TaskCompletionSource<AsyncIOContext<TKey, TValue>> asyncOperation;
+        public AsyncQueue<AsyncIOContext> callbackQueue;
 
         /// <summary>
         /// Synchronous completion event
         /// </summary>
-        internal AsyncIOContextCompletionEvent<TKey, TValue> completionEvent;
+        internal AsyncIOContextCompletionEvent completionEvent;
 
         /// <summary>
         /// Indicates whether this is a default instance with no pending operation
         /// </summary>
-        public bool IsDefault() => callbackQueue is null && asyncOperation is null && completionEvent is null;
+        public readonly bool IsDefault() => callbackQueue is null && completionEvent is null;
 
         /// <summary>
         /// Dispose
@@ -85,21 +76,27 @@ namespace Tsavorite.core
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
-    internal sealed class AsyncIOContextCompletionEvent<TKey, TValue> : IDisposable
+    internal sealed class AsyncIOContextCompletionEvent : IDisposable
     {
         internal SemaphoreSlim semaphore;
         internal Exception exception;
-        internal AsyncIOContext<TKey, TValue> request;
+        internal AsyncIOContext request;
 
         internal AsyncIOContextCompletionEvent()
         {
             semaphore = new SemaphoreSlim(0);
             request.id = -1;
-            request.minAddress = Constants.kInvalidAddress;
+            request.minAddress = kInvalidAddress;
             request.completionEvent = this;
         }
 
-        internal void Prepare(IHeapContainer<TKey> request_key, long logicalAddress)
+        /// <summary>
+        /// Prepares to issue an async IO. <paramref name="request_key"/>
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="request_key"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
+        /// </remarks>
+        internal void Prepare(PinnedSpanByte request_key, long logicalAddress)
         {
             request.Dispose();
             request.request_key = request_key;
@@ -107,12 +104,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(ref AsyncIOContext<TKey, TValue> ctx)
+        internal void Set(ref AsyncIOContext ctx)
         {
             request.Dispose();
             request = ctx;
             exception = null;
-            semaphore.Release(1);
+            _ = semaphore.Release(1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -121,7 +118,7 @@ namespace Tsavorite.core
             request.Dispose();
             request = default;
             exception = ex;
-            semaphore.Release(1);
+            _ = semaphore.Release(1);
         }
 
         internal void Wait(CancellationToken token = default) => semaphore.Wait(token);

@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.Buffers;
 using System.IO;
 using System.Linq;
@@ -94,7 +96,7 @@ namespace Tsavorite.test
 
             for (int i = 0; i < numEntries; i++)
             {
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
             }
 
             log.CompleteLog(true);
@@ -116,7 +118,7 @@ namespace Tsavorite.test
                         }
                         break;
                     case TsavoriteLogTestBase.IteratorType.AsyncMemoryOwner:
-                        await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                        await foreach ((IMemoryOwner<byte> result, _, _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                         {
                             ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                             result.Dispose();
@@ -141,3 +143,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

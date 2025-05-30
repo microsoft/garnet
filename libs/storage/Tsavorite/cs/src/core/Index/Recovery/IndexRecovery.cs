@@ -161,19 +161,19 @@ namespace Tsavorite.core
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
 
-            for (long bucket = 0; bucket < table_size_; ++bucket)
+            for (long bucket = 0; bucket < table_size_; bucket++)
             {
                 HashBucket* b = ptable_ + bucket;
                 while (true)
                 {
-                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; ++bucket_entry)
+                    for (int bucket_entry = 0; bucket_entry < Constants.kOverflowBucketIndex; bucket_entry++)
                     {
                         entry.word = b->bucket_entries[bucket_entry];
                         if (entry.Tentative)
                             b->bucket_entries[bucket_entry] = 0;
                     }
                     // Reset any ephemeral bucket level locks
-                    b->bucket_entries[Constants.kOverflowBucketIndex] &= Constants.kAddressMask;
+                    b->bucket_entries[Constants.kOverflowBucketIndex] &= LogAddress.kAddressBitMask;
                     if (b->bucket_entries[Constants.kOverflowBucketIndex] == 0) break;
                     b = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(b->bucket_entries[Constants.kOverflowBucketIndex]);
                 }

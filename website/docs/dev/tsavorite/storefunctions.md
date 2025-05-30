@@ -8,7 +8,7 @@ title: StoreFunctions and Allocator Wrapper
 
 This section discusses both of these because they were part of a change to add two additional type args, `TStoreFunctions` and `TAllocator`, to `TsavoriteKV` as well as the various sessions and `*Context` (e.g. `BasicContext`). The purpose of both of these is to provide better performance by inlining calls. StoreFunctions also provides better logical design for the location of the operations that are store-level rather than session-level, as described below.
 
-From the caller point of view, we have two new type parameters on `TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator>`. The `TStoreFunctions` and `TAllocator` are also on `*.Context` (e.g. `BasicContext`) as well. C# allows the 'using' alias only as the first lines of a namespace declaration, and the alias is file-local and recognized by subsequent 'using' aliases, so the "Api" aliases such as `BasicGarnetApi` in multiple files are much longer now.
+From the caller point of view, we have two new type parameters on `TsavoriteKV<TStoreFunctions, TAllocator>`. The `TStoreFunctions` and `TAllocator` are also on `*.Context` (e.g. `BasicContext`) as well. C# allows the 'using' alias only as the first lines of a namespace declaration, and the alias is file-local and recognized by subsequent 'using' aliases, so the "Api" aliases such as `BasicGarnetApi` in multiple files are much longer now.
 
 `TsavoriteKV` constructor has been changed to take 3 parameters:
 - `KVSettings<TKey, TValue>`. This replaces the previous long list of parameters. `LogSettings`, `ReadCacheSettings`, and `CheckpointSettings` have become internal classes, used only by `TsavoriteKV` (created from `TsavoriteKVSettings`) when instantiating the Allocators (e.g. the new `AllocatorSettings` has a `LogSettings` member). `SerializerSettings` has been removed in favor of methods on `IStoreFunctions`.
@@ -22,7 +22,7 @@ These are described in more detail below.
 
 Because `IStoreFunctions` is intended to provide maximum inlining, Tsavorite does not provide a `StoreFunctionsBase`. Instead, Tsavorite provides a `StoreFunctions` struct implementation, with optional implementations passed in, for:
 - Key Comparison (previously passed as an `ITsavoriteKeyComparer` interface, which is not inlined)
-- Key and Value Serializers. Due to limitations on type arguments, these must be passed as `Func<>` which creates the implementation instance, and because serialization is an expensive operation, we stay with the `IObjectSerializer<TKey>` and `IObjectSerializer<TValue>` interfaces rather than clutter the `IStoreFunctions<TKey, TValue>` interface with the Key and Value Serializer type args.
+- Serializers for Value objects. Due to limitations on type arguments, these must be passed as `Func<>` which creates the implementation instance, and because serialization is an expensive operation, we stay with the `IObjectSerializer` interfaces rather than clutter the `IStoreFunctions` interface with the Key and Value Serializer type args.
 - Record disposal (previously on `ISessionFunctions` as multiple methods, and now only a single method with a "reason" parameter).
 - Checkpoint completion callback (previously on `ISessionFunctions`).
 
@@ -33,8 +33,8 @@ Of course, because `TsavoriteKV` has the `TStoreFunctions` type parameter, this 
 As with `StoreFunctions`, the Allocator Wrapper is intended to provide maximal inlining. As noted above, type parameters implemented by classes do not generate inlined code; the JITted code is general, for a single `IntPtr`-sized reference. For structs, however, the JITter generates code specific to that specific struct type, in part because the size can vary (e.g. when pushed on the stack as a parameter).
 
 There is a hack that allows a type parameter implemented by a class to be inlined: the generic type must be for a struct that wraps the class type and makes calls on that class type in a non-generic way. This is the approach the Allocator Wrapper takes:
-- The `BlittableAllocator`, `GenericAllocator`, and `SpanByteAllocator` classes are now the wrapper structs, with `Key`, `Value`, and `TStoreFunctions` type args. These implement the `IAllocator` interface.
-- There are new `BlittableAllocatorImpl`, `GenericAllocatorImpl`, and `SpanByteAllocatorImpl` classes that implement most of the functionality as previously, including inheriting from `AllocatorBase`. These also have `Key`, `Value`, and `TStoreFunctions` type args; the `TAllocator` is not needed as a type arg because it is known to be the `XxxAllocator` Wrapper struct. The wrapper structs contain an instance of the `XxxAllocatorImpl` class. 
+- The `SpanByteAllocator` and `ObjectAllocator` classes are now the wrapper structs, with a `TStoreFunctions` type arg. These implement the `IAllocator` interface.
+- There are new `SpanByteAllocatorImpl` and `ObjectAllocatorImpl` classes that implement most of the functionality as previously, including inheriting from `AllocatorBase`. These also have a `TStoreFunctions` type arg; the `TAllocator` is not needed as a type arg because it is known to be the `XxxAllocator` Wrapper struct. The wrapper structs contain an instance of the `XxxAllocatorImpl` class. 
 - `AllocatorBase` itself now contains a `_wrapper` field that is a struct-wrapper instance (which contains the instance pointer of the fully-derived allocator class) that is constrained to the `IAllocator` interface. `AllocatorBase` itself is templated on `TStoreFunctions` and `TAllocator`.
 
 The new Allocator definition supports two interfaces:

@@ -19,10 +19,10 @@ namespace Garnet.server
         {
             return garnetObjectType switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(expiration),
-                GarnetObjectType.List => new ListObject(expiration),
-                GarnetObjectType.Hash => new HashObject(expiration),
-                GarnetObjectType.Set => new SetObject(expiration),
+                GarnetObjectType.SortedSet => new SortedSetObject(),
+                GarnetObjectType.List => new ListObject(),
+                GarnetObjectType.Hash => new HashObject(),
+                GarnetObjectType.Set => new SetObject(),
                 _ => throw new Exception("Unsupported data type"),
             };
         }
@@ -77,6 +77,7 @@ namespace Garnet.server
                 GarnetObjectType.Expire => false,
                 GarnetObjectType.PExpire => false,
                 GarnetObjectType.Persist => false,
+                GarnetObjectType.Migrate => false,
                 _ => true,
             };
         }

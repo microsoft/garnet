@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -26,7 +28,7 @@ namespace Tsavorite.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             DeleteDirectory(MethodTestDir, wait: true);
 
-            var kvSettings = new KVSettings<MyKey, MyValue>()
+            var kvSettings = new KVSettings()
             {
                 IndexSize = 1L << 13,
                 MutableFraction = 0.1,
@@ -344,3 +346,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

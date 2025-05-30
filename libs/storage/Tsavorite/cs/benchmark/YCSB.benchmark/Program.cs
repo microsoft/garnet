@@ -28,9 +28,9 @@ namespace Tsavorite.benchmark
 
                 switch (testLoader.BenchmarkType)
                 {
-                    case BenchmarkType.Ycsb:
+                    case BenchmarkType.FixedLen:
                         {
-                            var tester = new Tsavorite_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            var tester = new FixedLenYcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
                             testStats.AddResult(tester.Run(testLoader));
                             tester.Dispose();
                         }
@@ -42,7 +42,14 @@ namespace Tsavorite.benchmark
                             tester.Dispose();
                         }
                         break;
-                    case BenchmarkType.ConcurrentDictionaryYcsb:
+                    case BenchmarkType.Object:
+                        {
+                            var tester = new ObjectYcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
+                        break;
+                    case BenchmarkType.ConcurrentDictionary:
                         {
                             var tester = new ConcurrentDictionary_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
                             testStats.AddResult(tester.Run(testLoader));

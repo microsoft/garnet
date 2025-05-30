@@ -209,7 +209,7 @@ namespace Resp.benchmark
         private Thread[] InitializeThreadWorkers()
         {
             Thread[] workers = new Thread[NumThreads];
-            for (int idx = 0; idx < NumThreads; ++idx)
+            for (int idx = 0; idx < NumThreads; idx++)
             {
                 int x = idx;
 

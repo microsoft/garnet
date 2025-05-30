@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         internal sealed class TsavoriteExecutionContext<TInput, TOutput, TContext>
         {
@@ -27,19 +27,19 @@ namespace Tsavorite.core
             public long totalPending;
             public readonly Dictionary<long, PendingContext<TInput, TOutput, TContext>> ioPendingRequests;
             public readonly AsyncCountDown pendingReads;
-            public readonly AsyncQueue<AsyncIOContext<TKey, TValue>> readyResponses;
+            public readonly AsyncQueue<AsyncIOContext> readyResponses;
             public int asyncPendingCount;
             internal RevivificationStats RevivificationStats = new();
-            public bool isAcquiredLockable;
+            public bool isAcquiredTransactional;
 
             public TsavoriteExecutionContext(int sessionID)
             {
                 SessionState = SystemState.Make(Phase.REST, 1);
                 this.sessionID = sessionID;
-                readyResponses = new AsyncQueue<AsyncIOContext<TKey, TValue>>();
+                readyResponses = new AsyncQueue<AsyncIOContext>();
                 ioPendingRequests = new Dictionary<long, PendingContext<TInput, TOutput, TContext>>();
                 pendingReads = new AsyncCountDown();
-                isAcquiredLockable = false;
+                isAcquiredTransactional = false;
             }
 
             public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;

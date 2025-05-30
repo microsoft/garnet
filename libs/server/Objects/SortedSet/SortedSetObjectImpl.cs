@@ -225,7 +225,7 @@ namespace Garnet.server
             // ZSCORE key member
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var member = input.parseState.GetArgSliceByRef(0).ToArray();
 
             if (!TryGetScore(member, out var score))
             {
@@ -249,7 +249,7 @@ namespace Garnet.server
 
             for (var i = 0; i < count; i++)
             {
-                var member = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var member = input.parseState.GetArgSliceByRef(i).ToArray();
 
                 if (!TryGetScore(member, out var score))
                 {
@@ -286,9 +286,12 @@ namespace Garnet.server
             {
                 foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
                 {
-                    if (IsExpired(item.Element)) continue;
-                    if (item.Score > maxValue || (maxExclusive && item.Score == maxValue)) break;
-                    if (minExclusive && item.Score == minValue) continue;
+                    if (IsExpired(item.Element))
+                        continue;
+                    if (item.Score > maxValue || (maxExclusive && item.Score == maxValue))
+                        break;
+                    if (minExclusive && item.Score == minValue)
+                        continue;
                     count++;
                 }
             }
@@ -311,7 +314,7 @@ namespace Garnet.server
             }
 
             // Read member
-            var member = input.parseState.GetArgSliceByRef(1).SpanByte.ToByteArray();
+            var member = input.parseState.GetArgSliceByRef(1).ToArray();
 
             if (sortedSetDict.TryGetValue(member, out var score))
             {
@@ -670,7 +673,7 @@ namespace Garnet.server
             //ZRANK key member
             var withScore = input.arg1 == 1;
 
-            var member = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var member = input.parseState.GetArgSliceByRef(0).ToArray();
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 

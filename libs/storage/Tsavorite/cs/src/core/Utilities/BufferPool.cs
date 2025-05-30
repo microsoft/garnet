@@ -116,6 +116,12 @@ namespace Tsavorite.core
             // Assume ctor is called for allocation and leave Free unset
         }
 
+        public unsafe (byte[] array, long offset) GetArrayAndUnalignedOffset(long alignedOffset)
+        {
+            long ptr = (long)Unsafe.AsPointer(ref buffer[0]);
+            return (buffer, alignedOffset + ptr - (long)aligned_pointer);
+        }
+
         /// <summary>
         /// Dispose
         /// </summary>
@@ -206,6 +212,20 @@ namespace Tsavorite.core
             this.sectorSize = sectorSize;
         }
 
+        public void EnsureSize(ref SectorAlignedMemory page, int size)
+        {
+            if (page is null)
+            {
+                page = Get(size);
+                return;
+            }
+            if (page.AlignedTotalCapacity < size)
+            {
+                page.Return();
+                page = Get(size);
+            }
+        }
+
         /// <summary>
         /// Return
         /// </summary>
@@ -262,7 +282,7 @@ namespace Tsavorite.core
             Interlocked.Increment(ref totalGets);
 #endif
 
-            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            int requiredSize = sectorSize + ((numRecords * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
             int index = Position(requiredSize / sectorSize);
             if (queue[index] == null)
             {

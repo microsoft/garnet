@@ -22,15 +22,15 @@ namespace BDN.benchmark.CustomProcs
         /// </summary>
         public const string CommandName = "CTXNSET";
 
-        ArgSlice setA;
-        ArgSlice setB;
-        ArgSlice setC;
-        ArgSlice setD;
+        PinnedSpanByte setA;
+        PinnedSpanByte setB;
+        PinnedSpanByte setC;
+        PinnedSpanByte setD;
 
-        ArgSlice valueA;
-        ArgSlice valueB;
-        ArgSlice valueC;
-        ArgSlice valueD;
+        PinnedSpanByte valueA;
+        PinnedSpanByte valueB;
+        PinnedSpanByte valueC;
+        PinnedSpanByte valueD;
 
         /// <summary>
         ///  CTXNSET key1 key2 key3 key4 value1 value2 value3 value4

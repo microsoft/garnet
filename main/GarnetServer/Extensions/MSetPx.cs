@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet
 {
@@ -38,7 +39,7 @@ namespace Garnet
             var expiryMs = GetNextArg(ref procInput, ref offset);
 
             // Read and set key-value pairs with expiry
-            ArgSlice key, value;
+            PinnedSpanByte key, value;
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
                 value = GetNextArg(ref procInput, ref offset);

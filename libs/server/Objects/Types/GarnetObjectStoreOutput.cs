@@ -58,22 +58,19 @@ namespace Garnet.server
         /// <summary>
         /// True if output flag WrongType is set
         /// </summary>
-        public bool HasWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;
+        public readonly bool HasWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;
 
         /// <summary>
         /// True if output flag RemoveKey is set
         /// </summary>
-        public bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
+        public readonly bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
 
-        public GarnetObjectStoreOutput()
-        {
-            SpanByteAndMemory = new(null);
-        }
+        public GarnetObjectStoreOutput() => SpanByteAndMemory = new(null);
 
-        public GarnetObjectStoreOutput(SpanByteAndMemory spam)
-        {
-            SpanByteAndMemory = spam;
-        }
+        public GarnetObjectStoreOutput(SpanByteAndMemory spam) => SpanByteAndMemory = spam;
+
+        public static unsafe GarnetObjectStoreOutput FromPinnedPointer(byte* pointer, int length)
+            => new(new SpanByteAndMemory() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length) });
 
         public void ConvertToHeap()
         {

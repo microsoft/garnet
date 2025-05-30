@@ -12,15 +12,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
-
     /// <summary>
-    /// Scan iterator for hybrid log
+    /// Scan iterator for TsavoriteLog
     /// </summary>
-    public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
+    public class TsavoriteLogIterator : ScanIteratorBase, IDisposable
     {
         protected readonly TsavoriteLog tsavoriteLog;
-        private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
+        private readonly TsavoriteLogAllocatorImpl allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
@@ -33,22 +31,10 @@ namespace Tsavorite.core
         /// </summary>
         public bool Ended => (nextAddress >= endAddress) || (tsavoriteLog.LogCompleted && nextAddress == tsavoriteLog.TailAddress);
 
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="tsavoriteLog"></param>
-        /// <param name="hlog"></param>
-        /// <param name="beginAddress"></param>
-        /// <param name="endAddress"></param>
-        /// <param name="scanBufferingMode"></param>
-        /// <param name="epoch"></param>
-        /// <param name="headerSize"></param>
-        /// <param name="getMemory"></param>
-        /// <param name="scanUncommitted"></param>
-        /// <param name="logger"></param>
-        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> hlog, long beginAddress, long endAddress,
-                GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
+        /// <summary>Constructor</summary>
+        internal unsafe TsavoriteLogIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
+                GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
             allocator = hlog;
@@ -76,7 +62,6 @@ namespace Tsavorite.core
                     if (!await WaitAsync(token).ConfigureAwait(false))
                         yield break;
                 }
-
                 yield return (result, length, currentAddress, nextAddress);
             }
         }
@@ -163,7 +148,7 @@ namespace Tsavorite.core
             return SlowWaitUncommittedAsync(token);
         }
 
-        private static async ValueTask<bool> SlowWaitAsync(TsavoriteLogScanIterator @this, CancellationToken token)
+        private static async ValueTask<bool> SlowWaitAsync(TsavoriteLogIterator @this, CancellationToken token)
         {
             while (true)
             {
@@ -428,11 +413,11 @@ namespace Tsavorite.core
                         throw;
                     }
 
-                    if (isCommitRecord)
-                    {
-                        TsavoriteLogRecoveryInfo info = new();
-                        info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
-                        if (info.CommitNum != long.MaxValue) continue;
+                if (isCommitRecord)
+                {
+                    TsavoriteLogRecoveryInfo info = new();
+                    info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
+                    if (info.CommitNum != long.MaxValue) continue;
 
                         // Otherwise, no more entries
                         return false;
@@ -764,9 +749,9 @@ namespace Tsavorite.core
                     outNextAddress = currentAddress;
                 }
 
-                var _currentPage = currentAddress >> allocator.LogPageSizeBits;
+                var _currentPage = allocator.GetPage(currentAddress);
                 var _currentFrame = _currentPage % frameSize;
-                var _currentOffset = currentAddress & allocator.PageSizeMask;
+                var _currentOffset = allocator.GetOffsetOnPage(currentAddress);
 
                 if (disposed)
                     return false;
@@ -802,14 +787,14 @@ namespace Tsavorite.core
                 if (entryLength == 0)
                 {
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
-                    var nextStart = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                    var nextStart = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
-                        var pageOffset = currentAddress & ((1 << allocator.LogPageSizeBits) - 1);
+                        var pageOffset = allocator.GetOffsetOnPage(currentAddress);
 
                         // If zeroed out field is at page start, we encountered an uninitialized page and should signal up
                         if (pageOffset == 0)
-                            throw new TsavoriteException("Uninitialized page found during scan at page " + (currentAddress >> allocator.LogPageSizeBits));
+                            throw new TsavoriteException("Uninitialized page found during scan at page " + allocator.GetPage(currentAddress));
                     }
                     continue;
                 }
@@ -842,8 +827,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
+                    currentAddress = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 
@@ -882,9 +867,9 @@ namespace Tsavorite.core
                     return false;
                 }
 
-                var _currentPage = currentAddress >> allocator.LogPageSizeBits;
+                var _currentPage = allocator.GetPage(currentAddress);
                 var _currentFrame = _currentPage % frameSize;
-                var _currentOffset = currentAddress & allocator.PageSizeMask;
+                var _currentOffset = allocator.GetOffsetOnPage(currentAddress);
 
                 if (disposed)
                     return false;
@@ -947,8 +932,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                if ((currentAddress & allocator.PageSizeMask) + recordSize == allocator.PageSize)
-                    currentAddress = (1 + (currentAddress >> allocator.LogPageSizeBits)) << allocator.LogPageSizeBits;
+                if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
+                    currentAddress = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 

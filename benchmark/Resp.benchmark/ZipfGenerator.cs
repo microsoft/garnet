@@ -29,7 +29,7 @@ namespace Resp.benchmark
         private static double Zeta(int count, double theta)
         {
             double zetaN = 0.0;
-            for (var ii = 1; ii <= count; ++ii)
+            for (var ii = 1; ii <= count; ii++)
                 zetaN += 1.0 / Math.Pow(ii, theta);
             return zetaN;
         }

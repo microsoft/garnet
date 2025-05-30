@@ -23,6 +23,32 @@ namespace BenchmarkDotNetTests
                 test.TearDown();
                 return;
             }
+            if (args[0].ToLower() == "inlining")
+            {
+                var test = new InliningTests();
+                test.NumRecords = 1_000_000;
+                test.SetupPopulatedStore();
+                if (args.Length > 1)
+                {
+                    var testName = args[1].ToLower();
+                    if (testName == "read")
+                        test.Read();
+                    else if (testName == "upsert")
+                        test.Upsert();
+                    else if (testName == "rmw")
+                        test.RMW();
+                    else
+                        throw new ArgumentException($"Unknown inlining test: {args[1]}");
+                }
+                else
+                {
+                    test.Read();
+                    test.Upsert();
+                    test.RMW();
+                }
+                test.TearDown();
+                return;
+            }
 
             // Do regular invocation.
             BenchmarkSwitcher.FromAssembly(typeof(BenchmarkDotNetTestsApp).Assembly).Run(args);

@@ -5,10 +5,13 @@ using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
-    struct PageUnit
+    struct PageUnit<TValuePage>
     {
-        public byte[] value;
+        public TValuePage value;
         public long pointer;
+
+        /// <inheritdoc/>
+        public override string ToString() => $"Value {value}, Pointer {pointer}";
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -18,6 +21,9 @@ namespace Tsavorite.core
         public long LastFlushedUntilAddress;
         [FieldOffset(8)]
         public long Dirty;
+
+        /// <inheritdoc/>
+        public override string ToString() => $"LastFUA {LastFlushedUntilAddress}, Dirty {Dirty}";
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -29,5 +35,8 @@ namespace Tsavorite.core
         public int Page;
         [FieldOffset(0)]
         public long PageAndOffset;
+
+        /// <inheritdoc/>
+        public override string ToString() => $"Page {Page}, Offset {Offset}";
     }
 }

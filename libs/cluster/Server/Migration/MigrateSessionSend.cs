@@ -11,51 +11,39 @@ namespace Garnet.cluster
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
         /// <summary>
-        /// Write main store key-value pair directly to client buffer or flush buffer to make space and try again writing.
+        /// Write a serialized record directly to the client buffer; if there is not enough room, flush the buffer and retry writing.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
+        /// <param name="output">Output buffer from Read(), containing the full serialized record</param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendMainStoreKeyValuePair(ref SpanByte key, ref SpanByte value)
+        private bool WriteOrSendRecordSpan(ref SpanByteAndMemory output, bool isMainStore)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (_gcs.NeedsInitialization)
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
 
-            // Try write serialized key value to client buffer
-            while (!_gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
+            fixed (byte* ptr = output.MemorySpan)
             {
-                // Flush key value pairs in the buffer
-                if (!HandleMigrateTaskResponse(task))
-                    return false;
+                // Try to write serialized record to client buffer
+                while (!_gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))
+                {
+                    // Flush records in the buffer
+                    if (!HandleMigrateTaskResponse(task))
+                        return false;
 
-                // re-initialize cluster migrate command parameters
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                    // Re-initialize cluster migrate command parameters for the next loop iteration
+                    _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+                }
             }
             return true;
         }
 
         /// <summary>
-        /// Write object store key-value pair directly to client buffer or flush buffer to make space and try again writing.
+        /// Flush the final partial buffer to the client.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="expiration"></param>
-        /// <returns></returns>
-        private bool WriteOrSendObjectStoreKeyValuePair(byte[] key, byte[] value, long expiration)
+        /// <returns>True on success, else false</returns>
+        private bool FlushFinalMigrationBuffer(bool isMainStore)
         {
-            // Check if we need to initialize cluster migrate command arguments
-            if (_gcs.NeedsInitialization)
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
-
-            while (!_gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
-            {
-                // Flush key value pairs in the buffer
-                if (!HandleMigrateTaskResponse(task))
-                    return false;
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
-            }
-            return true;
+            return HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer());
         }
 
         /// <summary>

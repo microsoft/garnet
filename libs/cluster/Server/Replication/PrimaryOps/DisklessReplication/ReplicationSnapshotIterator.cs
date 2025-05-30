@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Threading;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,11 @@ namespace Garnet.cluster
 
         public MainStoreSnapshotIterator mainStoreSnapshotIterator;
         public ObjectStoreSnapshotIterator objectStoreSnapshotIterator;
+
+        // For serialization from LogRecord to DiskLogRecord
+        SpanByteAndMemory serializationOutput;
+        GarnetObjectSerializer valueObjectSerializer;
+        MemoryPool<byte> memoryPool;
 
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
@@ -47,6 +53,9 @@ namespace Garnet.cluster
             mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
             if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
                 objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
+
+            memoryPool = MemoryPool<byte>.Shared;
+            valueObjectSerializer = new(customCommandManager: default);
         }
 
         /// <summary>
@@ -80,7 +89,8 @@ namespace Garnet.cluster
 
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
+                if (!replicationSyncManager.IsActive(i))
+                    continue;
                 sessions[i].InitializeIterationBuffer();
                 if (isMainStore)
                     sessions[i].currentStoreVersion = targetVersion;
@@ -94,13 +104,19 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool StringReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
             {
+                var key = srcLogRecord.Key;
+                var value = srcLogRecord.ValueSpan;
                 logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }
+
+            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
+            DiskLogRecord.Serialize(in srcLogRecord, valueSerializer: null, ref serializationOutput, memoryPool);
 
             var needToFlush = false;
             while (true)
@@ -114,20 +130,22 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActive(i)) continue;
+                    if (!replicationSyncManager.IsActive(i))
+                        continue;
 
                     // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader(isMainStore: true);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueSpanByte(ref key, ref value, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
 
-                if (!needToFlush) break;
+                if (!needToFlush)
+                    break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
@@ -138,16 +156,21 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool Reader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool ObjectReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
             {
+                var key = srcLogRecord.Key;
+                var value = srcLogRecord.ValueObject;
                 logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }
 
+            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
+            DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer, ref serializationOutput, memoryPool);
+
             var needToFlush = false;
-            var objectData = GarnetObjectSerializer.Serialize(value);
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -159,20 +182,22 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActive(i)) continue;
+                    if (!replicationSyncManager.IsActive(i))
+                        continue;
 
                     // Initialize header if necessary
                     sessions[i].SetClusterSyncHeader(isMainStore: false);
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueByteArray(key, objectData, value.Expiration, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
 
-                if (!needToFlush) break;
+                if (!needToFlush)
+                    break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
@@ -187,8 +212,8 @@ namespace Garnet.cluster
             // Flush remaining data
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
-                sessions[i].SendAndResetIterationBuffer();
+                if (replicationSyncManager.IsActive(i))
+                    sessions[i].SendAndResetIterationBuffer();
             }
 
             // Wait for flush and response to complete
@@ -199,11 +224,13 @@ namespace Garnet.cluster
 
             // Reset read marker
             firstRead = false;
+
+            serializationOutput.Dispose();
         }
     }
 
     internal sealed unsafe class MainStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions<SpanByte, SpanByte>
+        IStreamingSnapshotIteratorFunctions
     {
         readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
         long targetVersion;
@@ -214,8 +241,9 @@ namespace Garnet.cluster
             return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: true);
         }
 
-        public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
-            => snapshotIteratorManager.Reader(ref key, ref value, recordMetadata, numberOfRecords);
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
+            => snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)
             => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(MainStoreSnapshotIterator)}");
@@ -225,7 +253,7 @@ namespace Garnet.cluster
     }
 
     internal sealed unsafe class ObjectStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions<byte[], IGarnetObject>
+        IStreamingSnapshotIteratorFunctions
     {
         readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
         long targetVersion;
@@ -236,8 +264,9 @@ namespace Garnet.cluster
             return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: false);
         }
 
-        public bool Reader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords)
-            => snapshotIteratorManager.Reader(ref key, ref value, recordMetadata, numberOfRecords);
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
+            => snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)
             => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(ObjectStoreSnapshotIterator)}");

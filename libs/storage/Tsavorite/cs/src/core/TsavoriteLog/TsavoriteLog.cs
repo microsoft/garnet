@@ -13,16 +13,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
+    using static LogAddress;
 
     /// <summary>
-    /// Tsavorite log
+    /// Tsavorite Log
     /// </summary>
     public sealed class TsavoriteLog : IDisposable
     {
         private Exception cannedException = null;
 
-        readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
+        readonly TsavoriteLogAllocatorImpl allocator;
         readonly LightEpoch epoch;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
@@ -164,10 +164,12 @@ namespace Tsavorite.core
         /// </summary>
         public long MaxMemorySizeBytes => allocator.MaxMemorySizeBytes;
 
+        internal long SetAddressType(long address) => allocator.SetAddressType(address);
+
         /// <summary>
         /// Actual memory used by log
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => allocator.GetStartLogicalAddressOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
 
         /// <summary>
         /// Create new log instance
@@ -204,14 +206,11 @@ namespace Tsavorite.core
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
             epoch = new LightEpoch();
-            CommittedUntilAddress = Constants.kFirstValidAddress;
-            CommittedBeginAddress = Constants.kFirstValidAddress;
-            SafeTailAddress = Constants.kFirstValidAddress;
+            CommittedUntilAddress = FirstValidAddress;
+            CommittedBeginAddress = FirstValidAddress;
+            SafeTailAddress = FirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
-            allocator = new(
-                new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback },
-                StoreFunctions<Empty, byte>.Create(EmptyKeyComparer.Instance),
-                @this => new BlittableAllocator<Empty, Byte, EmptyStoreFunctions>(@this));
+            allocator = new(new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback });
             allocator.Initialize();
             beginAddress = allocator.BeginAddress;
 
@@ -363,7 +362,7 @@ namespace Tsavorite.core
         /// </summary>
         public void Reset()
         {
-            var beginAddress = allocator.GetFirstValidLogicalAddress(0);
+            var beginAddress = allocator.GetFirstValidLogicalAddressOnPage(0);
             allocator.Reset();
             CommittedUntilAddress = beginAddress;
             CommittedBeginAddress = beginAddress;
@@ -411,7 +410,7 @@ namespace Tsavorite.core
             try
             {
                 if (beginAddress == 0)
-                    beginAddress = allocator.GetFirstValidLogicalAddress(0);
+                    beginAddress = allocator.GetFirstValidLogicalAddressOnPage(0);
 
                 if (committedUntilAddress == 0)
                     committedUntilAddress = beginAddress;
@@ -482,7 +481,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Mark the log as complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// Mark the log as complete. A completed log log will no longer allow enqueues, and all currently enqueued items will
         /// be immediately committed.
         /// </summary>
         /// <param name="spinWait"> whether to spin until log completion becomes committed </param>
@@ -511,7 +510,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check if the log is complete. A completed log will no longer allow enqueues, and all currently enqueued items will
+        /// Check if the log is complete. A completed log log will no longer allow enqueues, and all currently enqueued items will
         /// be immediately committed.
         /// </summary>
         public bool LogCompleted => commitNum == long.MaxValue;
@@ -522,7 +521,7 @@ namespace Tsavorite.core
             safeTailRefreshCallbackCompleted?.Signal();
             safeTailRefreshEntryEnqueued?.Signal();
             commitQueue.Dispose();
-            commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
+            commitTcs.TrySetException(new ObjectDisposedException("TsavoriteLog has been disposed"));
             allocator.Dispose();
             epoch.Dispose();
             if (disposeLogCommitManager)
@@ -598,14 +597,12 @@ namespace Tsavorite.core
         /// Get page size in bits
         /// </summary>
         /// <returns></returns>
-        public int UnsafeGetLogPageSizeBits()
-            => allocator.LogPageSizeBits;
+        public int UnsafeGetLogPageSizeBits() => allocator.LogPageSizeBits;
 
         /// <summary>
         /// Get read only lag address
         /// </summary>
-        public long UnsafeGetReadOnlyAddressLagOffset()
-            => allocator.GetReadOnlyAddressLagOffset();
+        public long UnsafeGetReadOnlyAddressLagOffset() => allocator.GetReadOnlyAddressLagOffset();
 
         /// <summary>
         /// Enqueue batch of entries to log (in memory) - no guarantee of flush/commit
@@ -616,7 +613,7 @@ namespace Tsavorite.core
         {
             long logicalAddress;
             while (!TryEnqueue(readOnlySpanBatch, out logicalAddress))
-                Thread.Yield();
+                _ = Thread.Yield();
             return logicalAddress;
         }
 
@@ -669,14 +666,13 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            {
+                epoch.Suspend();
+                if (cannedException != null)
+                    throw cannedException;
+                return false;
+            }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             entry.SerializeTo(new Span<byte>((void*)(headerSize + physicalAddress), length));
@@ -710,12 +706,11 @@ namespace Tsavorite.core
             epoch.Resume();
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -751,14 +746,13 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
-                if (logicalAddress == 0)
-                {
-                    epoch.Suspend();
-                    if (cannedException != null) throw cannedException;
-                    return false;
-                }
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
+            {
+                epoch.Suspend();
+                if (cannedException != null)
+                    throw cannedException;
+                return false;
+            }
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             fixed (byte* bp = entry)
@@ -792,11 +786,11 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -826,11 +820,11 @@ namespace Tsavorite.core
 
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
@@ -870,16 +864,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and one <see cref="SpanByte"/> entry atomically to the log.
+        /// Append a user-defined blittable struct header and one <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item.TotalSize;
+            var length = sizeof(THeader) + item.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -889,7 +883,8 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+            var offset = headerSize + sizeof(THeader);
+            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -897,17 +892,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -917,8 +912,10 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -926,15 +923,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe void Enqueue(ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = item1.TotalSize + item2.TotalSize;
+            var length = item1.TotalSize() + item2.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -943,8 +940,10 @@ namespace Tsavorite.core
             logicalAddress = AllocateBlock(allocatedLength);
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            item1.CopyTo(physicalAddress + headerSize);
-            item2.CopyTo(physicalAddress + headerSize + item1.TotalSize);
+            var offset = headerSize;
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -952,18 +951,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + item3.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -973,9 +972,12 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item2.TotalSize();
+            item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -983,7 +985,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="input"></param>
@@ -1009,17 +1011,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + input.SerializedLength;
+            var length = sizeof(THeader) + item1.TotalSize() + input.SerializedLength;
             var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1028,8 +1030,10 @@ namespace Tsavorite.core
             logicalAddress = AllocateBlock(allocatedLength);
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize, input.SerializedLength);
+            var offset = headerSize + sizeof(THeader);
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            input.CopyTo(physicalAddress + offset, input.SerializedLength);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1037,18 +1041,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + input.SerializedLength;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + input.SerializedLength;
             var allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1057,10 +1061,12 @@ namespace Tsavorite.core
             logicalAddress = AllocateBlock(allocatedLength);
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize,
-                input.SerializedLength);
+            var offset = headerSize + sizeof(THeader);
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item2.TotalSize();
+            input.CopyTo(physicalAddress + offset, input.SerializedLength);
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1068,15 +1074,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log.
+        /// Append a user-defined header byte and a <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe void Enqueue(byte userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item.TotalSize;
+            var length = sizeof(byte) + item.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -1086,7 +1092,8 @@ namespace Tsavorite.core
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
-            item.CopyTo(physicalAddress + sizeof(byte));
+            var offset = sizeof(byte);
+            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1099,15 +1106,15 @@ namespace Tsavorite.core
             while (true)
             {
                 var flushEvent = allocator.FlushEvent;
-                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
-                if (logicalAddress > 0)
+                if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                     return logicalAddress;
 
-                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
                 Debug.Assert(logicalAddress == 0);
 
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 try
                 {
                     flushEvent.Wait();
@@ -1120,7 +1127,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1128,28 +1135,30 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();    
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1158,7 +1167,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -1167,29 +1176,32 @@ namespace Tsavorite.core
         /// <param name="item3"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref SpanByte item3, out long logicalAddress)
+        public unsafe bool TryEnqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ReadOnlySpan<byte> item3, out long logicalAddress)
             where THeader : unmanaged
         {
             logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + item3.TotalSize;
+            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + item3.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            item3.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize);
+            var offset = headerSize + sizeof(THeader);
+            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item1.TotalSize();
+            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
+            offset += item2.TotalSize();
+            item3.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -1198,33 +1210,34 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log. If it returns true, we are
+        /// Try to append a user-defined header byte and a <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log. If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
         /// <returns>Whether the append succeeded</returns>
-        public unsafe bool TryEnqueue(byte userHeader, ref SpanByte item, out long logicalAddress)
+        public unsafe bool TryEnqueue(byte userHeader, ReadOnlySpan<byte> item, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = sizeof(byte) + item.TotalSize;
+            var length = sizeof(byte) + item.TotalSize();
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 
             var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
             *physicalAddress = userHeader;
-            item.CopyTo(physicalAddress + sizeof(byte));
+            var offset = sizeof(byte);
+            item.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
@@ -2043,7 +2056,7 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
                 if (snapToPageStart)
-                    untilAddress &= ~allocator.PageSizeMask;
+                    untilAddress = allocator.GetAddressOfStartOfPage(untilAddress);
 
                 bool epochProtected = epoch.ThisInstanceProtected();
                 try
@@ -2068,7 +2081,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, untilAddress & ~allocator.PageSizeMask, out _);
+            Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPage(untilAddress), out _);
         }
 
         /// <summary>
@@ -2081,11 +2094,11 @@ namespace Tsavorite.core
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogIterator Scan(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
-                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+                scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
@@ -2094,7 +2107,7 @@ namespace Tsavorite.core
             if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
                 throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
-            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+            var iter = new TsavoriteLogIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
             if (Interlocked.Increment(ref logRefCount) == 1)
                 throw new TsavoriteException("Cannot scan disposed log instance");
@@ -2123,11 +2136,11 @@ namespace Tsavorite.core
             }
         }
 
-        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
         {
             if (readOnlyMode)
             {
-                scanBufferingMode = ScanBufferingMode.SinglePageBuffering;
+                scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering;
 
                 if (scanUncommitted)
                     throw new TsavoriteException("Cannot use scanUncommitted with read-only TsavoriteLog");
@@ -2272,12 +2285,12 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            var logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out var logicalAddress))
             {
                 epoch.Suspend();
                 return false;
             }
+
             // Finish filling in all fields
             info.BeginAddress = BeginAddress;
             info.UntilAddress = logicalAddress + allocatedLength;
@@ -2528,7 +2541,7 @@ namespace Tsavorite.core
 
                 // Reset variables to normal
                 allocator.Initialize();
-                CommittedUntilAddress = Constants.kFirstValidAddress;
+                CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2537,12 +2550,12 @@ namespace Tsavorite.core
 
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = FirstValidAddress;
 
                 try
                 {
@@ -2613,12 +2626,12 @@ namespace Tsavorite.core
             Debug.Assert(info.CommitNum == requestedCommitNum);
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = FirstValidAddress;
                 try
                 {
                     allocator.RestoreHybridLog(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress);
@@ -2682,7 +2695,7 @@ namespace Tsavorite.core
                 logger?.LogDebug("Unable to recover using any available commit");
                 // Reset things to be something normal lol
                 allocator.Initialize();
-                CommittedUntilAddress = Constants.kFirstValidAddress;
+                CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
                     allocator.HeadAddress = long.MaxValue;
@@ -2691,12 +2704,12 @@ namespace Tsavorite.core
 
             if (!readOnlyMode)
             {
-                var headAddress = info.UntilAddress - allocator.GetOffsetInPage(info.UntilAddress);
+                var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
                 if (info.BeginAddress > headAddress)
                     headAddress = info.BeginAddress;
 
                 if (headAddress == 0)
-                    headAddress = Constants.kFirstValidAddress;
+                    headAddress = FirstValidAddress;
                 await allocator.RestoreHybridLogAsync(info.BeginAddress, headAddress, info.UntilAddress, info.UntilAddress, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
@@ -2734,21 +2747,18 @@ namespace Tsavorite.core
             int totalEntries = readOnlySpanBatch.TotalEntries();
             allocatedLength = 0;
             for (int i = 0; i < totalEntries; i++)
-            {
                 allocatedLength += Align(readOnlySpanBatch.Get(i).Length) + headerSize;
-            }
 
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
             if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
 
-            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
-
-            if (logicalAddress == 0)
+            if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {
                 epoch.Suspend();
-                if (cannedException != null) throw cannedException;
+                if (cannedException != null)
+                    throw cannedException;
                 return false;
             }
 

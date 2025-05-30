@@ -53,7 +53,7 @@ namespace Garnet
                                 var timeInMicroSecondBytes = Encoding.ASCII.GetBytes(timeInMicroSecond.ToString());
                                 fixed (byte* timeInMicroSecondBytesPtr = timeInMicroSecondBytes)
                                 {
-                                    api.SortedSetAdd(key, new ArgSlice(unixTimeInMilliSecondPtr, unixTimeInMilliSecondBytes.Length), new ArgSlice(timeInMicroSecondBytesPtr, timeInMicroSecondBytes.Length), out var _);
+                                    api.SortedSetAdd(key, PinnedSpanByte.FromPinnedPointer(unixTimeInMilliSecondPtr, unixTimeInMilliSecondBytes.Length), PinnedSpanByte.FromPinnedPointer(timeInMicroSecondBytesPtr, timeInMicroSecondBytes.Length), out var _);
                                     api.EXPIRE(key, TimeSpan.FromMilliseconds(slidingWindowInMilliSeconds), out var _, StoreType.Object);
                                 }
                             }

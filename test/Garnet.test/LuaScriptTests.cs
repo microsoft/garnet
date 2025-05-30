@@ -43,7 +43,7 @@ namespace Garnet.test
                 ref var arg = ref procInput.parseState.GetArgSliceByRef(0);
 
                 var mem = MemoryPool.Rent(arg.Length + 2);
-                arg.ReadOnlySpan.CopyTo(mem.Memory.Span);
+                arg.                ReadOnlySpan.CopyTo(mem.Memory.Span);
                 mem.Memory.Span[arg.Length] = (byte)'\r';
                 mem.Memory.Span[arg.Length + 1] = (byte)'\n';
 
@@ -369,7 +369,7 @@ namespace Garnet.test
             {
                 tasks[i] = Task.Run(async () =>
                 {
-                    for (var ii = 0; ii < numIterations; ++ii)
+                    for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
@@ -385,7 +385,7 @@ namespace Garnet.test
             {
                 tasks[i] = Task.Run(async () =>
                 {
-                    for (var ii = 0; ii < numIterations; ++ii)
+                    for (var ii = 0; ii < numIterations; ii++)
                     {
                         _ = db.ScriptEvaluate(script, [(RedisKey)"mykey"]);
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));

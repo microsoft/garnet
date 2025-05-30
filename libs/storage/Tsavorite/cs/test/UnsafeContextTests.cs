@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -34,7 +36,7 @@ namespace Tsavorite.test.UnsafeContext
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType)
+        private void Setup(KVSettings kvSettings, DeviceType deviceType)
         {
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename);
@@ -624,3 +626,5 @@ namespace Tsavorite.test.UnsafeContext
         }
     }
 }
+
+#endif // LOGRECORD_TODO

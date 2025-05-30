@@ -13,7 +13,7 @@ namespace Garnet.test
     public class IndexGrowthTests
     {
         GarnetServer server;
-        private int indexResizeTaskDelaySeconds = 10;
+        private int indexResizeTaskDelaySeconds = 5;
         private int indexResizeWaitCycles = 2;
 
         [SetUp]

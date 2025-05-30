@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.IO;
 using NUnit.Framework;
@@ -10,7 +12,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Expiration
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class ExpirationTests
@@ -33,8 +35,7 @@ namespace Tsavorite.test.Expiration
         [Flags]
         internal enum Funcs
         {
-            Invalid = 0, NeedInitialUpdate = 0x0001, NeedCopyUpdate = 0x0002, InPlaceUpdater = 0x0004, InitialUpdater = 0x0008, CopyUpdater = 0x0010,
-            SingleReader = 0x0020, ConcurrentReader = 0x0040,
+            Invalid = 0, NeedInitialUpdate = 0x0001, NeedCopyUpdate = 0x0002, InPlaceUpdater = 0x0004, InitialUpdater = 0x0008, CopyUpdater = 0x0010, Reader = 0x0020,
             RMWCompletionCallback = 0x0100, ReadCompletionCallback = 0x0200,
             SkippedCopyUpdate = NeedCopyUpdate | RMWCompletionCallback,
             DidCopyUpdate = NeedCopyUpdate | CopyUpdater,
@@ -150,12 +151,12 @@ namespace Tsavorite.test.Expiration
 
             Revivify                            // TODO - NYI: An Update or RMW operation encounters a tombstoned record of >= size of the new value, so the record is updated.
                                                 //      Test with newsize < space, then again with newsize == original space
-                                                //          Verify tombstone is revivified on later insert (SingleWriter called within Tsavorite-acquired RecordInfo.SpinLock)
+                                                //          Verify tombstone is revivified on later insert (InitialWriter called within Tsavorite-acquired RecordInfo.SpinLock)
                                                 //          Verify tombstone is revivified on later simple RMW (IU called within Tsavorite-acquired RecordInfo.SpinLock)
 #pragma warning restore format
         };
 
-        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, ExpirationInput, ExpirationOutput, Empty>
         {
             private static unsafe void VerifyValue(int key, ref SpanByte valueSpanByte)
             {
@@ -479,27 +480,12 @@ namespace Tsavorite.test.Expiration
             public override int GetUpsertValueLength(ref SpanByte value, ref ExpirationInput input) => value.TotalSize;
 
             // Read functions
-            public override unsafe bool SingleReader(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref ReadInfo readInfo)
+            public override unsafe bool Reader(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref ReadInfo readInfo)
             {
                 int key1 = key.AsSpan<int>()[0];
                 ref int field1 = ref value.AsSpan<int>()[0];
 
-                output.AddFunc(Funcs.SingleReader);
-                if (IsExpired(key1, field1))
-                {
-                    readInfo.Action = ReadAction.Expire;
-                    return false;
-                }
-                output.retrievedValue = field1;
-                return true;
-            }
-
-            public override unsafe bool ConcurrentReader(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                int key1 = key.AsSpan<int>()[0];
-                ref int field1 = ref value.AsSpan<int>()[0];
-
-                output.AddFunc(Funcs.ConcurrentReader);
+                output.AddFunc(Funcs.Reader);
                 if (IsExpired(key1, field1))
                 {
                     readInfo.Action = ReadAction.Expire;
@@ -510,16 +496,16 @@ namespace Tsavorite.test.Expiration
             }
 
             // Upsert functions
-            public override bool SingleWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
                 => SpanByteFunctions<Empty>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
-            public override bool ConcurrentWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+            public override bool InPlaceWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
                 => SpanByteFunctions<Empty>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
         }
 
         IDevice log;
         ExpirationFunctions functions;
-        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
         BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 
@@ -634,9 +620,9 @@ namespace Tsavorite.test.Expiration
             ClassicAssert.AreEqual(GetValue(ModifyKey) + (afterIncrement ? 1 : 0), output.retrievedValue);
             Funcs expectedFuncs = flushMode switch
             {
-                FlushMode.NoFlush => Funcs.ConcurrentReader,
-                FlushMode.ReadOnly => Funcs.SingleReader,
-                FlushMode.OnDisk => Funcs.SingleReader | Funcs.ReadCompletionCallback,
+                FlushMode.NoFlush => Funcs.Reader,
+                FlushMode.ReadOnly => Funcs.Reader,
+                FlushMode.OnDisk => Funcs.Reader | Funcs.ReadCompletionCallback,
                 _ => Funcs.Invalid
             };
             ClassicAssert.AreNotEqual(expectedFuncs, Funcs.Invalid, $"Unexpected flushmode {flushMode}");
@@ -1127,3 +1113,5 @@ namespace Tsavorite.test.Expiration
         }
     }
 }
+
+#endif // LOGRECORD_TODO

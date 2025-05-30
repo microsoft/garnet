@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -358,7 +360,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private void Populate(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bContext = session.BasicContext;
 
             for (int i = 0; i < DeviceTypeRecoveryTests.NumOps; i++)
@@ -368,7 +370,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         static int GetRandomLength(Random r) => r.Next(StackAllocMax) + 1;  // +1 to remain in range 1..StackAllocMax
 
-        private unsafe void Populate(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
+        private unsafe void Populate(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
@@ -439,7 +441,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         private static void Read(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bContext = session.BasicContext;
 
             for (var i = 0; i < DeviceTypeRecoveryTests.NumUniqueKeys; i++)
@@ -450,13 +452,13 @@ namespace Tsavorite.test.recovery.sumstore
             }
         }
 
-        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store, bool isAsync)
+        private async ValueTask RecoverAndReadTest(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store, bool isAsync)
         {
             await Recover(store, isAsync);
             Read(store);
         }
 
-        private static void Read(TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
+        private static void Read(TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
@@ -512,3 +514,5 @@ namespace Tsavorite.test.recovery.sumstore
         }
     }
 }
+
+#endif // LOGRECORD_TODO

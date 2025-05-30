@@ -19,18 +19,18 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
+    using TransactionalGarnetApi = GarnetApi<TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+        TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     /// <summary>
     /// RESP server session
@@ -96,7 +96,7 @@ namespace Garnet.server
         /// </summary>
         public StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
-        internal LockableGarnetApi lockableGarnetApi;
+        internal TransactionalGarnetApi transactionalGarnetApi;
         internal TransactionManager txnManager;
 
         readonly IGarnetAuthenticator _authenticator;
@@ -539,7 +539,7 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
+                                _ = ProcessBasicCommands(cmd, ref transactionalGarnetApi);
                             }
                             else _ = cmd switch
                             {
@@ -1134,7 +1134,7 @@ namespace Garnet.server
             return result;
         }
 
-        public ArgSlice GetCommandAsArgSlice(out bool success)
+        public PinnedSpanByte GetCommandAsArgSlice(out bool success)
         {
             if (bytesRead - readHead < 6)
             {
@@ -1162,7 +1162,7 @@ namespace Garnet.server
             }
             Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
 
-            var result = new ArgSlice(recvBufferPtr + readHead + 2, psize);
+            var result = PinnedSpanByte.FromPinnedPointer(recvBufferPtr + readHead + 2, psize);
             Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
             Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
 
@@ -1191,13 +1191,9 @@ namespace Garnet.server
 
         private static unsafe bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
         {
-            if (k.Length > length) return false;
-
-            var dest = new SpanByte(length, (IntPtr)dst);
-            if (k.IsSpanByte)
-                k.SpanByte.CopyTo(ref dest);
-            else
-                k.AsMemoryReadOnlySpan().CopyTo(dest.AsSpan());
+            if (k.Length > length)
+                return false;
+            k.ReadOnlySpan.CopyTo(new Span<byte>(dst, length));
             return true;
         }
 
@@ -1597,7 +1593,7 @@ namespace Garnet.server
         {
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
-            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
+            var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession, dbStorageSession.transactionalContext, dbStorageSession.objectStoreTransactionalContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
                 dbStorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger, dbId);
@@ -1616,7 +1612,7 @@ namespace Garnet.server
             this.txnManager = dbSession.TransactionManager;
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
-            this.lockableGarnetApi = dbSession.LockableGarnetApi;
+            this.transactionalGarnetApi = dbSession.TransactionalGarnetApi;
 
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }

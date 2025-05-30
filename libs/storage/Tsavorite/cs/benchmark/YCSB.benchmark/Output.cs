@@ -11,6 +11,6 @@ namespace Tsavorite.benchmark
     public struct Output
     {
         [FieldOffset(0)]
-        public Value value;
+        public FixedLengthValue value;
     }
 }

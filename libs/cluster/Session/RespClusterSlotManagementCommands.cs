@@ -405,7 +405,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
+            var sbKey = parseState.GetArgSliceByRef(0);
             var keyPtr = sbKey.ToPointer();
             var keySize = sbKey.Length;
 

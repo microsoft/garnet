@@ -45,6 +45,14 @@ namespace Tsavorite.core
             return pointers[frameNumber % frameSize] + offset;
         }
 
+        public unsafe (byte[] array, long offset) GetArrayAndUnalignedOffset(long frameNumber, long alignedOffset)
+        {
+            var frameIndex = frameNumber % frameSize;
+
+            long ptr = (long)Unsafe.AsPointer(ref frame[frameIndex]);
+            return (frame[frameIndex], alignedOffset + ptr - pointers[frameIndex]);
+        }
+
         public void Dispose()
         {
         }

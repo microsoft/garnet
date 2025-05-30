@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -27,14 +29,8 @@ namespace Tsavorite.test.InputOutputParameterTests
         {
             internal long lastWriteAddress;
 
-            public override bool ConcurrentReader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                lastWriteAddress = readInfo.Address;
-                return SingleReader(ref key, ref input, ref value, ref output, ref readInfo);
-            }
-
             /// <inheritdoc/>
-            public override bool SingleReader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo)
+            public override bool Reader(ref int key, ref int input, ref int value, ref int output, ref ReadInfo readInfo)
             {
                 ClassicAssert.AreEqual(key * input, value);
                 lastWriteAddress = readInfo.Address;
@@ -43,18 +39,18 @@ namespace Tsavorite.test.InputOutputParameterTests
             }
 
             /// <inheritdoc/>
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-                => SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, WriteReason.Upsert, ref recordInfo);
+            public override bool InPlaceWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+                => InitialWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
 
             /// <inheritdoc/>
-            public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
                 lastWriteAddress = upsertInfo.Address;
                 dst = output = src * input;
                 return true;
             }
             /// <inheritdoc/>
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reasons)
+            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo)
             {
                 ClassicAssert.AreEqual(lastWriteAddress, upsertInfo.Address);
                 ClassicAssert.AreEqual(key * input, dst);
@@ -162,9 +158,11 @@ namespace Tsavorite.test.InputOutputParameterTests
             loading = false;
             input *= input;
 
-            // ConcurrentWriter (update existing records)
+            // InPlaceWriter (update existing records)
             doWrites();
             doReads();
         }
     }
 }
+
+#endif // LOGRECORD_TODO

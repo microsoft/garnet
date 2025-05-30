@@ -11,16 +11,16 @@ namespace Tsavorite.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    internal abstract class HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : IStateMachineTask
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal abstract class HybridLogCheckpointSMTask<TStoreFunctions, TAllocator> : IStateMachineTask
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        protected readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         protected long lastVersion;
         protected readonly Guid guid;
         protected bool isStreaming;
 
-        public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public HybridLogCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
             this.guid = guid;
@@ -73,7 +73,7 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store)
         {
             // Collect object log offsets only after flushes
             // are completed

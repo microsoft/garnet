@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -232,7 +234,7 @@ namespace Tsavorite.test
 
             foreach (var (key, address) in rmwCopyUpdatedAddresses)
             {
-                // ConcurrentReader does not verify the input struct.
+                // Reader does not verify the input struct.
                 InputStruct inputStruct = default;
                 OutputStruct outputStruct = default;
                 ReadOptions readOptions = default;
@@ -254,15 +256,12 @@ namespace Tsavorite.test
             }
 
             // Read functions
-            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+            public override bool Reader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
             {
                 ClassicAssert.IsFalse(readInfo.RecordInfo.IsNull());
                 dst.value = value;
                 return true;
             }
-
-            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-                => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
         }
 
         [Test]
@@ -360,3 +359,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

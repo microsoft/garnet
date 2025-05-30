@@ -15,20 +15,12 @@ namespace Garnet
     {
         private readonly List<(LogLevel, Exception, string)> _memoryLog = new();
 
-        public IDisposable BeginScope<TState>(TState state)
-        {
-            return null;
-        }
+        public IDisposable BeginScope<TState>(TState state) => null;
 
-        public bool IsEnabled(LogLevel logLevel)
-        {
-            return true;
-        }
+        public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-        {
-            this._memoryLog.Add((logLevel, exception, formatter(state, exception)));
-        }
+            => this._memoryLog.Add((logLevel, exception, formatter(state, exception)));
 
         /// <summary>
         /// Flushes logger entries into a destination logger.
@@ -63,9 +55,6 @@ namespace Garnet
 
     internal static class LoggingBuilderExtensions
     {
-        public static ILoggingBuilder AddMemory(this ILoggingBuilder builder)
-        {
-            return builder.AddProvider(new MemoryLoggerProvider());
-        }
+        public static ILoggingBuilder AddMemory(this ILoggingBuilder builder) => builder.AddProvider(new MemoryLoggerProvider());
     }
 }

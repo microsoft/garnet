@@ -4,6 +4,7 @@
 using System;
 using System.Text;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -92,7 +93,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input">The input to parse.</param>
         /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
-        public OperationDirection GetOperationDirection(ArgSlice input)
+        public OperationDirection GetOperationDirection(PinnedSpanByte input)
         {
             // Optimize for the common case
             if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
@@ -100,7 +101,7 @@ namespace Garnet.server
             if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
                 return OperationDirection.Right;
             // Rare case: try making upper case and retry
-            MakeUpperCase(input.ptr);
+            MakeUpperCase(input.ToPointer());
             if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
                 return OperationDirection.Left;
             if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))

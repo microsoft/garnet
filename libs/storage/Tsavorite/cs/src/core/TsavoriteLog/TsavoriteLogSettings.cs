@@ -14,7 +14,7 @@ namespace Tsavorite.core
     public delegate byte[] GetMemory(int minLength);
 
     /// <summary>
-    /// Type of checksum to add to log
+    /// Type of checksum to add to TsavoriteLog
     /// </summary>
     public enum LogChecksumType
     {
@@ -29,7 +29,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Tsavorite Log Settings
+    /// Tsavorite Log LogSettings
     /// </summary>
     public class TsavoriteLogSettings : IDisposable
     {
@@ -76,7 +76,7 @@ namespace Tsavorite.core
         public int SegmentSizeBits { set { SegmentSize = 1L << value; } }
 
         /// <summary>
-        /// Log commit manager - if you want to override the default implementation of commit.
+        /// TsavoriteLog commit manager - if you want to override the default implementation of commit.
         /// </summary>
         public ILogCommitManager LogCommitManager = null;
 
@@ -93,7 +93,7 @@ namespace Tsavorite.core
         public GetMemory GetMemory = null;
 
         /// <summary>
-        /// Type of checksum to add to log
+        /// Type of checksum to add to TsavoriteLog
         /// </summary>
         public LogChecksumType LogChecksum = LogChecksumType.None;
 
@@ -121,7 +121,7 @@ namespace Tsavorite.core
         public bool RemoveOutdatedCommits = true;
 
         /// <summary>
-        /// Log commit policy that influences the behavior of Commit() calls.
+        /// TsavoriteLog commit policy that influences the behavior of Commit() calls.
         /// </summary>
         public LogCommitPolicy LogCommitPolicy = LogCommitPolicy.Default();
 

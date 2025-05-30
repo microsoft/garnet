@@ -138,18 +138,13 @@ namespace Garnet.server
         /// <summary>
         /// Set "WithEtag" flag for the input header
         /// </summary>
-        internal void SetWithEtagFlag() => flags |= RespInputFlags.WithEtag;
+        internal void SetWithETagFlag() => flags |= RespInputFlags.WithEtag;
 
         /// <summary>
         /// Check if the WithEtag flag is set
         /// </summary>
         /// <returns></returns>
-        internal bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
-
-        /// <summary>
-        /// Check that neither SetGet nor WithEtag flag is set
-        /// </summary>
-        internal bool NotSetGetNorCheckWithEtag() => (flags & (RespInputFlags.SetGet | RespInputFlags.WithEtag)) == 0;
+        internal bool CheckWithETagFlag() => (flags & RespInputFlags.WithEtag) != 0;
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,
@@ -157,22 +152,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="expireTime">Expiration time</param>
         /// <returns></returns>
-        internal unsafe bool CheckExpiry(long expireTime)
-        {
-            if ((flags & RespInputFlags.Deterministic) != 0)
-            {
-                if ((flags & RespInputFlags.Expired) != 0)
-                    return true;
-            }
-            else
-            {
-                if (expireTime < DateTimeOffset.Now.UtcTicks)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
+        internal readonly unsafe bool CheckExpiry(long expireTime)
+            => (flags & RespInputFlags.Deterministic) != 0 
+                ? (flags & RespInputFlags.Expired) != 0 
+                : expireTime < DateTimeOffset.Now.UtcTicks;
 
         /// <summary>
         /// Check the SetGet flag
@@ -188,9 +171,9 @@ namespace Garnet.server
             => (byte*)Unsafe.AsPointer(ref cmd);
 
         /// <summary>
-        /// Get header as SpanByte
+        /// Get header as PinnedSpanByte
         /// </summary>
-        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+        public unsafe PinnedSpanByte SpanByte => PinnedSpanByte.FromPinnedPointer(ToPointer(), Length);
 
         /// <summary>
         /// Get header length
@@ -276,7 +259,7 @@ namespace Garnet.server
             var curr = dest;
 
             // Serialize header
-            header.SpanByte.CopyTo(curr);
+            header.SpanByte.SerializeTo(curr);
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
@@ -289,7 +272,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Number of serialized bytes
@@ -302,10 +285,10 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
-            curr += sbHeader.TotalSize;
-            header = h;
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
 
             // Deserialize arg1
             arg1 = *(int*)curr;
@@ -405,7 +388,7 @@ namespace Garnet.server
             var curr = dest;
 
             // Serialize header
-            header.SpanByte.CopyTo(curr);
+            header.SpanByte.SerializeTo(curr);
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
@@ -414,7 +397,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -427,10 +410,10 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
-            curr += sbHeader.TotalSize;
-            header = h;
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
 
             // Deserialize arg1
             arg1 = *(long*)curr;
@@ -496,7 +479,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             return (int)(curr - dest);
