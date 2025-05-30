@@ -2932,6 +2932,17 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void WaitForFailoverCompleted(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var infoItem = context.clusterTestUtils.GetReplicationInfo(nodeIndex, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-completed"))
+                    break;
+                BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForFailoverCompleted));
+            }
+        }
+
         public void Checkpoint(int nodeIndex, ILogger logger = null)
             => Checkpoint((IPEndPoint)endpoints[nodeIndex], logger: logger);
 
