@@ -1040,8 +1040,13 @@ namespace Garnet.server
             activeDbIds.mapLock.CloseLock();
         }
 
-        // TODO: Probably want to give each DB an option to have it's own frequency
-        public override void MainStoreCollectedExpiredKeysInBackgroundTask(int frequency, int range, ILogger logger = null, CancellationToken cancellation = default)
+        public override void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
+            => StartCollectionPerDb((GarnetDatabase db) => MainStoreCollectExpiredKeysForDbInBackgroundAsync(db, frequency, logger, cancellation));
+
+        public override void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
+            => StartCollectionPerDb((GarnetDatabase db) => MainStoreCollectExpiredKeysForDbInBackgroundAsync(db, frequency, logger, cancellation));
+
+        private void StartCollectionPerDb(Func<GarnetDatabase, Task> action)
         {
             var databasesMapSnapshot = databases.Map;
 
@@ -1052,17 +1057,22 @@ namespace Garnet.server
             {
                 var dbId = activeDbIdsMapSnapshot[i];
                 GarnetDatabase db = databasesMapSnapshot[dbId];
-                Task.Run(async () => await MainStoreCollectedExpiredKeysForDbInBackgroundAsync(db, frequency, range, logger, cancellation));
+                Task.Run(() => action(db));
             }
         }
 
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null)
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null)
+            => CollectExpiredMainStoreKeysImpl(GetDbById(dbId), logger);
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null)
+            => CollectExpiredObjStoreKeysImpl(GetDbById(dbId), logger);
+
+        private GarnetDatabase GetDbById(int dbId)
         {
             var databasesMapSize = databases.ActualSize;
             var databasesMapSnapshot = databases.Map;
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
-            var db = databasesMapSnapshot[dbId];
-            return CollectExpiredMainStoreKeys(db, range, logger);
+            return databasesMapSnapshot[dbId];
         }
     }
 }

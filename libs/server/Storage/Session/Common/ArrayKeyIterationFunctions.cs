@@ -229,6 +229,44 @@ namespace Garnet.server
                 }
             }
 
+            internal sealed class ObjectStoreGetExpiredKeys : IScanIteratorFunctions<byte[], IGarnetObject>
+            {
+                public long totalRecordsScanned;
+
+                private readonly GetDBKeysInfo info;
+
+                internal ObjectStoreGetExpiredKeys() => info = new();
+
+                internal void Initialize(List<byte[]> keys)
+                    => info.Initialize(keys, default, 0);
+
+                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords,out cursorRecordResult);
+
+                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                {
+                    totalRecordsScanned++;
+                    if (value.Expiration < 0 || !ObjectSessionFunctions.CheckExpiry(value))
+                        cursorRecordResult = CursorRecordResult.Skip;
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Accept;
+                        info.keys.Add(key);
+                    }
+
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress)
+                {
+                    totalRecordsScanned = 0;
+                    return true;
+                }
+
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
+            }
+
             internal sealed class MainStoreGetExpiredKeys : IScanIteratorFunctions<SpanByte, SpanByte>
             {
                 public long totalRecordsScanned;

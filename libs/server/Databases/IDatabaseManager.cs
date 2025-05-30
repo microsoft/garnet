@@ -259,14 +259,25 @@ namespace Garnet.server
         internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
 
         /// <summary>
-        /// Runs a background task per DB to manage periodic active expired key collection.
+        /// Runs a background task per DB to manage periodic active expired key collection on Main store
         /// In the case of a single DB, this will start only a single task.
         /// </summary>
-        public abstract void MainStoreCollectedExpiredKeysInBackgroundTask(int frequency, int range, ILogger logger = null, CancellationToken cancellation = default);
+        public void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
 
         /// <summary>
-        /// On Demand Expired Main Store Keys collection, for a given range over a particular db given its ID
+        /// On Demand Expired Main Store Keys collection, for a db given its ID
         /// </summary>
-        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, int range, ILogger logger = null);
+        public (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null);
+
+        /// <summary>
+        /// Runs a background task per DB to manage periodic active expired key collection on Obj store
+        /// In the case of a single DB, this will start only a single task.
+        /// </summary>
+        public void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
+
+        /// <summary>
+        /// On Demand Expired Main Store Keys collection, for a db given its ID
+        /// </summary>
+        public (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null);
     }
 }

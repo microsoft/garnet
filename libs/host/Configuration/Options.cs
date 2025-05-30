@@ -619,10 +619,6 @@ namespace Garnet
         [Option("main-store-expired-collection-freq", Required = false, HelpText = "Main store's expired key collection frequency in seconds")]
         public int MainStoreExpiredKeyCollectionFrequencySecs { get; set; }
 
-        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
-        [Option("main-store-active-expiration-revivifiable-region-percentage", Required = false, HelpText = "Percentage of revivifiable region to scan for Main store active expiration")]
-        public int MainStoreActiveExpirationRevivifiableRegionPercentage { get; set; }
-
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -892,7 +888,6 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 MainStoreExpiredKeyCollectionFrequencySecs = MainStoreExpiredKeyCollectionFrequencySecs,
-                MainStoreActiveExpirationRevivifiableRegionPercentage = MainStoreActiveExpirationRevivifiableRegionPercentage,
             };
         }
 

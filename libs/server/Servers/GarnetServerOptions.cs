@@ -116,11 +116,6 @@ namespace Garnet.server
         public int MainStoreExpiredKeyCollectionFrequencySecs = -1;
 
         /// <summary>
-        /// Max number of records to expire in-memory per round of expired key collection. 
-        /// </summary>
-        public int MainStoreActiveExpirationRevivifiableRegionPercentage = 100;
-
-        /// <summary>
         /// Index resize check frequency in seconds.
         /// </summary>
         public int IndexResizeFrequencySecs = 60;

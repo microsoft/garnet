@@ -696,8 +696,11 @@ namespace Garnet.server
             }
         }
 
-        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandMainStoreExpiredKeyColleciton(int dbId, int scanningPercentageOfRevivRegion)
-            => databaseManager.CollectExpiredMainStoreKeys(dbId, scanningPercentageOfRevivRegion, logger);
+        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandMainStoreExpiredKeyCollection(int dbId)
+            => databaseManager.CollectExpiredMainStoreKeys(dbId, logger);
+
+        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandObjStoreExpiredKeyCollection(int dbId)
+            => databaseManager.CollectExpiredObjStoreKeys(dbId, logger);
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
         /// <param name="token"></param>
@@ -751,11 +754,17 @@ namespace Garnet.server
 
             if (serverOptions.MainStoreExpiredKeyCollectionFrequencySecs > 0)
             {
-                // Internally uses Task.Run to run background timer based loops that asynchronously wake up and run collection rounds
-                databaseManager.MainStoreCollectedExpiredKeysInBackgroundTask(
+                // Internally the below methods use Task.Run to run background tasks that loops asynchronously wake up and run collection rounds
+                databaseManager.MainStoreCollectExpiredKeysInBackgroundTask(
                     serverOptions.MainStoreExpiredKeyCollectionFrequencySecs,
-                    serverOptions.MainStoreActiveExpirationRevivifiableRegionPercentage,
                     logger, ctsCommit.Token);
+                
+                if (!serverOptions.DisableObjects)
+                {
+                    databaseManager.ObjStoreCollectExpiredKeysInBackgroundTask(
+                        serverOptions.MainStoreExpiredKeyCollectionFrequencySecs,
+                        logger, ctsCommit.Token);
+                }
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

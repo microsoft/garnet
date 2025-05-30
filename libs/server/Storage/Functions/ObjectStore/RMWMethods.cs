@@ -23,6 +23,7 @@ namespace Garnet.server
                 case GarnetObjectType.Expire:
                 case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
+                case GarnetObjectType.DelIfExpIm:
                     return false;
                 default:
                     if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
@@ -148,6 +149,13 @@ namespace Garnet.server
                     else
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     return true;
+                case GarnetObjectType.DelIfExpIm:
+                    if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        return false;
+                    }
+                    return true;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
@@ -189,7 +197,15 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
-            => true;
+        {
+            if (oldValue.Expiration > 0 && input.header.CheckExpiry(oldValue.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
+            return true;
+        }
 
         /// <inheritdoc />
         public bool CopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
