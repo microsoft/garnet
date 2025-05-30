@@ -134,7 +134,8 @@ namespace Garnet
 
             LazyJsonReaderOptions = new(() => new JsonReaderOptions
             {
-                CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true
+                CommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
             });
         }
 

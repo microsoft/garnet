@@ -206,7 +206,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.IndexSize)));
             ClassicAssert.AreEqual("256m", ((JsonElement)nonDefaultOptions[nameof(Options.IndexSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.RevivBinRecordCounts)));
-            ClassicAssert.AreEqual(new[] { 4,5 },
+            ClassicAssert.AreEqual(new[] { 4, 5 },
                 ((JsonElement)nonDefaultOptions[nameof(Options.RevivBinRecordCounts)]).EnumerateArray()
                 .Select(i => i.GetInt32()));
             ClassicAssert.IsFalse(nonDefaultOptions.ContainsKey(nameof(Options.Recover)));
