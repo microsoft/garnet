@@ -111,11 +111,13 @@ namespace Garnet.test
 
             // No import path, no command line args
             // Check values match those on defaults.conf
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out _, out exitGracefully, silentMode: true);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(null, out options, out invalidOptions, out var optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("32m", options.PageSize);
             ClassicAssert.AreEqual("16g", options.MemorySize);
+            var nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
+            ClassicAssert.IsEmpty(nonDefaultOptions);
 
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
@@ -123,8 +125,8 @@ namespace Garnet.test
             var binPaths = new[] { GetFullExtensionBinPath("Garnet.test"), GetFullExtensionBinPath("Garnet.test.cluster") };
             var modules = new[] { Assembly.GetExecutingAssembly().Location };
 
-            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out exitGracefully, silentMode: true);
+            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--index", "128m", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("4m", options.PageSize);
@@ -139,10 +141,30 @@ namespace Garnet.test
             CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
             CollectionAssert.AreEqual(modules, options.LoadModuleCS);
 
+            // Validate non-default configuration options
+            nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
+            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
+            ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
+            ClassicAssert.AreEqual(53, ((JsonElement)nonDefaultOptions[nameof(Options.Port)]).GetInt32());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.RevivifiableFraction)));
+            ClassicAssert.AreEqual(0.5, ((JsonElement)nonDefaultOptions[nameof(Options.RevivifiableFraction)]).GetDouble());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.RevivBinRecordCounts)));
+            ClassicAssert.AreEqual(new[] { 1, 2, 3 },
+                ((JsonElement)nonDefaultOptions[nameof(Options.RevivBinRecordCounts)]).EnumerateArray()
+                .Select(i => i.GetInt32()));
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Recover)));
+            ClassicAssert.AreEqual(true, ((JsonElement)nonDefaultOptions[nameof(Options.Recover)]).GetBoolean());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.LoadModuleCS)));
+            ClassicAssert.AreEqual(modules,
+                ((JsonElement)nonDefaultOptions[nameof(Options.LoadModuleCS)]).EnumerateArray()
+                .Select(m => m.GetString()));
+
             // Import from previous export command, no command line args
             // Check values from import path override values from default.conf
             args = ["--config-import-path", configPath];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out exitGracefully, silentMode: true);
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
@@ -151,11 +173,17 @@ namespace Garnet.test
             CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
             CollectionAssert.AreEqual(modules, options.LoadModuleCS);
 
+            // Validate non-default configuration options
+            nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
+            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
+            ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
+
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
             binPaths = [GetFullExtensionBinPath("Garnet.test")];
-            args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--port", "0", "--no-obj", "--aof", "--reviv-bin-record-counts", "4,5", "--extension-bin-paths", string.Join(',', binPaths)];
-            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out exitGracefully, silentMode: true);
+            args = ["--config-import-path", configPath, "-p", "12m", "-s", "1g", "--recover", "false", "--index", "256m", "--port", "0", "--no-obj", "--aof", "--reviv-bin-record-counts", "4,5", "--extension-bin-paths", string.Join(',', binPaths)];
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
@@ -167,6 +195,23 @@ namespace Garnet.test
             ClassicAssert.IsTrue(options.EnableAOF);
             CollectionAssert.AreEqual(new[] { 4, 5 }, options.RevivBinRecordCounts);
             CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
+
+            // Validate non-default configuration options
+            nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
+            ClassicAssert.AreEqual(11, nonDefaultOptions.Count);
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
+            ClassicAssert.AreEqual("12m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
+            ClassicAssert.AreEqual(0, ((JsonElement)nonDefaultOptions[nameof(Options.Port)]).GetInt32());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.IndexSize)));
+            ClassicAssert.AreEqual("256m", ((JsonElement)nonDefaultOptions[nameof(Options.IndexSize)]).GetString());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.RevivBinRecordCounts)));
+            ClassicAssert.AreEqual(new[] { 4,5 },
+                ((JsonElement)nonDefaultOptions[nameof(Options.RevivBinRecordCounts)]).EnumerateArray()
+                .Select(i => i.GetInt32()));
+            ClassicAssert.IsFalse(nonDefaultOptions.ContainsKey(nameof(Options.Recover)));
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.DisableObjects)));
+            ClassicAssert.IsTrue(((JsonElement)nonDefaultOptions[nameof(Options.DisableObjects)]).GetBoolean());
 
             // No import path, include command line args
             // Check that all invalid options flagged

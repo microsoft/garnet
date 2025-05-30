@@ -39,6 +39,7 @@ namespace Garnet
 
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
+                // Only write properties with the OptionsAttribute, and are not marked with the JsonIgnore or HiddenOption attributes
                 var ignoreAttr = prop.GetCustomAttributes(typeof(JsonIgnoreAttribute)).FirstOrDefault();
                 if (ignoreAttr != null)
                     continue;
@@ -51,9 +52,11 @@ namespace Garnet
                 if (optionAttr == null)
                     continue;
 
+                // Get the property values from the current object and the default object
                 var val = prop.GetValue(value);
                 var def = prop.GetValue(defaultObj);
 
+                // Only serialize if the current object value is different from the default object value
                 if (!AreEqual(prop.PropertyType, val, def))
                 {
                     writer.WritePropertyName(prop.Name);
@@ -71,6 +74,7 @@ namespace Garnet
             if (value == null || defaultValue == null)
                 return false;
 
+            // Handle IEnumerable<T> properties
             if (type != typeof(string) && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
             {
                 var valueEnum = ((IEnumerable)value).Cast<object>();

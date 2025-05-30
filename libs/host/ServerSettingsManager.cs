@@ -154,25 +154,24 @@ Please check the syntax of your command. For detailed usage information run with
                 return false;
             }
 
+            // Serialize non-default config options
+            var configProvider = ConfigProviderFactory.GetConfigProvider(ConfigFileType.GarnetConf, defaultOptions);
+            var isSerialized = configProvider.TrySerializeOptions(options, true, logger, out optionsJson);
+            if (!isSerialized)
+            {
+                logger?.LogTrace("Encountered an error while serializing options.");
+                return false;
+            }
+
             // Dump non-default config options to log
             if (options.DumpConfig.HasValue && options.DumpConfig.Value)
             {
-                var configProvider = ConfigProviderFactory.GetConfigProvider(ConfigFileType.GarnetConf);
-                var isSerialized = configProvider.TrySerializeOptions(options, true, defaultOptions, logger,
-                    out var serializedOptionsJson);
-                if (!isSerialized)
+                var serializedOptions = optionsJson.Split(Environment.NewLine).Skip(1).SkipLast(1)
+                    .Select(o => o.Trim()).ToArray();
+                logger?.LogTrace("Found {count} non-default configuration options:", serializedOptions.Length);
+                foreach (var serializedOption in serializedOptions)
                 {
-                    logger?.LogTrace("Encountered an error while serializing options.");
-                }
-                else
-                {
-                    var serializedOptions = serializedOptionsJson.Split(Environment.NewLine).Skip(1).SkipLast(1)
-                        .Select(o => o.Trim()).ToArray();
-                    logger?.LogTrace("Found {count} non-default configuration options:", serializedOptions.Length);
-                    foreach (var serializedOption in serializedOptions)
-                    {
-                        logger?.LogTrace("{option}", serializedOption);
-                    }
+                    logger?.LogTrace("{option}", serializedOption);
                 }
             }
 

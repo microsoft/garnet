@@ -17,6 +17,11 @@ namespace Garnet
     internal interface IConfigProvider
     {
         /// <summary>
+        /// Object containing default configuration values
+        /// </summary>
+        Options DefaultOptions { get; set; }
+
+        /// <summary>
         /// Import an Options object from path using a stream provider
         /// </summary>
         /// <param name="path">Path to the config file containing the serialized object</param>
@@ -41,11 +46,10 @@ namespace Garnet
         /// </summary>
         /// <param name="options">Options object to serialize</param>
         /// <param name="skipDefaultOptions">If true, serializer should not serialize properties with default values</param>
-        /// <param name="defaultOptions">Object containing default options (only used if skipDefaultOptions is true)</param>
         /// <param name="logger">Logger</param>
         /// <param name="value">The serialized object</param>
         /// <returns>True if serialization succeeded</returns>
-        bool TrySerializeOptions(Options options, bool skipDefaultOptions, Options defaultOptions, ILogger logger, out string value);
+        bool TrySerializeOptions(Options options, bool skipDefaultOptions, ILogger logger, out string value);
 
         /// <summary>
         /// Deserialize an Options object
@@ -72,19 +76,26 @@ namespace Garnet
         /// Get a IConfigProvider instance based on its configuration file type
         /// </summary>
         /// <param name="fileType">The configuration file type</param>
+        /// <param name="defaultOptions">Options object containing default configuration values (used only when calling TrySerializeOptions with skipDefaultOptions)</param>
         /// <returns></returns>
         /// <exception cref="NotImplementedException"></exception>
-        public static IConfigProvider GetConfigProvider(ConfigFileType fileType)
+        public static IConfigProvider GetConfigProvider(ConfigFileType fileType, Options defaultOptions = null)
         {
+            IConfigProvider instance;
             switch (fileType)
             {
                 case ConfigFileType.GarnetConf:
-                    return GarnetConfigProvider.Instance;
+                    instance = GarnetConfigProvider.Instance;
+                    break;
                 case ConfigFileType.RedisConf:
-                    return RedisConfigProvider.Instance;
+                    instance = RedisConfigProvider.Instance;
+                    break;
                 default:
                     throw new NotImplementedException($"No ConfigProvider exists for file type: {fileType}.");
             }
+
+            instance.DefaultOptions = defaultOptions;
+            return instance;
         }
     }
 
@@ -94,16 +105,37 @@ namespace Garnet
     internal class GarnetConfigProvider : IConfigProvider
     {
         private static readonly Lazy<IConfigProvider> LazyInstance;
+        private static Lazy<JsonSerializerOptions> LazyJsonSerializerOptions;
+        private static Lazy<JsonSerializerOptions> LazyJsonSerializerOptionsSkipDefaults;
+        private static Lazy<JsonReaderOptions> LazyJsonReaderOptions;
 
         public static IConfigProvider Instance => LazyInstance.Value;
+
+        public Options DefaultOptions { get; set; }
 
         static GarnetConfigProvider()
         {
             LazyInstance = new(() => new GarnetConfigProvider());
         }
 
-        private GarnetConfigProvider()
+        public GarnetConfigProvider()
         {
+            LazyJsonSerializerOptions = new(() => new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new JsonStringEnumConverter() }
+            });
+
+            LazyJsonSerializerOptionsSkipDefaults = new(() => new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new CompactObjectJsonConverter<Options>(DefaultOptions), new JsonStringEnumConverter() }
+            });
+
+            LazyJsonReaderOptions = new(() => new JsonReaderOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true
+            });
         }
 
         public bool TryImportOptions(string path, IStreamProvider streamProvider, Options options, ILogger logger)
@@ -123,7 +155,7 @@ namespace Garnet
 
         public bool TryExportOptions(string path, IStreamProvider streamProvider, Options options, ILogger logger)
         {
-            if (!TrySerializeOptions(options, false, null, logger, out var serializedOptions))
+            if (!TrySerializeOptions(options, false, logger, out var serializedOptions))
                 return false;
 
             var data = Encoding.ASCII.GetBytes(serializedOptions);
@@ -132,15 +164,12 @@ namespace Garnet
             return true;
         }
 
-        public bool TrySerializeOptions(Options options, bool skipDefaultOptions, Options defaultOptions, ILogger logger, out string value)
+        public bool TrySerializeOptions(Options options, bool skipDefaultOptions, ILogger logger, out string value)
         {
             value = null;
-
-            var jsonSerializerOptions = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                Converters = { new CompactObjectJsonConverter<Options>(defaultOptions), new JsonStringEnumConverter() }
-            };
+            var jsonSerializerOptions = skipDefaultOptions
+                ? LazyJsonSerializerOptionsSkipDefaults.Value
+                : LazyJsonSerializerOptions.Value;
 
             try
             {
@@ -169,15 +198,9 @@ namespace Garnet
                 NumberHandling = JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.WriteAsString
             };
 
-            var jsonReaderOptions = new JsonReaderOptions
-            {
-                CommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true
-            };
-
             try
             {
-                var jsonReader = new Utf8JsonReader(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(value)), jsonReaderOptions);
+                var jsonReader = new Utf8JsonReader(new ReadOnlySpan<byte>(Encoding.UTF8.GetBytes(value)), LazyJsonReaderOptions.Value);
 
                 // No need fot the return value, as the deserializer populates the existing options instance
                 _ = JsonSerializer.Deserialize<Options>(ref jsonReader, jsonSerializerOptions);
@@ -201,6 +224,8 @@ namespace Garnet
 
         public static IConfigProvider Instance => LazyInstance.Value;
 
+        public Options DefaultOptions { get; set; }
+
         static RedisConfigProvider()
         {
             LazyInstance = new(() => new RedisConfigProvider());
@@ -223,7 +248,7 @@ namespace Garnet
             throw new NotImplementedException();
         }
 
-        public bool TrySerializeOptions(Options options, bool skipDefaultOptions, Options defaultOptions, ILogger logger, out string value) => throw new NotImplementedException();
+        public bool TrySerializeOptions(Options options, bool skipDefaultOptions, ILogger logger, out string value) => throw new NotImplementedException();
 
         public bool TryDeserializeOptions(string value, ILogger logger, out Options options) => throw new NotImplementedException();
 
