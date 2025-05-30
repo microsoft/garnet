@@ -428,7 +428,7 @@ namespace Garnet
         public bool? FastAofTruncate { get; set; }
 
         [OptionValidation]
-        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
+        [Option("on-demand-checkpoint", Required = true, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]

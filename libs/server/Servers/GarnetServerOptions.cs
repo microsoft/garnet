@@ -327,7 +327,7 @@ namespace Garnet.server
         /// <summary>
         /// Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching
         /// </summary>
-        public bool OnDemandCheckpoint = false;
+        public bool OnDemandCheckpoint = true;
 
         /// <summary>
         /// Whether diskless replication is enabled or not.
