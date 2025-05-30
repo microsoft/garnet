@@ -453,6 +453,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = "64m",
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             EndPoint clusterAnnounceEndpoint = null)
@@ -501,6 +502,7 @@ namespace Garnet.test
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
                     replicaDisklessSyncDelay: replicaDisklessSyncDelay,
+                    replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint);
@@ -559,6 +561,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = "64m",
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
@@ -674,6 +677,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
+                ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
             };
 
