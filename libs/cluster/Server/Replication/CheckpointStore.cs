@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -154,19 +155,23 @@ namespace Garnet.cluster
                 logger?.LogTrace("Suspended readers and deleting outdated checkpoint!");
 
                 // Below check each checkpoint token separately if it is eligible for deletion
-                if (CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
+                if (!CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
+                    break;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
-                if (CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
+                if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
+                    break;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 if (!clusterProvider.serverOptions.DisableObjects)
                 {
-                    if (CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_HLOG))
-                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.metadata.objectStoreHlogToken);
+                    if (!CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_HLOG))
+                        break;
+                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.metadata.objectStoreHlogToken);
 
-                    if (CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_INDEX))
-                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
+                    if (!CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_INDEX))
+                        break;
+                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
                 }
 
                 // At least one token can always be deleted thus invalidating the in-memory entry
@@ -184,11 +189,14 @@ namespace Garnet.cluster
                 var curr = toDelete.next;
                 while (curr != null && curr != tail)
                 {
-                    // Token can be deleted when curr entry and toDelete do not share it
+                    // If current entry does not contain a shared token it is safe to delete because
+                    // either all previous entries would have contained a shared token and would be locked from readers
+                    // in order for the loop to reach the point where this entry is being inspected or it is the first entry being inspected.
                     if (!curr.ContainsSharedToken(toDelete, fileType))
                         return true;
 
-                    // If token is shared then try to suspend addition of new readers
+                    // Here we know that the entry contains a shared token so we try to suspend access to readers.
+                    // If we fail we can immediately return that we cannot delete this token 
                     if (!curr.TrySuspendReaders())
                         return false;
 
@@ -196,7 +204,8 @@ namespace Garnet.cluster
                     curr = curr.next;
                 }
 
-                // Here we reached the tail so we can delete the token only if it is not shared with the tail
+                Debug.Assert(curr == tail);
+                // Tail is checked separately because we don't want to lock readers, just check for shared tokens.
                 return !curr.ContainsSharedToken(toDelete, fileType);
             }
         }
