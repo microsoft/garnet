@@ -54,9 +54,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetManagerType(0, out var managerType))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
 
             try
