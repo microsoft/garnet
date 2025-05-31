@@ -625,7 +625,7 @@ namespace Garnet.server
 
                 if (withScores)
                 {
-                    writer.WriteDoubleBulkString(score);
+                    writer.WriteDoubleNumeric(score);
                 }
             }
 
@@ -700,7 +700,7 @@ namespace Garnet.server
                 {
                     writer.WriteArrayLength(2); // Rank and score
                     writer.WriteInt32(rank);
-                    writer.WriteDoubleBulkString(score);
+                    writer.WriteDoubleNumeric(score);
                 }
                 else
                 {
