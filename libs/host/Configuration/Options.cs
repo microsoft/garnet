@@ -471,10 +471,6 @@ namespace Garnet
         public string ConfigExportPath { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
-        [Option("dump-config", Required = false, HelpText = "Dump all non-default configuration options to the trace log")]
-        public bool? DumpConfig { get; set; }
-
-        [System.Text.Json.Serialization.JsonIgnore]
         [OptionValidation]
         [Option("use-azure-storage-for-config-export", Required = false, Default = false, HelpText = "Use Azure storage to export config file")]
         public bool? UseAzureStorageForConfigExport { get; set; }

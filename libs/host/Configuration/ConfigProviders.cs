@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CommandLine;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -129,7 +130,11 @@ namespace Garnet
             LazyJsonSerializerOptionsSkipDefaults = new(() => new JsonSerializerOptions
             {
                 WriteIndented = true,
-                Converters = { new CompactObjectJsonConverter<Options>(DefaultOptions), new JsonStringEnumConverter() }
+                Converters =
+                {
+                    new CompactOptionsJsonConverter(DefaultOptions),
+                    new JsonStringEnumConverter()
+                }
             });
 
             LazyJsonReaderOptions = new(() => new JsonReaderOptions
@@ -254,5 +259,18 @@ namespace Garnet
         public bool TryDeserializeOptions(string value, ILogger logger, out Options options) => throw new NotImplementedException();
 
         public bool TryDeserializeOptions(Options options, string value, ILogger logger) => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Converter for serializing Options object while skipping default values
+    /// Converter will serialize properties marked by the OptionAttribute and exclude options marked by the HiddenOptionAttribute.
+    /// </summary>
+    internal class CompactOptionsJsonConverter : CompactObjectJsonConverter<Options>
+    {
+        /// <inheritdoc />
+        public CompactOptionsJsonConverter(Options defaultInstance) : base(defaultInstance, [typeof(OptionAttribute)],
+            [typeof(HiddenOptionAttribute)])
+        {
+        }
     }
 }

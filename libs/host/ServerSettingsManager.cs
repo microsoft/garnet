@@ -159,20 +159,17 @@ Please check the syntax of your command. For detailed usage information run with
             var isSerialized = configProvider.TrySerializeOptions(options, true, logger, out optionsJson);
             if (!isSerialized)
             {
-                logger?.LogTrace("Encountered an error while serializing options.");
+                logger?.LogError("Encountered an error while serializing options.");
                 return false;
             }
 
             // Dump non-default config options to log
-            if (options.DumpConfig.HasValue && options.DumpConfig.Value)
+            var serializedOptions = optionsJson.Split(Environment.NewLine).Skip(1).SkipLast(1)
+                .Select(o => o.Trim()).ToArray();
+            logger?.LogInformation("Found {count} non-default configuration options:", serializedOptions.Length);
+            foreach (var serializedOption in serializedOptions)
             {
-                var serializedOptions = optionsJson.Split(Environment.NewLine).Skip(1).SkipLast(1)
-                    .Select(o => o.Trim()).ToArray();
-                logger?.LogTrace("Found {count} non-default configuration options:", serializedOptions.Length);
-                foreach (var serializedOption in serializedOptions)
-                {
-                    logger?.LogTrace("{option}", serializedOption);
-                }
+                logger?.LogInformation("{option}", serializedOption);
             }
 
             // Export the settings to file, if ConfigExportPath is specified

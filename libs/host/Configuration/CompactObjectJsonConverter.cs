@@ -14,16 +14,52 @@ namespace Garnet
 {
     /// <summary>
     /// Serializes an object into a JSON stream while skipping default values
-    /// defined by specified object in the constructor
+    /// defined by specified object in the constructor.
     /// </summary>
     /// <typeparam name="T">Destination object type</typeparam>
-    public class CompactObjectJsonConverter<T> : JsonConverter<T> where T : class, new()
+    internal class CompactObjectJsonConverter<T> : JsonConverter<T> where T : class, new()
     {
         private readonly T defaultObj;
+        readonly HashSet<string> serializableProperties;
 
-        public CompactObjectJsonConverter(T defaultInstance)
+        /// <summary>
+        /// Creates a converter that serializes an object to json while skipping default values
+        /// </summary>
+        /// <param name="defaultInstance">The object containing default values to skip</param>
+        /// <param name="includeAttributes">Attributes marking properties to include in serialization (empty of all included)</param>
+        /// <param name="excludeAttributes">Attributes marking properties to exclude in serialization (empty if none excluded)</param>
+        public CompactObjectJsonConverter(T defaultInstance, Type[] includeAttributes = null, Type[] excludeAttributes = null)
         {
             defaultObj = defaultInstance;
+            var attrsToExclude = excludeAttributes == null ? new HashSet<Type>()
+                : [.. excludeAttributes.Where(t => t.IsAssignableTo(typeof(Attribute))).Union([typeof(JsonIgnoreAttribute)])];
+            var attrsToInclude = includeAttributes == null ? new HashSet<Type>()
+                : [.. includeAttributes.Where(t => t.IsAssignableTo(typeof(Attribute)))];
+
+            // Determine properties to include in serialization according to excludeAttributes and includeAttributes
+            serializableProperties = new HashSet<string>();
+            foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                // Property should have at least one included attribute (if any exist) and none of the excluded attributes
+                // in order to be serialized
+                var writeProp = false;
+                foreach (var customAttribute in prop.GetCustomAttributes())
+                {
+                    if (attrsToExclude.Contains(customAttribute.GetType()))
+                    {
+                        writeProp = false;
+                        break;
+                    }
+
+                    if (!writeProp && (attrsToInclude.Count == 0 || attrsToInclude.Contains(customAttribute.GetType())))
+                        writeProp = true;
+                }
+
+                if (writeProp)
+                {
+                    serializableProperties.Add(prop.Name);
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -39,17 +75,8 @@ namespace Garnet
 
             foreach (var prop in typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                // Only write properties with the OptionAttribute, and are not marked with the JsonIgnore or HiddenOption attributes
-                var ignoreAttr = prop.GetCustomAttributes(typeof(JsonIgnoreAttribute)).FirstOrDefault();
-                if (ignoreAttr != null)
-                    continue;
-
-                var hiddenAttr = prop.GetCustomAttributes(typeof(HiddenOptionAttribute)).FirstOrDefault();
-                if (hiddenAttr != null)
-                    continue;
-
-                var optionAttr = prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
-                if (optionAttr == null)
+                // Check if property can be serialized
+                if (!serializableProperties.Contains(prop.Name))
                     continue;
 
                 // Get the property values from the current object and the default object
