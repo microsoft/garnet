@@ -160,7 +160,7 @@ namespace Garnet.server
 
                     resultSb.Append("\n");
                     var result = resultSb.ToString();
-                    WriteVerbatimString(Encoding.UTF8.GetBytes(result));
+                    WriteVerbatimString(Encoding.ASCII.GetBytes(result));
 
                     return true;
                 }
@@ -194,7 +194,7 @@ namespace Garnet.server
 
             resultSb.Append("\n");
             var result = resultSb.ToString();
-            WriteVerbatimString(Encoding.UTF8.GetBytes(result));
+            WriteVerbatimString(Encoding.ASCII.GetBytes(result));
 
             return true;
         }
@@ -505,7 +505,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(this.clientName, ref dcurr, dend))
                     SendAndReset();
             }
 
