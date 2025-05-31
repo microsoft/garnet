@@ -113,10 +113,32 @@ Please check the syntax of your command. For detailed usage information run with
                 logger?.LogInformation("Configuration file path not specified. Using default values with command-line switches.");
             }
 
+            // Create a copy of the options before reparsing the command line arguments
+            var initOptionsCopy = (Options)initOptions.Clone();
+
             // Re-parse command line arguments after initializing Options object with initialization function
             // In order to override options specified in the command line arguments
             if (!parser.TryParseArguments(consolidatedArgs, argNameToDefaultValue, out options, out exitGracefully, () => initOptions, silentMode))
                 return false;
+
+            // Since IEnumerable<T> options could have been overridden by the last operation,
+            // it is necessary to copy them from the previous copy of the options, if they weren't explicitly overridden
+            foreach (var prop in typeof(Options).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                var optionAttr = (OptionAttribute)prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
+                if (optionAttr == null)
+                    continue;
+
+                var type = prop.PropertyType;
+                if (type.IsGenericType &&
+                    type.GetGenericTypeDefinition() == typeof(IEnumerable<>) &&
+                    !consolidatedArgs.Contains($"-{optionAttr.ShortName}", StringComparer.InvariantCultureIgnoreCase) &&
+                    !consolidatedArgs.Contains($"--{optionAttr.LongName}", StringComparer.InvariantCultureIgnoreCase))
+                {
+                    var value = prop.GetValue(initOptionsCopy);
+                    prop.SetValue(options, value);
+                }
+            }
 
             // Validate options
             if (!options.IsValid(out invalidOptions, logger))

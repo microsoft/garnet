@@ -62,22 +62,31 @@ namespace Garnet.server
             {
                 foreach (var filePath in binaryFiles)
                 {
-                    using var fs = File.OpenRead(filePath);
-                    using var peReader = new PEReader(fs);
-
-                    var metadataReader = peReader.GetMetadataReader();
-                    var assemblyPublicKeyHandle = metadataReader.GetAssemblyDefinition().PublicKey;
-
-                    if (assemblyPublicKeyHandle.IsNil)
+                    try
                     {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
-                        return false;
+                        var isSigned = false;
+
+                        using var fs = File.OpenRead(filePath);
+                        using var peReader = new PEReader(fs);
+
+                        if (peReader.HasMetadata)
+                        {
+                            var metadataReader = peReader.GetMetadataReader();
+                            var assemblyPublicKeyHandle = metadataReader.GetAssemblyDefinition().PublicKey;
+
+                            isSigned = !assemblyPublicKeyHandle.IsNil &&
+                                       metadataReader.GetBlobBytes(assemblyPublicKeyHandle).Length > 0;
+                        }
+
+                        if (!isSigned)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                            return false;
+                        }
                     }
-
-                    var publicKeyBytes = metadataReader.GetBlobBytes(assemblyPublicKeyHandle);
-                    if (publicKeyBytes.Length == 0)
+                    catch (Exception)
                     {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ACCESSING_ASSEMBLIES;
                         return false;
                     }
                 }
