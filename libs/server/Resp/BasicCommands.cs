@@ -77,9 +77,7 @@ namespace Garnet.server
                 {
                     if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
                     }
 
                     switch (option)
@@ -315,16 +313,12 @@ namespace Garnet.server
             // Validate offset
             if (!parseState.TryGetInt(1, out var offset))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             if (offset < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
             var input = new RawStringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
@@ -349,9 +343,7 @@ namespace Garnet.server
             // Validate range
             if (!parseState.TryGetInt(1, out _) || !parseState.TryGetInt(2, out _))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             var input = new RawStringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
@@ -731,9 +723,7 @@ namespace Garnet.server
             long incrByValue = 0;
             if (parseState.Count > 1 && !parseState.TryGetLong(1, out incrByValue))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
@@ -904,9 +894,7 @@ namespace Garnet.server
 
             if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.ReadWriteSession)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
             }
 
             // Since Garnet currently only supports a single database,
@@ -1049,22 +1037,18 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("COMMAND COUNT");
             }
-            else
+
+            if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, true, logger))
             {
-                if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, true, logger))
-                {
-                    respCommandCount = 0;
-                }
-
-                var commandCount = customCommandManagerSession.GetCustomCommandInfoCount() + respCommandCount;
-
-                while (!RespWriteUtils.TryWriteInt32(commandCount, ref dcurr, dend))
-                    SendAndReset();
+                respCommandCount = 0;
             }
+
+            var commandCount = customCommandManagerSession.GetCustomCommandInfoCount() + respCommandCount;
+
+            while (!RespWriteUtils.TryWriteInt32(commandCount, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
@@ -1304,10 +1288,7 @@ namespace Garnet.server
                 // Validate protocol version
                 if (!parseState.TryGetInt(tokenIdx++, out var localRespProtocolVersion))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER);
                 }
 
                 tmpRespProtocolVersion = (byte)localRespProtocolVersion;
@@ -1485,10 +1466,7 @@ namespace Garnet.server
         {
             if (respProtocolVersion <= 2)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2);
             }
 
             if (parseState.Count != 1)

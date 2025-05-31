@@ -614,9 +614,7 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage("ERR Invalid GC generation."u8);
                 }
             }
 
@@ -691,9 +689,7 @@ namespace Garnet.server
         {
             if (clusterSession == null)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
             clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
@@ -704,10 +700,7 @@ namespace Garnet.server
         {
             if (parseState.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEBUG));
             }
 
             if (
