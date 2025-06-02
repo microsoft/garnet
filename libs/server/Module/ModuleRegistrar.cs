@@ -199,8 +199,18 @@ namespace Garnet.server
             errorMessage = default;
 
             // Get types that implement IModule from loaded assemblies
-            var loadedTypes = loadedAssembly
-                .GetTypes()
+            Type[] loadedTypes;
+            try
+            {
+                loadedTypes = loadedAssembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException)
+            {
+                errorMessage = CmdStrings.RESP_ERR_MODULE_LOADED_TYPES;
+                return false;
+            }
+
+            loadedTypes = loadedTypes
                 .Where(t => t.IsSubclassOf(typeof(ModuleBase)) && !t.IsAbstract)
                 .ToArray();
 

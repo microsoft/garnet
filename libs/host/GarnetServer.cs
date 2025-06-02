@@ -277,6 +277,12 @@ namespace Garnet
             var maxDatabases = opts.EnableCluster ? 1 : opts.MaxDatabases;
             logger?.LogInformation("Max number of logical databases allowed on server: {maxDatabases}", maxDatabases);
 
+            if (opts.ExtensionBinPaths?.Length > 0)
+            {
+                logger?.LogTrace("Allowed binary paths for extension loading: {binPaths}", string.Join(",", opts.ExtensionBinPaths));
+                logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", opts.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
+            }
+
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 
