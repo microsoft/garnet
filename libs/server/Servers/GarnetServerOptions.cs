@@ -340,9 +340,9 @@ namespace Garnet.server
         public int ReplicaDisklessSyncDelay = 5;
 
         /// <summary>
-        /// AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible.
+        /// AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.
         /// </summary>
-        public string ReplicaDisklessSyncFullSyncAofThreshold = "64m";
+        public string ReplicaDisklessSyncFullSyncAofThreshold = string.Empty;
 
         /// <summary>
         /// With main-memory replication, whether we use null device for AOF. Ensures no disk IO, but can cause data loss during replication.
@@ -915,7 +915,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         public long ReplicaDisklessSyncFullSyncAofThresholdValue()
-            => ParseSize(ReplicaDisklessSyncFullSyncAofThreshold);
+            => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold);
 
         /// <summary>
         /// Get object store segment size
