@@ -1440,7 +1440,7 @@ namespace Garnet.server
         /// <param name="weights">An optional array of doubles representing the weights to apply to each sorted set during the union.</param>
         /// <param name="aggregateType">The type of aggregation to use when combining scores from the sorted sets. Defaults to <see cref="SortedSetAggregateType.Sum"/>.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
-        GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
+        GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double Element, byte[] Score)> pairs);
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,

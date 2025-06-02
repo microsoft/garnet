@@ -1669,9 +1669,9 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("SUM", new double[] { 5, 7, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with SUM aggregate")]
+        [TestCase("SUM", new double[] { 3, 5, 6, 7 }, new string[] { "c", "a", "d", "b" }, Description = "Tests ZUNION with SUM aggregate")]
         [TestCase("MIN", new double[] { 1, 2, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with MIN aggregate")]
-        [TestCase("MAX", new double[] { 4, 5, 3, 6 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with MAX aggregate")]
+        [TestCase("MAX", new double[] { 3, 4, 5, 6 }, new string[] { "c", "a", "b", "d" }, Description = "Tests ZUNION with MAX aggregate")]
         public void CanUseZUnionWithAggregateOption(string aggregateType, double[] expectedScores, string[] expectedElements)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1709,7 +1709,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(new double[] { 2, 3 }, new double[] { 14, 19, 6, 18 }, new string[] { "a", "b", "c", "d" }, Description = "Tests ZUNION with multiple weights")]
+        [TestCase(new double[] { 2, 3 }, new double[] { 6, 14, 18, 19 }, new string[] { "c", "a", "d", "b" }, Description = "Tests ZUNION with multiple weights")]
         public void CanUseZUnionWithWeights(double[] weights, double[] expectedScores, string[] expectedElements)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3697,12 +3697,12 @@ namespace Garnet.test
 
             // Basic ZUNION
             var response = lightClientRequest.SendCommandChunks("ZUNION 2 zset1 zset2", bytesSent, 7);
-            var expectedResponse = "*6\r\n$3\r\nuno\r\n$3\r\ndue\r\n$3\r\ntre\r\n$7\r\nquattro\r\n$6\r\ncinque\r\n$3\r\nsei\r\n";
+            var expectedResponse = "*6\r\n$3\r\nuno\r\n$3\r\ndue\r\n$6\r\ncinque\r\n$3\r\nsei\r\n$3\r\ntre\r\n$7\r\nquattro\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZUNION with WITHSCORES
             response = lightClientRequest.SendCommandChunks("ZUNION 2 zset1 zset2 WITHSCORES", bytesSent, 13);
-            expectedResponse = "*12\r\n$3\r\nuno\r\n$1\r\n2\r\n$3\r\ndue\r\n$1\r\n4\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$1\r\n8\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n";
+            expectedResponse = "*12\r\n$3\r\nuno\r\n$1\r\n2\r\n$3\r\ndue\r\n$1\r\n4\r\n$6\r\ncinque\r\n$1\r\n5\r\n$3\r\nsei\r\n$1\r\n6\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$1\r\n8";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -3774,7 +3774,7 @@ namespace Garnet.test
 
             // Test WEIGHTS and AGGREGATE together
             var response = lightClientRequest.SendCommand("ZUNION 2 zset1 zset2 WEIGHTS 2 3 AGGREGATE MAX WITHSCORES");
-            var expectedResponse = "*8\r\n$3\r\nuno\r\n$2\r\n12\r\n$3\r\ndue\r\n$2\r\n15\r\n$3\r\ntre\r\n$1\r\n6\r\n$7\r\nquattro\r\n$2\r\n18\r\n";
+            var expectedResponse = "*8\r\n$3\r\ntre\r\n$1\r\n6\r\n$3\r\nuno\r\n$2\r\n12\r\n$3\r\ndue\r\n$2\r\n15\r\n$7\r\nquattro\r\n$2\r\n18\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 

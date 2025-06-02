@@ -1025,7 +1025,7 @@ namespace Garnet.server
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
 
-        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -1047,7 +1047,18 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetUnion(keys, ref objectContext, out pairs, weights, aggregateType);
+                var status = SortedSetUnion(keys, ref objectContext, out var result, weights, aggregateType);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new SortedSet<(double, byte[])>(SortedSetComparer.Instance);
+
+                    foreach (var pair in result)
+                    {
+                        pairs.Add((pair.Value, pair.Key));
+                    }
+                }
+
+                return status;
             }
             finally
             {
