@@ -620,6 +620,10 @@ namespace Garnet
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("active-expired-collection-freq", Required = false, HelpText = "expired key collection frequency in seconds")]
+        public int ActiveExpiredKeyCollectionFrequencySecs { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -888,6 +892,7 @@ namespace Garnet
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
+                ActiveExpiredKeyCollectionFrequencySecs = ActiveExpiredKeyCollectionFrequencySecs,
             };
         }
 

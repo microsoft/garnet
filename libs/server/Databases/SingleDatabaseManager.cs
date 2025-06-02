@@ -393,6 +393,24 @@ namespace Garnet.server
             return checkpointsPaused;
         }
 
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+            return CollectExpiredMainStoreKeysImpl(DefaultDatabase, logger);
+        }
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+            return CollectExpiredObjStoreKeysImpl(DefaultDatabase, logger);
+        }
+
+        public override void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
+            => Task.Run(() => MainStoreCollectExpiredKeysForDbInBackgroundAsync(DefaultDatabase, frequency, logger, cancellation));
+
+        public override void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
+            => Task.Run(() => MainStoreCollectExpiredKeysForDbInBackgroundAsync(DefaultDatabase, frequency, logger, cancellation));
+
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
             StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.TailAddress);

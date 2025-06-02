@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -406,15 +408,15 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         protected void ExecuteObjectCollection(GarnetDatabase db, ILogger logger = null)
         {
-            if (db.DatabaseStorageSession == null)
+            if (db.ObjectStoreCollectionDatabaseStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferManager();
-                db.DatabaseStorageSession =
+                db.ObjectStoreCollectionDatabaseStorageSession =
                     new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            ExecuteHashCollect(db.DatabaseStorageSession);
-            ExecuteSortedSetCollect(db.DatabaseStorageSession);
+            ExecuteHashCollect(db.ObjectStoreCollectionDatabaseStorageSession);
+            ExecuteSortedSetCollect(db.ObjectStoreCollectionDatabaseStorageSession);
         }
 
         /// <summary>
@@ -690,6 +692,116 @@ namespace Garnet.server
         {
             storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
             storageSession.scratchBufferManager.Reset();
+        }
+
+        /// <inheritdoc/>
+        public abstract void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
+
+        /// <inheritdoc/>
+        public abstract void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
+
+        /// <inheritdoc/>
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null);
+
+        /// <inheritdoc/>
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null);
+
+        protected Task MainStoreCollectExpiredKeysForDbInBackgroundAsync(GarnetDatabase db, int frequency, ILogger logger = null, CancellationToken cancellationToken = default)
+            => RunBackgroundTask(() => CollectExpiredMainStoreKeysImpl(db, logger), frequency, logger, cancellationToken);
+
+        protected Task ObjStoreCollectExpiredKeysForDbInBackgroundAsync(GarnetDatabase db, int frequency, ILogger logger = null, CancellationToken cancellationToken = default)
+            => RunBackgroundTask(() => CollectExpiredObjStoreKeysImpl(db, logger), frequency, logger, cancellationToken);
+
+        private async Task RunBackgroundTask(Action action, int frequency, ILogger logger = null, CancellationToken cancellationToken = default)
+        {
+            Debug.Assert(frequency > 0);
+            try
+            {
+                while (true)
+                {
+                    if (cancellationToken.IsCancellationRequested) return;
+                    action();
+                    await Task.Delay(TimeSpan.FromSeconds(frequency), cancellationToken);
+                }
+            }
+            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+            { }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background task. Task won't be resumed.");
+            }
+        }
+
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeysImpl(GarnetDatabase db, ILogger logger = null)
+        {
+            if (db.MainStoreActiveExpDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                db.MainStoreActiveExpDbStorageSession =
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            long scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
+            long scanTill = StoreWrapper.store.Log.TailAddress;
+
+            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(
+                cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
+
+            long numExpiredKeysFound = keys.Count;
+
+            RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIM);
+            // If there is any sort of shift of the marker then a few of my scanned records will be from a redundant region.
+            // DelIfExpIm will be noop for those records since they will early exit at NCU.
+            foreach (byte[] key in keys)
+            {
+                unsafe
+                {
+                    fixed (byte* keyPtr = key)
+                    {
+                        SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+                        // Use basic session for transient locking
+                        db.MainStoreActiveExpDbStorageSession.DEL_Conditional(ref keySb, ref input, ref db.MainStoreActiveExpDbStorageSession.basicContext);
+                    }
+                }
+
+                logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
+            }
+
+            logger?.LogDebug("Main Store - Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
+
+            return (numExpiredKeysFound, totalRecordsScanned);
+        }
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeysImpl(GarnetDatabase db, ILogger logger = null)
+        {
+            if (db.ObjStoreActiveExpDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                db.ObjStoreActiveExpDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            long scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
+            long scanTill = StoreWrapper.objectStore.Log.TailAddress;
+
+            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysObjectStore(
+                cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
+
+            long numExpiredKeysFound = keys.Count;
+
+            ObjectInput input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
+
+            for (var i = 0; i < keys.Count; i++)
+            {
+                var key = keys[i];
+                GarnetObjectStoreOutput output = new GarnetObjectStoreOutput();
+                db.ObjStoreActiveExpDbStorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref db.ObjectStoreCollectionDatabaseStorageSession.objectStoreBasicContext);
+                logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
+            }
+
+            logger?.LogDebug("Obj Store - Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
+
+            return (numExpiredKeysFound, totalRecordsScanned);
         }
     }
 }

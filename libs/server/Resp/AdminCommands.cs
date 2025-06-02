@@ -54,6 +54,7 @@ namespace Garnet.server
                 RespCommand.SLOWLOG_RESET => NetworkSlowLogReset(),
                 RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
+                RespCommand.ACTEXP => NetworkACTEXP(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
@@ -887,6 +888,53 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// ACTEXP MAIN|OBJ [DBID]
+        /// Scan the mutable region and tm=ombstone all expired keys actively instead of lazy.
+        /// This is meant to be able to let users do on-demand active expiration, and even build their own schedulers
+        /// for calling expiration based on their known workload patterns.
+        /// </summary>
+        private bool NetworkACTEXP()
+        {
+            if (parseState.Count < 1 || parseState.Count > 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ACTEXP));
+            }
+
+            StoreOptions storeOption;
+            if (!parseState.TryGetStoreOption(0, out storeOption))
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_INVALID_STORE_OPTION, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // default database as default choice.
+            int dbId = 0;
+            if (parseState.Count > 1)
+            {
+                if (!TryParseDatabaseId(1, out dbId))
+                    return true;
+            }
+
+            (long recordsExpired, long recordsScanned) = storeOption == StoreOptions.MAIN ?
+                storeWrapper.OnDemandMainStoreExpiredKeyCollection(dbId) : storeWrapper.OnDemandObjStoreExpiredKeyCollection(dbId);
+
+            // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
+            int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
+
+            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsScanned, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }

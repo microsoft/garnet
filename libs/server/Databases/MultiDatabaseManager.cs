@@ -1039,5 +1039,40 @@ namespace Garnet.server
             databasesContentLock.CloseLock();
             activeDbIds.mapLock.CloseLock();
         }
+
+        public override void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
+            => StartCollectionPerDb((GarnetDatabase db) => MainStoreCollectExpiredKeysForDbInBackgroundAsync(db, frequency, logger, cancellation));
+
+        public override void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
+            => StartCollectionPerDb((GarnetDatabase db) => MainStoreCollectExpiredKeysForDbInBackgroundAsync(db, frequency, logger, cancellation));
+
+        private void StartCollectionPerDb(Func<GarnetDatabase, Task> action)
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                GarnetDatabase db = databasesMapSnapshot[dbId];
+                Task.Run(() => action(db));
+            }
+        }
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null)
+            => CollectExpiredMainStoreKeysImpl(GetDbById(dbId), logger);
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null)
+            => CollectExpiredObjStoreKeysImpl(GetDbById(dbId), logger);
+
+        private GarnetDatabase GetDbById(int dbId)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            return databasesMapSnapshot[dbId];
+        }
     }
 }
