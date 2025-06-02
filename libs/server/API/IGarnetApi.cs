@@ -1436,7 +1436,7 @@ namespace Garnet.server
         /// Performs a union of multiple sorted sets and stores the result in a dictionary.
         /// </summary>
         /// <param name="keys">A read-only span of ArgSlice representing the keys of the sorted sets to union.</param>
-        /// <param name="pairs">An output dictionary where the result of the union will be stored, with byte arrays as keys and doubles as values.</param>
+        /// <param name="pairs">An output sorted set where the result of the union will be stored.</param>
         /// <param name="weights">An optional array of doubles representing the weights to apply to each sorted set during the union.</param>
         /// <param name="aggregateType">The type of aggregation to use when combining scores from the sorted sets. Defaults to <see cref="SortedSetAggregateType.Sum"/>.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
