@@ -301,7 +301,6 @@ namespace Garnet.server
 
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
-
             }
 
             internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>

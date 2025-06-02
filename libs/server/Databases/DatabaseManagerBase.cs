@@ -784,7 +784,7 @@ namespace Garnet.server
             long scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
             long scanTill = StoreWrapper.objectStore.Log.TailAddress;
 
-            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(
+            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysObjectStore(
                 cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
 
             long numExpiredKeysFound = keys.Count;
