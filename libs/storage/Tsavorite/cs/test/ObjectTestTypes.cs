@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
@@ -23,16 +24,23 @@ namespace Tsavorite.test
         }
     }
 
-    public class TestObjectValue : IHeapObject
+    public class TestObjectValue : HeapObjectBase
     {
         public int value;
 
-        public long MemorySize { get => sizeof(int); set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
-        public long DiskSize { get => MemorySize; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
-
-        public void Dispose() { }
-
         public override string ToString() => value.ToString();
+
+        public override void Dispose() { }
+
+        public override HeapObjectBase Clone() => throw new NotImplementedException();
+        public override void DoSerialize(BinaryWriter writer) => throw new NotImplementedException();
+        public override void WriteType(BinaryWriter writer, bool isNull) => throw new NotImplementedException();
+
+        public TestObjectValue()
+        {
+            MemorySize = sizeof(int);
+            DiskSize = MemorySize;
+        }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>
         {
@@ -174,17 +182,20 @@ namespace Tsavorite.test
             => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 
-    public class TestLargeObjectValue : IHeapObject
+    public class TestLargeObjectValue : HeapObjectBase
     {
         public byte[] value;
 
-        public long MemorySize { get => DiskSize + 24 /* TODO: ByteArrayOverhead */; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
-        public long DiskSize { get => sizeof(int) + value.Length; set => throw new NotImplementedException("TestValueObject.DiskSize.set"); }
+        public override HeapObjectBase Clone() => throw new NotImplementedException();
+        public override void DoSerialize(BinaryWriter writer) => throw new NotImplementedException();
+        public override void WriteType(BinaryWriter writer, bool isNull) => throw new NotImplementedException();
 
-        public void Dispose() { }
+        public override void Dispose() { }
 
         public TestLargeObjectValue()
         {
+            MemorySize = DiskSize + 24; // TODO: ByteArrayOverhead
+            DiskSize = sizeof(int) + value.Length;
         }
 
         public TestLargeObjectValue(int size)

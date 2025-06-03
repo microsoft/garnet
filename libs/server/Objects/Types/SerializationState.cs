@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.server
 {

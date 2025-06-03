@@ -3,51 +3,21 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
-using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    public struct ObjectSizes
-    {
-        /// <summary>In-memory size, including .NET object overheads</summary>
-        public long Memory;
-
-        /// <summary>Serialized size, for disk IO or other storage</summary>
-        public long Disk;
-
-        public ObjectSizes(long memory, long disk)
-        {
-            Memory = memory;
-            Disk = disk + sizeof(byte); // Additional byte for GarnetObjectBase.Type
-        }
-
-        [Conditional("DEBUG")]
-        public void Verify() => Debug.Assert(Memory >= 0 && Disk >= 0, $"Invalid sizes [{Memory}, {Disk}]");
-    }
-
     /// <summary>
     /// Base class for Garnet heap objects
     /// </summary>
-    public abstract class GarnetObjectBase : IGarnetObject
+    public abstract class GarnetObjectBase : HeapObjectBase, IGarnetObject
     {
-        int serializationState;
         public byte[] serialized;
 
         /// <inheritdoc />
         public abstract byte Type { get; }
-
-        /// <inheritdoc />
-        public long MemorySize { get => sizes.Memory; set => sizes.Memory = value; }
-
-        /// <inheritdoc />
-        public long DiskSize { get => sizes.Disk; set => sizes.Disk = value; }
-
-        public ObjectSizes sizes;
 
         protected GarnetObjectBase(ObjectSizes sizes)
         {
@@ -62,118 +32,19 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void Serialize(BinaryWriter writer)
-        {
-            while (true)
-            {
-                // This is probably called from Flush, including for checkpoints. If CopyUpdate() has already serialized the object, we will use that
-                // serialized state. Otherwise, we will serialize the object directly to the writer, and not create the serialized byte[]; only
-                // CopyUpdater does that, as it must ensure the object's (v1) data is not changed during the checkpoint.
-                if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
-                {
-                    // Directly serialize to wire, do not cache serialized state
-                    writer.Write(Type);
-                    DoSerialize(writer);
-                    serializationState = (int)SerializationPhase.REST;
-                    return;
-                }
-
-                // If we are here, serializationState is one of the .SERIALIZ* states. This means that either:
-                // - Another thread is currently serializing this object (e.g. checkpoint and eviction)
-                // - CopyUpdate() is serializing this object
-
-                if (serializationState == (int)SerializationPhase.SERIALIZED)
-                {
-                    // If serialized state is cached, use that
-                    var _serialized = serialized;
-                    if (_serialized != null)
-                    {
-                        writer.Write(Type);
-                        writer.Write(_serialized);
-                    }
-                    else
-                    {
-                        // Write null object to stream
-                        writer.Write((byte)GarnetObjectType.Null);
-                    }
-                    return;
-                }
-
-                Thread.Yield();
-            }
-        }
-
-        /// <inheritdoc />
-        public IGarnetObject CopyUpdate(bool isInNewVersion, ref RMWInfo rmwInfo)
-        {
-            // Note that this does a shallow copy of the object's internal structures (e.g. List<>), which means subsequent modifications of newValue
-            // in the (v+1) version of the record will modify data seen from the 'this' in the (v) record. Normally this is OK because the (v) version
-            // of the record is not reachable once the (v+1) version is inserted, but if a checkpoint is ongoing, the (v) version is part of that.
-            var newValue = Clone();
-
-            // If we are not currently taking a checkpoint, we can delete the old version since the new version of the object is already created
-            // in the new record, which has been inserted (because this CopyUpdate() is called from PostCopyUpdater() after a successful CAS).
-            if (!isInNewVersion)
-            {
-                rmwInfo.ClearSourceValueObject = true;
-                return newValue;
-            }
-
-            // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
-            // of the object during a checkpoint while the (v+1) version of the record may modify the shallow-copied internal structures.
-            while (true)
-            {
-                if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
-                {
-                    using var ms = new MemoryStream();
-                    using var writer = new BinaryWriter(ms, Encoding.UTF8);
-                    DoSerialize(writer);
-                    serialized = ms.ToArray();
-
-                    serializationState = (int)SerializationPhase.SERIALIZED;    // This is the only place .SERIALIZED is set
-                    break;
-                }
-
-                // If we're here, serializationState is one of the .SERIALIZ* states. CopyUpdate has a lock on the tag chain, so no other thread will
-                // be running CopyUpdate. Therefore there are two possibilities:
-                // 1. CopyUpdate has been called before and the state is .SERIALIZED and '_serialized' is created. We're done.
-                // 2. Serialize() is running (likely in a Flush()) and the state is .SERIALIZING. We will Yield and loop to wait for it to finish.
-
-                if (serializationState >= (int)SerializationPhase.SERIALIZED)
-                    break;
-
-                _ = Thread.Yield();
-            }
-
-            return newValue;
-        }
-
-        /// <summary>
-        /// Clone object (shallow copy)
-        /// </summary>
-        /// <returns></returns>
-        public abstract GarnetObjectBase Clone();
-
-        /// <inheritdoc />
         public abstract bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, out long sizeChange);
-
-        /// <inheritdoc />
-        public abstract void Dispose();
 
         /// <summary>
         /// Serialize to given writer
         /// NOTE: Make sure to first call base.DoSerialize(writer) in all derived classes.
         /// </summary>
-        public virtual void DoSerialize(BinaryWriter writer)
+        public override void DoSerialize(BinaryWriter writer)
         {
             // Add anything here that needs to be in front of the derived object data
         }
 
-        private bool MakeTransition(SerializationPhase expectedPhase, SerializationPhase nextPhase)
-        {
-            if (Interlocked.CompareExchange(ref serializationState, (int)nextPhase, (int)expectedPhase) != (int)expectedPhase) return false;
-            return true;
-        }
+        /// <inheritdoc />
+        public override void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull ? (byte)GarnetObjectType.Null : Type);
 
         /// <summary>
         /// Scan the items of the collection

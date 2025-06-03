@@ -248,8 +248,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Asserts that <paramref name="newValueSize"/> is the same size as the value data size in the <see cref="RecordSizeInfo"/> before setting the length.
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueLength(int newValueSize, in RecordSizeInfo sizeInfo)
+        public readonly bool TrySetValueLength(int newValueSize, in RecordSizeInfo sizeInfo)
         {
             Debug.Assert(newValueSize == sizeInfo.FieldInfo.ValueDataSize, $"Mismatched value size; expected {sizeInfo.FieldInfo.ValueDataSize}, actual {newValueSize}");
             return TrySetValueLength(in sizeInfo);
@@ -258,8 +259,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Tries to set the length of the value field, with consideration to whether there is also space for the optionals (ETag and Expiration).
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueLength(in RecordSizeInfo sizeInfo)
+        public readonly bool TrySetValueLength(in RecordSizeInfo sizeInfo)
         {
             var valueAddress = ValueAddress;
             var oldTotalInlineValueSize = LogField.GetInlineTotalSizeOfField(valueAddress, Info.ValueIsInline);
@@ -419,6 +421,10 @@ namespace Tsavorite.core
             return true;
         }
 
+        /// <summary>
+        /// Set the value span, checking for conversion from inline and for space for optionals (ETag, Expiration).
+        /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo)
         {
@@ -434,23 +440,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Set the object, checking for conversion from inline and for space for optionals (ETag, Expiration).
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
-        public bool TrySetValueObject(IHeapObject value, in RecordSizeInfo sizeInfo)
-#pragma warning restore IDE0251
-        {
-            return TrySetValueLength(in sizeInfo) && TrySetValueObject(value);
-        }
-
+        public readonly bool TrySetValueObject(IHeapObject value, in RecordSizeInfo sizeInfo) => TrySetValueLength(in sizeInfo) && TrySetValueObject(value);
 
         /// <summary>
         /// This overload must be called only when it is known the LogRecord's Value is not inline, and there is no need to check
         /// optionals (ETag or Expiration). In that case it is faster to just set the object.
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
-        public bool TrySetValueObject(IHeapObject value)
-#pragma warning restore IDE0251
+        public readonly bool TrySetValueObject(IHeapObject value)
         {
             Debug.Assert(Info.ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
 
@@ -511,10 +511,12 @@ namespace Tsavorite.core
             return RoundUp(recSize, Constants.kRecordAlignment) - recSize;
         }
 
+        /// <summary>
+        /// Set the filler length (the extra data length, if any).
+        /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies the object list
         public void SetFillerLength(int allocatedSize)
-#pragma warning restore IDE0251
         {
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
             // Therefore optionals (ETag, Expiration) are not considered here.
@@ -552,10 +554,12 @@ namespace Tsavorite.core
             SetFillerLength(sizeInfo.AllocatedInlineRecordSize);
         }
 
+        /// <summary>
+        /// Set the ETag, checking for space for optionals.
+        /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
         public bool TrySetETag(long eTag)
-#pragma warning restore IDE0251
         {
             if (Info.HasETag)
             {
@@ -606,10 +610,12 @@ namespace Tsavorite.core
             return true;
         }
 
+        /// <summary>
+        /// Remove the ETag.
+        /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
         public bool RemoveETag()
-#pragma warning restore IDE0251
         {
             if (!Info.HasETag)
                 return true;
@@ -652,6 +658,10 @@ namespace Tsavorite.core
             return true;
         }
 
+        /// <summary>
+        /// Set the Expiration, checking for space for optionals.
+        /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySetExpiration(long expiration)
         {
@@ -693,10 +703,12 @@ namespace Tsavorite.core
             return true;
         }
 
+        /// <summary>
+        /// Remove the expiration
+        /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': Not doing so because it modifies internal state
         public bool RemoveExpiration()
-#pragma warning restore IDE0251
         {
             if (!Info.HasExpiration)
                 return true;

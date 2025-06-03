@@ -450,9 +450,6 @@ namespace Tsavorite.core
                         allocOptions.elideSourceRecord = false;
                         newLogRecord.InfoRef.PreviousAddress = stackCtx.recSrc.LatestLogicalAddress;
                     }
-
-                    if (rmwInfo.ClearSourceValueObject)
-                        srcLogRecord.ClearValueObject(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
                     goto DoCAS;
                 }
                 if (rmwInfo.Action == RMWAction.CancelOperation)
@@ -512,7 +509,12 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // We must leave the source value object in the record long enough for PostCopyUpdater to use it for size tracking.
+                if (srcLogRecord.Info.ValueIsObject)
+                    srcLogRecord.ValueObject.CopyObjectAndCacheSerializedDataIfNeeded(in srcLogRecord, ref newLogRecord, ref rmwInfo);
                 PostCopyToTail(in srcLogRecord, ref stackCtx);
+                if (rmwInfo.ClearSourceValueObject)
+                    srcLogRecord.ClearValueObject(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
 
                 // If IU, status will be NOTFOUND; return that.
                 if (!doingCU)

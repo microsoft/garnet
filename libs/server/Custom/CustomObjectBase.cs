@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
+
 using System.IO;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
