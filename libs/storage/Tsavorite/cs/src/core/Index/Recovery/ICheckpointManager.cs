@@ -73,7 +73,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logToken"></param>
         /// <param name="commitMetadata"></param>
-        void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata);
+        void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata);
 
         /// <summary>
         /// Cleanup log checkpoint

@@ -232,7 +232,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
+        public unsafe void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
             var device = NextLogCheckpointDevice(logToken);
 

@@ -49,7 +49,7 @@ namespace Tsavorite.core
         internal void WriteHybridLogMetaInfo()
         {
             _hybridLogCheckpoint.info.cookie = checkpointManager.GetCookie();
-            checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
+            checkpointManager.CommitLogCheckpointMetadata(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 
         internal void CleanupLogCheckpoint()

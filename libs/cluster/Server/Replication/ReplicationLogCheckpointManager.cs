@@ -126,7 +126,7 @@ namespace Garnet.cluster
                     var cookieSize = checkpointMetadata.Length - metadataWithoutCookie.Length;
                     var cookie = new byte[cookieSize];
                     Array.Copy(checkpointMetadata, cookie, cookieSize);
-                    recoveryInfo.cookie = metadataWithoutCookie;
+                    recoveryInfo.cookie = cookie;
                 }
                 catch (Exception ex)
                 {
@@ -177,7 +177,7 @@ namespace Garnet.cluster
             // TODO: convert is not needed after deprecating old format
             //  byte commit metadata send from the primary should be following the new unified format
             var recoveryInfo = ConverMetadata(checkpointMetadata);
-            CommitLogCheckpoint(logToken, recoveryInfo.ToByteArray());
+            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
         }
 
         /// <summary>
