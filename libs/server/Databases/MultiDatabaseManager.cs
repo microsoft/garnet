@@ -1058,7 +1058,7 @@ namespace Garnet.server
         public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null)
         {
             var (k1, t1) = CollectExpiredMainStoreKeys(GetDbById(dbId), logger);
-            var (k2, t2) = CollectExpiredObjectStoreKeys(GetDbById(dbId), logger);
+            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : CollectExpiredObjectStoreKeys(GetDbById(dbId), logger);
             return (k1 + k2, t1 + t2);
         }
 

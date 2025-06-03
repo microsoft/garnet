@@ -401,7 +401,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
             var (k1, t1) = CollectExpiredMainStoreKeys(DefaultDatabase, logger);
-            var (k2, t2) = CollectExpiredObjectStoreKeys(DefaultDatabase, logger);
+            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : CollectExpiredObjectStoreKeys(DefaultDatabase, logger);
             return (k1 + k2, t1 + t2);
         }
 

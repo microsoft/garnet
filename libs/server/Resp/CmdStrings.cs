@@ -293,8 +293,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
-        public static ReadOnlySpan<byte> RESP_INVALID_ACTIVE_EXP_RANGE => "Invalid range argument. Range should be an integer between 0-100"u8;
-        public static ReadOnlySpan<byte> RESP_INVALID_STORE_OPTION => "Invalid store option. Options can only be MAIN or OBJ"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ACTEXP_INVALID => "ERR Cannot execute ACTEXP with periodic key collection enabled"u8;
 
         /// <summary>
         /// Response string templates

@@ -429,6 +429,10 @@ namespace Garnet.server
         protected void ExecuteKeyCollection(GarnetDatabase db, ILogger logger = null)
         {
             _ = CollectExpiredMainStoreKeys(db, logger);
+
+            if (StoreWrapper.serverOptions.DisableObjects)
+                return;
+
             _ = CollectExpiredObjectStoreKeys(db, logger);
         }
 
@@ -772,7 +776,7 @@ namespace Garnet.server
             {
                 var key = keys[i];
                 GarnetObjectStoreOutput output = new GarnetObjectStoreOutput();
-                db.ObjStoreActiveExpDbStorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref db.ObjectStoreCollectionDatabaseStorageSession.objectStoreBasicContext);
+                db.ObjStoreActiveExpDbStorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref db.ObjStoreActiveExpDbStorageSession.objectStoreBasicContext);
                 logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
             }
 

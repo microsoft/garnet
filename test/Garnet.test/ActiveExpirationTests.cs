@@ -52,12 +52,7 @@ namespace Garnet.test
                 // wait for the expiration of the items that were put in.
                 await Task.Delay(TimeSpan.FromSeconds(ActiveExpirationFreqSecs));
 
-                RedisResult[] res = (RedisResult[])db.Execute("ACTEXP", "MAIN");
-
-                ClassicAssert.IsTrue(int.Parse(res[0].ToString()) > 0);
-                ClassicAssert.IsTrue(int.Parse(res[1].ToString()) > 0);
-
-                res = (RedisResult[])db.Execute("ACTEXP", "OBJ");
+                RedisResult[] res = (RedisResult[])db.Execute("ACTEXP");
 
                 ClassicAssert.IsTrue(int.Parse(res[0].ToString()) > 0);
                 ClassicAssert.IsTrue(int.Parse(res[1].ToString()) > 0);

@@ -905,6 +905,11 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ACTEXP));
             }
 
+            if (storeWrapper.serverOptions.ExpiredKeyCollectionFrequencySecs > 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_ACTEXP_INVALID);
+            }
+
             // Default database as default choice.
             int dbId = 0;
             if (parseState.Count > 0)
