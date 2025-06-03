@@ -150,7 +150,7 @@ namespace Garnet.server
             static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
             {
                 // Try to fit in the existing buffer
-                var into = buffer.FullBuffer();
+                var into = buffer.CurrentFullBuffer();
                 if (Encoding.UTF8.TryGetBytes(raw, into, out var written))
                 {
                     strBytes = into[..written];
