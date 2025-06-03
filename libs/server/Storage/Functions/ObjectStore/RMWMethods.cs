@@ -110,7 +110,7 @@ namespace Garnet.server
             // Expired data
             if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
+                rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return false;
             }
 
@@ -150,11 +150,6 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     return true;
                 case GarnetObjectType.DelIfExpIm:
-                    if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
                     return true;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
@@ -198,7 +193,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            if (oldValue.Expiration > 0 && input.header.CheckExpiry(oldValue.Expiration))
+            if (input.header.type == GarnetObjectType.DelIfExpIm && oldValue.Expiration > 0 && input.header.CheckExpiry(oldValue.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndStop;
                 return false;
@@ -265,6 +260,8 @@ namespace Garnet.server
                     }
                     else
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                    break;
+                case GarnetObjectType.DelIfExpIm:
                     break;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)

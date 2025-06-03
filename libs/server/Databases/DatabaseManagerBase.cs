@@ -742,7 +742,9 @@ namespace Garnet.server
                     {
                         SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                         // Use basic session for transient locking
-                        db.MainStoreActiveExpDbStorageSession.DEL_Conditional(ref keySb, ref input, ref db.MainStoreActiveExpDbStorageSession.basicContext);
+                        var status = db.MainStoreActiveExpDbStorageSession.DEL_Conditional(ref keySb, ref input, ref db.MainStoreActiveExpDbStorageSession.basicContext);
+                        if (status == GarnetStatus.NOTFOUND)
+                            logger?.LogWarning("we know this is an expired key that is a part of the store.");
                     }
                 }
 

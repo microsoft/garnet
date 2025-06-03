@@ -15,6 +15,8 @@ namespace Garnet.test
     {
         private const int ActiveExpirationFreqSecs = 10;
 
+        private const int TotalNumKeysToCreate = 100;
+
         private GarnetServer server;
 
         [SetUp]
@@ -55,7 +57,7 @@ namespace Garnet.test
                 RedisResult[] res = (RedisResult[])db.Execute("ACTEXP");
 
                 ClassicAssert.IsTrue(int.Parse(res[0].ToString()) > 0);
-                ClassicAssert.IsTrue(int.Parse(res[1].ToString()) > 0);
+                ClassicAssert.IsTrue(int.Parse(res[1].ToString()) == TotalNumKeysToCreate);
             });
         }
 
@@ -69,9 +71,9 @@ namespace Garnet.test
             var tombstonedRecords = new List<string>();
 
             var random = new Random();
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < TotalNumKeysToCreate; i++)
             {
-                var toAddInList = random.Next(0, 100) < 50 ? tombstonedRecords : untombstonedRecords;
+                var toAddInList = random.Next(0, 2) == 0 ? tombstonedRecords : untombstonedRecords;
                 toAddInList.Add(Guid.NewGuid().ToString());
             }
 
@@ -97,7 +99,8 @@ namespace Garnet.test
 
                 // check that revivification happened for expired record 
                 // HK TODO: WHY TF NOT?
-                ClassicAssert.IsTrue(server.Provider.StoreWrapper.store.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify as expected");
+                ClassicAssert.IsTrue(server.Provider.StoreWrapper.objectStore.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for obj store as expected");
+                ClassicAssert.IsTrue(server.Provider.StoreWrapper.store.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for main store as expected");
 
                 // Post active expiration, expired records don't exist for sure. This can be fooled by passive expiration too, so check reviv metrics too
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, false, "All to be expired should no longer exist post gc");
@@ -115,20 +118,20 @@ namespace Garnet.test
             Random rnd = new Random();
             for (int i = 0; i < keys.Count; i++)
             {
-                int randomInt = rnd.Next(allowedExpirationRange.Item1, allowedExpirationRange.Item2);
-                bool isMainStore = randomInt < (allowedExpirationRange.Item2 + allowedExpirationRange.Item1) / 2;
-                bool hasExpiration = randomInt % 2 == 0;
+                int expirationOrScore = rnd.Next(allowedExpirationRange.Item1, allowedExpirationRange.Item2);
+                bool isMainStore = rnd.Next(0, 2) == 0;
+                bool hasExpiration = rnd.Next(0, 2) == 0;
                 if (isMainStore)
                 {
                     db.StringSet(keys[i], Guid.NewGuid().ToString());
                 }
                 else
                 {
-                    db.SortedSetAdd(keys[i], Guid.NewGuid().ToString(), randomInt);
+                    db.SortedSetAdd(keys[i], Guid.NewGuid().ToString(), expirationOrScore);
                 }
 
                 if (hasExpiration || forceExpirationaddition)
-                    ClassicAssert.IsTrue(db.KeyExpire(keys[i], TimeSpan.FromSeconds(randomInt)));
+                    ClassicAssert.IsTrue(db.KeyExpire(keys[i], TimeSpan.FromSeconds(expirationOrScore)));
             }
         }
 
