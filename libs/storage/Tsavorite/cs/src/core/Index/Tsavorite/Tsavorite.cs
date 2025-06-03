@@ -131,7 +131,6 @@ namespace Tsavorite.core
                 allocatorSettings.LogSettings = new()
                 {
                     LogDevice = new NullDevice(),
-                    ObjectLogDevice = null, // TODO remove hlog.HasObjectLog ? new NullDevice() : null,
                     PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                     MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                     SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -278,8 +277,7 @@ namespace Tsavorite.core
                 var incremental = tryIncremental
                     && checkpointType == CheckpointType.Snapshot
                     && token != default
-                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
-                    ; // TODO remove && !hlog.HasObjectLog;
+                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress;
                 if (incremental)
                 {
                     stateMachine = Checkpoint.IncrementalHybridLogOnly(this, token);
@@ -303,8 +301,7 @@ namespace Tsavorite.core
             return
                 checkpointType == CheckpointType.Snapshot
                 && guid != default
-                && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
-                ; // TODO remove: && !hlog.HasObjectLog;
+                && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress;
         }
 
         /// <summary>

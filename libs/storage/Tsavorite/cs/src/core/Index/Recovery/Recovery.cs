@@ -626,12 +626,6 @@ namespace Tsavorite.core
                 return false;
             }
 
-            // Recover segment offsets for object log
-            if (recoveredHLCInfo.info.objectLogSegmentOffsets != null)
-                Array.Copy(recoveredHLCInfo.info.objectLogSegmentOffsets,
-                    hlog.GetSegmentOffsets(),
-                    recoveredHLCInfo.info.objectLogSegmentOffsets.Length);
-
             tailAddress = recoveredHLCInfo.info.finalLogicalAddress;
             headAddress = recoveredHLCInfo.info.headAddress;
             if (numPagesToPreload != -1)

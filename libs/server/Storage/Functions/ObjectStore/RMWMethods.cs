@@ -224,7 +224,7 @@ namespace Garnet.server
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
             // the record was CASed into the hash chain before it gets modified
             var oldValueSize = srcLogRecord.ValueObject.MemorySize;
-            var value = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(srcLogRecord.Info.IsInNewVersion, ref rmwInfo);
+            var value = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(dstLogRecord.Info.IsInNewVersion, ref rmwInfo);
 
             // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.

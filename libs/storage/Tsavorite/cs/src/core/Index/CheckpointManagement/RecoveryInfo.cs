@@ -67,11 +67,6 @@ namespace Tsavorite.core
         public bool placeholder;
 
         /// <summary>
-        /// Object log segment offsets
-        /// </summary>
-        public long[] objectLogSegmentOffsets;
-
-        /// <summary>
         /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
         /// At recovery, this value denotes the delta tail address excluding the metadata record for the checkpoint
         /// because we create the metadata before writing to the delta file.
@@ -95,8 +90,6 @@ namespace Tsavorite.core
             snapshotFinalLogicalAddress = 0;
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
-
-            objectLogSegmentOffsets = null;
         }
 
         const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
@@ -168,19 +161,6 @@ namespace Tsavorite.core
                 var exclusionCount = int.Parse(reader.ReadLine());
                 for (int j = 0; j < exclusionCount; j++)
                     _ = reader.ReadLine();
-            }
-
-            // Read object log segment offsets
-            value = reader.ReadLine();
-            var numSegments = int.Parse(value);
-            if (numSegments > 0)
-            {
-                objectLogSegmentOffsets = new long[numSegments];
-                for (int i = 0; i < numSegments; i++)
-                {
-                    value = reader.ReadLine();
-                    objectLogSegmentOffsets[i] = long.Parse(value);
-                }
             }
 
             if (checksum != Checksum(numSessions))
@@ -264,16 +244,6 @@ namespace Tsavorite.core
                     writer.WriteLine(placeholder);
 
                     writer.WriteLine(checkpointTokenCount);
-
-                    // Write object log segment offsets
-                    writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
-                    if (objectLogSegmentOffsets != null)
-                    {
-                        for (int i = 0; i < objectLogSegmentOffsets.Length; i++)
-                        {
-                            writer.WriteLine(objectLogSegmentOffsets[i]);
-                        }
-                    }
                 }
                 return ms.ToArray();
             }
@@ -285,7 +255,7 @@ namespace Tsavorite.core
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
             return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
-                ^ checkpointTokensCount ^ (objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
+                ^ checkpointTokensCount;
         }
 
         /// <summary>

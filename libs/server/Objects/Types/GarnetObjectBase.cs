@@ -66,6 +66,9 @@ namespace Garnet.server
         {
             while (true)
             {
+                // This is probably called from Flush, including for checkpoints. If CopyUpdate() has already serialized the object, we will use that
+                // serialized state. Otherwise, we will serialize the object directly to the writer, and not create the serialized byte[]; only
+                // CopyUpdater does that, as it must ensure the object's (v1) data is not changed during the checkpoint.
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
                     // Directly serialize to wire, do not cache serialized state
@@ -74,6 +77,10 @@ namespace Garnet.server
                     serializationState = (int)SerializationPhase.REST;
                     return;
                 }
+
+                // If we are here, serializationState is one of the .SERIALIZ* states. This means that either:
+                // - Another thread is currently serializing this object (e.g. checkpoint and eviction)
+                // - CopyUpdate() is serializing this object
 
                 if (serializationState == (int)SerializationPhase.SERIALIZED)
                 {
@@ -99,17 +106,21 @@ namespace Garnet.server
         /// <inheritdoc />
         public IGarnetObject CopyUpdate(bool isInNewVersion, ref RMWInfo rmwInfo)
         {
+            // Note that this does a shallow copy of the object's internal structures (e.g. List<>), which means subsequent modifications of newValue
+            // in the (v+1) version of the record will modify data seen from the 'this' in the (v) record. Normally this is OK because the (v) version
+            // of the record is not reachable once the (v+1) version is inserted, but if a checkpoint is ongoing, the (v) version is part of that.
             var newValue = Clone();
 
-            // If we are not currently taking a checkpoint, we can delete the old version
-            // since the new version of the object is already created.
+            // If we are not currently taking a checkpoint, we can delete the old version since the new version of the object is already created
+            // in the new record, which has been inserted (because this CopyUpdate() is called from PostCopyUpdater() after a successful CAS).
             if (!isInNewVersion)
             {
                 rmwInfo.ClearSourceValueObject = true;
                 return newValue;
             }
 
-            // Create a serialized version for checkpoint version (v)
+            // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
+            // of the object during a checkpoint while the (v+1) version of the record may modify the shallow-copied internal structures.
             while (true)
             {
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
@@ -119,9 +130,14 @@ namespace Garnet.server
                     DoSerialize(writer);
                     serialized = ms.ToArray();
 
-                    serializationState = (int)SerializationPhase.SERIALIZED;
+                    serializationState = (int)SerializationPhase.SERIALIZED;    // This is the only place .SERIALIZED is set
                     break;
                 }
+
+                // If we're here, serializationState is one of the .SERIALIZ* states. CopyUpdate has a lock on the tag chain, so no other thread will
+                // be running CopyUpdate. Therefore there are two possibilities:
+                // 1. CopyUpdate has been called before and the state is .SERIALIZED and '_serialized' is created. We're done.
+                // 2. Serialize() is running (likely in a Flush()) and the state is .SERIALIZING. We will Yield and loop to wait for it to finish.
 
                 if (serializationState >= (int)SerializationPhase.SERIALIZED)
                     break;

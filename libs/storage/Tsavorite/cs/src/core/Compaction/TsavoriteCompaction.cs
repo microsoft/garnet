@@ -80,8 +80,7 @@ namespace Tsavorite.core
             var tempKVSettings = new KVSettings(baseDir: null, loggerFactory: loggerFactory)
             {
                 IndexSize = KVSettings.SetIndexSizeFromCacheLines(IndexSize),
-                LogDevice = new NullDevice(),
-                ObjectLogDevice = new NullDevice()
+                LogDevice = new NullDevice()
             };
 
             using (var tempKv = new TsavoriteKV<TStoreFunctions, TAllocator>(tempKVSettings, storeFunctions, allocatorFactory))

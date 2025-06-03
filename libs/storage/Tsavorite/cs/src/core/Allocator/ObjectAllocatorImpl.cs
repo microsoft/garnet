@@ -13,8 +13,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using static Utility;
     using static LogAddress;
+    using static Utility;
 
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, ObjectAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
@@ -39,8 +39,23 @@ namespace Tsavorite.core
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
 
+#if READ_WRITE
+        /// <summary>
+        /// Offset of expanded IO tail on the disk for Flush. This is added to .PreviousAddress for all records being flushed.
+        /// It leads <see cref="ClosedDiskTailOffset"/>, which is recalculated after we arrive at <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosed(long)"/>.
+        /// </summary>
+        long FlushedDiskTailOffset;
+
+        /// <summary>
+        /// Offset of expanded IO tail on the disk for Close. When we arrive at <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosed(long)"/>
+        /// this is used to calculate the offset for each .PreviousAddress in the in-memory log that references the page being closed, so it can be patched up
+        /// to the on-disk address for that record.
+        /// </summary>
+        long ClosedDiskTailOffset;
+
         // Size of object chunks being written to storage
-        // TODO: private readonly int objectBlockSize = 100 * (1 << 20);
+        private readonly int objectBlockSize = 100 * (1 << 20);
+#endif // READ_WRITE
 
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
@@ -316,53 +331,6 @@ namespace Tsavorite.core
             base.RemoveSegment(segment);
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-        {
-            WriteAsync(flushPage,
-                    (ulong)(AlignedPageSizeBytes * flushPage),
-                    (uint)PageSize,
-                    callback,
-                    asyncResult, device);
-        }
-
-        protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
-        {
-#if READ_WRITE
-            VerifyCompatibleSectorSize(device);
-            VerifyCompatibleSectorSize(objectLogDevice);
-
-            var epochTaken = false;
-            if (!epoch.ThisInstanceProtected())
-            {
-                epochTaken = true;
-                epoch.Resume();
-            }
-            try
-            {
-                if (HeadAddress >= (flushPage << LogPageSizeBits) + pageSize)
-                {
-                    // Requested page is unavailable in memory, ignore
-                    callback(0, 0, asyncResult);
-                }
-                else
-                {
-                    // We are writing to separate device, so use fresh segment offsets
-                    WriteAsync(flushPage,
-                            (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                            (uint)pageSize, callback, asyncResult,
-                            device, objectLogDevice, flushPage, localSegmentOffsets, fuzzyStartLogicalAddress);
-                }
-            }
-            finally
-            {
-                if (epochTaken)
-                    epoch.Suspend();
-            }
-#endif // READ_WRITE
-        }
-
         internal void ClearPage(long page, int offset)
         {
             // This is called during recovery, not as part of normal operations, so there is no need to walk pages starting at offset to Free() ObjectIds
@@ -391,9 +359,41 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        {
+            WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize,
+                    callback, asyncResult, device);
+        }
+
+        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize,
+            DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
+        {
+            VerifyCompatibleSectorSize(device);
+
+            var epochTaken = epoch.ResumeIfNotProtected();
+            try
+            {
+                if (HeadAddress >= GetStartLogicalAddressOfPage(flushPage) + pageSize)
+                {
+                    // Requested page is unavailable in memory, ignore
+                    callback(0, 0, asyncResult);
+                    return;
+                }
+
+                // We are writing to separate device
+                WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageSize,
+                        callback, asyncResult, device, flushPage, fuzzyStartLogicalAddress);
+            }
+            finally
+            {
+                if (epochTaken)
+                    epoch.Suspend();
+            }
+        }
+
         private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device, long intendedDestinationPage = -1, long[] localSegmentOffsets = null, long fuzzyStartLogicalAddress = long.MaxValue)
+                        IDevice device, long intendedDestinationPage = -1, long fuzzyStartLogicalAddress = long.MaxValue)
         {
 #if READ_WRITE
             // Short circuit if we are using a null device
@@ -403,28 +403,31 @@ namespace Tsavorite.core
                 return;
             }
 
-            int start = 0, aligned_start = 0, end = (int)numBytesToWrite;
+            Debug.Assert(asyncResult.page == flushPage, "TODO: should these always be equal?");
+
+            // TODO: If ObjectIdMap for this page is empty and FlushedDiskTailOffset is 0, we can write directly.
+
+
+            int startOffset = 0, alignedStartOffset = 0, endOffset = (int)numBytesToWrite;
             if (asyncResult.partial)
             {
-                // We're writing only a subset of the page
-                start = (int)(asyncResult.fromAddress - (asyncResult.page << LogPageSizeBits));
-                aligned_start = (start / sectorSize) * sectorSize;
-                end = (int)(asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits));
+                // We're writing only a subset of the page, so aligned_start will be rounded down to sectorSize-aligned start position.
+                var pageStart = GetStartLogicalAddressOfPage(asyncResult.page);
+                startOffset = (int)(asyncResult.fromAddress - pageStart);
+                alignedStartOffset = (int)RoundDown(startOffset, sectorSize);
+                endOffset = (int)(asyncResult.untilAddress - pageStart);
             }
-
-            // Check if user did not override with special segment offsets
-            localSegmentOffsets ??= segmentOffsets;
 
             // This is the in-memory buffer page to be written
             var src = values[flushPage % BufferSize];
 
-            // We create a shadow copy of the page if we are under epoch protection.
+            // If we are under epoch protection we must suspend the epoch during the time-consuming flush. However, this means we must
+            // hold onto shadow copies of the page's objects if we are under epoch protection.
             // This copy ensures that object references are kept valid even if the original page is reclaimed.
             // We suspend epoch during the actual flush as that can take a long time.
-            var epochProtected = false;
-            if (epoch.ThisInstanceProtected())
+            var epochWasProtected = epoch.ThisInstanceProtected();
+            if (epochWasProtected)
             {
-                epochProtected = true;
                 src = new AllocatorRecord[values[flushPage % BufferSize].Length];
                 Array.Copy(values[flushPage % BufferSize], src, values[flushPage % BufferSize].Length);
                 epoch.Suspend();
@@ -435,17 +438,19 @@ namespace Tsavorite.core
                 // when writing to the main log (both object pointers and addresses are 8 bytes).
                 var buffer = bufferPool.Get((int)numBytesToWrite);
 
-                if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
+                if (alignedStartOffset < startOffset && (KeyHasObjects() || ValueHasObjects()))
                 {
-                    // Do not read back the invalid header of page 0
-                    if ((flushPage > 0) || (start > GetFirstValidLogicalAddress(flushPage)))
+                    // Read the first "alignedStartOffset" bytes back from the disk, rather than re-serializing the start of the page. This is necessary
+                    // for sector-aligned writes. Do not read back the invalid header of page 0.
+                    // TODO: Move this into StorageDeviceBase to back up to just the sector before the end of the previous write.
+                    if ((flushPage > 0) || (startOffset > GetFirstValidLogicalAddress(flushPage)))
                     {
                         // Get the overlapping HLOG from disk as we wrote it with object pointers previously. This avoids object reserialization
                         PageAsyncReadResult<Empty> result = new()
                         {
                             handle = new CountdownEvent(1)
                         };
-                        device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
+                        device.ReadAsync(alignedDestinationAddress + (ulong)alignedStartOffset, (IntPtr)buffer.aligned_pointer + alignedStartOffset,
                             (uint)sectorSize, AsyncReadPageCallback, result);
                         result.handle.Wait();
                     }
@@ -454,19 +459,19 @@ namespace Tsavorite.core
                         // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
                         Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
 
-                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start,
-                            numBytesToWrite - start, numBytesToWrite - start);
+                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + startOffset), buffer.aligned_pointer + startOffset,
+                            numBytesToWrite - startOffset, numBytesToWrite - startOffset);
                     }
                 }
                 else
                 {
                     fixed (RecordInfo* pin = &src[0].info)
                     {
-                        // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
+                        // Copy all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
                         Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
 
-                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start,
-                            numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
+                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + alignedStartOffset), buffer.aligned_pointer + alignedStartOffset,
+                            numBytesToWrite - alignedStartOffset, numBytesToWrite - alignedStartOffset);
                     }
                 }
 
@@ -484,7 +489,7 @@ namespace Tsavorite.core
                 // Track the size to be written to the object log.
                 long endPosition = 0;
 
-                for (int i = start / RecordSize; i < end / RecordSize; i++)
+                for (int i = startOffset / RecordSize; i < endOffset / RecordSize; i++)
                 {
                     byte* recordPtr = buffer.aligned_pointer + i * RecordSize;
 
@@ -555,7 +560,7 @@ namespace Tsavorite.core
                     }
 
                     // If this record's serialized size surpassed ObjectBlockSize or it's the last record to be written, write to the object log.
-                    if (endPosition > objectBlockSize || i == (end / RecordSize) - 1)
+                    if (endPosition > objectBlockSize || i == (endOffset / RecordSize) - 1)
                     {
                         var memoryStreamActualLength = ms.Position;
                         var memoryStreamTotalLength = (int)endPosition;
@@ -588,7 +593,7 @@ namespace Tsavorite.core
                             ((AddressInfo*)address)->Address += _objAddr;
 
                         // If we have not written all records, prepare for the next chunk of records to be written.
-                        if (i < (end / RecordSize) - 1)
+                        if (i < (endOffset / RecordSize) - 1)
                         {
                             // Create a new MemoryStream for the next chunk of records to be written.
                             ms = new MemoryStream();
@@ -605,11 +610,12 @@ namespace Tsavorite.core
                             Debug.Assert(memoryStreamTotalLength > 0);
                             objlogDevice.WriteAsync(
                                 (IntPtr)_objBuffer.aligned_pointer,
-                                (int)(alignedDestinationAddress >> LogSegmentSizeBits),
+                                (int)(alignedDestinationAddress >> LogSegmentSizeBits), // TODO replace segment overload call with non-segment form; let SDB handle converting
                                 (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback<TContext>, asyncResult);
 
                             // Wait for write to complete before resuming next write
                             _ = asyncResult.done.WaitOne();
+                            asyncResult.done = default;
                             _objBuffer.Return();
                         }
                         else
@@ -630,24 +636,24 @@ namespace Tsavorite.core
                     }
                 }
 
+                // We are done writing _objBuffer chunks to the object log. Now write the main log from buffer.
                 if (asyncResult.partial)
                 {
                     // We're writing only a subset of the page, so update our count of bytes to write.
-                    var aligned_end = (int)(asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits));
-                    aligned_end = (aligned_end + (sectorSize - 1)) & ~(sectorSize - 1);
-                    numBytesToWrite = (uint)(aligned_end - aligned_start);
+                    var alignedEndOffset = RoundUp(endOffset, sectorSize);
+                    numBytesToWrite = (uint)(alignedEndOffset - alignedStartOffset);
                 }
 
                 // Round up the number of byte to write to sector alignment.
                 var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
 
                 // Finally write the hlog page
-                device.WriteAsync((IntPtr)buffer.aligned_pointer + aligned_start, alignedDestinationAddress + (ulong)aligned_start,
+                device.WriteAsync((IntPtr)buffer.aligned_pointer + alignedStartOffset, alignedDestinationAddress + (ulong)alignedStartOffset,
                     alignedNumBytesToWrite, callback, asyncResult);
             }
             finally
             {
-                if (epochProtected)
+                if (epochWasProtected)
                     epoch.Resume();
             }
 #endif // READ_WRITE
@@ -810,13 +816,6 @@ namespace Tsavorite.core
 #endif // READ_WRITE
         }
 
-        public struct AllocatorRecord   // TODO remove
-        {
-            public RecordInfo info;
-            public byte[] key;
-            public byte[] value;
-        }
-
         #region Page handlers for objects
         /// <summary>
         /// Deseialize part of page from stream
@@ -824,11 +823,11 @@ namespace Tsavorite.core
         /// <param name="raw"></param>
         /// <param name="ptr">From pointer</param>
         /// <param name="untilptr">Until pointer</param>
-        /// <param name="src"></param>
         /// <param name="stream">Stream</param>
-        public void Deserialize(byte* raw, long ptr, long untilptr, AllocatorRecord[] src, Stream stream)
+        public void Deserialize(byte* raw, long ptr, long untilptr, Stream stream)
         {
 #if READ_WRITE
+AllocatorRecord[] src, 
             long streamStartPos = stream.Position;
             long start_addr = -1;
             int start_offset = -1, end_offset = -1;
@@ -965,8 +964,6 @@ namespace Tsavorite.core
         }
         #endregion
 
-        public long[] GetSegmentOffsets() => null;
-
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
 #if READ_WRITE
@@ -974,9 +971,10 @@ namespace Tsavorite.core
 #endif // READ_WRITE
         }
 
-        internal void PopulatePage(byte* src, int required_bytes, ref AllocatorRecord[] destinationPage)
+        internal void PopulatePage(byte* src, int required_bytes)
         {
 #if READ_WRITE
+, ref AllocatorRecord[] destinationPage
             fixed (RecordInfo* pin = &destinationPage[0].info)
             {
                 Debug.Assert(required_bytes <= RecordSize * destinationPage.Length);

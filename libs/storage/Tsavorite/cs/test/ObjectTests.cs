@@ -29,7 +29,6 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 10

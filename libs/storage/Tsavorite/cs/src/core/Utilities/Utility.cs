@@ -139,6 +139,13 @@ namespace Tsavorite.core
             return (value + (alignment - 1)) & ~(alignment - 1);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long RoundDown(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown alignment must be a power of two");
+            return value & ~(alignment - 1);
+        }
+
         /// <summary>
         /// Is type blittable
         /// </summary>

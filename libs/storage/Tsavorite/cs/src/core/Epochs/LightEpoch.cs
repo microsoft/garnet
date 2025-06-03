@@ -197,6 +197,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Thread resumes its epoch entry if it has not already been acquired
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ResumeIfNotProtected()
+        {
+            if (ThisInstanceProtected())
+                return false;
+            Resume();
+            return true;
+        }
+
+        /// <summary>
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>

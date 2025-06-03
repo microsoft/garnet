@@ -964,9 +964,7 @@ namespace Garnet.server
             bool NetworkCLIENTID()
             {
                 if (parseState.Count != 0)
-                {
                     return AbortWithWrongNumberOfArguments("client|id");
-                }
 
                 while (!RespWriteUtils.TryWriteInt64(Id, ref dcurr, dend))
                     SendAndReset();
@@ -1058,7 +1056,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName), ref dcurr, dend))
                     SendAndReset();
-
                 return false;
             }
 
@@ -1088,9 +1085,7 @@ namespace Garnet.server
             }
 
             if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
                 RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
 
             var result = new ReadOnlySpan<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
@@ -1184,7 +1179,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)
         {
-            if (length < 1) return false;
+            if (length < 1)
+                return false;
             *dst++ = s.Value;
             return true;
         }

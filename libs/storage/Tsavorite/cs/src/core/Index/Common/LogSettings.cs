@@ -43,11 +43,6 @@ namespace Tsavorite.core
         public IDevice LogDevice;
 
         /// <summary>
-        /// Device used for serialized heap objects in hybrid log
-        /// </summary>
-        public IDevice ObjectLogDevice;
-
-        /// <summary>
         /// Size of a segment (group of pages), in bits
         /// </summary>
         public int PageSizeBits = 25;
@@ -61,11 +56,6 @@ namespace Tsavorite.core
         /// Total size of in-memory part of log, in bits
         /// </summary>
         public int MemorySizeBits = 34;
-
-        /// <summary>
-        /// Size of pages for ObjectAllocator key and optional fields space
-        /// </summary>
-        public int ObjectLogVariableSpacePageSizeBits = 25;
 
         /// <summary>
         /// Controls how many pages should be empty to account for non-power-of-two-sized log
@@ -83,8 +73,7 @@ namespace Tsavorite.core
         public ReadCopyOptions ReadCopyOptions;
 
         /// <summary>
-        /// Settings for optional read cache
-        /// Overrides the "copy reads to tail" setting
+        /// Settings for optional read cache. Overrides the "copy reads to tail" setting.
         /// </summary>
         public ReadCacheSettings ReadCacheSettings = null;
 

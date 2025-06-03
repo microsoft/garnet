@@ -51,7 +51,7 @@ namespace Tsavorite.core
         /// <summary>Buffer size mask</summary>
         protected readonly int BufferSizeMask;
 
-        /// <summary>Aligned page size in bytes</summary>
+        /// <summary>Aligned (to sector size) page size in bytes</summary>
         protected readonly int AlignedPageSizeBytes;
 
         /// <summary>Total hybrid log size (bits)</summary>
@@ -198,10 +198,8 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="result"></param>
         /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
-        /// <param name="localSegmentOffsets"></param>
         /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
-        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress);
+        protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, long fuzzyStartLogicalAddress);
 
         /// <summary>Read objects to memory (async)</summary>
         protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default);
@@ -503,8 +501,11 @@ namespace Tsavorite.core
             MonotonicUpdate(ref PageStatusIndicator[pageIndex].Dirty, version, out _);
         }
 
+        /// <summary>
+        /// This writes data from a page (or pages) that does not need to be expanded.
+        /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void WriteAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
+        internal void WriteInlinePageAsync<TContext>(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                 DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                 IDevice device)
         {
@@ -587,7 +588,6 @@ namespace Tsavorite.core
                 this.epoch = epoch;
 
             settings.LogDevice.Initialize(1L << settings.SegmentSizeBits, epoch);
-            settings.ObjectLogDevice?.Initialize(-1, epoch);
 
             // Page size
             LogPageSizeBits = settings.PageSizeBits;
@@ -1767,9 +1767,7 @@ namespace Tsavorite.core
             void FlushRunner()
             {
                 var totalNumPages = (int)(endPage - startPage);
-
                 var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
-                var localSegmentOffsets = new long[SegmentBufferSize];
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
@@ -1788,7 +1786,7 @@ namespace Tsavorite.core
                     };
 
                     // Intended destination is flushPage
-                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, objectLogDevice, localSegmentOffsets, fuzzyStartLogicalAddress);
+                    WriteAsyncToDevice(startPage, flushPage, pageSize, AsyncFlushPageToDeviceCallback, asyncResult, device, fuzzyStartLogicalAddress);
 
                     if (throttleCheckpointFlushDelayMs >= 0)
                     {

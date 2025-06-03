@@ -174,7 +174,6 @@ namespace Tsavorite.core
             if (disposeDevices)
             {
                 LogDevice?.Dispose();
-                ObjectLogDevice?.Dispose();
                 if (deleteDirOnDispose && baseDir != null)
                 {
                     try { new DirectoryInfo(baseDir).Delete(true); } catch { }
@@ -187,7 +186,6 @@ namespace Tsavorite.core
         {
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
-            retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             retStr += $"; mutable fraction: {MutableFraction};";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             retStr += $"; read copy options: {ReadCopyOptions}";
@@ -215,7 +213,6 @@ namespace Tsavorite.core
             {
                 ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
-                ObjectLogDevice = ObjectLogDevice,
                 MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),

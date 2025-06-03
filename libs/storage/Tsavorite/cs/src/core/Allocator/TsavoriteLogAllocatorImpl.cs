@@ -112,21 +112,20 @@ namespace Tsavorite.core
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
-            WriteAsync((IntPtr)pointers[flushPage % BufferSize],
+            WriteInlinePageAsync((IntPtr)pointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
                     (uint)AlignedPageSizeBytes,
                     callback,
                     asyncResult, device);
         }
 
-        protected override void WriteAsyncToDevice<TContext>
-            (long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
+        protected override void WriteAsyncToDevice<TContext> (long startPage, long flushPage, int pageSize,
+            DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
 
-            WriteAsync((IntPtr)pointers[flushPage % BufferSize],
+            WriteInlinePageAsync((IntPtr)pointers[flushPage % BufferSize],
                         (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
                         (uint)alignedPageSize, callback, asyncResult,
                         device);

@@ -82,7 +82,6 @@ namespace Tsavorite.core
             {
                 IndexSize = KVSettings.SetIndexSizeFromCacheLines(store.IndexSize),
                 LogDevice = new NullDevice(),
-                ObjectLogDevice = new NullDevice(),
                 MutableFraction = 1,
                 loggerFactory = loggerFactory
             };

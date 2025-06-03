@@ -58,7 +58,6 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store);
                     store.WriteHybridLogMetaInfo();
                     store.lastVersion = lastVersion;
                     break;
@@ -70,18 +69,6 @@ namespace Tsavorite.core
                     store.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
                     store.checkpointTcs = nextTcs;
                     break;
-            }
-        }
-
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store)
-        {
-            // Collect object log offsets only after flushes
-            // are completed
-            var seg = store.hlog.GetSegmentOffsets();
-            if (seg != null)
-            {
-                store._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                Array.Copy(seg, store._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
             }
         }
 

@@ -207,7 +207,6 @@ namespace Tsavorite.core
                 MemorySizeBits = ReadOnlyMode ? 0 : Utility.NumBitsPreviousPowerOf2(MemorySize),
                 ReadCopyOptions = ReadCopyOptions.None,
                 MutableFraction = MutableFraction,
-                ObjectLogDevice = null,
                 ReadCacheSettings = null,
             };
         }

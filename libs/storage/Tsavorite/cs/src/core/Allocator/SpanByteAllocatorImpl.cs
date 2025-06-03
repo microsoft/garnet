@@ -230,15 +230,15 @@ namespace Tsavorite.core
         internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
+            => WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
                     (uint)AlignedPageSizeBytes, callback, asyncResult, device);
 
-        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long[] localSegmentOffsets, long fuzzyStartLogicalAddress)
+        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize,
+            DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
-            WriteAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
-                        (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+            WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * (flushPage - startPage)),
+                    (uint)AlignedPageSizeBytes, callback, asyncResult, device);
         }
 
         internal void ClearPage(long page, int offset)
@@ -266,8 +266,6 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
             => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
-
-        internal static long[] GetSegmentOffsets() => null;
 
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {

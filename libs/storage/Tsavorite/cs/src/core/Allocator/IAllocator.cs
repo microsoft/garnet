@@ -56,9 +56,6 @@ namespace Tsavorite.core
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty atomically</summary>
         void MarkPageAtomic(long logicalAddress, long version);
 
-        /// <summary>Get segment offsets</summary>
-        long[] GetSegmentOffsets(); // TODO remove
-
         /// <summary>Serialize key to log</summary>
         void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord);
 

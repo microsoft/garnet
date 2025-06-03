@@ -33,12 +33,6 @@ namespace Tsavorite.core
             => (AllocatorBase<TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
-        public readonly bool IsFixedLength => true;
-
-        /// <inheritdoc/>
-        public readonly bool HasObjectLog => true;
-
-        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddressOfPage(page);
 
@@ -119,10 +113,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long[] GetSegmentOffsets() => _this.GetSegmentOffsets();
 
         /// <inheritdoc/>        
         public readonly int OverflowPageCount => _this.OverflowPageCount;
