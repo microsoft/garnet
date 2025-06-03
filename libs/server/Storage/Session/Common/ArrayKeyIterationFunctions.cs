@@ -250,13 +250,13 @@ namespace Garnet.server
             internal sealed class ObjectStoreGetExpiredKeys : ExpiredKeysBase<byte[], IGarnetObject>
             {
                 protected override bool IsExpired(ref IGarnetObject value) => value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value);
-                protected override byte[] TransformKeyForSaving(byte[] key) => key;
+                protected override byte[] TransformKeyForSaving(ref byte[] key) => key;
             }
 
             internal sealed class MainStoreGetExpiredKeys : ExpiredKeysBase<SpanByte, SpanByte>
             {
                 protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
-                protected override byte[] TransformKeyForSaving(SpanByte key) => key.ToByteArray();
+                protected override byte[] TransformKeyForSaving(ref SpanByte key) => key.ToByteArray();
             }
 
             internal abstract class ExpiredKeysBase<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
@@ -272,7 +272,7 @@ namespace Garnet.server
 
                 protected abstract bool IsExpired(ref TValue value);
 
-                protected abstract byte[] TransformKeyForSaving(TKey key);
+                protected abstract byte[] TransformKeyForSaving(ref TKey key);
 
                 public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                         => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
@@ -283,7 +283,7 @@ namespace Garnet.server
                     if (IsExpired(ref value))
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        info.keys.Add(TransformKeyForSaving(key));
+                        info.keys.Add(TransformKeyForSaving(ref key));
                     }
                     else
                     {

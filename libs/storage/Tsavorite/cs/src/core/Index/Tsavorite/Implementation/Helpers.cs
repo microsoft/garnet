@@ -283,6 +283,7 @@ namespace Tsavorite.core
 
                 Debug.Assert(stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress || srcRecordInfo.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcRecordInfo.ToString()}");
 
+                // Reviv stats are added to SessionFunction's stats and not revivification manager's why?
                 (isElided, isAdded) = TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo,
                                         (usedValueLength, fullValueLength, fullRecordLength));
 

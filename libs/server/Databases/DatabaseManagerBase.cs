@@ -742,13 +742,12 @@ namespace Garnet.server
                     {
                         SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                         // Use basic session for transient locking
-                        var status = db.MainStoreActiveExpDbStorageSession.DEL_Conditional(ref keySb, ref input, ref db.MainStoreActiveExpDbStorageSession.basicContext);
-                        if (status == GarnetStatus.NOTFOUND)
-                            logger?.LogWarning("we know this is an expired key that is a part of the store.");
+                        if (GarnetStatus.OK == db.MainStoreActiveExpDbStorageSession.DEL_Conditional(ref keySb, ref input, ref db.MainStoreActiveExpDbStorageSession.basicContext))
+                            logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
+                        else
+                            logger?.LogWarning("Expired key {key} was not found in Main Store", System.Text.Encoding.UTF8.GetString(key));
                     }
                 }
-
-                logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
             }
 
             logger?.LogDebug("Main Store - Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
@@ -778,8 +777,10 @@ namespace Garnet.server
             {
                 var key = keys[i];
                 GarnetObjectStoreOutput output = new GarnetObjectStoreOutput();
-                db.ObjStoreActiveExpDbStorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref db.ObjStoreActiveExpDbStorageSession.objectStoreBasicContext);
-                logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
+                if (GarnetStatus.OK == db.ObjStoreActiveExpDbStorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref db.ObjStoreActiveExpDbStorageSession.objectStoreBasicContext))
+                    logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
+                else
+                    logger?.LogWarning("Expired key {key} was not found in Obj Store", System.Text.Encoding.UTF8.GetString(key));
             }
 
             logger?.LogDebug("Obj Store - Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
