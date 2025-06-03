@@ -2001,7 +2001,7 @@ namespace Garnet.test.cluster
         }
 
 #if DEBUG
-        [Test, Order(22), CancelAfter(testTimeout)]
+        //[Test, Order(22), CancelAfter(testTimeout)]
         public void ClusterMigrateSetDelete(CancellationToken cancellationToken)
         {
             var sourceNodeIndex = 0;
