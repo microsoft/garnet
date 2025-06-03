@@ -345,7 +345,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
-                ActiveExpiredKeyCollectionFrequencySecs = activeExpirationFrequencySecs,
+                ExpiredKeyCollectionFrequencySecs = activeExpirationFrequencySecs,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -397,7 +397,7 @@ namespace Garnet.test
             }
 
             // HK TODO
-            opts.UseRevivBinsPowerOf2 = true; 
+            opts.UseRevivBinsPowerOf2 = true;
             opts.RevivBinBestFitScanLimit = 0;
             opts.RevivNumberOfBinsToSearch = 0;
             opts.RevivifiableFraction = 1;

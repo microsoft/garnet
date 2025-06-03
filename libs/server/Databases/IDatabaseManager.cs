@@ -185,6 +185,11 @@ namespace Garnet.server
         public void ExecuteObjectCollection();
 
         /// <summary>
+        /// Executes a store-wide key collect operation
+        /// </summary>
+        public void ExecuteKeyCollection();
+
+        /// <summary>
         /// Start object size trackers for all active databases
         /// </summary>
         public void StartObjectSizeTrackers(CancellationToken token = default);
@@ -259,25 +264,8 @@ namespace Garnet.server
         internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
 
         /// <summary>
-        /// Runs a background task per DB to manage periodic active expired key collection on Main store
-        /// In the case of a single DB, this will start only a single task.
+        /// On Demand Expired Keys collection, for a db given its ID
         /// </summary>
-        public void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
-
-        /// <summary>
-        /// On Demand Expired Main Store Keys collection, for a db given its ID
-        /// </summary>
-        public (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null);
-
-        /// <summary>
-        /// Runs a background task per DB to manage periodic active expired key collection on Obj store
-        /// In the case of a single DB, this will start only a single task.
-        /// </summary>
-        public void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
-
-        /// <summary>
-        /// On Demand Expired Main Store Keys collection, for a db given its ID
-        /// </summary>
-        public (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null);
+        public (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null);
     }
 }

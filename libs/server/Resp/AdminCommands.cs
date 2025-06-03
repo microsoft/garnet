@@ -893,36 +893,27 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// ACTEXP MAIN|OBJ [DBID]
+        /// ACTEXP [DBID]
         /// Scan the mutable region and tm=ombstone all expired keys actively instead of lazy.
         /// This is meant to be able to let users do on-demand active expiration, and even build their own schedulers
         /// for calling expiration based on their known workload patterns.
         /// </summary>
         private bool NetworkACTEXP()
         {
-            if (parseState.Count < 1 || parseState.Count > 2)
+            if (parseState.Count > 1)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ACTEXP));
             }
 
-            StoreOptions storeOption;
-            if (!parseState.TryGetStoreOption(0, out storeOption))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_INVALID_STORE_OPTION, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            // default database as default choice.
+            // Default database as default choice.
             int dbId = 0;
-            if (parseState.Count > 1)
+            if (parseState.Count > 0)
             {
-                if (!TryParseDatabaseId(1, out dbId))
+                if (!TryParseDatabaseId(0, out dbId))
                     return true;
             }
 
-            (long recordsExpired, long recordsScanned) = storeOption == StoreOptions.MAIN ?
-                storeWrapper.OnDemandMainStoreExpiredKeyCollection(dbId) : storeWrapper.OnDemandObjStoreExpiredKeyCollection(dbId);
+            (var recordsExpired, var recordsScanned) = storeWrapper.OnDemandExpiredKeyCollection(dbId);
 
             // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
             int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;

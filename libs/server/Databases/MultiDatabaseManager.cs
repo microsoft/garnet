@@ -521,6 +521,21 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
+        public override void ExecuteKeyCollection()
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                ExecuteKeyCollection(databasesMapSnapshot[dbId], Logger);
+            }
+        }
+
+        /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default)
         {
             sizeTrackersStarted = true;
@@ -1040,32 +1055,12 @@ namespace Garnet.server
             activeDbIds.mapLock.CloseLock();
         }
 
-        public override void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
-            => StartCollectionPerDb((GarnetDatabase db) => MainStoreCollectExpiredKeysForDbInBackgroundAsync(db, frequency, logger, cancellation));
-
-        public override void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
-            => StartCollectionPerDb((GarnetDatabase db) => MainStoreCollectExpiredKeysForDbInBackgroundAsync(db, frequency, logger, cancellation));
-
-        private void StartCollectionPerDb(Func<GarnetDatabase, Task> action)
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null)
         {
-            var databasesMapSnapshot = databases.Map;
-
-            var activeDbIdsMapSize = activeDbIds.ActualSize;
-            var activeDbIdsMapSnapshot = activeDbIds.Map;
-
-            for (var i = 0; i < activeDbIdsMapSize; i++)
-            {
-                var dbId = activeDbIdsMapSnapshot[i];
-                GarnetDatabase db = databasesMapSnapshot[dbId];
-                Task.Run(() => action(db));
-            }
+            var (k1, t1) = CollectExpiredMainStoreKeys(GetDbById(dbId), logger);
+            var (k2, t2) = CollectExpiredObjectStoreKeys(GetDbById(dbId), logger);
+            return (k1 + k2, t1 + t2);
         }
-
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null)
-            => CollectExpiredMainStoreKeysImpl(GetDbById(dbId), logger);
-
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null)
-            => CollectExpiredObjStoreKeysImpl(GetDbById(dbId), logger);
 
         private GarnetDatabase GetDbById(int dbId)
         {

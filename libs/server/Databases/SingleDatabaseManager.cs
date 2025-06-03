@@ -301,6 +301,10 @@ namespace Garnet.server
             ExecuteObjectCollection(defaultDatabase, Logger);
 
         /// <inheritdoc/>
+        public override void ExecuteKeyCollection() =>
+            ExecuteKeyCollection(defaultDatabase, Logger);
+
+        /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>
             ObjectStoreSizeTracker?.Start(token);
 
@@ -393,23 +397,13 @@ namespace Garnet.server
             return checkpointsPaused;
         }
 
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null)
+        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-            return CollectExpiredMainStoreKeysImpl(DefaultDatabase, logger);
+            var (k1, t1) = CollectExpiredMainStoreKeys(DefaultDatabase, logger);
+            var (k2, t2) = CollectExpiredObjectStoreKeys(DefaultDatabase, logger);
+            return (k1 + k2, t1 + t2);
         }
-
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null)
-        {
-            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-            return CollectExpiredObjStoreKeysImpl(DefaultDatabase, logger);
-        }
-
-        public override void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
-            => Task.Run(() => MainStoreCollectExpiredKeysForDbInBackgroundAsync(DefaultDatabase, frequency, logger, cancellation));
-
-        public override void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default)
-            => Task.Run(() => MainStoreCollectExpiredKeysForDbInBackgroundAsync(DefaultDatabase, frequency, logger, cancellation));
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -80,6 +79,9 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public abstract void ExecuteObjectCollection();
+
+        /// <inheritdoc/>
+        public abstract void ExecuteKeyCollection();
 
         /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
@@ -420,6 +422,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Executes a store-wide key collect operation for the specified database
+        /// </summary>
+        /// <param name="db">Database for object collection</param>
+        /// <param name="logger">Logger</param>
+        protected void ExecuteKeyCollection(GarnetDatabase db, ILogger logger = null)
+        {
+            _ = CollectExpiredMainStoreKeys(db, logger);
+            _ = CollectExpiredObjectStoreKeys(db, logger);
+        }
+
+        /// <summary>
         /// Run compaction on specified database
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
@@ -695,45 +708,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public abstract void MainStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null);
 
-        /// <inheritdoc/>
-        public abstract void ObjStoreCollectExpiredKeysInBackgroundTask(int frequency, ILogger logger = null, CancellationToken cancellation = default);
-
-        /// <inheritdoc/>
-        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(int dbId, ILogger logger = null);
-
-        /// <inheritdoc/>
-        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeys(int dbId, ILogger logger = null);
-
-        protected Task MainStoreCollectExpiredKeysForDbInBackgroundAsync(GarnetDatabase db, int frequency, ILogger logger = null, CancellationToken cancellationToken = default)
-            => RunBackgroundTask(() => CollectExpiredMainStoreKeysImpl(db, logger), frequency, logger, cancellationToken);
-
-        protected Task ObjStoreCollectExpiredKeysForDbInBackgroundAsync(GarnetDatabase db, int frequency, ILogger logger = null, CancellationToken cancellationToken = default)
-            => RunBackgroundTask(() => CollectExpiredObjStoreKeysImpl(db, logger), frequency, logger, cancellationToken);
-
-        private async Task RunBackgroundTask(Action action, int frequency, ILogger logger = null, CancellationToken cancellationToken = default)
-        {
-            Debug.Assert(frequency > 0);
-            try
-            {
-                while (true)
-                {
-                    if (cancellationToken.IsCancellationRequested) return;
-                    action();
-                    await Task.Delay(TimeSpan.FromSeconds(frequency), cancellationToken);
-                }
-            }
-            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
-            { }
-            catch (Exception ex)
-            {
-                logger?.LogCritical(ex, "Unknown exception received for background task. Task won't be resumed.");
-            }
-        }
-
-
-        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeysImpl(GarnetDatabase db, ILogger logger = null)
+        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(GarnetDatabase db, ILogger logger = null)
         {
             if (db.MainStoreActiveExpDbStorageSession == null)
             {
@@ -746,7 +723,7 @@ namespace Garnet.server
             long scanTill = StoreWrapper.store.Log.TailAddress;
 
             (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(
-                cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
+                cursor: scanFrom, storeCursor: out long scannedTill, keys: out var keys, endAddress: scanTill);
 
             long numExpiredKeysFound = keys.Count;
 
@@ -773,7 +750,7 @@ namespace Garnet.server
             return (numExpiredKeysFound, totalRecordsScanned);
         }
 
-        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjStoreKeysImpl(GarnetDatabase db, ILogger logger = null)
+        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjectStoreKeys(GarnetDatabase db, ILogger logger = null)
         {
             if (db.ObjStoreActiveExpDbStorageSession == null)
             {

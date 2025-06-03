@@ -698,11 +698,32 @@ namespace Garnet.server
             }
         }
 
-        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandMainStoreExpiredKeyCollection(int dbId)
-            => databaseManager.CollectExpiredMainStoreKeys(dbId, logger);
+        async Task KeyCollectTask(int keyCollectFrequencySecs, CancellationToken token = default)
+        {
+            Debug.Assert(keyCollectFrequencySecs > 0);
+            try
+            {
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
 
-        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandObjStoreExpiredKeyCollection(int dbId)
-            => databaseManager.CollectExpiredObjStoreKeys(dbId, logger);
+                    databaseManager.ExecuteKeyCollection();
+
+                    await Task.Delay(TimeSpan.FromSeconds(keyCollectFrequencySecs), token);
+                }
+            }
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background key collect task. Key collect task won't be resumed.");
+            }
+        }
+
+        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandExpiredKeyCollection(int dbId)
+            => databaseManager.CollectExpiredKeys(dbId, logger);
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
         /// <param name="token"></param>
@@ -754,19 +775,9 @@ namespace Garnet.server
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
 
-            if (serverOptions.ActiveExpiredKeyCollectionFrequencySecs > 0)
+            if (serverOptions.ExpiredKeyCollectionFrequencySecs > 0)
             {
-                // Internally the below methods use Task.Run to run background tasks that loops asynchronously wake up and run collection rounds
-                databaseManager.MainStoreCollectExpiredKeysInBackgroundTask(
-                    serverOptions.ActiveExpiredKeyCollectionFrequencySecs,
-                    logger, ctsCommit.Token);
-                
-                if (!serverOptions.DisableObjects)
-                {
-                    databaseManager.ObjStoreCollectExpiredKeysInBackgroundTask(
-                        serverOptions.ActiveExpiredKeyCollectionFrequencySecs,
-                        logger, ctsCommit.Token);
-                }
+                Task.Run(async () => await KeyCollectTask(serverOptions.ExpiredKeyCollectionFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
