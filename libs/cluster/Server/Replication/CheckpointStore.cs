@@ -85,7 +85,7 @@ namespace Garnet.cluster
                 {
                     if (!toDeletelogToken.Equals(logToken))
                     {
-                        logger.LogTrace("Deleting log token {toDeletelogToken}", toDeletelogToken);
+                        logger?.LogTrace("Deleting log token {toDeletelogToken}", toDeletelogToken);
                         ckptManager.DeleteLogCheckpoint(toDeletelogToken);
                     }
                 }
@@ -95,7 +95,7 @@ namespace Garnet.cluster
                 {
                     if (!toDeleteIndexToken.Equals(indexToken))
                     {
-                        logger.LogTrace("Deleting index token {toDeleteIndexToken}", toDeleteIndexToken);
+                        logger?.LogTrace("Deleting index token {toDeleteIndexToken}", toDeleteIndexToken);
                         ckptManager.DeleteIndexCheckpoint(toDeleteIndexToken);
                     }
                 }
