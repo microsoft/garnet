@@ -63,15 +63,15 @@ namespace Garnet.test
         public Task TestScheduledActiveExpirationViaSimulation()
             => TestActiveExpirationAsync((_) => Task.Delay(TimeSpan.FromSeconds(ActiveExpirationFreqSecs)));
 
-        private async Task TestActiveExpirationAsync(Func<IDatabase, Task> activeExpiraitonInvocation)
+        private async Task TestActiveExpirationAsync(Func<IDatabase, Task> activeExpirationInvocation)
         {
-            List<string> untombstonedRecords = new List<string>();
-            List<string> tombstonedRecords = new List<string>();
+            var untombstonedRecords = new List<string>();
+            var tombstonedRecords = new List<string>();
 
-            Random random = new Random();
+            var random = new Random();
             for (int i = 0; i < 100; i++)
             {
-                List<string> toAddInList = random.Next(0, 100) < 50 ? tombstonedRecords : untombstonedRecords;
+                var toAddInList = random.Next(0, 100) < 50 ? tombstonedRecords : untombstonedRecords;
                 toAddInList.Add(Guid.NewGuid().ToString());
             }
 
@@ -87,13 +87,13 @@ namespace Garnet.test
                 // add a set of records that MUST expire within the duration of the test.
                 PopulateStore(tombstonedRecords, db, (6, ActiveExpirationFreqSecs), forceExpirationaddition: true);
 
-                long tailAddr = server.Provider.StoreWrapper.store.Log.TailAddress;
+                var tailAddr = server.Provider.StoreWrapper.store.Log.TailAddress;
 
                 // Pre Active expiration EVERYTHING exists
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, true, "All to be expired should still exist");
                 CheckExistenceConditionOnAllKeys(db, untombstonedRecords, true, "All to be not expired should still exist");
 
-                await activeExpiraitonInvocation(db);
+                await activeExpirationInvocation(db);
 
                 // check that revivification happened for expired record 
                 // HK TODO: WHY TF NOT?
