@@ -614,7 +614,6 @@ namespace Garnet.server
                 {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
                     StoreWrapper.store.CheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
-                    StoreWrapper.store.CheckpointManager.CurrentHistoryId = StoreWrapper.runId;
                 }
 
                 if (checkpointCoveredAofAddress > 0)

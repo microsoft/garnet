@@ -320,10 +320,12 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Establish connection to cluster.
         /// </summary>
+        /// <param name="enabledCluster"></param>
         /// <param name="useTLS"></param>
         /// <param name="certificates"></param>
         /// <param name="clientCreds"></param>
         public void CreateConnection(
+            bool enabledCluster = true,
             bool useTLS = false,
             X509CertificateCollection certificates = null,
             ServerCredential clientCreds = new ServerCredential())
@@ -337,7 +339,7 @@ namespace Garnet.test.cluster
                 authUsername: clientCreds.user,
                 authPassword: clientCreds.password,
                 certificates: certificates);
-            clusterTestUtils.Connect(logger);
+            clusterTestUtils.Connect(cluster: enabledCluster, logger: logger);
             clusterTestUtils.PingAll(logger);
         }
 

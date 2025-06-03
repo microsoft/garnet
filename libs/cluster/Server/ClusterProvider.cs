@@ -463,5 +463,8 @@ namespace Garnet.cluster
             }
             return true;
         }
+
+        /// <inheritdoc />
+        public string GetRunId() => replicationManager.PrimaryReplId;
     }
 }
