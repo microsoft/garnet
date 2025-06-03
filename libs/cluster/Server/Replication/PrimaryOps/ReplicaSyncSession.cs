@@ -129,17 +129,17 @@ namespace Garnet.cluster
             {
                 logger?.LogInformation("Replica replicaId:{replicaId} requesting checkpoint replicaStoreVersion:{replicaStoreVersion} replicaObjectStoreVersion:{replicaObjectStoreVersion}",
                     replicaNodeId, replicaCheckpointEntry.metadata.storeVersion, replicaCheckpointEntry.metadata.objectStoreVersion);
-                gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
 
                 logger?.LogInformation("Attempting to acquire checkpoint");
                 (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
                 logger?.LogInformation("Checkpoint search completed");
 
+                gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
+
                 long index_size = -1;
                 long obj_index_size = -1;
                 if (!ValidateMetadata(localEntry, out index_size, out var hlog_size, out obj_index_size, out var obj_hlog_size, out var skipLocalMainStoreCheckpoint, out var skipLocalObjectStoreCheckpoint))
                 {
-                    localEntry.RemoveReader();
                     throw new GarnetException("Failed to validate metadata");
                 }
 
@@ -326,18 +326,20 @@ namespace Garnet.cluster
 
         public async Task<(CheckpointEntry, AofSyncTaskInfo)> AcquireCheckpointEntry()
         {
-            // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
-            var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
-                (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
-
             AofSyncTaskInfo aofSyncTaskInfo;
             CheckpointEntry cEntry;
 
             // This loop tries to provide the following two guarantees
             // 1. Retrieve latest checkpoint and lock it to prevent deletion before it is send to the replica
             // 2. Guard against truncation of AOF in between the retrieval of the checkpoint metadata and start of the aofSyncTask
+            var iteration = 0;
+            var numOdcAttempts = 0;
+            const int maxOdcAttempts = 2;
             while (true)
             {
+                logger?.LogInformation("AcquireCheckpointEntry iteration {iteration}", iteration);
+                iteration++;
+
                 aofSyncTaskInfo = null;
                 cEntry = default;
 
@@ -346,24 +348,25 @@ namespace Garnet.cluster
                 // We want to share the on-demand checkpoint and ensure that only one replica should succeed when calling TakeOnDemandCheckpoint
                 var lastSaveTime = storeWrapper.lastSaveTime;
 
+                var exceptionInjected = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition);
+
                 // Retrieve latest checkpoint and lock it from deletion operations
-                var acquiredCheckpoint = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Acquire_Checkpoint_Entry_Fail_Condition) ||
-                    !clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory(out cEntry);
-                if (acquiredCheckpoint)
+                var addedReader = !exceptionInjected && clusterProvider.replicationManager.TryGetLatestCheckpointEntryFromMemory(out cEntry);
+
+                if (!addedReader)
                 {
                     // Fail to acquire lock, could mean that a writer might be trying to delete
-                    Debug.Assert(cEntry == null);
-                    await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-                    continue; // Go back to re-acquire checkpoint
+                    logger?.LogWarning("Could not acquire lock for existing checkpoint, retrying.");
+
+                    // Go back to re-acquire the latest checkpoint
+                    await Task.Yield();
+                    continue;
                 }
 
-                // Break early if main-memory-replication on and do not wait for OnDemandCheckpoint
-                // We do this to avoid waiting indefinitely for a checkpoint that will never be taken
-                if (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint)
-                {
-                    logger?.LogWarning("MainMemoryReplication: OnDemandCheckpoint is turned off, skipping valid checkpoint acquisition.");
-                    break;
-                }
+#if DEBUG
+                // Only on Debug mode
+                await ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+#endif
 
                 // Calculate the minimum start address covered by this checkpoint
                 var startAofAddress = cEntry.GetMinAofCoveredAddress();
@@ -371,13 +374,23 @@ namespace Garnet.cluster
                 // If there is possible AOF data loss and we need to take an on-demand checkpoint,
                 // then we should take the checkpoint before we register the sync task, because
                 // TryAddReplicationTask is guaranteed to return true in this scenario.
-                if (possibleAofDataLoss &&
-                    clusterProvider.serverOptions.OnDemandCheckpoint &&
-                    (startAofAddress < clusterProvider.replicationManager.AofTruncatedUntil || !ValidateMetadata(cEntry, out _, out _, out _, out _, out _, out _)))
+                var validMetadata = ValidateMetadata(cEntry, out _, out _, out _, out _, out _, out _);
+                if (clusterProvider.serverOptions.OnDemandCheckpoint &&
+                    (startAofAddress < clusterProvider.replicationManager.AofTruncatedUntil || !validMetadata))
                 {
-                    cEntry.RemoveReader();
-                    await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-                    continue; // Go back to re-acquire checkpoint
+                    if (numOdcAttempts >= maxOdcAttempts && clusterProvider.AllowDataLoss)
+                    {
+                        logger?.LogWarning("Failed to acquire checkpoint after {numOdcAttempts} on-demand checkpoint attempts. Possible data loss, startAofAddress:{startAofAddress} < truncatedUntil:{truncatedUntil}.", numOdcAttempts, startAofAddress, clusterProvider.replicationManager.AofTruncatedUntil);
+                    }
+                    else
+                    {
+                        cEntry.RemoveReader();
+                        numOdcAttempts++;
+                        logger?.LogInformation("Taking on-demand checkpoint, attempt {numOdcAttempts}.", numOdcAttempts);
+                        await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
+                        await Task.Yield();
+                        continue;
+                    }
                 }
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
@@ -388,10 +401,7 @@ namespace Garnet.cluster
                 // Unlock last checkpoint because associated startAofAddress is no longer available
                 cEntry.RemoveReader();
 
-                // Take on demand checkpoint if main memory replication is enabled
-                if (clusterProvider.serverOptions.OnDemandCheckpoint)
-                    await storeWrapper.TakeOnDemandCheckpoint(lastSaveTime);
-
+                // Go back to re-acquire checkpoint
                 await Task.Yield();
             }
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -74,35 +75,29 @@ namespace Garnet.cluster
             PurgeAllCheckpointsExceptTokens(StoreType.Main, entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
             if (!clusterProvider.serverOptions.DisableObjects)
                 PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.metadata.objectStoreHlogToken, entry.metadata.objectStoreIndexToken);
-        }
 
-        /// <summary>
-        /// Used to purge all checkpoint tokens except the tokens provided.
-        /// </summary>
-        /// <param name="storeType">StoreType</param>
-        /// <param name="logToken">GUID token for log</param>
-        /// <param name="indexToken">GUID token for index</param>
-        public void PurgeAllCheckpointsExceptTokens(StoreType storeType, Guid logToken, Guid indexToken)
-        {
-            var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
-
-            // Delete log checkpoints
-            foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
+            void PurgeAllCheckpointsExceptTokens(StoreType storeType, Guid logToken, Guid indexToken)
             {
-                if (!toDeletelogToken.Equals(logToken))
+                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
+
+                // Delete log checkpoints
+                foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
                 {
-                    logger.LogTrace("Deleting log token {toDeletelogToken}", toDeletelogToken);
-                    ckptManager.DeleteLogCheckpoint(toDeletelogToken);
+                    if (!toDeletelogToken.Equals(logToken))
+                    {
+                        logger?.LogTrace("Deleting log token {toDeletelogToken}", toDeletelogToken);
+                        ckptManager.DeleteLogCheckpoint(toDeletelogToken);
+                    }
                 }
-            }
 
-            // Delete index checkpoints
-            foreach (var toDeleteIndexToken in ckptManager.GetIndexCheckpointTokens())
-            {
-                if (!toDeleteIndexToken.Equals(indexToken))
+                // Delete index checkpoints
+                foreach (var toDeleteIndexToken in ckptManager.GetIndexCheckpointTokens())
                 {
-                    logger.LogTrace("Deleting index token {toDeleteIndexToken}", toDeleteIndexToken);
-                    ckptManager.DeleteIndexCheckpoint(toDeleteIndexToken);
+                    if (!toDeleteIndexToken.Equals(indexToken))
+                    {
+                        logger?.LogTrace("Deleting index token {toDeleteIndexToken}", toDeleteIndexToken);
+                        ckptManager.DeleteIndexCheckpoint(toDeleteIndexToken);
+                    }
                 }
             }
         }
@@ -160,19 +155,23 @@ namespace Garnet.cluster
                 logger?.LogTrace("Suspended readers and deleting outdated checkpoint!");
 
                 // Below check each checkpoint token separately if it is eligible for deletion
-                if (CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
+                if (!CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
+                    break;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
-                if (CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
-                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
+                if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
+                    break;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 if (!clusterProvider.serverOptions.DisableObjects)
                 {
-                    if (CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_HLOG))
-                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.metadata.objectStoreHlogToken);
+                    if (!CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_HLOG))
+                        break;
+                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteLogCheckpoint(curr.metadata.objectStoreHlogToken);
 
-                    if (CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_INDEX))
-                        clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
+                    if (!CanDeleteToken(curr, CheckpointFileType.OBJ_STORE_INDEX))
+                        break;
+                    clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
                 }
 
                 // At least one token can always be deleted thus invalidating the in-memory entry
@@ -190,11 +189,14 @@ namespace Garnet.cluster
                 var curr = toDelete.next;
                 while (curr != null && curr != tail)
                 {
-                    // Token can be deleted when curr entry and toDelete do not share it
+                    // If current entry does not contain a shared token it is safe to delete because
+                    // either all previous entries would have contained a shared token and would be locked from readers
+                    // in order for the loop to reach the point where this entry is being inspected or it is the first entry being inspected.
                     if (!curr.ContainsSharedToken(toDelete, fileType))
                         return true;
 
-                    // If token is shared then try to suspend addition of new readers
+                    // Here we know that the entry contains a shared token so we try to suspend access to readers.
+                    // If we fail we can immediately return that we cannot delete this token 
                     if (!curr.TrySuspendReaders())
                         return false;
 
@@ -202,7 +204,8 @@ namespace Garnet.cluster
                     curr = curr.next;
                 }
 
-                // Here we reached the tail so we can delete the token only if it is not shared with the tail
+                Debug.Assert(curr == tail);
+                // Tail is checked separately because we don't want to lock readers, just check for shared tokens.
                 return !curr.ContainsSharedToken(toDelete, fileType);
             }
         }
@@ -212,7 +215,7 @@ namespace Garnet.cluster
         /// Caller is responsible for releasing reader by calling removeReader on entry
         /// </summary>
         /// <returns></returns>
-        public bool GetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
+        public bool TryGetLatestCheckpointEntryFromMemory(out CheckpointEntry cEntry)
         {
             cEntry = null;
             var _tail = tail;
@@ -224,8 +227,7 @@ namespace Garnet.cluster
                     {
                         storeCheckpointCoveredAofAddress = 0,
                         objectCheckpointCoveredAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : 0
-                    },
-                    _lock = default
+                    }
                 };
                 _ = cEntry.TryAddReader();
                 return true;
@@ -267,8 +269,7 @@ namespace Garnet.cluster
                     objectStoreIndexToken = objectStoreIndexToken,
                     objectCheckpointCoveredAofAddress = objectCheckpointCoveredAofAddress,
                     objectStorePrimaryReplId = objectStorePrimaryReplId,
-                },
-                _lock = new SingleWriterMultiReaderLock()
+                }
             };
             return entry;
 
@@ -300,12 +301,11 @@ namespace Garnet.cluster
         /// <returns></returns>
         public string GetLatestCheckpointFromMemoryInfo()
         {
-            var _tail = tail;
-            if (_tail == null)
-                return "(empty)";
-
             try
             {
+                var _tail = tail;
+                if (_tail == null)
+                    return "(empty)";
                 return _tail.ToString();
             }
             catch
@@ -320,11 +320,11 @@ namespace Garnet.cluster
         /// <returns></returns>
         public string GetLatestCheckpointFromDiskInfo()
         {
-            var cEntry = GetLatestCheckpointEntryFromDisk();
-            if (cEntry == null)
-                return "(empty)";
             try
             {
+                var cEntry = GetLatestCheckpointEntryFromDisk();
+                if (cEntry == null)
+                    return "(empty)";
                 return cEntry.ToString();
             }
             catch

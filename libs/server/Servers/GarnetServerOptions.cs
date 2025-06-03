@@ -327,7 +327,7 @@ namespace Garnet.server
         /// <summary>
         /// Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching
         /// </summary>
-        public bool OnDemandCheckpoint = false;
+        public bool OnDemandCheckpoint = true;
 
         /// <summary>
         /// Whether diskless replication is enabled or not.
@@ -338,6 +338,11 @@ namespace Garnet.server
         /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
         /// </summary>
         public int ReplicaDisklessSyncDelay = 5;
+
+        /// <summary>
+        /// AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.
+        /// </summary>
+        public string ReplicaDisklessSyncFullSyncAofThreshold = string.Empty;
 
         /// <summary>
         /// With main-memory replication, whether we use null device for AOF. Ensures no disk IO, but can cause data loss during replication.
@@ -904,6 +909,13 @@ namespace Garnet.server
                 logger?.LogInformation("Warning: using lower object store page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
         }
+
+        /// <summary>
+        /// Get integer value of ReplicaDisklessSyncFullSyncAofThreshold
+        /// </summary>
+        /// <returns></returns>
+        public long ReplicaDisklessSyncFullSyncAofThresholdValue()
+            => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold);
 
         /// <summary>
         /// Get object store segment size

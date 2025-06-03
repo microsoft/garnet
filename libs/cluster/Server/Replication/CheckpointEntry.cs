@@ -50,6 +50,7 @@ namespace Garnet.cluster
         {
             metadata = new();
             next = null;
+            _lock = new();
         }
 
         public long GetMinAofCoveredAddress()
