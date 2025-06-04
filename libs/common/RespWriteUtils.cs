@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -585,7 +584,7 @@ namespace Garnet.common
             }
 
             Span<byte> buffer = stackalloc byte[32];
-            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
+            if (!value.TryFormat(buffer, out var bytesWritten))
                 return false;
 
             var itemDigits = NumUtils.CountDigits(bytesWritten);
