@@ -67,6 +67,7 @@ namespace Garnet.cluster
 
         private HybridLogRecoveryInfo ConverMetadata(byte[] checkpointMetadata)
         {
+            // NOTE: this conversion should be simplified after suspending support for the old format which assumed the cookie is stored in the prefix.
             var success = true;
             HybridLogRecoveryInfo recoveryInfo = new();
 
@@ -150,8 +151,6 @@ namespace Garnet.cluster
         /// <param name="checkpointMetadata"></param>
         public void CommiLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
         {
-            // TODO: convert is not needed after deprecating old format
-            //  byte commit metadata send from the primary should be following the new unified format
             var recoveryInfo = ConverMetadata(checkpointMetadata);
             CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
         }
