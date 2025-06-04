@@ -112,37 +112,25 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Iterates over hybrid log collecting keys that point to live, expired records.
+        /// Iterates over main store memory collecting expired records.
         /// </summary>
-        internal (bool, long) ScanExpiredKeysMainStore(long cursor, out long storeCursor, out List<byte[]> keys, long endAddress)
+        internal (long, long) ScanExpiredKeysMainStore(long fromAddress)
         {
-            Keys ??= new();
-            Keys.Clear();
-
-            keys = Keys;
-
             mainStoreDbExpiredScanFuncs ??= new();
-            mainStoreDbExpiredScanFuncs.Initialize(keys);
-
-            storeCursor = cursor;
-            return (basicContext.Session.ScanCursor(ref storeCursor, count: int.MaxValue, mainStoreDbExpiredScanFuncs, endAddress, validateCursor: cursor != 0 && cursor != lastScanCursor), mainStoreDbExpiredScanFuncs.totalRecordsScanned);
+            mainStoreDbExpiredScanFuncs.Initialize(this);
+            _ = basicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, mainStoreDbExpiredScanFuncs);
+            return (mainStoreDbExpiredScanFuncs.deletedCount, mainStoreDbExpiredScanFuncs.totalCount);
         }
 
         /// <summary>
-        /// Iterates over hybrid log collecting keys that point to live, expired records.
+        /// Iterates over object store memory collecting expired records.
         /// </summary>
-        internal (bool, long) ScanExpiredKeysObjectStore(long cursor, out long storeCursor, out List<byte[]> keys, long endAddress)
+        internal (long, long) ScanExpiredKeysObjectStore(long fromAddress)
         {
-            Keys ??= new();
-            Keys.Clear();
-
-            keys = Keys;
-
             objectStoreDbExpiredScanFuncs ??= new();
-            objectStoreDbExpiredScanFuncs.Initialize(keys);
-
-            storeCursor = cursor;
-            return (objectStoreBasicContext.Session.ScanCursor(ref storeCursor, count: int.MaxValue, objectStoreDbExpiredScanFuncs, endAddress, validateCursor: cursor != 0 && cursor != lastScanCursor), objectStoreDbExpiredScanFuncs.totalRecordsScanned);
+            objectStoreDbExpiredScanFuncs.Initialize(this);
+            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, objectStoreDbExpiredScanFuncs);
+            return (objectStoreDbExpiredScanFuncs.deletedCount, objectStoreDbExpiredScanFuncs.totalCount);
         }
 
         /// <summary>
@@ -221,7 +209,7 @@ namespace Garnet.server
                 objectStoreDbSizeFuncs ??= new();
                 objectStoreDbSizeFuncs.Initialize();
                 cursor = 0;
-                objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
+                _ = objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
                 count += objectStoreDbSizeFuncs.Count;
             }
 
@@ -250,40 +238,48 @@ namespace Garnet.server
             internal sealed class ObjectStoreGetExpiredKeys : ExpiredKeysBase<byte[], IGarnetObject>
             {
                 protected override bool IsExpired(ref IGarnetObject value) => value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value);
-                protected override byte[] TransformKeyForSaving(ref byte[] key) => key;
+                protected override bool DeleteIfExpiredInMemory(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata)
+                {
+                    var input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
+                    var output = new GarnetObjectStoreOutput();
+                    return GarnetStatus.OK == storageSession.RMW_ObjectStore(ref key, ref input, ref output, ref storageSession.objectStoreBasicContext);
+                }
             }
 
             internal sealed class MainStoreGetExpiredKeys : ExpiredKeysBase<SpanByte, SpanByte>
             {
                 protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
-                protected override byte[] TransformKeyForSaving(ref SpanByte key) => key.ToByteArray();
+                protected override bool DeleteIfExpiredInMemory(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata)
+                {
+                    var input = new RawStringInput(RespCommand.DELIFEXPIM);
+                    return GarnetStatus.OK == storageSession.DEL_Conditional(ref key, ref input, ref storageSession.basicContext);
+                }
             }
 
             internal abstract class ExpiredKeysBase<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
             {
-                public long totalRecordsScanned;
+                public long totalCount;
+                public long deletedCount;
+                protected StorageSession storageSession;
 
-                private readonly GetDBKeysInfo info;
-
-                internal ExpiredKeysBase() => info = new();
-
-                internal void Initialize(List<byte[]> keys)
-                    => info.Initialize(keys, default, 0);
+                public void Initialize(StorageSession storageSession)
+                    => this.storageSession = storageSession;
 
                 protected abstract bool IsExpired(ref TValue value);
 
-                protected abstract byte[] TransformKeyForSaving(ref TKey key);
+                protected abstract bool DeleteIfExpiredInMemory(ref TKey key, ref TValue value, RecordMetadata recordMetadata);
 
                 public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                         => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
 
                 public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    totalRecordsScanned++;
+                    totalCount++;
                     if (IsExpired(ref value))
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        info.keys.Add(TransformKeyForSaving(ref key));
+                        if (DeleteIfExpiredInMemory(ref key, ref value, recordMetadata))
+                            deletedCount++;
                     }
                     else
                     {
@@ -295,7 +291,7 @@ namespace Garnet.server
 
                 public bool OnStart(long beginAddress, long endAddress)
                 {
-                    totalRecordsScanned = 0;
+                    totalCount = deletedCount = 0;
                     return true;
                 }
 

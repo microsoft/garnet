@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -719,40 +718,14 @@ namespace Garnet.server
             if (db.MainStoreActiveExpDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferManager();
-                db.MainStoreActiveExpDbStorageSession =
-                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                db.MainStoreActiveExpDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            long scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
-            long scanTill = StoreWrapper.store.Log.TailAddress;
+            var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
+            (var deletedCount, var totalCount) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(scanFrom);
+            logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
 
-            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(
-                cursor: scanFrom, storeCursor: out long scannedTill, keys: out var keys, endAddress: scanTill);
-
-            long numExpiredKeysFound = keys.Count;
-
-            RawStringInput input = new RawStringInput(RespCommand.DELIFEXPIM);
-            // If there is any sort of shift of the marker then a few of my scanned records will be from a redundant region.
-            // DelIfExpIm will be noop for those records since they will early exit at NCU.
-            foreach (byte[] key in keys)
-            {
-                unsafe
-                {
-                    fixed (byte* keyPtr = key)
-                    {
-                        SpanByte keySb = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                        // Use basic session for transient locking
-                        if (GarnetStatus.OK == db.MainStoreActiveExpDbStorageSession.DEL_Conditional(ref keySb, ref input, ref db.MainStoreActiveExpDbStorageSession.basicContext))
-                            logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
-                        else
-                            logger?.LogWarning("Expired key {key} was not found in Main Store", System.Text.Encoding.UTF8.GetString(key));
-                    }
-                }
-            }
-
-            logger?.LogDebug("Main Store - Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
-
-            return (numExpiredKeysFound, totalRecordsScanned);
+            return (deletedCount, totalCount);
         }
 
         protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjectStoreKeys(GarnetDatabase db, ILogger logger = null)
@@ -763,29 +736,11 @@ namespace Garnet.server
                 db.ObjStoreActiveExpDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            long scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
-            long scanTill = StoreWrapper.objectStore.Log.TailAddress;
+            var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
+            (var deletedCount, var totalCount) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysObjectStore(scanFrom);
+            logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
 
-            (bool iteratedTillEndOfRange, long totalRecordsScanned) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysObjectStore(
-                cursor: scanFrom, storeCursor: out long scannedTill, keys: out List<byte[]> keys, endAddress: scanTill);
-
-            long numExpiredKeysFound = keys.Count;
-
-            ObjectInput input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
-
-            for (var i = 0; i < keys.Count; i++)
-            {
-                var key = keys[i];
-                GarnetObjectStoreOutput output = new GarnetObjectStoreOutput();
-                if (GarnetStatus.OK == db.ObjStoreActiveExpDbStorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref db.ObjStoreActiveExpDbStorageSession.objectStoreBasicContext))
-                    logger?.LogDebug("Deleted Expired Key {key} for DB {id}", System.Text.Encoding.UTF8.GetString(key), db.Id);
-                else
-                    logger?.LogWarning("Expired key {key} was not found in Obj Store", System.Text.Encoding.UTF8.GetString(key));
-            }
-
-            logger?.LogDebug("Obj Store - Deleted {numKeys} keys out {totalRecords} records in range {start} to {end} for DB {id}", numExpiredKeysFound, totalRecordsScanned, scanFrom, scannedTill, db.Id);
-
-            return (numExpiredKeysFound, totalRecordsScanned);
+            return (deletedCount, totalCount);
         }
     }
 }
