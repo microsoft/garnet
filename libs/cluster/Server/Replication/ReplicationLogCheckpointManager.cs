@@ -13,12 +13,6 @@ namespace Garnet.cluster
 {
     internal sealed class ReplicationLogCheckpointManager : DeviceLogCommitCheckpointManager, IDisposable
     {
-        public long CurrentSafeAofAddress = 0;
-        public long RecoveredSafeAofAddress = 0;
-
-        public string CurrentReplicationId = string.Empty;
-        public string RecoveredReplicationId = string.Empty;
-
         readonly bool isMainStore;
         public Action<bool, long, long, bool> checkpointVersionShiftStart;
         public Action<bool, long, long, bool> checkpointVersionShiftEnd;
@@ -38,27 +32,7 @@ namespace Garnet.cluster
         {
             this.isMainStore = isMainStore;
             this.safelyRemoveOutdated = safelyRemoveOutdated;
-            this.createCookieDelegate = CreateCookie;
             this.logger = logger;
-
-            // Pre-append cookie in commitMetadata.
-            // cookieMetadata 52 bytes
-            // 1. 4 bytes to track size of cookie
-            // 2. 8 bytes for checkpointCoveredAddress
-            // 3. 40 bytes for primaryReplicationId
-            unsafe byte[] CreateCookie()
-            {
-                var cookie = new byte[sizeof(int) + sizeof(long) + CurrentReplicationId.Length];
-                var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentReplicationId);
-                fixed (byte* ptr = cookie)
-                fixed (byte* pridPtr = primaryReplIdBytes)
-                {
-                    *(int*)ptr = sizeof(long) + CurrentReplicationId.Length;
-                    *(long*)(ptr + 4) = CurrentSafeAofAddress;
-                    Buffer.MemoryCopy(pridPtr, ptr + 12, primaryReplIdBytes.Length, primaryReplIdBytes.Length);
-                }
-                return cookie;
-            }
         }
 
         public override void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming)
@@ -136,7 +110,9 @@ namespace Garnet.cluster
 
                 byte[] ExtractCookie(byte[] commitMetadataWithCookie)
                 {
-                    var cookieTotalSize = GetCookieData(commitMetadataWithCookie, out RecoveredSafeAofAddress, out RecoveredReplicationId);
+                    var cookieTotalSize = GetCookieData(commitMetadataWithCookie, out var recoveredSafeAofAddress, out var recoveredReplicationId);
+                    RecoveredSafeAofAddress = recoveredSafeAofAddress;
+                    RecoveredHistoryId = recoveredReplicationId;
                     var payloadSize = commitMetadataWithCookie.Length - cookieTotalSize;
 
                     var commitMetadata = new byte[payloadSize];

@@ -15,7 +15,7 @@ namespace Tsavorite.core
         /// Add cookie delegate
         /// </summary>
         /// <param name="cookieCreationDelegate"></param>
-        public void AddCookieDelegate(Func<byte[]> cookieCreationDelegate) => checkpointManager.AddCookieDelegate(cookieCreationDelegate);
+        public void SetCookieDelegate(Func<byte[]> cookieCreationDelegate) => checkpointManager.SetCookieDelegate(cookieCreationDelegate);
 
         private byte[] recoveredCommitCookie;
         /// <summary>
