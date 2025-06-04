@@ -403,8 +403,7 @@ namespace Garnet.server
                         op = RespCommand.INCRBY;
                     else
                     {
-                        return AbortWithErrorMessage(
-                                   $"ERR Bitfield command {Encoding.ASCII.GetString(command)} not supported"
+                        return AbortWithErrorMessage($"ERR Bitfield command {Encoding.ASCII.GetString(command)} not supported"
                                                     );
                     }
 

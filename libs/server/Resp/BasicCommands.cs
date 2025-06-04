@@ -1037,7 +1037,7 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments("COMMAND COUNT");
+                return AbortWithWrongNumberOfArguments("COMMAND|COUNT");
             }
 
             if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, true, logger))

@@ -57,7 +57,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array item to memory.
+        /// Writes an array str to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteArrayItem(long item)
@@ -408,21 +408,21 @@ namespace Garnet.common
 
         /// <summary>
         /// Write Verbatim string to memory.
-        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with "txt" type.
+        /// If RESP2, write as Bulk String. If RESP3, write as Verbatim String with given type.
         /// </summary>
-        /// <param name="item"></param>
+        /// <param name="str">String to write to memory</param>
         /// <param name="ext">String 3-letter type. If not supplied default is "txt"</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteVerbatimString(scoped ReadOnlySpan<byte> item, scoped ReadOnlySpan<byte> ext = default)
+        public void WriteVerbatimString(scoped ReadOnlySpan<byte> str, scoped ReadOnlySpan<byte> ext = default)
         {
             if (resp3)
             {
-                while (!RespWriteUtils.TryWriteVerbatimString(item, ext.IsEmpty ? "txt"u8 : ext, ref curr, end))
+                while (!RespWriteUtils.TryWriteVerbatimString(str, ext.IsEmpty ? RespStrings.VerbatimTxt : ext, ref curr, end))
                     ReallocateOutput();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteBulkString(item, ref curr, end))
+                while (!RespWriteUtils.TryWriteBulkString(str, ref curr, end))
                     ReallocateOutput();
             }
         }
