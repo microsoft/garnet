@@ -504,8 +504,16 @@ namespace Garnet.server
                                 SendAndReset();
                             while (!RespWriteUtils.TryWriteBulkString(member.ReadOnlySpan, ref dcurr, dend))
                                 SendAndReset();
-                            while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
-                                SendAndReset();
+
+                            if (respProtocolVersion >= 3)
+                            {
+                                WriteDoubleNumeric(double.Parse(score.ReadOnlySpan));
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
+                                    SendAndReset();
+                            }
                         }
                     }
                     break;

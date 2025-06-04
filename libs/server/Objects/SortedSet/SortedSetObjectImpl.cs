@@ -764,10 +764,12 @@ namespace Garnet.server
 
             if (withHeader)
             {
+                /*
                 if (respProtocolVersion >= 3)
                     writer.WriteArrayLength(count);
                 else
-                    writer.WriteArrayLength(count * 2);
+                */
+                writer.WriteArrayLength(count * 2);
             }
 
             while (count > 0)
@@ -779,11 +781,14 @@ namespace Garnet.server
 
                 UpdateSize(max.Element, false);
 
+                /*
                 if (!withHeader || respProtocolVersion >= 3)
                     writer.WriteArrayLength(2);
+                */
 
                 writer.WriteBulkString(max.Element);
-                writer.WriteDoubleNumeric(max.Score);
+                //writer.WriteDoubleNumeric(max.Score);
+                writer.WriteDoubleBulkString(max.Score);
 
                 countDone++;
                 count--;
