@@ -353,6 +353,11 @@ namespace Garnet.server
                 WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
             };
 
+            // The ZRANGESTORE code will read our output and store it, it's used to RESP2 output.
+            // Since in that case isn't displayed to the user, we can override the version to let it work.
+            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOpts.Store) != 0)
+                respProtocolVersion = 2;
+
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
