@@ -974,7 +974,7 @@ namespace Garnet.server
 
                         if (result != null)
                         {
-                            foreach (var (element, score) in result)
+                            foreach (var (score, element) in result)
                             {
                                 if (respProtocolVersion == 3 && includeWithScores)
                                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
@@ -1142,7 +1142,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var (element, score) in result)
+                    foreach (var (score, element) in result)
                     {
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
