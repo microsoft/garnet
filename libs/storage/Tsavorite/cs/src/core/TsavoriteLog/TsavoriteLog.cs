@@ -844,6 +844,45 @@ namespace Tsavorite.core
             return true;
         }
 
+        public unsafe bool TryEnqueueStreamEntry(byte* id, int idLength, int numPairs, byte* entry, int entryLength, out long logicalAddress)
+        {
+            logicalAddress = 0;
+            var length = idLength + sizeof(int) + entryLength;
+            int allocatedLength = headerSize + Align(length);
+            ValidateAllocatedLength(allocatedLength);
+
+            epoch.Resume();
+
+            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+
+            logicalAddress = allocator.TryAllocateRetryNow(allocatedLength);
+            if (logicalAddress == 0)
+            {
+                epoch.Suspend();
+                if (cannedException != null) throw cannedException;
+                return false;
+            }
+
+            var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
+            // start writing 
+            // first we copy the id
+            *(long*)(headerSize + physicalAddress) = *(long*)id;
+            *(long*)(headerSize + physicalAddress + 8) = *(long*)(id + sizeof(long));
+            // Buffer.MemoryCopy(id, (void*)(headerSize + physicalAddress), idLength, idLength);
+            // then we copy the number of pairs
+            // Buffer.MemoryCopy(numPairsBytes, (void*)(headerSize + physicalAddress + idLength), numPairsBytesLength, numPairsBytesLength);
+            *(int*)(headerSize + physicalAddress + idLength) = numPairs;
+            // then we copy the entry
+            Buffer.MemoryCopy(entry, (void*)(headerSize + physicalAddress + idLength + sizeof(int)), entryLength, entryLength);
+
+            SetHeader(length, (byte*)physicalAddress);
+            safeTailRefreshEntryEnqueued?.Signal();
+            epoch.Suspend();
+            if (AutoCommit) Commit();
+            return true;
+        }
+
+
         /// <summary>
         /// Append a user-defined blittable struct header atomically to the log.
         /// </summary>
