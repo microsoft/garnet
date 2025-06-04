@@ -442,14 +442,14 @@ namespace Garnet.cluster
         internal bool BumpAndWaitForEpochTransition()
         {
             BumpCurrentEpoch();
+            // Acquire latest bumped epoch
+            var currentEpoch = GarnetCurrentEpoch;
             foreach (var server in storeWrapper.Servers)
             {
                 while (true)
                 {
                 retry:
                     Thread.Yield();
-                    // Acquire latest bumped epoch
-                    var currentEpoch = GarnetCurrentEpoch;
                     var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
                     foreach (var s in sessions)
                     {
@@ -463,5 +463,8 @@ namespace Garnet.cluster
             }
             return true;
         }
+
+        /// <inheritdoc />
+        public string GetRunId() => replicationManager.PrimaryReplId;
     }
 }

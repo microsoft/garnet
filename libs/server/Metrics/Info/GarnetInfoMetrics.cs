@@ -53,7 +53,7 @@ namespace Garnet.server
                 new("monitor_task", storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? "enabled" : "disabled"),
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
-                new("run_id", storeWrapper.runId),
+                new("run_id", storeWrapper.RunId),
                 new("redis_version", storeWrapper.redisProtocolVersion),
                 new("redis_mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
             ];

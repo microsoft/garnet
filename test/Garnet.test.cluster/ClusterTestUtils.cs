@@ -595,10 +595,11 @@ namespace Garnet.test.cluster
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 
-        public void Connect(ILogger logger = null)
+        public void Connect(bool cluster = true, ILogger logger = null)
         {
             InitMultiplexer(GetRedisConfig(endpoints), textWriter, logger: logger);
-            this.nodeIds = GetNodeIds(logger: logger);
+            if (cluster)
+                this.nodeIds = GetNodeIds(logger: logger);
         }
 
         private void InitMultiplexer(ConfigurationOptions redisConfig, TextWriter textWriter, bool failAssert = true, ILogger logger = null)

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -49,13 +48,8 @@ namespace Tsavorite.core
 
         internal void WriteHybridLogMetaInfo()
         {
-            var metadata = _hybridLogCheckpoint.info.ToByteArray();
-            if (CommitCookie != null && CommitCookie.Length != 0)
-            {
-                var convertedCookie = Convert.ToBase64String(CommitCookie);
-                metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
-            }
-            checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
+            _hybridLogCheckpoint.info.cookie = checkpointManager.GetCookie();
+            checkpointManager.CommitLogCheckpointMetadata(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 
         internal void CleanupLogCheckpoint()
@@ -66,13 +60,8 @@ namespace Tsavorite.core
 
         internal void WriteHybridLogIncrementalMetaInfo(DeltaLog deltaLog)
         {
-            var metadata = _hybridLogCheckpoint.info.ToByteArray();
-            if (CommitCookie != null && CommitCookie.Length != 0)
-            {
-                var convertedCookie = Convert.ToBase64String(CommitCookie);
-                metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
-            }
-            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
+            _hybridLogCheckpoint.info.cookie = checkpointManager.GetCookie();
+            checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray(), deltaLog);
         }
 
         internal void CleanupLogIncrementalCheckpoint()
