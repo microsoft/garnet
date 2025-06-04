@@ -190,12 +190,6 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteOK()
-        {
-            WriteDirect(CmdStrings.RESP_OK);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteNull()
         {
             if (respProtocolVersion >= 3)
@@ -282,7 +276,7 @@ namespace Garnet.server
         {
             if (respProtocolVersion >= 3)
             {
-                while (!RespWriteUtils.TryWriteVerbatimString(item, ext.IsEmpty ? "txt"u8 : ext, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteVerbatimString(item, ext.IsEmpty ? RespStrings.VerbatimTxt : ext, ref dcurr, dend))
                     SendAndReset();
             }
             else

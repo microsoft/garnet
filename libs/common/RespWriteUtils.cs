@@ -619,10 +619,9 @@ namespace Garnet.common
             }
 
             Span<byte> buffer = stackalloc byte[32];
-            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
+            if (!value.TryFormat(buffer, out var bytesWritten))
                 return false;
 
-            var itemDigits = NumUtils.CountDigits(bytesWritten);
             int totalLen = 1 + bytesWritten + 2;
             if (totalLen > (int)(end - curr))
                 return false;
@@ -735,8 +734,14 @@ namespace Garnet.common
         {
             Debug.Assert(ext.Length == 3);
 
+            // Verbatim string length includes the type metadata.
+            // So ext (3 bytes) + ':' (1 byte separator) + str
             var actualLength = 3 + 1 + str.Length;
             var itemDigits = NumUtils.CountDigits(actualLength);
+
+            // '=' (1 byte separator) + itemDigits (length of digits describing length) +
+            // '\r\n' (2 bytes separator) + actualLength (length of string including metadata) +
+            // '\r\n' (2 bytes separator)
             var totalLen = 1 + itemDigits + 2 + actualLength + 2;
             if (totalLen > (int)(end - curr))
                 return false;
