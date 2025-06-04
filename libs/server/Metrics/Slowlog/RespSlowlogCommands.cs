@@ -168,7 +168,7 @@ namespace Garnet.server
                         byte[] args = new byte[len];
                         fixed (byte* argsPtr = args)
                         {
-                            parseState.CopyTo(argsPtr, len);
+                            parseState.SerializeTo(argsPtr, len);
                         }
                         entry.Arguments = args;
                     }

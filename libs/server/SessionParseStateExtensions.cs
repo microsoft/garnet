@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -156,25 +157,22 @@ namespace Garnet.server
             isSigned = default;
             var encodingSlice = parseState.GetArgSliceByRef(idx);
 
-            if (encodingSlice.length <= 1)
+            if (encodingSlice.Length <= 1)
             {
                 return false;
             }
 
-            var ptr = encodingSlice.ptr + 1;
-
-            isSigned = *encodingSlice.ptr == 'i';
-
-            if (!isSigned && *encodingSlice.ptr != 'u')
-            {
+            var ptr = encodingSlice.ToPointer() + 1;
+            byte b = *encodingSlice.ToPointer();
+            isSigned = b == 'i';
+            if (!isSigned && b != 'u')
                 return false;
-            }
 
             return
-                RespReadUtils.TryReadInt64Safe(ref ptr, encodingSlice.ptr + encodingSlice.length,
+                RespReadUtils.TryReadInt64Safe(ref ptr, encodingSlice.ToPointer() + encodingSlice.Length,
                                            out bitCount, out var bytesRead,
                                            out _, out _, allowLeadingZeros: false) &&
-                ((int)bytesRead == encodingSlice.length - 1) && (bytesRead > 0L) &&
+                ((int)bytesRead == encodingSlice.Length - 1) && (bytesRead > 0L) &&
                 (bitCount > 0) &&
                 ((isSigned && bitCount <= 64) ||
                  (!isSigned && bitCount < 64));
@@ -199,12 +197,12 @@ namespace Garnet.server
                 return false;
             }
 
-            var ptr = offsetSlice.ptr;
-            var len = offsetSlice.length;
+            var ptr = offsetSlice.ToPointer();
+            var len = offsetSlice.Length;
 
             if (*ptr == '#')
             {
-                if (offsetSlice.length == 1)
+                if (offsetSlice.Length == 1)
                     return false;
 
                 multiplyOffset = true;
@@ -213,7 +211,7 @@ namespace Garnet.server
             }
 
             return
-                RespReadUtils.TryReadInt64Safe(ref ptr, offsetSlice.ptr + offsetSlice.length,
+                RespReadUtils.TryReadInt64Safe(ref ptr, offsetSlice.ToPointer() + offsetSlice.Length,
                                            out bitFieldOffset, out var bytesRead,
                                            out _, out _, allowLeadingZeros: false) &&
                 ((int)bytesRead == len) && (bytesRead > 0L) &&
@@ -253,7 +251,7 @@ namespace Garnet.server
                 if (command == RespCommand.GEORADIUSBYMEMBER || command == RespCommand.GEORADIUSBYMEMBER_RO)
                 {
                     // From Member
-                    searchOpts.fromMember = parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                    searchOpts.fromMember = parseState.GetArgSliceByRef(currTokenIdx++).ToArray();
                     searchOpts.origin = GeoOriginType.FromMember;
                 }
                 else
@@ -310,7 +308,7 @@ namespace Garnet.server
                             break;
                         }
 
-                        searchOpts.fromMember = parseState.GetArgSliceByRef(currTokenIdx++).SpanByte.ToByteArray();
+                        searchOpts.fromMember = parseState.GetArgSliceByRef(currTokenIdx++).ToArray();
                         searchOpts.origin = GeoOriginType.FromMember;
                         continue;
                     }
@@ -763,7 +761,7 @@ namespace Garnet.server
         /// <param name="keySpecs">The RespCommandKeySpecification array contains the key specification</param>
         /// <param name="keys">The list to store extracted keys.</param>
         /// <returns>True if keys were successfully extracted, otherwise false.</returns>
-        internal static bool TryExtractKeysFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys)
+        internal static bool TryExtractKeysFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<PinnedSpanByte> keys)
         {
             keys = new();
 
@@ -786,7 +784,7 @@ namespace Garnet.server
         /// <param name="keys">The list to store extracted keys.</param>
         /// <param name="flags">The list to store associated flags for each key.</param>
         /// <returns>True if keys and flags were successfully extracted, otherwise false.</returns>
-        internal static bool TryExtractKeysAndFlagsFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys, out List<string[]> flags)
+        internal static bool TryExtractKeysAndFlagsFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<PinnedSpanByte> keys, out List<string[]> flags)
         {
             keys = new();
             flags = new();
@@ -816,7 +814,7 @@ namespace Garnet.server
         /// <param name="keys">The list to store extracted keys.</param>
         /// <param name="spec">The key specification to use for extraction.</param>
         /// <returns>True if keys were successfully extracted, otherwise false.</returns>
-        private static bool ExtractKeysFromSpec(ref SessionParseState state, List<ArgSlice> keys, RespCommandKeySpecification spec)
+        private static bool ExtractKeysFromSpec(ref SessionParseState state, List<PinnedSpanByte> keys, RespCommandKeySpecification spec)
         {
             int startIndex = 0;
 

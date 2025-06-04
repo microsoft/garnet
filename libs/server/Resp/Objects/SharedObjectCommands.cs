@@ -34,8 +34,7 @@ namespace Garnet.server
             }
 
             // Read key for the scan
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Get cursor value
             if (!parseState.TryGetLong(1, out var cursorValue) || cursorValue < 0)
@@ -66,8 +65,8 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
-            var status = storageApi.ObjectScan(keyBytes, ref input, ref output);
+            var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var status = storageApi.ObjectScan(key, ref input, ref output);
 
             switch (status)
             {

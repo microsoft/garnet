@@ -7,9 +7,9 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Equality comparer for <see cref="SpanByte"/>
+    /// Equality comparer for <see cref="ReadOnlySpan{_byte_}"/>
     /// </summary>
-    public struct SpanByteComparer : IKeyComparer<SpanByte>
+    public struct SpanByteComparer : IKeyComparer
     {
         /// <summary>
         /// The default instance.
@@ -18,37 +18,23 @@ namespace Tsavorite.core
         public static readonly SpanByteComparer Instance = new();
 
         /// <inheritdoc />
-        public readonly unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly unsafe long GetHashCode64(ReadOnlySpan<byte> key) => StaticGetHashCode64(key);
 
         /// <summary>
         /// Get 64-bit hash code
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long StaticGetHashCode64(ref SpanByte spanByte)
-        {
-            if (spanByte.Serialized)
-            {
-                byte* ptr = (byte*)Unsafe.AsPointer(ref spanByte);
-                return Utility.HashBytes(ptr + sizeof(int), spanByte.Length);
-            }
-            else
-            {
-                byte* ptr = (byte*)spanByte.Pointer;
-                return Utility.HashBytes(ptr, spanByte.Length);
-            }
-        }
+        public static unsafe long StaticGetHashCode64(ReadOnlySpan<byte> key) => Utility.HashBytes(key);
 
         /// <inheritdoc />
-        public readonly unsafe bool Equals(ref SpanByte k1, ref SpanByte k2) => StaticEquals(ref k1, ref k2);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly unsafe bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => StaticEquals(k1, k2);
 
         /// <summary>
         /// Equality comparison
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool StaticEquals(ref SpanByte k1, ref SpanByte k2)
-        {
-            return k1.AsReadOnlySpanWithMetadata().SequenceEqual(k2.AsReadOnlySpanWithMetadata())
-                && (k1.MetadataSize == k2.MetadataSize);
-        }
+        public static unsafe bool StaticEquals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.SequenceEqual(k2);
     }
 }

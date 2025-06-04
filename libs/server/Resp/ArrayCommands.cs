@@ -30,9 +30,9 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref key, ref input, ref o);
+                var key = parseState.GetArgSliceByRef(c);
+                var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                var status = storageApi.GET(key, ref input, ref o);
 
                 switch (status)
                 {
@@ -65,16 +65,16 @@ namespace Garnet.server
                 SendAndReset();
 
             RawStringInput input = default;
-            SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
+            SpanByteAndMemory o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var key = parseState.GetArgSliceByRef(c);
 
                 // Store index in context, since completions are not in order
                 long ctx = c;
 
-                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out var isPending);
+                var status = storageApi.GET_WithPending(key, ref input, ref o, ctx, out var isPending);
 
                 if (isPending)
                 {
@@ -97,7 +97,7 @@ namespace Garnet.server
                                 SendAndReset(o.Memory, o.Length);
                             else
                                 dcurr += o.Length;
-                            o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+                            o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
                         }
                         else
                         {
@@ -111,7 +111,7 @@ namespace Garnet.server
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
                             WriteNull();
-                            o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+                            o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
                         }
                         else
                         {
@@ -125,7 +125,7 @@ namespace Garnet.server
             if (firstPending != -1)
             {
                 // First complete all pending ops
-                storageApi.GET_CompletePending(outputArr, true);
+                _ = storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
                 for (var i = firstPending; i < parseState.Count; i++)
@@ -161,9 +161,9 @@ namespace Garnet.server
 
             for (int c = 0; c < parseState.Count; c += 2)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
-                _ = storageApi.SET(ref key, ref val);
+                var key = parseState.GetArgSliceByRef(c);
+                var val = parseState.GetArgSliceByRef(c + 1);
+                _ = storageApi.SET(key, val);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -196,8 +196,8 @@ namespace Garnet.server
             int keysDeleted = 0;
             for (int c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var status = storageApi.DELETE(ref key, StoreType.All);
+                var key = parseState.GetArgSliceByRef(c);
+                var status = storageApi.DELETE(key, StoreType.All);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)
@@ -380,7 +380,7 @@ namespace Garnet.server
             }
 
             var pattern = "*"u8;
-            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
+            var patternArgSlice = PinnedSpanByte.FromPinnedSpan(pattern);
             var allKeys = true;
             long countValue = 10;
             ReadOnlySpan<byte> typeParameterValue = default;
@@ -571,7 +571,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES);
             }
 
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
             if (!output.IsSpanByte)

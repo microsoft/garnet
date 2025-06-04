@@ -19,7 +19,7 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).ToArray();
 
             if (TryGetValue(key, out var hashValue))
             {
@@ -41,7 +41,7 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).ToArray();
 
                 if (TryGetValue(key, out var hashValue))
                 {
@@ -80,12 +80,9 @@ namespace Garnet.server
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-
-                if (Remove(key, out var hashValue))
-                {
+                var key = input.parseState.GetArgSliceByRef(i).ToArray();
+                if (Remove(key, out _))
                     output.Header.result1++;
-                }
             }
         }
 
@@ -96,13 +93,13 @@ namespace Garnet.server
 
         private void HashStrLength(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).ToArray();
             output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
         private void HashExists(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var field = input.parseState.GetArgSliceByRef(0).ToArray();
             output.Header.result1 = ContainsKey(field) ? 1 : 0;
         }
 
@@ -180,8 +177,8 @@ namespace Garnet.server
             var hop = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).ToArray();
+                var value = input.parseState.GetArgSliceByRef(i + 1).ToArray();
 
                 if (!TryGetValue(key, out var hashValue))
                 {
@@ -242,7 +239,7 @@ namespace Garnet.server
             // This value is used to indicate partial command execution
             output.Header.result1 = int.MinValue;
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).ToArray();
             var incrSlice = input.parseState.GetArgSliceByRef(1);
 
             var valueExists = TryGetValue(key, out var value);
@@ -267,7 +264,7 @@ namespace Garnet.server
                     result += incr;
 
                     var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
-                    var success = Utf8Formatter.TryFormat(result, resultSpan, out int bytesWritten,
+                    var success = Utf8Formatter.TryFormat(result, resultSpan, out var bytesWritten,
                         format: default);
                     Debug.Assert(success);
 
@@ -278,7 +275,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    resultBytes = incrSlice.SpanByte.ToByteArray();
+                    resultBytes = incrSlice.ToArray();
                     Add(key, resultBytes);
                 }
 
@@ -309,7 +306,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    resultBytes = incrSlice.SpanByte.ToByteArray();
+                    resultBytes = incrSlice.ToArray();
                     Add(key, resultBytes);
                 }
 

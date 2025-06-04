@@ -8,17 +8,17 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 10)]
-    struct TxnKeyEntry : ILockableKey
+    struct TxnKeyEntry : ITransactionalKey
     {
         [FieldOffset(0)]
         internal long keyHash;
@@ -29,20 +29,20 @@ namespace Garnet.server
         [FieldOffset(9)]
         internal LockType lockType;
 
-        #region ILockableKey
+        #region ITransactionalKey
         /// <inheritdoc/>
-        public long KeyHash { get => keyHash; }
+        public readonly long KeyHash => keyHash;
 
         /// <inheritdoc/>
-        public LockType LockType { get => lockType; }
-        #endregion ILockableKey
+        public readonly LockType LockType => lockType;
+        #endregion ITransactionalKey
 
         /// <inheritdoc />
-        public override string ToString()
+        public override readonly string ToString()
         {
             // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
             var keyHashSign = keyHash < 0 ? "-" : string.Empty;
-            var absKeyHash = this.keyHash >= 0 ? this.keyHash : -this.keyHash;
+            var absKeyHash = keyHash >= 0 ? keyHash : -keyHash;
             return $"{keyHashSign}{absKeyHash}:{(isObject ? "obj" : "raw")}:{(lockType == LockType.None ? "-" : (lockType == LockType.Shared ? "s" : "x"))}";
         }
     }
@@ -61,19 +61,19 @@ namespace Garnet.server
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
-                LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
+        internal TxnKeyEntries(int initialCount, TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> transactionalContext,
+                TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreTransactionalContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
-            comparison = new(lockableContext, objectStoreLockableContext);
+            comparison = new(transactionalContext, objectStoreTransactionalContext);
         }
 
         public bool IsReadOnly
         {
             get
             {
-                bool readOnly = true;
+                var readOnly = true;
                 for (int i = 0; i < keyCount; i++)
                 {
                     if (keys[i].lockType == LockType.Exclusive)
@@ -86,11 +86,11 @@ namespace Garnet.server
             }
         }
 
-        public void AddKey(ArgSlice keyArgSlice, bool isObject, LockType type)
+        public void AddKey(PinnedSpanByte keyArgSlice, bool isObject, LockType type)
         {
             var keyHash = !isObject
-                ? comparison.lockableContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparison.objectStoreLockableContext.GetKeyHash(keyArgSlice.ToArray());
+                ? comparison.transactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan)
+                : comparison.objectStoreTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -122,14 +122,14 @@ namespace Garnet.server
             // Issue main store locks
             if (mainKeyCount > 0)
             {
-                comparison.lockableContext.Lock(keys, 0, mainKeyCount);
+                comparison.transactionalContext.Lock(keys, 0, mainKeyCount);
                 mainStoreKeyLocked = true;
             }
 
             // Issue object store locks
             if (mainKeyCount < keyCount)
             {
-                comparison.objectStoreLockableContext.Lock(keys, mainKeyCount, keyCount - mainKeyCount);
+                comparison.objectStoreTransactionalContext.Lock(keys, mainKeyCount, keyCount - mainKeyCount);
                 objectStoreKeyLocked = true;
             }
 
@@ -150,7 +150,7 @@ namespace Garnet.server
             // TryLock will unlock automatically in case of partial failure
             if (mainKeyCount > 0)
             {
-                mainStoreKeyLocked = comparison.lockableContext.TryLock(keys, 0, mainKeyCount, lock_timeout);
+                mainStoreKeyLocked = comparison.transactionalContext.TryLock(keys, 0, mainKeyCount, lock_timeout);
                 if (!mainStoreKeyLocked)
                 {
                     phase = 0;
@@ -162,7 +162,7 @@ namespace Garnet.server
             // TryLock will unlock automatically in case of partial failure
             if (mainKeyCount < keyCount)
             {
-                objectStoreKeyLocked = comparison.objectStoreLockableContext.TryLock(keys, mainKeyCount, keyCount - mainKeyCount, lock_timeout);
+                objectStoreKeyLocked = comparison.objectStoreTransactionalContext.TryLock(keys, mainKeyCount, keyCount - mainKeyCount, lock_timeout);
                 if (!objectStoreKeyLocked)
                 {
                     phase = 0;
@@ -178,9 +178,9 @@ namespace Garnet.server
         {
             phase = 2;
             if (mainStoreKeyLocked && mainKeyCount > 0)
-                comparison.lockableContext.Unlock(keys, 0, mainKeyCount);
+                comparison.transactionalContext.Unlock(keys, 0, mainKeyCount);
             if (objectStoreKeyLocked && mainKeyCount < keyCount)
-                comparison.objectStoreLockableContext.Unlock(keys, mainKeyCount, keyCount - mainKeyCount);
+                comparison.objectStoreTransactionalContext.Unlock(keys, mainKeyCount, keyCount - mainKeyCount);
             mainKeyCount = 0;
             keyCount = 0;
             mainStoreKeyLocked = false;
@@ -196,12 +196,12 @@ namespace Garnet.server
             for (int ii = 0; ii < keyCount; ii++)
             {
                 ref var entry = ref keys[ii];
-                sb.Append(delimiter);
-                sb.Append(entry.ToString());
+                _ = sb.Append(delimiter);
+                _ = sb.Append(entry.ToString());
             }
 
             if (sb.Length > 0)
-                sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
+                _ = sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
             return sb.ToString();
         }
     }

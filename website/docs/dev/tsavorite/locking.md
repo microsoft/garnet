@@ -6,19 +6,17 @@ title: Locking
 
 # Locking
 
-There are three modes of locking in Tsavorite, set by a `ConcurrencyControlMode` value on the Tsavorite constructor:
-  - `LockTable`: Tsavorite's hash index buckets are used to hold the lock state. Locktable locking is either manual or transient:
-    - **Manual**: Garnet calls a `Lock` method on `LockableContext` or `LockableUnsafeContext` (hereafter referred to collectively as `Lockable*Context`) at the beginning of a transaction, passing an ordered array of keys, and must call `Unlock` when the transaction is complete. Tsavorite does not try to lock during individual operations on these session contexts.
-    - **Transient**: Tsavorite acquires and releases locks for individual keys for the duration of a data operation: Upsert, RMW, Read, or Delete. Collectively, these are referred to here as `InternalXxx` for the internal methods that implement them.
-  - `None`: No locking is done by Tsavorite. 
+Locking is always on in Tsavorite. It is done by locking the HashIndex bucket. There are two modes of locking; these are automatic based on what sessions the caller uses:
+  - **Manual**: In this mode, the Garnet processing layer calls a `Lock` method on `TransactionalContext` or `TransactionalUnsafeContext` (hereafter referred to collectively as `Transactional*Context`) at the beginning of a transaction, passing an ordered array of keys, and must call `Unlock` when the transaction is complete. Tsavorite does not try to lock during individual operations on these session contexts.
+  - **Transient**: Tsavorite acquires and releases locks for individual keys for the duration of a data operation: Upsert, RMW, Read, or Delete. Collectively, these are referred to here as `InternalRUMD` for the internal methods that implement them: Read, Upsert, rMw, and Delete.
 
 All locks are obtained via spinning on `Interlocked.CompareExchange` and `Thread.Yield()` and have limited spin count, to avoid deadlocks; if they fail to acquire the desired lock in this time, the operation retries.
 
-As noted above, manual locking is done by obtaining the `Lockable*Context` instance from a `ClientSession`. There are currently 4 `*Context` implementations; all are `struct` for inlining. All `*Context` are obtained as properties on the `ClientSession` named for the type (e.g. `clientSession.LockableContext`). The characteristics of each `*Context` are:
+As noted above, manual locking is done by obtaining the `Transactional*Context` instance from a `ClientSession`. There are currently 4 `*Context` implementations; all are `struct` for inlining. All `*Context` are obtained as properties on the `ClientSession` named for the type (e.g. `clientSession.TransactionalContext`). The characteristics of each `*Context` are:
 - **`BasicContext`**: This is exactly the same as `ClientSession`, internally calling directly through to `ClientSession`'s methods and reusing `ClientSession`'s `TsavoriteSession`. It provides safe epoch management (acquiring and releasing the epoch on each call) and Transient locking.
 - **`UnsafeContext : IUnsafeContext`**: This provides Transient locking, but rather than safe epoch management handled per-operation by Tsavorite, this supports "unsafe" manual epoch management controlled by the client via `BeginUnsafe()` and `EndUnsafe()`; it is the client's responsibility to make these calls correctly. `UnsafeContext` API methods call the internal ContextRead etc. methods without doing the Resume and Suspend (within try/finally) of epoch protection as is done by the "Safe" API methods.
-- **`LockableContext : ILockableContext`**: This provides safe epoch management, but rather than Transient locking, this requires Manual locks via `BeginLockable` and `EndLockable`. This requirement ensures that all locks are acquired before any methods accessing those keys are called.
-- **`LockableUnsafeContext : ILockableContext, IUnsafeContext`**: This combines manual epoch management and manual locking, exposing both sets of methods.
+- **`TransactionalContext : ITransactionalContext`**: This provides safe epoch management, but rather than Transient locking, this requires Manual locks via `BeginTransactional` and `EndTransactional`. This requirement ensures that all locks are acquired before any methods accessing those keys are called.
+- **`TransactionalUnsafeContext : ITransactionalContext, IUnsafeContext`**: This combines manual epoch management and manual locking, exposing both sets of methods.
 
 In addition to the `Lock` methods, Tsavorite supports:
 - `TryLock`: Accepts an array of keys and returns true if all locks were acquired, else false (and any locks that were acquired are released)
@@ -29,28 +27,28 @@ In addition to the `Lock` methods, Tsavorite supports:
 All manual locking of keys must lock the keys in a deterministic order, and unlock in the reverse order, to avoid deadlocks.
 
 Lock spinning is limited in order to avoid deadlocks such as the following:
-  - `Lockable*Context` LC1 exclusively locks k1
+  - `Transactional*Context` LC1 exclusively locks k1
   - `BasicContext` BC1 tries to acquire an exclusive Transient lock on k1, and spins while holding the epoch
   - LC1 does an RMW on k1 resulting in a CopyUpdate; this does a BlockAllocate that finds it must flush pages from the head of the log in order to make room at the tail. 
     - LC1 therefore calls BumpCurrentEpoch(... OnPagesClosed)
     - Because BC1 holds the epoch, the OnPagesClosed() call is never drained, so we have deadlock
 By ensuring that locks are limited in spins, we force one or both of the above sessions to release any locks it has already aquired and return up the callstack to retry the operation via RETRY_LATER (which refreshes the epoch, allowing other operations such as the OnPagesClosed() mentioned above to complete).
 
-Transient locks are never held across pending I/O or other Wait operations. All the data operations' low-level implementors (`InternalRead`, `InternalUpsert`, `InternalRMW`, and `InternalDelete`--collectively known as `InternalXxx`) release these locks when the call is exited; if the operations must be retried, the locks are reacquired as part of the normal operation there.
+Transient locks are never held across pending I/O or other Wait operations. All the data operations' low-level implementors (`InternalRead`, `InternalUpsert`, `InternalRMW`, and `InternalDelete`--collectively known as `InternalRUMD`) release these locks when the call is exited; if the operations must be retried, the locks are reacquired as part of the normal operation there.
 
 ## Example
-Here is an example of the above two use cases, condensed from the unit tests in `LockableUnsafeContextTests.cs`:
+Here is an example of the above two use cases, condensed from the unit tests in `TransactionalUnsafeContextTests.cs`:
 
 ```cs
-    var luContext = session.GetLockableUnsafeContext();
+    var luContext = session.GetTransactionalUnsafeContext();
     luContext.BeginUnsafe();
-    luContext.BeginLockable();
+    luContext.BeginTransaction();
 
     var keys = new[]
     {
-        new FixedLengthLockableKeyStruct<long>(readKey24, LockType.Shared, luContext),      // Source, shared
-        new FixedLengthLockableKeyStruct<long>(readKey51, LockType.Shared, luContext),      // Source, shared
-        new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
+        new FixedLengthTransactionalKeyStruct(readKey24, LockType.Shared, luContext),      // Source, shared
+        new FixedLengthTransactionalKeyStruct(readKey51, LockType.Shared, luContext),      // Source, shared
+        new FixedLengthTransactionalKeyStruct(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
     };
 
     // Sort the keys to guard against deadlock
@@ -64,7 +62,7 @@ Here is an example of the above two use cases, condensed from the unit tests in 
 
     luContext.Unlock(keys);
 
-    luContext.EndLockable();
+    luContext.EndTransaction();
     luContext.EndUnsafe();
 ```
 
@@ -73,7 +71,7 @@ Here is an example of the above two use cases, condensed from the unit tests in 
 This section covers the internal design and implementation of Tsavorite's locking.
 
 ### Operation Data Structures
-There are a number of variables necessary to track the main hash table entry information, the 'source' record as defined above, and other stack-based data relevant to the operation. These variables are placed within structs that live on the stack at the `InternalXxx` level.
+There are a number of variables necessary to track the main hash table entry information, the 'source' record as defined above, and other stack-based data relevant to the operation. These variables are placed within structs that live on the stack at the `InternalRUMD` level.
 
 #### HashEntryInfo
 This is used for hash-chain traversal and CAS updates. It consists primarily of:
@@ -134,9 +132,7 @@ Some relevant `RecordInfo` bits:
 
 ### Locking Flow
 
-When `Internalxxx` when `ConcurrencyControlMode` is `LockTable`:
-
-We obtain the key hash at the start of the operation, so we lock its bucket if we are not in a `Lockable*Context` (if we are, we later Assert that the key is already locked).
+We obtain the key hash at the start of the operation, so we lock its bucket if we are not in a `Transactional*Context` (if we are, we later Assert that the key is already locked).
 
 Following this, the requested operation is performed within a try/finally block whose 'finally' releases the lock.
 
@@ -161,4 +157,4 @@ Using the above example and assuming an update of r8000, the resulting chain wou
 - `HashTable` -> r8000 (invalid) -> r7000 -> mxxxx (new) -> m4000 -> m3000 -> m...
 - In this example, note that the record address spaces are totally different between the main log and readcache; "xxxx" is used as the "new address" to symbolize this.
 
-This splicing operation requires that we deal with updates at the tail of the tag chain (in the `HashEntryInfo`) as well as at the splice point. This cannot be done as a single atomic operation. To handle this, we detach the readcache prefix chain, insert the new record at the tail, and then reattach the detached records. See `DetachAndReattachReadCacheChain` for specifics. We may fail the reattach, but this is acceptable (versus more complicated and expensive locking) because such failures should be rare and the readcache is just a performance optimization.
+This splicing operation requires that we deal with updates at the tail of the tag chain (in the `HashEntryInfo`) as well as at the splice point. This cannot be done as a single atomic operation. To handle this, we check if another session added a readcache entry from a pending read while we were inserting a record at the tail of the log. If so, the new readcache record must be invalidated (see `ReadCacheCheckTailAfterSplice`).

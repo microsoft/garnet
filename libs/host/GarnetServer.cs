@@ -20,11 +20,11 @@ using Tsavorite.core;
 
 namespace Garnet
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Implementation Garnet server
@@ -48,8 +48,8 @@ namespace Garnet
         private readonly GarnetServerOptions opts;
         private IGarnetServer[] servers;
         private SubscribeBroker subscribeBroker;
-        private KVSettings<SpanByte, SpanByte> kvSettings;
-        private KVSettings<byte[], IGarnetObject> objKvSettings;
+        private KVSettings kvSettings;
+        private KVSettings objKvSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
         private ILogger logger;
@@ -233,7 +233,7 @@ namespace Garnet
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true, logger);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, startFresh: true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
@@ -332,7 +332,7 @@ namespace Garnet
             }
         }
 
-        private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory,
+        private TsavoriteKV<MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory,
             out LightEpoch epoch, out StateMachineDriver stateMachineDriver)
         {
             epoch = new LightEpoch();
@@ -350,12 +350,12 @@ namespace Garnet
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
-            return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
-                , StoreFunctions<SpanByte, SpanByte>.Create()
+            return new(kvSettings
+                , StoreFunctions.Create()
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
-        private TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
+        private TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> CreateObjectStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
             LightEpoch epoch, StateMachineDriver stateMachineDriver, out CacheSizeTracker objectStoreSizeTracker)
         {
             objectStoreSizeTracker = null;
@@ -375,12 +375,10 @@ namespace Garnet
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: false, logger) :
                 new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
-            var objStore = new TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator>(
-                objKvSettings,
-                StoreFunctions<byte[], IGarnetObject>.Create(new ByteArrayKeyComparer(),
-                    () => new ByteArrayBinaryObjectSerializer(),
-                    () => new GarnetObjectSerializer(customCommandManager)),
-                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            var objStore = new TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator>(objKvSettings
+                , StoreFunctions.Create(new SpanByteComparer(),
+                    () => new GarnetObjectSerializer(customCommandManager))
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (objHeapMemorySize > 0 || objReadCacheHeapMemorySize > 0)
                 objectStoreSizeTracker = new CacheSizeTracker(objStore, objKvSettings, objHeapMemorySize, objReadCacheHeapMemorySize,
@@ -404,7 +402,8 @@ namespace Garnet
 
             opts.GetAofSettings(dbId, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
-            var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+            var appendOnlyFile = new TsavoriteLog(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteAof"));
+
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");
             return (aofDevice, appendOnlyFile);

@@ -29,12 +29,12 @@ namespace HdrHistogram.Utilities
     /// <see cref="WriterReaderPhaser"/> "writers" are wait free, "readers" block for other "readers", and "readers" are only blocked by "writers" whose critical was entered before the reader's <seealso cref="FlipPhase()"/> attempt.
     /// <para>
     /// When used to protect an actively recording data structure, the assumptions on how readers and writers act are:
-    /// <ol>
-    /// <li>There are two sets of data structures("active" and "inactive")</li>
-    /// <li>Writing is done to the perceived active version(as perceived by the writer), and only within critical sections delineated by <see cref="WriterCriticalSectionEnter()"/> and <see cref="WriterCriticalSectionExit(long)"/>).</li>
-    /// <li> Only readers switch the perceived roles of the active and inactive data structures.
-    /// They do so only while under <see cref="ReaderLock()"/>, and only before calling <see cref="FlipPhase()"/>.</li>
-    /// </ol>
+    /// <list type="bullet">
+    /// <item>There are two sets of data structures("active" and "inactive")</item>
+    /// <item>Writing is done to the perceived active version(as perceived by the writer), and only within critical sections delineated by <see cref="WriterCriticalSectionEnter()"/> and <see cref="WriterCriticalSectionExit(long)"/>).</item>
+    /// <item> Only readers switch the perceived roles of the active and inactive data structures.
+    /// They do so only while under <see cref="ReaderLock()"/>, and only before calling <see cref="FlipPhase()"/>.</item>
+    /// </list>
     /// When the above assumptions are met, <see cref="WriterReaderPhaser"/> guarantees that the inactive data structures are not being modified by any writers while being read while under <seealso cref="ReaderLock()"/> protection after a <see cref="FlipPhase()"/> operation.
     /// </para>
     /// </remarks>

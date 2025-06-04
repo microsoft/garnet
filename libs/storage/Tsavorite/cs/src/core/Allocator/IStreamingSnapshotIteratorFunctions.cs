@@ -8,7 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions for streaming snapshot iteration
     /// </summary>
-    public interface IStreamingSnapshotIteratorFunctions<TKey, TValue>
+    public interface IStreamingSnapshotIteratorFunctions
     {
         /// <summary>Iteration is starting.</summary>
         /// <param name="checkpointToken">Checkpoint token</param>
@@ -18,12 +18,11 @@ namespace Tsavorite.core
         bool OnStart(Guid checkpointToken, long currentVersion, long nextVersion);
 
         /// <summary>Next record in the streaming snapshot.</summary>
-        /// <param name="key">Reference to the current record's key</param>
-        /// <param name="value">Reference to the current record's Value</param>
+        /// <param name="srcLogRecord">Reference to the current record</param>
         /// <param name="recordMetadata">Record metadata, including <see cref="RecordInfo"/> and the current record's logical address</param>
         /// <param name="numberOfRecords">The number of records returned so far, not including the current one.</param>
         /// <returns>True to continue iteration, else false</returns>
-        bool Reader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords);
+        bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords) where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>Iteration is complete.</summary>
         /// <param name="completed">If true, the iteration completed; else OnStart() or Reader() returned false to stop the iteration.</param>

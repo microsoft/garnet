@@ -8,7 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Identifies which log regions records will be copied from to <see cref="ReadCopyTo"/>. This specification is
     /// evaluated in hierarchical order, from that on the TsavoriteKV ctor, which may be overridden by those in 
-    /// <see cref="ClientSession{Key, Value, Input, Output, Context, Functions, StoreFunctions, Allocator}"/>.NewSession(), which may be overridden
+    /// <see cref="ClientSession{TInput, TOutput, TContext, TSessionFunctions, TStoreFunctions, TAllocator}"/>.NewSession(), which may be overridden
     /// by those at the individual Read() level.
     /// </summary>
     public enum ReadCopyFrom : byte

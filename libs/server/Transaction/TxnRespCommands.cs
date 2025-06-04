@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -224,7 +225,7 @@ namespace Garnet.server
                 return true;
             }
 
-            List<ArgSlice> keys = [];
+            List<PinnedSpanByte> keys = [];
 
             for (var c = 0; c < count; c++)
             {

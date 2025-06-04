@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -21,7 +22,7 @@ namespace Garnet.server
         /// Parsed integer
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int ReadInt(ref ArgSlice slice)
+        public static int ReadInt(PinnedSpanByte slice)
         {
             int number = default;
             var ptr = slice.ptr;
@@ -43,7 +44,7 @@ namespace Garnet.server
         /// True if integer read successfully
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadInt(ref ArgSlice slice, out int number)
+        public static bool TryReadInt(PinnedSpanByte slice, out int number)
         {
             number = default;
             var ptr = slice.ptr;
@@ -60,7 +61,7 @@ namespace Garnet.server
         /// Parsed long
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long ReadLong(ref ArgSlice slice)
+        public static long ReadLong(PinnedSpanByte slice)
         {
             long number = default;
             var ptr = slice.ptr;
@@ -82,7 +83,7 @@ namespace Garnet.server
         /// True if long parsed successfully
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadLong(ref ArgSlice slice, out long number)
+        public static bool TryReadLong(PinnedSpanByte slice, out long number)
         {
             number = default;
             var ptr = slice.ptr;
@@ -99,9 +100,9 @@ namespace Garnet.server
         /// Parsed double
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double ReadDouble(ref ArgSlice slice)
+        public static double ReadDouble(PinnedSpanByte slice)
         {
-            if (!TryReadDouble(ref slice, out var number))
+            if (!TryReadDouble(slice, out var number))
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
             }
@@ -115,7 +116,7 @@ namespace Garnet.server
         /// True if double parsed successfully
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadDouble(ref ArgSlice slice, out double number)
+        public static bool TryReadDouble(PinnedSpanByte slice, out double number)
         {
             var sbNumber = slice.ReadOnlySpan;
             return Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
@@ -129,7 +130,7 @@ namespace Garnet.server
         /// Parsed string
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static string ReadString(ref ArgSlice slice)
+        public static string ReadString(PinnedSpanByte slice)
         {
             return Encoding.ASCII.GetString(slice.ReadOnlySpan);
         }
@@ -141,9 +142,9 @@ namespace Garnet.server
         /// Parsed integer
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadBool(ref ArgSlice slice)
+        public static bool ReadBool(PinnedSpanByte slice)
         {
-            if (!TryReadBool(ref slice, out var value))
+            if (!TryReadBool(slice, out var value))
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
             }
@@ -157,7 +158,7 @@ namespace Garnet.server
         /// True if integer read successfully
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadBool(ref ArgSlice slice, out bool value)
+        public static bool TryReadBool(PinnedSpanByte slice, out bool value)
         {
             value = false;
 

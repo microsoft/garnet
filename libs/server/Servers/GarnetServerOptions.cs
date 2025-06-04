@@ -289,7 +289,7 @@ namespace Garnet.server
         public int CheckpointThrottleFlushDelayMs = 0;
 
         /// <summary>
-        /// Enable FastCommit mode for TsavoriteLog
+        /// Enable FastCommit mode for TsavoriteAof
         /// </summary>
         public bool EnableFastCommit = true;
 
@@ -544,7 +544,7 @@ namespace Garnet.server
         /// <param name="logFactory">Tsavorite Log factory instance</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+        public KVSettings GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
             out INamedDeviceFactory logFactory)
         {
             if (MutablePercent is < 10 or > 95)
@@ -552,7 +552,7 @@ namespace Garnet.server
 
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
 
-            KVSettings<SpanByte, SpanByte> kvSettings = new()
+            KVSettings kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
@@ -657,7 +657,7 @@ namespace Garnet.server
                     FreeRecordBins = new RevivificationBin[RevivBinRecordSizes.Length],
                     RevivifiableFraction = RevivifiableFraction
                 };
-                for (var ii = 0; ii < RevivBinRecordSizes.Length; ++ii)
+                for (var ii = 0; ii < RevivBinRecordSizes.Length; ii++)
                 {
                     var recordCount = RevivBinRecordCounts?.Length switch
                     {
@@ -703,7 +703,7 @@ namespace Garnet.server
         /// <summary>
         /// Get KVSettings for the object store log
         /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+        public KVSettings GetObjectStoreSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
             out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
         {
             objReadCacheHeapMemorySize = default;
@@ -712,7 +712,7 @@ namespace Garnet.server
                 throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
 
             var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
-            KVSettings<byte[], IGarnetObject> kvSettings = new()
+            KVSettings kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
@@ -802,11 +802,10 @@ namespace Garnet.server
             }
             else if (UseRevivBinsPowerOf2 || RevivBinRecordSizes?.Length > 0)
             {
-                logger?.LogInformation("[Object Store] Using Revivification with a single fixed-size bin");
-                kvSettings.RevivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
+                logger?.LogInformation("[Store] Using Revivification with power-of-2 bins");
+                kvSettings.RevivificationSettings = RevivificationSettings.PowerOf2Bins.Clone();
+                kvSettings.RevivificationSettings.NumberOfBinsToSearch = RevivNumberOfBinsToSearch;
                 kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
-                kvSettings.RevivificationSettings.FreeRecordBins[0].NumberOfRecords = RevivObjBinRecordCount;
-                kvSettings.RevivificationSettings.FreeRecordBins[0].BestFitScanLimit = RevivBinBestFitScanLimit;
             }
             else
             {

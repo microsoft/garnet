@@ -40,8 +40,8 @@ namespace Garnet
         private static bool TestAPI<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput) where TGarnetApi : IGarnetApi
         {
             var offset = 0;
-            var pairs = new (ArgSlice field, ArgSlice value)[6];
-            var fields = new ArgSlice[pairs.Length];
+            var pairs = new (PinnedSpanByte field, PinnedSpanByte value)[6];
+            var fields = new PinnedSpanByte[pairs.Length];
 
             var myHash = GetNextArg(ref procInput.parseState, ref offset);
 

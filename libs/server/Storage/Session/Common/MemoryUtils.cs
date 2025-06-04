@@ -46,10 +46,8 @@ namespace Garnet.server
 
         internal static long CalculateKeyValueSize(byte[] key, IGarnetObject value)
         {
-            // Round up key size to account for alignment during allocation 
-            // and add up overhead for allocating a byte array
-            return Utility.RoundUp(key.Length, IntPtr.Size) + ByteArrayOverhead +
-                value.Size;
+            // Round up key size to account for alignment during allocation and add overhead for allocating a byte array
+            return Utility.RoundUp(key.Length, IntPtr.Size) + ByteArrayOverhead + value.MemorySize;
         }
     }
 }

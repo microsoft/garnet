@@ -28,7 +28,7 @@ namespace Tsavorite.devices
         readonly ConcurrentDictionary<long, ReadWriteRequestInfo> pendingReadWriteOperations;
         readonly ConcurrentDictionary<long, RemoveRequestInfo> pendingRemoveOperations;
         readonly Timer hangCheckTimer;
-        readonly SemaphoreSlim singleWriterSemaphore;
+        readonly SemaphoreSlim initialWriterSemaphore;
         readonly TimeSpan limit;
         readonly bool localBlobManager;
 
@@ -53,7 +53,7 @@ namespace Tsavorite.devices
             public DateTime TimeStamp;
         }
 
-        SemaphoreSlim SingleWriterSemaphore => singleWriterSemaphore;
+        SemaphoreSlim InitialWriterSemaphore => initialWriterSemaphore;
 
         internal IStorageErrorHandler StorageErrorHandler { get; private set; }
 
@@ -106,7 +106,7 @@ namespace Tsavorite.devices
             StorageErrorHandler.Token.Register(CancelAllRequests);
             this.underLease = underLease;
             hangCheckTimer = new Timer(DetectHangs, null, 0, 20000);
-            singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
+            initialWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
             limit = TimeSpan.FromSeconds(90);
 
             StartAsync().Wait();
@@ -141,7 +141,7 @@ namespace Tsavorite.devices
             StorageErrorHandler.Token.Register(CancelAllRequests);
             this.underLease = underLease;
             hangCheckTimer = new Timer(DetectHangs, null, 0, 20000);
-            singleWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
+            initialWriterSemaphore = underLease ? new SemaphoreSlim(1) : null;
             limit = TimeSpan.FromSeconds(90);
 
             StartAsync().Wait();
@@ -311,7 +311,7 @@ namespace Tsavorite.devices
                 BlobManager.StopAsync().Wait();
 
             hangCheckTimer.Dispose();
-            singleWriterSemaphore?.Dispose();
+            initialWriterSemaphore?.Dispose();
 
             // Unlike in LocalStorageDevice, we explicitly remove all page blobs if the deleteOnClose flag is set, instead of relying on the operating system
             // to delete files after the end of our process. This leads to potential problems if multiple instances are sharing the same underlying page blobs.
@@ -675,7 +675,7 @@ namespace Tsavorite.devices
 
                         if (underLease)
                         {
-                            SingleWriterSemaphore.Release();
+                            InitialWriterSemaphore.Release();
                         }
 
                     }, TaskContinuationOptions.ExecuteSynchronously);
@@ -685,7 +685,7 @@ namespace Tsavorite.devices
         {
             if (underLease)
             {
-                await SingleWriterSemaphore.WaitAsync();
+                await InitialWriterSemaphore.WaitAsync();
             }
 
             long offset = 0;

@@ -264,13 +264,13 @@ namespace Garnet.server
                         var filterSpan = filter.Span;
 
                         var valueIx = argIx + 1;
-                        ref var value = ref parseState.GetArgSliceByRef(valueIx);
+                        var value = parseState.GetArgSliceByRef(valueIx);
 
                         AsciiUtils.ToUpperInPlace(filterSpan);
 
                         if (filterSpan.SequenceEqual(CmdStrings.ID))
                         {
-                            if (!ParseUtils.TryReadLong(ref value, out var idParsed))
+                            if (!ParseUtils.TryReadLong(value, out var idParsed))
                             {
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrShouldBeGreaterThanZero, "client-id")));
                             }
@@ -291,7 +291,7 @@ namespace Garnet.server
 
                             if (!parseState.TryGetClientType(valueIx, out var typeParsed))
                             {
-                                var typeStr = ParseUtils.ReadString(ref value);
+                                var typeStr = ParseUtils.ReadString(value);
                                 return AbortWithErrorMessage(Encoding.UTF8.GetBytes(string.Format(CmdStrings.GenericUnknownClientType, typeStr)));
                             }
 
@@ -307,7 +307,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrDuplicateFilter, "USER")));
                             }
 
-                            user = ParseUtils.ReadString(ref value);
+                            user = ParseUtils.ReadString(value);
                         }
                         else if (filterSpan.SequenceEqual(CmdStrings.ADDR))
                         {
@@ -316,7 +316,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrDuplicateFilter, "ADDR")));
                             }
 
-                            addr = ParseUtils.ReadString(ref value);
+                            addr = ParseUtils.ReadString(value);
                         }
                         else if (filterSpan.SequenceEqual(CmdStrings.LADDR))
                         {
@@ -325,7 +325,7 @@ namespace Garnet.server
                                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrDuplicateFilter, "LADDR")));
                             }
 
-                            lAddr = ParseUtils.ReadString(ref value);
+                            lAddr = ParseUtils.ReadString(value);
                         }
                         else if (filterSpan.SequenceEqual(CmdStrings.SKIPME))
                         {
@@ -351,7 +351,7 @@ namespace Garnet.server
                         }
                         else if (filterSpan.SequenceEqual(CmdStrings.MAXAGE))
                         {
-                            if (!ParseUtils.TryReadLong(ref value, out var maxAgeParsed))
+                            if (!ParseUtils.TryReadLong(value, out var maxAgeParsed))
                             {
                                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
                             }

@@ -25,6 +25,18 @@ namespace Tsavorite.core
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
 
+        /// <summary>Default number of bits for the size of an inline (not overflow) key</summary>
+        public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;
+
+        /// <summary>Default number of bits for the size of an inline (not overflow) value, for <see cref="SpanByteAllocator{TStoreFunctions}"/></summary>
+        public const int kDefaultMaxInlineValueSizeBits = 10;
+
+        /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
+        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits - 1;
+
+        /// <summary>Maximum size of a string is 512MB</summary>
+        public const int kMaxStringSizeBits = 29;
+
         /// <summary>
         /// Device used for main hybrid log
         /// </summary>
@@ -51,6 +63,11 @@ namespace Tsavorite.core
         public int MemorySizeBits = 34;
 
         /// <summary>
+        /// Size of pages for ObjectAllocator key and optional fields space
+        /// </summary>
+        public int ObjectLogVariableSpacePageSizeBits = 25;
+
+        /// <summary>
         /// Controls how many pages should be empty to account for non-power-of-two-sized log
         /// </summary>
         public int MinEmptyPageCount = 0;
@@ -75,5 +92,15 @@ namespace Tsavorite.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
+
+        /// <summary>
+        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
+        /// </summary>
+        public int MaxInlineKeySizeBits = kDefaultMaxInlineKeySizeBits;
+
+        /// <summary>
+        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// </summary>
+        public int MaxInlineValueSizeBits = kDefaultMaxInlineValueSizeBits;
     }
 }

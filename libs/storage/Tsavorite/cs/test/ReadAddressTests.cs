@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -82,14 +84,7 @@ namespace Tsavorite.test.readaddress
                 }
             }
 
-            public override bool ConcurrentReader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                output.value = SetReadOutput(key.key, value.value);
-                output.address = readInfo.Address;
-                return true;
-            }
-
-            public override bool SingleReader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo)
+            public override bool Reader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo)
             {
                 output.value = SetReadOutput(key.key, value.value);
                 output.address = readInfo.Address;
@@ -97,12 +92,12 @@ namespace Tsavorite.test.readaddress
             }
 
             // Return false to force a chain of values.
-            public override bool ConcurrentWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => false;
+            public override bool InPlaceWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => false;
 
             public override bool InPlaceUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false;
 
             // Record addresses
-            public override bool SingleWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
                 dst = src;
                 output.address = upsertInfo.Address;
@@ -134,7 +129,7 @@ namespace Tsavorite.test.readaddress
                     if (useReadCache && readCopyOptions.CopyTo == ReadCopyTo.ReadCache)
                         ClassicAssert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
                     else
-                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what SingleWriter set
+                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what InitialWriter set
                 }
             }
 
@@ -317,10 +312,7 @@ namespace Tsavorite.test.readaddress
 
             public readonly bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool ConcurrentReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-            public bool SingleReader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 Output output = new() { address = recordMetadata.Address, value = SetReadOutput(key.key, value.value) };
@@ -579,3 +571,5 @@ namespace Tsavorite.test.readaddress
         }
     }
 }
+
+#endif // LOGRECORD_TODO

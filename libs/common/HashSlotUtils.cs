@@ -72,18 +72,23 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Compute hash slot from the given ArgSlice
+        /// </summary>
+        public static unsafe ushort HashSlot(PinnedSpanByte argSlice)
+            => HashSlot(argSlice.ToPointer(), argSlice.Length);
+
+        /// <summary>
         /// Compute hash slot from the given SpanByte
         /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
-        public static unsafe ushort HashSlot(ref SpanByte key)
-            => HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
+        public static unsafe ushort HashSlot(ReadOnlySpan<byte> key)
+        {
+            fixed (byte* keyPtr = key)
+                return HashSlot(keyPtr, key.Length);
+        }
 
         /// <summary>
         /// Compute hash slot of given data
         /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
         public static unsafe ushort HashSlot(Span<byte> key)
         {
             fixed (byte* keyPtr = key)
