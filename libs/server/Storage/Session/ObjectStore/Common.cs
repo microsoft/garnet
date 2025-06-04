@@ -241,29 +241,31 @@ namespace Garnet.server
                 fixed (byte* outputPtr = outputSpan)
                 {
                     var refPtr = outputPtr;
+                    var c = (char)*refPtr;
+                    var end = outputPtr + outputSpan.Length;
 
-                    if (*refPtr == '-')
+                    if (c == '-')
                     {
-                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, end))
                             return default;
                     }
-                    else if (*refPtr == '*')
+                    else if ((c == '*') || (c == '~') || (c == '%'))
                     {
                         if (isScanOutput)
                         {
                             // Read the first two elements
-                            if (!RespReadUtils.TryReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out var outerArraySize, ref refPtr, end, c))
                                 return default;
 
                             element = null;
                             len = 0;
                             // Read cursor value
-                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                                 return default;
                         }
 
                         // Get the number of elements
-                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadUnsignedLengthHeader(out var arraySize, ref refPtr, end, c))
                             return default;
 
                         // Create the argslice[]
@@ -277,17 +279,32 @@ namespace Garnet.server
                         {
                             element = null;
                             len = 0;
-                            if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                             {
                                 elements[i] = new ArgSlice(element, len);
                             }
                         }
                     }
+                    else if (c == ',')
+                    {
+                        if (refPtr == end)
+                            return default;
+
+                        var start = ++refPtr;
+
+                        if (!RespReadUtils.TryReadAsSpan(out var res, ref refPtr, end))
+                            return default;
+
+                        if (!double.TryParse(res, out _))
+                            return default;
+
+                        elements = [new ArgSlice(start, res.Length)];
+                    }
                     else
                     {
                         byte* result = null;
                         len = 0;
-                        if (!RespReadUtils.TryReadPtrWithLengthHeader(ref result, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadPtrWithLengthHeader(ref result, ref len, ref refPtr, end))
                             return default;
                         elements = [new ArgSlice(result, len)];
                     }

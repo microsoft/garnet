@@ -786,10 +786,8 @@ namespace Garnet.server
 
                 UpdateSize(max.Element, false);
 
-                /*
-                if (!withHeader || respProtocolVersion >= 3)
+                if (!withHeader /* || respProtocolVersion >= 3 */)
                     writer.WriteArrayLength(2);
-                */
 
                 writer.WriteBulkString(max.Element);
                 //writer.WriteDoubleNumeric(max.Score);
