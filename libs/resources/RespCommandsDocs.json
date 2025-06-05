@@ -113,6 +113,21 @@
     ]
   },
   {
+    "Command": "ACTEXP",
+    "Name": "ACTEXP",
+    "Summary": "Iterates over all mutable records and deletes the expired ones.",
+    "Group": "Generic",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration. N is the number of records in memory.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "APPEND",
     "Name": "APPEND",
     "Summary": "Appends a string to the value of a key. Creates the key if it doesn\u0027t exist.",
@@ -1896,6 +1911,22 @@
     ]
   },
   {
+    "Command": "DELIFEXPIM",
+    "Name": "DELIFEXPIM",
+    "Summary": "Deletes a key if it is in memory and expired.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
@@ -1917,7 +1948,6 @@
       }
     ]
   },
-
   {
     "Command": "DISCARD",
     "Name": "DISCARD",
@@ -7776,6 +7806,12 @@
     ]
   },
   {
+    "Command": "ZCOLLECT",
+    "Name": "ZCOLLECT",
+    "Summary": "Manually trigger deletion of expired members from memory for SortedSet",
+    "Group": "Hash"
+  },
+  {
     "Command": "ZCOUNT",
     "Name": "ZCOUNT",
     "Summary": "Returns the count of members in a sorted set that have scores within a range.",
@@ -7802,12 +7838,6 @@
         "Type": "Double"
       }
     ]
-  },
-  {
-    "Command": "ZCOLLECT",
-    "Name": "ZCOLLECT",
-    "Summary": "Manually trigger deletion of expired members from memory for SortedSet",
-    "Group": "Hash"
   },
   {
     "Command": "ZDIFF",
@@ -8597,43 +8627,6 @@
     ]
   },
   {
-    "Command": "ZPTTL",
-    "Name": "ZPTTL",
-    "Summary": "Returns the TTL in milliseconds of a sorted set member.",
-    "Group": "SortedSet",
-    "Complexity": "O(N) where N is the number of specified members",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "MEMBERS",
-        "Type": "Block",
-        "Token": "MEMBERS",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "NUMMEMBERS",
-            "DisplayText": "nummembers",
-            "Type": "Integer"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MEMBER",
-            "DisplayText": "member",
-            "Type": "String",
-            "ArgumentFlags": "Multiple"
-          }
-        ]
-      }
-    ]
-  },
-  {
     "Command": "ZPOPMAX",
     "Name": "ZPOPMAX",
     "Summary": "Returns the highest-scoring members from a sorted set after removing them. Deletes the sorted set if the last member was popped.",
@@ -8676,6 +8669,43 @@
         "DisplayText": "count",
         "Type": "Integer",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "ZPTTL",
+    "Name": "ZPTTL",
+    "Summary": "Returns the TTL in milliseconds of a sorted set member.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
       }
     ]
   },
