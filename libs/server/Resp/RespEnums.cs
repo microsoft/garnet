@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 namespace Garnet.server
 {
     internal enum ExpirationOption : byte
@@ -21,11 +24,5 @@ namespace Garnet.server
         None,
         NX,
         XX
-    }
-
-    internal enum StoreOptions : byte
-    {
-        MAIN,
-        OBJ
     }
 }
