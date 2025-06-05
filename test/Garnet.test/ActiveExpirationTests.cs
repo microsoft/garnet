@@ -37,7 +37,7 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             // create server with active expiration enabled, TODO: need to turn on reviv to see log growth minimized from reviv
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, activeExpirationFrequencySecs: activeExpSchedule);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, activeExpirationFrequencySecs: activeExpSchedule, useReviv: true);
             server.Start();
         }
 

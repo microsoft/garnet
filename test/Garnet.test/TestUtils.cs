@@ -260,7 +260,9 @@ namespace Garnet.test
             int slowLogThreshold = 0,
             TextWriter logTo = null,
             bool enableCluster = false,
-            int activeExpirationFrequencySecs = -1)
+            int activeExpirationFrequencySecs = -1,
+            bool useReviv = false
+            )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -396,25 +398,17 @@ namespace Garnet.test
                 });
             }
 
-            // HK TODO
-            opts.UseRevivBinsPowerOf2 = true;
-            opts.RevivBinBestFitScanLimit = 0;
-            opts.RevivNumberOfBinsToSearch = 0;
-            opts.RevivifiableFraction = 1;
-            opts.RevivInChainOnly = false;
-            opts.RevivBinRecordCounts = [];
-            opts.RevivBinRecordSizes = [];
-            opts.RevivObjBinRecordCount = 256;
-            /*
-             *     RevivBinBestFitScanLimit: 0
-    RevivBinRecordCounts: {int[0]}
-    RevivBinRecordSizes: {int[0]}
-    RevivInChainOnly: false
-    RevivNumberOfBinsToSearch: 0
-    RevivObjBinRecordCount: 256
-    RevivifiableFraction: 1
-             * */
-
+            if (useReviv)
+            {
+                opts.UseRevivBinsPowerOf2 = true;
+                opts.RevivBinBestFitScanLimit = 0;
+                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivifiableFraction = 1;
+                opts.RevivInChainOnly = false;
+                opts.RevivBinRecordCounts = [];
+                opts.RevivBinRecordSizes = [];
+                opts.RevivObjBinRecordCount = 256;
+            }
 
             return new GarnetServer(opts, loggerFactory);
         }
