@@ -3890,7 +3890,7 @@ namespace Garnet.test
             response = await c.ExecuteAsync("ZSCORE", "z", "a");
             ClassicAssert.AreEqual(doublePrefix + "0\r\n", response);
 
-            var exptectedResponse = (respVersion >= 3) ? 
+            var exptectedResponse = (respVersion >= 3) ?
                         "*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n" :
                         "*4\r\n$1\r\na\r\n$1\r\n0\r\n$1\r\nb\r\n$1\r\n1\r\n";
             response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES");
