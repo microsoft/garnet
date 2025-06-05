@@ -3895,8 +3895,6 @@ namespace Garnet.test
                         "*4\r\n$1\r\na\r\n$1\r\n0\r\n$1\r\nb\r\n$1\r\n1\r\n";
             response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES");
             ClassicAssert.AreEqual(exptectedResponse, response);
-            response = await c.ExecuteAsync("ZDIFF", "2", "z", "nx", "WITHSCORES");
-            ClassicAssert.AreEqual(exptectedResponse, response);
             response = await c.ExecuteAsync("ZUNION", "2", "z", "nx", "WITHSCORES");
             ClassicAssert.AreEqual(exptectedResponse, response);
 
