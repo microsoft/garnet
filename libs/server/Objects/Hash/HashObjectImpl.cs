@@ -116,10 +116,6 @@ namespace Garnet.server
 
             var countDone = 0;
 
-            // This version is an internal API which reprocesses the output and knows only about the RESP2 output.
-            if ((respProtocolVersion >= 3) && (seed != 0))
-                respProtocolVersion = 2;
-
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (includedCount)

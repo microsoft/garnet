@@ -269,21 +269,35 @@ namespace Garnet.server
                             return default;
 
                         // Create the argslice[]
-                        elements = new ArgSlice[isScanOutput ? arraySize + 1 : arraySize];
+                        System.Collections.Generic.List<ArgSlice> elemlist = new(isScanOutput ? arraySize + 1 : arraySize);
 
-                        int i = 0;
+                        var i = 0;
                         if (isScanOutput)
-                            elements[i++] = new ArgSlice(element, len);
+                            elemlist.Add(new ArgSlice(element, len));
 
-                        for (; i < elements.Length; i++)
+                        for (; i < arraySize; i++)
                         {
                             element = null;
                             len = 0;
-                            if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
+                            var outerLen = 1;
+                            c = (char)*refPtr;
+
+                            if ((c == '*') || (c == '~') || (c == '%'))
                             {
-                                elements[i] = new ArgSlice(element, len);
+                                if (!RespReadUtils.TryReadUnsignedLengthHeader(out outerLen, ref refPtr, end, c))
+                                    return default;
+                            }
+
+                            for (var k = 0; k < outerLen; ++k)
+                            {
+                                if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
+                                {
+                                    elemlist.Add(new ArgSlice(element, len));
+                                }
                             }
                         }
+
+                        elements = [.. elemlist];
                     }
                     else if (c == ',')
                     {
