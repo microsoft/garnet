@@ -26,27 +26,16 @@ namespace Garnet.test
 
         static object[] Read(string input, ref int pos)
         {
-            if (input.Length < 3)
-                return default;
-
             switch (input[pos])
             {
-                case '+':
-                    pos++;
-                    var resultString = ReadSimpleString(input, ref pos);
-                    return [resultString];
-
                 case ':':
                     pos++;
                     var resultInt = ReadIntegerAsString(input, ref pos);
                     return [resultInt];
 
-                case '-':
-                    pos++;
-                    var errorString = ReadErrorAsString(input, ref pos);
-                    return [errorString];
-
                 case '$':
+                case '~':
+                case '%':
                     pos++;
                     var resultBulk = ReadStringWithLengthHeader(input, ref pos);
                     return [resultBulk];
@@ -55,6 +44,21 @@ namespace Garnet.test
                     pos++;
                     var resultArray = ReadStringArrayWithLengthHeader(input, ref pos);
                     return resultArray;
+
+                case '+':
+                    pos++;
+                    var resultString = ReadSimpleString(input, ref pos);
+                    return [resultString];
+
+                case '-':
+                    pos++;
+                    var errorString = ReadErrorAsString(input, ref pos);
+                    return [errorString];
+
+                case ',':
+                    pos++;
+                    var resultDouble = ReadDoubleAsString(input, ref pos);
+                    return [resultDouble];
 
                 default:
                     RespParsingException.Throw($"Unexpected character {input[0]}");
@@ -74,7 +78,7 @@ namespace Garnet.test
             if (arraylen < 0)
                 RespParsingException.ThrowInvalidLength(arraylen);
 
-            List<object> lo = new();
+            List<object> lo = new(arraylen);
             for (var i = 0; i < arraylen; i++)
             {
                 var res = Read(input, ref loc);
@@ -116,6 +120,18 @@ namespace Garnet.test
                 RespParsingException.Throw("No newline");
 
             var ret = input[loc..pos];
+            loc = pos + 2;
+
+            return ret;
+        }
+        
+        private static double ReadDoubleAsString(string input, ref int loc)
+        {
+            var pos = input.IndexOf("\r\n", loc);
+            if (pos == -1)
+                RespParsingException.Throw("No newline");
+
+            var ret = double.Parse(input[loc..pos]);
             loc = pos + 2;
 
             return ret;
