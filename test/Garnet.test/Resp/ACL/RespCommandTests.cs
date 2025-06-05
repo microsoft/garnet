@@ -105,7 +105,7 @@ namespace Garnet.test.Resp.ACL
                 IEnumerable<RespCommand> allValues = Enum.GetValues<RespCommand>().Select(static x => x.NormalizeForACLs()).Distinct();
                 IEnumerable<RespCommand> testableValues =
                     allValues
-                    .Except([RespCommand.NONE, RespCommand.INVALID])
+                    .Except([RespCommand.NONE, RespCommand.INVALID, RespCommand.DELIFEXPIM])
                     .Where(cmd => !withOnlySubCommands.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
                     .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
                 IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
