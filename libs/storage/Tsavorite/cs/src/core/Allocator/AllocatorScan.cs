@@ -286,6 +286,9 @@ namespace Tsavorite.core
             {
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
+                //epoch.Suspend();
+                //try
+                //{
                 RecordMetadata recordMetadata = new(recordInfo, stackCtx.recSrc.LogicalAddress);
                 var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
                     ? !scanCursorState.functions.ConcurrentReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
@@ -301,6 +304,11 @@ namespace Tsavorite.core
                     if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
                         scanCursorState.retryLastRecord = true;
                 }
+                //}
+                //finally
+                //{
+                //    epoch.Resume();
+                //}
                 internalStatus = OperationStatus.SUCCESS;
             }
             return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out _);

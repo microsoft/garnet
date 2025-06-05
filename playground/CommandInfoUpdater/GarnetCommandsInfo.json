@@ -1,5 +1,18 @@
 ﻿[
   {
+    "Command": "ACTEXP",
+    "Name": "ACTEXP",
+    "Arity": -1,
+    "Flags": "Admin, NoScript, NoMulti, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "CLUSTER",
     "Name": "CLUSTER",
     "IsInternal": false,
@@ -392,6 +405,30 @@
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
+  },
+  {
+    "Command": "DELIFEXPIM",
+    "Name": "DELIFEXPIM",
+    "Arity": 1,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RM, Delete"
+      }
+    ]
   },
   {
     "Command": "DELIFGREATER",

@@ -894,7 +894,7 @@ namespace Garnet.server
 
         /// <summary>
         /// ACTEXP [DBID]
-        /// Scan the mutable region and tm=ombstone all expired keys actively instead of lazy.
+        /// Scan the mutable region and tombstone all expired keys actively instead of lazy.
         /// This is meant to be able to let users do on-demand active expiration, and even build their own schedulers
         /// for calling expiration based on their known workload patterns.
         /// </summary>

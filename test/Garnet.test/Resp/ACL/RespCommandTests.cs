@@ -320,6 +320,20 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ActExpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACTEXP",
+                [DoActExpAsync]
+            );
+
+            static async Task DoActExpAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("ACTEXP");
+            }
+        }
+
+        [Test]
         public async Task AppendACLsAsync()
         {
             int count = 0;
@@ -5598,6 +5612,21 @@ namespace Garnet.test.Resp.ACL
             static async Task DoSetIfGreaterAsync(GarnetClient client)
             {
                 var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]);
+                ClassicAssert.IsNotNull(res);
+            }
+        }
+
+        [Test]
+        public async Task DelIfExpIMACLsAsync()
+        {
+            await CheckCommandsAsync(
+               "DELIFEXPIM",
+               [DoDelIfExpIMAsync]
+           );
+
+            static async Task DoDelIfExpIMAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringArrayResultAsync("DELIFEXPIM", ["foo"]);
                 ClassicAssert.IsNotNull(res);
             }
         }

@@ -1,5 +1,20 @@
 [
   {
+    "Command": "ACTEXP",
+    "Name": "ACTEXP",
+    "Group": "Generic",
+    "Summary": "Iterates over all mutable records and deletes the expired ones.",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration. N is the number of records in memory.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "BGSAVE",
     "Name": "BGSAVE",
     "Summary": "Asynchronously saves the database(s) to disk.",
@@ -212,6 +227,22 @@
         "Type": "Integer",
         "Token": "COUNT",
         "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "DELIFEXPIM",
+    "Name": "DELIFEXPIM",
+    "Summary": "Deletes a key if it is in memory and expired.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
       }
     ]
   },
