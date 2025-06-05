@@ -114,9 +114,9 @@ namespace Garnet.cluster
                 void PerformScan(ref long current, long currentEnd)
                 {
                     if (storeType == StoreType.Main)
-                        _ = localServerSessions[taskId].BasicGarnetApi.IterateMainStore(ref storeScanFunctions.mss, ref current, currentEnd);
+                        _ = localServerSessions[taskId].BasicGarnetApi.IterateMainStore(ref storeScanFunctions.mss, ref current, currentEnd, workerEndAddress, returnTombstoned: true);
                     else if (storeType == StoreType.Object)
-                        _ = localServerSessions[taskId].BasicGarnetApi.IterateObjectStore(ref storeScanFunctions.oss, ref current, currentEnd);
+                        _ = localServerSessions[taskId].BasicGarnetApi.IterateObjectStore(ref storeScanFunctions.oss, ref current, currentEnd, returnTombstoned: true);
                 }
 
                 return Task.FromResult(true);
