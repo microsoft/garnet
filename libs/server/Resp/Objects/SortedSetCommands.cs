@@ -984,7 +984,7 @@ namespace Garnet.server
                         {
                             foreach (var (score, element) in result)
                             {
-                                if (respProtocolVersion == 3 && includeWithScores)
+                                if (respProtocolVersion >= 3 && includeWithScores)
                                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                                         SendAndReset();
 
@@ -1147,11 +1147,20 @@ namespace Garnet.server
                     }
 
                     // write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                    var arrayLength = result.Count;
+                    if (includeWithScores && respProtocolVersion == 2)
+                        arrayLength *= 2;
+                    while (!RespWriteUtils.TryWriteArrayLength(arrayLength, ref dcurr, dend))
                         SendAndReset();
 
                     foreach (var (score, element) in result)
                     {
+                        if (includeWithScores && respProtocolVersion >= 3)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
 
@@ -1427,11 +1436,20 @@ namespace Garnet.server
                     }
 
                     // write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                    var arrayLength = result.Count;
+                    if (includeWithScores && respProtocolVersion == 2)
+                        arrayLength *= 2;
+                    while (!RespWriteUtils.TryWriteArrayLength(arrayLength, ref dcurr, dend))
                         SendAndReset();
 
                     foreach (var (score, element) in result)
                     {
+                        if (includeWithScores && respProtocolVersion >= 3)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
 
