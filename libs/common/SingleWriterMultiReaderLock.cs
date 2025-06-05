@@ -18,6 +18,11 @@ namespace Garnet.common
         int _lock;
 
         /// <summary>
+        /// Basic Constructor
+        /// </summary>
+        public SingleWriterMultiReaderLock() => _lock = 0;
+
+        /// <summary>
         /// Check if write locked
         /// </summary>
         public bool IsWriteLocked => _lock < 0;

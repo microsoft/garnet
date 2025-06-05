@@ -459,6 +459,7 @@ namespace Garnet.test
             string AofMemorySize = "64m",
             bool OnDemandCheckpoint = false,
             int CommitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
@@ -474,6 +475,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             EndPoint clusterAnnounceEndpoint = null)
@@ -506,6 +508,7 @@ namespace Garnet.test
                     aofMemorySize: AofMemorySize,
                     onDemandCheckpoint: OnDemandCheckpoint,
                     commitFrequencyMs: CommitFrequencyMs,
+                    useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
                     enableIncrementalSnapshots: EnableIncrementalSnapshots,
                     fastCommit: FastCommit,
@@ -521,6 +524,7 @@ namespace Garnet.test
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
                     replicaDisklessSyncDelay: replicaDisklessSyncDelay,
+                    replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint);
@@ -564,6 +568,7 @@ namespace Garnet.test
             string aofMemorySize = "64m",
             bool onDemandCheckpoint = false,
             int commitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool disableStorageTier = false,
             bool enableIncrementalSnapshots = false,
             bool fastCommit = true,
@@ -578,6 +583,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
@@ -682,6 +688,7 @@ namespace Garnet.test
                 AofMemorySize = aofMemorySize,
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
+                UseAofNullDevice = useAofNullDevice,
                 EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
@@ -692,6 +699,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
+                ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
             };
 
