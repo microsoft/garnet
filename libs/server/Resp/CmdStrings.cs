@@ -161,8 +161,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
         public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
         public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
-        public static ReadOnlySpan<byte> MAIN => "MAIN"u8;
-        public static ReadOnlySpan<byte> OBJ => "OBJ"u8;
 
         /// <summary>
         /// Response strings

@@ -696,21 +696,6 @@ namespace Garnet.server
             return true;
         }
 
-        internal static bool TryGetStoreOption(this SessionParseState parseState, int idx, out StoreOptions value)
-        {
-            value = default;
-            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
-
-            if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MAIN))
-                value = StoreOptions.MAIN;
-            else if (sbArg.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OBJ))
-                value = StoreOptions.OBJ;
-            else
-                return false;
-
-            return true;
-        }
-
         /// <summary>
         /// Parse geo distance unit from parse state at specified index
         /// </summary>
