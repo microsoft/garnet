@@ -3889,6 +3889,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual(":1\r\n", response);
             response = await c.ExecuteAsync("ZSCORE", "z", "a");
             ClassicAssert.AreEqual(doublePrefix + "0\r\n", response);
+            response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
+            if (respVersion == 2)
+                ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n,0\r\n", response);
         }
 
         [Test]
@@ -4014,28 +4019,32 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ClientInfoTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void ClientInfoTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var result = (string)db.Execute("CLIENT", "INFO");
-            AssertExpectedClientFields(result);
+            AssertExpectedClientFields(result, protocol);
 
             var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "INFO", "foo"));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|info' command", exc.Message);
         }
 
         [Test]
-        public void ClientListTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void ClientListTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             // List everything
             {
                 var list = (string)db.Execute("CLIENT", "LIST");
-                AssertExpectedClientFields(list);
+                AssertExpectedClientFields(list, protocol);
             }
 
             // List by id
@@ -4043,13 +4052,13 @@ namespace Garnet.test
                 var id = (long)db.Execute("CLIENT", "ID");
 
                 var list = (string)db.Execute("CLIENT", "LIST", "ID", id, 123);
-                AssertExpectedClientFields(list);
+                AssertExpectedClientFields(list, protocol);
             }
 
             // List by type
             {
                 var list = (string)db.Execute("CLIENT", "LIST", "TYPE", "NORMAL");
-                AssertExpectedClientFields(list);
+                AssertExpectedClientFields(list, protocol);
             }
         }
 
@@ -4455,10 +4464,16 @@ namespace Garnet.test
         /// <summary>
         /// Check that list is non-empty, and has the minimum required fields.
         /// </summary>
-        private static void AssertExpectedClientFields(string list)
+        private static void AssertExpectedClientFields(string list, RedisProtocol protocol = RedisProtocol.Resp2)
         {
             var lines = list.Split("\n", StringSplitOptions.RemoveEmptyEntries);
             ClassicAssert.IsTrue(lines.Length >= 1);
+
+            if (protocol == RedisProtocol.Resp3)
+            {
+                ClassicAssert.IsTrue(lines[0].StartsWith("txt:"));
+                lines[0] = lines[0][4..];
+            }
 
             foreach (var line in lines)
             {

@@ -357,9 +357,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AddWithOptionsErrorConditions()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void AddWithOptionsErrorConditions(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var key = "SortedSet_Add";
@@ -1324,9 +1326,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void TestCheckSortedSetRangeStoreWithExistingDestinationKeySE()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void TestCheckSortedSetRangeStoreWithExistingDestinationKeySE(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var sourceKey = "sourceKey";
@@ -1434,9 +1438,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SortedSetMultiPopWithFirstKeyEmptyOnSecondPopTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void SortedSetMultiPopWithFirstKeyEmptyOnSecondPopTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             string[] keys = ["board1", "board2"];
@@ -2437,9 +2443,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZMPopWithExpiredItems()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public async Task ZMPopWithExpiredItems(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             db.SortedSetAdd("key0", "x", 1);

@@ -540,9 +540,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoRandomField()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void CanDoRandomField(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var hashKey = new RedisKey("user:user1");
