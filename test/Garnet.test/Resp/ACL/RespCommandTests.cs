@@ -5617,21 +5617,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task DelIfExpIMACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "DELIFEXPIM",
-               [DoDelIfExpIMAsync]
-           );
-
-            static async Task DoDelIfExpIMAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringArrayResultAsync("DELIFEXPIM", ["foo"]);
-                ClassicAssert.IsNotNull(res);
-            }
-        }
-
-        [Test]
         public async Task DelIfGreaterACLsAsync()
         {
             await CheckCommandsAsync(

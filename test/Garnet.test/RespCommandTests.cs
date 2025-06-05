@@ -47,7 +47,8 @@ namespace Garnet.test
             RespCommand.BITOP_OR,
             RespCommand.BITOP_XOR,
             RespCommand.BITOP_NOT,
-            RespCommand.INVALID
+            RespCommand.INVALID,
+            RespCommand.DELIFEXPIM
         ];
 
         [SetUp]

@@ -231,22 +231,6 @@
     ]
   },
   {
-    "Command": "DELIFEXPIM",
-    "Name": "DELIFEXPIM",
-    "Summary": "Deletes a key if it is in memory and expired.",
-    "Group": "Generic",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      }
-    ]
-  },
-  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",

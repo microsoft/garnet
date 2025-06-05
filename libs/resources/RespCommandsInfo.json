@@ -1206,30 +1206,6 @@
     ]
   },
   {
-    "Command": "DELIFEXPIM",
-    "Name": "DELIFEXPIM",
-    "Arity": 1,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RM, Delete"
-      }
-    ]
-  },
-  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Arity": 2,
@@ -5100,31 +5076,6 @@
     ]
   },
   {
-    "Command": "ZCOLLECT",
-    "Name": "ZCOLLECT",
-    "Arity": 2,
-    "Flags": "Admin, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Admin, SortedSet, Write, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update"
-      }
-    ]
-  },
-  {
     "Command": "ZCOUNT",
     "Name": "ZCOUNT",
     "Arity": 4,
@@ -5146,6 +5097,31 @@
           "Limit": 0
         },
         "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZCOLLECT",
+    "Name": "ZCOLLECT",
+    "Arity": 2,
+    "Flags": "Admin, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Write, Admin, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
       }
     ]
   },
@@ -5217,7 +5193,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, SortedSet, Write, Garnet",
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5242,7 +5218,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, SortedSet, Write, Garnet",
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5267,7 +5243,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, Read, SortedSet, Garnet",
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5471,7 +5447,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, SortedSet, Write, Garnet",
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5496,7 +5472,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, SortedSet, Write, Garnet",
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5521,7 +5497,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, SortedSet, Write, Garnet",
+    "AclCategories": "SortedSet, Fast, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5546,7 +5522,32 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, Read, SortedSet, Garnet",
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "ZPTTL",
+    "Name": "ZPTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5610,31 +5611,6 @@
           "Limit": 0
         },
         "Flags": "RW, Access, Delete"
-      }
-    ]
-  },
-  {
-    "Command": "ZPTTL",
-    "Name": "ZPTTL",
-    "Arity": -5,
-    "Flags": "Fast, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, Read, SortedSet, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
       }
     ]
   },
@@ -6033,14 +6009,14 @@
     ]
   },
   {
-    "Command": "ZSCORE",
-    "Name": "ZSCORE",
-    "Arity": 3,
+    "Command": "ZTTL",
+    "Name": "ZTTL",
+    "Arity": -5,
     "Flags": "Fast, ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, Read, SortedSet",
+    "AclCategories": "SortedSet, Fast, Read, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -6058,14 +6034,14 @@
     ]
   },
   {
-    "Command": "ZTTL",
-    "Name": "ZTTL",
-    "Arity": -5,
+    "Command": "ZSCORE",
+    "Name": "ZSCORE",
+    "Arity": 3,
     "Flags": "Fast, ReadOnly",
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Fast, Read, SortedSet, Garnet",
+    "AclCategories": "Fast, Read, SortedSet",
     "KeySpecifications": [
       {
         "BeginSearch": {
