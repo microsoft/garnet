@@ -758,6 +758,10 @@ namespace Garnet.server
             if (sortedSet.Count < count)
                 count = sortedSet.Count;
 
+            if (input.arg2 > 0)
+                respProtocolVersion = (byte)input.arg2;
+
+            // When the output will be read later by ProcessRespArrayOutputAsPairs we force RESP version to 2.
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (count == 0)
@@ -769,12 +773,10 @@ namespace Garnet.server
 
             if (withHeader)
             {
-                /*
                 if (respProtocolVersion >= 3)
                     writer.WriteArrayLength(count);
                 else
-                */
-                writer.WriteArrayLength(count * 2);
+                    writer.WriteArrayLength(count * 2);
             }
 
             while (count > 0)
@@ -786,12 +788,11 @@ namespace Garnet.server
 
                 UpdateSize(max.Element, false);
 
-                if (!withHeader /* || respProtocolVersion >= 3 */)
+                if (!withHeader || respProtocolVersion >= 3)
                     writer.WriteArrayLength(2);
 
                 writer.WriteBulkString(max.Element);
-                //writer.WriteDoubleNumeric(max.Score);
-                writer.WriteDoubleBulkString(max.Score);
+                writer.WriteDoubleNumeric(max.Score);
 
                 countDone++;
                 count--;

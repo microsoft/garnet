@@ -3885,15 +3885,25 @@ namespace Garnet.test
             response = await c.ExecuteAsync("LCS", "s1", "s2", "IDX");
             ClassicAssert.AreEqual(mapPrefix + "\r\n$7\r\nmatches\r\n*0\r\n$3\r\nlen\r\n:0\r\n", response);
 
-            response = await c.ExecuteAsync("ZADD", "z", "0", "a");
-            ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b");
+            ClassicAssert.AreEqual(":2\r\n", response);
             response = await c.ExecuteAsync("ZSCORE", "z", "a");
             ClassicAssert.AreEqual(doublePrefix + "0\r\n", response);
-            response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
-            if (respVersion == 2)
-                ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n", response);
             else
+                ClassicAssert.AreEqual("*4\r\n$1\r\na\r\n$1\r\n0\r\n$1\r\nb\r\n$1\r\n1\r\n", response);
+            response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
+            if (respVersion >= 3)
                 ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n,0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            response = await c.ExecuteAsync("ZPOPMAX", "z", "1");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\nb\r\n,1\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\nb\r\n$1\r\n1\r\n", response);
         }
 
         [Test]
