@@ -741,7 +741,7 @@ namespace Garnet.test
             string authUsername = null,
             string authPassword = null,
             X509CertificateCollection certificates = null,
-            RedisProtocol? protocol = RedisProtocol.Resp3)
+            RedisProtocol? protocol = null)
         {
             var cmds = RespCommandsInfo.TryGetRespCommandNames(out var names)
                 ? new HashSet<string>(names)
