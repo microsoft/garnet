@@ -56,24 +56,21 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|list");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
+            while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var userHandle in userHandles)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
-                while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
                     SendAndReset();
-
-                foreach (var userHandle in userHandles)
-                {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
-                        SendAndReset();
-                }
             }
 
             return true;
@@ -88,24 +85,21 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL USERS.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|users");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
+            while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var user in users)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
-                while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
                     SendAndReset();
-
-                foreach (var user in users)
-                {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
-                        SendAndReset();
-                }
             }
 
             return true;
@@ -147,7 +141,7 @@ namespace Garnet.server
             // Have to have at least the username
             if (parseState.Count == 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL SETUSER.");
+                return AbortWithWrongNumberOfArguments("acl|setuser");
             }
 
             if (!ValidateACLAuthenticator())
@@ -225,7 +219,7 @@ namespace Garnet.server
             // Have to have at least the username
             if (parseState.Count == 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.");
+                return AbortWithWrongNumberOfArguments("acl|deluser");
             }
 
             if (!ValidateACLAuthenticator())
@@ -274,7 +268,7 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.");
+                return AbortWithWrongNumberOfArguments("acl|whoami");
             }
 
             if (!ValidateACLAuthenticator())
@@ -299,7 +293,7 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.");
+                return AbortWithWrongNumberOfArguments("acl|load");
             }
 
             if (!ValidateACLAuthenticator())
@@ -339,7 +333,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.");
+                return AbortWithWrongNumberOfArguments("acl|save");
             }
 
             if (!ValidateACLAuthenticator())
@@ -382,7 +376,7 @@ namespace Garnet.server
             // The username must be provided.
             if (parseState.Count != 1)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL GETUSER.");
+                return AbortWithWrongNumberOfArguments("acl|getuser");
             }
 
             if (!ValidateACLAuthenticator())
