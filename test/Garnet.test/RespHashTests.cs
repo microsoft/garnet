@@ -1614,6 +1614,31 @@ namespace Garnet.test
         }
         #endregion
 
+        [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task HRespOutput(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+
+            response = await c.ExecuteAsync("HSET", "h", "a", "0");
+            ClassicAssert.AreEqual(":1\r\n", response);
+
+            response = await c.ExecuteAsync("HGETALL", "h");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("%1\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+
+            response = await c.ExecuteAsync("HRANDFIELD", "h", "1", "WITHVALUES");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+        }
 
         #region TxnTests
 
