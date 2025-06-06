@@ -59,64 +59,46 @@ namespace Garnet.cluster
 
             Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
-                var storeScanFunctions = migrateScan[taskId];
+                var migrateTask = migrateTasks[taskId];
                 var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTasks;
                 var workerStartAddress = beginAddress + (taskId * range);
                 var workerEndAddress = beginAddress + ((taskId + 1) * range);
 
                 workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
                 workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
-                storeScanFunctions.Initialize();
+                migrateTask.Initialize();
 
                 var cursor = workerStartAddress;
                 while (true)
                 {
                     var current = cursor;
                     // Build Sketch
-                    storeScanFunctions.SetSketchStatus(SketchStatus.INITIALIZING);
-                    storeScanFunctions.SetScanPhase(MigratePhase.BuildSketch);
-                    PerformScan(ref current, workerEndAddress);
+                    migrateTask.sketch.SetStatus(SketchStatus.INITIALIZING);
+                    migrateTask.Scan(storeType, ref current, workerEndAddress);
 
                     // Stop if no keys have been found
-                    if (storeScanFunctions.Count == 0) break;
+                    if (migrateTask.sketch.argSliceVector.IsEmpty) break;
 
                     var currentEnd = current;
-                    logger?.LogTrace("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys", taskId, cursor, current, storeScanFunctions.Count);
+                    logger?.LogTrace("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys",
+                        taskId, cursor, current, migrateTask.sketch.argSliceVector.Count);
 
                     // Transition EPSM to MIGRATING
-                    storeScanFunctions.SetSketchStatus(SketchStatus.TRANSMITTING);
+                    migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
                     WaitForConfigPropagation();
 
-                    // Iterate main store
-                    current = cursor;
-                    storeScanFunctions.SetScanPhase(MigratePhase.TransmitData);
-                    PerformScan(ref current, currentEnd);
+                    // Transmit all keys gathered
+                    migrateTask.Transmit(storeType);
 
                     // Transition EPSM to DELETING
-                    storeScanFunctions.SetSketchStatus(SketchStatus.DELETING);
+                    migrateTask.sketch.SetStatus(SketchStatus.DELETING);
                     WaitForConfigPropagation();
 
                     // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
-                    current = cursor;
-                    storeScanFunctions.SetScanPhase(MigratePhase.DeletingData);
-                    PerformScan(ref current, currentEnd);
+                    migrateTask.DeleteKeys();
 
-                    // Delete gathered keys
-                    foreach (var key in storeScanFunctions.keysToDelete)
-                        _ = localServerSessions[taskId].BasicGarnetApi.DELETE(key);
-                    storeScanFunctions.keysToDelete.Clear();
-                    storeScanFunctions.SetSketchStatus(SketchStatus.MIGRATED);
-                    storeScanFunctions.sketch.Clear();
+                    migrateTask.sketch.argSliceVector.Clear();
                     cursor = current;
-                }
-
-
-                void PerformScan(ref long current, long currentEnd)
-                {
-                    if (storeType == StoreType.Main)
-                        _ = localServerSessions[taskId].BasicGarnetApi.IterateMainStore(ref storeScanFunctions.mss, ref current, currentEnd, workerEndAddress, returnTombstoned: true);
-                    else if (storeType == StoreType.Object)
-                        _ = localServerSessions[taskId].BasicGarnetApi.IterateObjectStore(ref storeScanFunctions.oss, ref current, currentEnd, returnTombstoned: true);
                 }
 
                 return Task.FromResult(true);

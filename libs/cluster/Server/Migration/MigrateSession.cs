@@ -96,7 +96,7 @@ namespace Garnet.cluster
         /// <summary>
         /// MigrateSlotsScan for background slot migrate tasks
         /// </summary>
-        readonly MigrateScan[] migrateScan;
+        readonly MigrateTask[] migrateTasks;
 
         /// <summary>
         /// LocalServerSessions for background slot migrate tasks
@@ -133,7 +133,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            MigratingKeysSketch sketch,
+            Sketch sketch,
             TransferOption transferOption)
         {
             this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
@@ -159,18 +159,18 @@ namespace Garnet.cluster
 
             if (transferOption == TransferOption.SLOTS)
             {
-                migrateScan = new MigrateScan[clusterProvider.serverOptions.ParallelMigrateTasks];
+                migrateTasks = new MigrateTask[clusterProvider.serverOptions.ParallelMigrateTasks];
                 localServerSessions = new LocalServerSession[clusterProvider.serverOptions.ParallelMigrateTasks];
-                for (var i = 0; i < migrateScan.Length; i++)
+                for (var i = 0; i < migrateTasks.Length; i++)
                 {
-                    migrateScan[i] = new MigrateScan(this, logger: logger);
+                    migrateTasks[i] = new MigrateTask(this);
                     localServerSessions[i] = new LocalServerSession(clusterProvider.storeWrapper);
                 }
             }
             else
             {
-                migrateScan = new MigrateScan[1];
-                migrateScan[0] = new MigrateScan(this, sketch: sketch, logger: logger);
+                migrateTasks = new MigrateTask[1];
+                migrateTasks[0] = new MigrateTask(this, sketch: sketch);
                 localServerSessions = new LocalServerSession[1];
                 localServerSessions[0] = new LocalServerSession(clusterProvider.storeWrapper);
             }
@@ -186,6 +186,9 @@ namespace Garnet.cluster
                 authPassword: _passwd,
                 logger: logger);
 
+        public LocalServerSession GetLocalSession()
+            => new(clusterProvider.storeWrapper);
+
         /// <summary>
         /// Dispose
         /// </summary>
@@ -196,9 +199,9 @@ namespace Garnet.cluster
             _cts?.Dispose();
             _gcs.Dispose();
 
-            for (var i = 0; i < migrateScan.Length; i++)
+            for (var i = 0; i < migrateTasks.Length; i++)
             {
-                migrateScan[i].Dispose();
+                migrateTasks[i].Dispose();
                 localServerSessions[i].Dispose();
             }
         }
