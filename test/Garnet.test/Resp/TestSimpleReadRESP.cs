@@ -124,7 +124,7 @@ namespace Garnet.test
 
             return ret;
         }
-        
+
         private static double ReadDoubleAsString(string input, ref int loc)
         {
             var pos = input.IndexOf("\r\n", loc);
