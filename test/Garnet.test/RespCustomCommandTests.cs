@@ -222,6 +222,47 @@ namespace Garnet.test
         }
     }
 
+    public class ListPopCommandProc : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+        {
+            int offset = 0;
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, true);
+            return true;
+        }
+
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput,
+            ref MemoryResult<byte> output)
+        {
+            int offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+            var status = api.ListLeftPop(key, out ArgSlice value);
+            WriteSimpleString(ref output, status == GarnetStatus.OK ? value.ToString() : "NOTFOUND");
+        }
+    }
+
+    public class HGetCommandProc : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+        {
+            int offset = 0;
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, true);
+            return true;
+        }
+
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput,
+            ref MemoryResult<byte> output)
+        {
+            int offset = 0;
+            var key = GetNextArg(ref procInput, ref offset);
+            var field = GetNextArg(ref procInput, ref offset);
+
+            api.HashGet(key, field, out ArgSlice value);
+
+            WriteSimpleString(ref output, value.Length > 0 ? value.ToString() : "NOTFOUND");
+        }
+    }
+
     [TestFixture]
     public class RespCustomCommandTests
     {
@@ -1491,6 +1532,77 @@ namespace Garnet.test
                 // etag updated for this
                 ClassicAssert.AreEqual("2", res[0].ToString());
                 ClassicAssert.AreEqual("257", res[1].ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomTxnHGetTest()
+        {
+            const string procName = "HGETCUSTOM";
+            server.Register.NewTransactionProc(procName, () => new HGetCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                const string key = "myhashkey";
+                const string field = "field1";
+                const string value = "value1";
+
+                // when the hashobject does not exist
+                var result = db.Execute(procName, key, field);
+                ClassicAssert.AreEqual("NOTFOUND", result.ToString());
+
+                // create the hash object with the field
+                db.HashSet(key, field, value);
+
+                // when the hashobject exists
+                result = db.Execute(procName, key, field);
+                ClassicAssert.AreEqual(value, result.ToString());
+
+                // when the field does not exist in the hash object
+                result = db.Execute(procName, key, "nonexistentfield");
+                ClassicAssert.AreEqual("NOTFOUND", result.ToString());
+            }
+            catch (RedisServerException rse)
+            {
+                ClassicAssert.Fail(rse.Message);
+            }
+        }
+
+        [Test]
+        public void CustomTxnListPopTest()
+        {
+            const string procName = "LISTPOPCUSTOM";
+            server.Register.NewTransactionProc(procName, () => new ListPopCommandProc());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                const string key = "mylistkey";
+                const string value = "value1";
+
+                // when the list does not exist
+                var result = db.Execute(procName, key);
+                ClassicAssert.AreEqual("NOTFOUND", result.ToString());
+
+                // create the list with a value
+                db.ListRightPush(key, value);
+
+                // when the list exists
+                result = db.Execute(procName, key);
+                ClassicAssert.AreEqual(value, result.ToString());
+
+                // when the list is empty after popping
+                result = db.Execute(procName, key);
+                ClassicAssert.AreEqual("NOTFOUND", result.ToString());
             }
             catch (RedisServerException rse)
             {
