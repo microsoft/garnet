@@ -132,11 +132,17 @@ namespace Garnet.server
                 if (countParameter > 0 && countParameter > count)
                     countParameter = count;
 
-                var absCount = Math.Abs(countParameter);
-                var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
+                const int StackallocThreshold = 256;
+
+                var indexCount = Math.Abs(countParameter);
+
+                var indexes = indexCount <= StackallocThreshold ?
+                    stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+                RandomUtils.PickKRandomIndexes(count, indexes, seed, countParameter > 0);
 
                 // Write the size of the array reply
-                writer.WriteArrayLength(withValues && (respProtocolVersion == 2) ? absCount * 2 : absCount);
+                writer.WriteArrayLength(withValues && (respProtocolVersion == 2) ? indexCount * 2 : indexCount);
 
                 foreach (var index in indexes)
                 {
