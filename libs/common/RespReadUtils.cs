@@ -356,6 +356,18 @@ namespace Garnet.common
             var readHead = ptr + 1;
             var negative = *readHead == '-';
 
+            // Special case '_\r\n' (RESP3 NULL value)
+            if (*ptr == '_')
+            {
+                // The initial condition ensures at least two more bytes so no need for extra check.
+                if (*(ushort*)readHead == MemoryMarshal.Read<ushort>("\r\n"u8))
+                {
+                    length = -1;
+                    ptr = readHead + 2;
+                    return true;
+                }
+            }
+
             // String length headers must start with a '$', array headers with '*'
             if (*ptr != expectedSigil)
             {
