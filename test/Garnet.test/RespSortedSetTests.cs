@@ -4861,6 +4861,21 @@ namespace Garnet.test
             }
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
+
+        [Test]
+        public void ZInterResultOrder()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Setup test data
+            lightClientRequest.SendCommand("ZADD zset1 1 a 5 e 4 f 5 g");
+            lightClientRequest.SendCommand("ZADD zset2 4 e 4 f");
+
+            var response = lightClientRequest.SendCommand("ZINTER 2 zset2 zset1 WITHSCORES");
+            // ZINTER result should obey sortedset order invariant, 
+            var expectedResponse = "*4\r\n$1\r\nf\r\n$1\r\n8\r\n$1\r\ne\r\n$1\r\n9";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
     }
 
     public class SortedSetComparer : IComparer<(double, byte[])>
