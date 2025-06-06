@@ -280,7 +280,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, ref frame.GetPage(result.page % frame.frameSize));
+                hlog.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.RequiredBytes, ref frame.GetPage(result.page % frame.frameSize));
                 result.freeBuffer1.Return();
                 result.freeBuffer1 = null;
             }

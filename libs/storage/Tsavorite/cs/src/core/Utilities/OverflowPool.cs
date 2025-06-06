@@ -32,7 +32,7 @@ namespace Tsavorite.core
         {
             this.size = size;
             itemQueue = new ConcurrentQueue<T>();
-            this.disposer = disposer ?? (e => { });
+            this.disposer = disposer;
         }
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace Tsavorite.core
             }
             else
             {
-                disposer(item);
+                disposer?.Invoke(item);
                 return false;
             }
         }
@@ -70,7 +70,7 @@ namespace Tsavorite.core
         {
             disposed = true;
             while (itemQueue.TryDequeue(out var item))
-                disposer(item);
+                disposer?.Invoke(item);
         }
     }
 }
