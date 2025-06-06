@@ -297,13 +297,16 @@ namespace Tsavorite.core
         public long Expiration => CurrentIter.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
+        public bool IsMemoryLogRecord => CurrentIter.IsMemoryLogRecord;
 
         /// <inheritdoc/>
-        public bool AsLogRecord(out LogRecord logRecord) => CurrentIter.AsLogRecord(out logRecord);
+        public unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a TsavoriteKVIterator to a memory LogRecord.");
 
         /// <inheritdoc/>
-        public bool AsDiskLogRecord(out DiskLogRecord diskLogRecord) => CurrentIter.AsDiskLogRecord(out diskLogRecord);
+        public bool IsDiskLogRecord => CurrentIter.IsDiskLogRecord;
+
+        /// <inheritdoc/>
+        public unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref CurrentIter.AsDiskLogRecordRef();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

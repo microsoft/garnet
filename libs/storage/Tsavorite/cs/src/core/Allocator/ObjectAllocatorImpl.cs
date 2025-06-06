@@ -252,25 +252,21 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
+        /// <summary>
+        /// Dispose an in-memory <see cref="LogRecord"/>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             logRecord.ClearOptionals();
             if (disposeReason != DisposeReason.Deleted)
-                _ = logRecord.FreeKeyOverflow();
-
-            if (!logRecord.Info.ValueIsInline)
-            {
-                if (!logRecord.FreeValueOverflow() && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
-                {
-                    var heapObj = logRecord.ValueObject;
-                    if (heapObj is not null)
-                        storeFunctions.DisposeValueObject(heapObj, disposeReason);
-                    logRecord.objectIdMap.Free(logRecord.ValueObjectId);
-                }
-            }
+                _ = logRecord.ClearKeyIfOverflow();
+            _ = logRecord.ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, disposeReason));
         }
 
+        /// <summary>
+        /// Dispose a <see cref="DiskLogRecord"/>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {

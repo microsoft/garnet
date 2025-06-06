@@ -192,17 +192,20 @@ namespace Tsavorite.test
 
         public override void Dispose() { }
 
-        public TestLargeObjectValue()
-        {
-            MemorySize = DiskSize + 24; // TODO: ByteArrayOverhead
-            DiskSize = sizeof(int) + value.Length;
-        }
+        public TestLargeObjectValue() { }
 
         public TestLargeObjectValue(int size)
         {
             value = new byte[size];
             for (int i = 0; i < size; i++)
                 value[i] = (byte)(size + i);
+            SetSizes();
+        }
+
+        private void SetSizes()
+        {
+            DiskSize = sizeof(int) + value.Length;
+            MemorySize = DiskSize + 24; // TODO: ByteArrayOverhead
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>
@@ -213,6 +216,7 @@ namespace Tsavorite.test
                 obj = value;
                 int size = reader.ReadInt32();
                 value.value = reader.ReadBytes(size);
+                value.SetSizes();
             }
 
             public override void Serialize(IHeapObject obj)

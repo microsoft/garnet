@@ -151,14 +151,17 @@ namespace Tsavorite.core
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
-                if (srcLogRecord.AsLogRecord(out var logRecord))
+                if (srcLogRecord.IsMemoryLogRecord)
                 {
-                    diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+                    ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                    diskLogRecord.Serialize(in inMemoryLogRecord, bufferPool, valueSerializer);
                     return;
                 }
 
                 // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
-                _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
+                if (!srcLogRecord.IsDiskLogRecord)
+                    throw new TsavoriteException("Unknown TSourceLogRecord type");
+                ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
                 if (inputDiskLogRecord.OwnsMemory)
                     diskLogRecord.TransferFrom(ref inputDiskLogRecord);
                 else
@@ -222,21 +225,16 @@ namespace Tsavorite.core
             public readonly long Expiration => diskLogRecord.Expiration;
 
             /// <inheritdoc/>
-            public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for PendingContext
+            public readonly bool IsMemoryLogRecord => false;
 
             /// <inheritdoc/>
-            public readonly bool AsLogRecord(out LogRecord logRecord)
-            {
-                logRecord = default;
-                return false;
-            }
+            public unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a PendingContext to a memory LogRecord.");
 
             /// <inheritdoc/>
-            public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
-            {
-                diskLogRecord = this.diskLogRecord;
-                return true;
-            }
+            public readonly bool IsDiskLogRecord => true;
+
+            /// <inheritdoc/>
+            public unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

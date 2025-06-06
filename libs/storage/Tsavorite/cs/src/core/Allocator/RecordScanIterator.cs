@@ -357,21 +357,16 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
+        public bool IsMemoryLogRecord => false;
 
         /// <inheritdoc/>
-        public bool AsLogRecord(out LogRecord logRecord)
-        {
-            logRecord = default;
-            return false;
-        }
+        public unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a RecordScanIterator to a memory LogRecord.");
 
         /// <inheritdoc/>
-        public bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
-        {
-            diskLogRecord = this.diskLogRecord;
-            return true;
-        }
+        public bool IsDiskLogRecord => true;
+
+        /// <inheritdoc/>
+        public unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

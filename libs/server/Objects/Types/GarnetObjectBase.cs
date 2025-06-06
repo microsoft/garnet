@@ -14,8 +14,6 @@ namespace Garnet.server
     /// </summary>
     public abstract class GarnetObjectBase : HeapObjectBase, IGarnetObject
     {
-        public byte[] serialized;
-
         /// <inheritdoc />
         public abstract byte Type { get; }
 

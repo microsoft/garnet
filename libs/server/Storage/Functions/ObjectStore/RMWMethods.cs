@@ -226,11 +226,9 @@ namespace Garnet.server
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // The ValueObject should have been set by Tsavorite. TODO: If the value is not an object, copy it here.
-            var value = Unsafe.As<IGarnetObject>(dstLogRecord.ValueObject);
-            Debug.Assert(value != null, "ValueObject should have been set by Tsavorite in CreateNewRecordRMW.");
-
+            var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
             var oldValueSize = srcLogRecord.ValueObject.MemorySize;
+            _ = dstLogRecord.TrySetValueObject(value);
 
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags

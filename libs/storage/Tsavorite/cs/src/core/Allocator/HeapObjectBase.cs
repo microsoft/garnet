@@ -56,6 +56,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a cloned (shallow copy) of this object
         /// </summary>
+        /// <remarks>The implementation of this method should NOT copy <see cref="serializedBytes"/>.</remarks>
         public abstract HeapObjectBase Clone();
 
         /// <summary>
@@ -120,42 +121,31 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void CopyObjectAndCacheSerializedDataIfNeeded<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord
+        public void CacheSerializedObjectData(ref LogRecord srcLogRecord, ref LogRecord dstLogRecord)
         {
-            // If this was a disk log record, we can just copy an object straight over if there is one; similar for Overflow (TODO: Stream Deserializer
-            // of long overflow values directly to the overflow byte[] to avoid double-allocation).
-
-            // It is not a DiskLogRecord, so it must be a LogRecord. First clone the source object to the destination log record.
+            // We'll want to clone the source object to the destination log record so PostCopyUpdater can modify it.
             // Note that this does a shallow copy of the object's internal structures (e.g. List<>), which means subsequent modifications of newValue
             // in the (v+1) version of the record will modify data seen from the 'this' in the (v) record. Normally this is OK because the (v) version
             // of the record is not reachable once the (v+1) version is inserted, but if a checkpoint is ongoing, the (v) version is part of that.
-            Debug.Assert(ReferenceEquals(this, srcLogRecord.ValueObject), $"{GetCurrentMethodName()} should be called on the Source LogRecord's ValueObject.");
-            var newValueObject = Clone();
-
-            Debug.Assert(dstLogRecord.Info.ValueIsObject, $"{GetCurrentMethodName()} should not be called for non-object {nameof(dstLogRecord)}.");
-            _ = dstLogRecord.TrySetValueObject(newValueObject);
-
-            // If we are not currently taking a checkpoint, we can delete the old version since the new version of the object is already created
-            // in the new record, which we know has been inserted because this routine is called after a successful CAS.
-            if (!dstLogRecord.Info.IsInNewVersion)
-            {
-                rmwInfo.ClearSourceValueObject = true;
-                return;
-            }
+            // (If this was an Overflow instead of an Object, then PostCopyUpdater will follow the normal RCU logic, creating a new ValueSpan which will
+            // probably (but not necessarily) be another Overflow.)
+            Debug.Assert(ReferenceEquals(this, srcLogRecord.ValueObject), $"{GetCurrentMethodName()} must be called on the Source LogRecord's ValueObject.");
+            Debug.Assert(dstLogRecord.Info.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
+            Debug.Assert(dstLogRecord.Info.IsInNewVersion, $"{GetCurrentMethodName()} must only be called when taking a checkpoint.");
 
             // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
             // of the object during a checkpoint while the (v+1) version of the record may modify the shallow-copied internal structures.
+            var oldValueObject = (HeapObjectBase)srcLogRecord.ValueObject;
             while (true)
             {
-                if (newValueObject.SerializationPhase == (int)SerializationPhase.REST && newValueObject.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
+                if (oldValueObject.SerializationPhase == (int)SerializationPhase.REST && oldValueObject.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
                     using var ms = new MemoryStream();
                     using var writer = new BinaryWriter(ms, Encoding.UTF8);
-                    newValueObject.DoSerialize(writer);
-                    newValueObject.serializedBytes = ms.ToArray();
+                    oldValueObject.DoSerialize(writer);
+                    oldValueObject.serializedBytes = ms.ToArray();
 
-                    newValueObject.SerializationPhase = SerializationPhase.SERIALIZED;    // This is the only place .SERIALIZED is set
+                    oldValueObject.SerializationPhase = SerializationPhase.SERIALIZED;    // This is the only place .SERIALIZED is set
                     break;
                 }
 
@@ -163,11 +153,19 @@ namespace Tsavorite.core
                 // be running CopyUpdate. Therefore there are two possibilities:
                 // 1. CopyUpdate has been called before and the state is .SERIALIZED and '_serialized' is created. We're done.
                 // 2. Serialize() is running (likely in a Flush()) and the state is .SERIALIZING. We will Yield and loop to wait for it to finish.
-                if (newValueObject.SerializationPhase >= SerializationPhase.SERIALIZED)
+                if (oldValueObject.SerializationPhase >= SerializationPhase.SERIALIZED)
                     break;
 
                 _ = Thread.Yield();
             }
+        }
+
+        /// <inheritdoc />
+        public void ClearSerializedObjectData()
+        {
+            // Clear the serialized data, so it can be GC'd
+            serializedBytes = null;
+            SerializationPhase = SerializationPhase.REST; // Reset to initial state
         }
     }
 }

@@ -249,7 +249,7 @@ namespace Tsavorite.core
         /// Called when disposing a record, to free an Object or Overflow allocation and convert to inline so the lengths are set for record scanning or revivification.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void FreeObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
+        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey)
         {
             // ObjectIdSize and InlineLengthPrefixSize are the same so we can just set the length to zero; there was no data associated with the objectId. This also
             // means we don't have to adjust the filler length, since the field size here isn't changing. This method is called by record disposal, which also clears

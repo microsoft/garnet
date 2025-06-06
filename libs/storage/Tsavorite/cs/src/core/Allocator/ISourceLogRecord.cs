@@ -49,17 +49,17 @@ namespace Tsavorite.core
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
-        /// <summary>If requested by CopyUpdater, the source ValueObject will be cleared immediately (to manage object size tracking most effectively).</summary>
-        /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
-        void ClearValueObject(Action<IHeapObject> disposer);
+        /// <summary>Whether this is an instance of <see cref="LogRecord"/></summary>
+        bool IsMemoryLogRecord { get; }
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is an instance of <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.</summary>
-        /// <returns>True if this is a <see cref="LogRecord"/>, with the output <paramref name="logRecord"/> set; else false.</returns>
-        bool AsLogRecord(out LogRecord logRecord);
+        /// <summary>Return this as a ref <see cref="LogRecord"/>, or throw if not <see cref="IsMemoryLogRecord"/></summary>
+        ref LogRecord AsMemoryLogRecordRef();
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type this is an instance of <see cref="DiskLogRecord"/> to a <see cref="DiskLogRecord"/> type.</summary>
-        /// <returns>True if this is a <see cref="DiskLogRecord"/>, with the output <paramref name="diskLogRecord"/> set; else false.</returns>
-        bool AsDiskLogRecord(out DiskLogRecord diskLogRecord);
+        /// <summary>Whether this is an instance of <see cref="DiskLogRecord"/></summary>
+        bool IsDiskLogRecord { get; }
+
+        /// <summary>Return this as a ref <see cref="DiskLogRecord"/>, or throw if not <see cref="IsDiskLogRecord"/></summary>
+        ref DiskLogRecord AsDiskLogRecordRef();
 
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();

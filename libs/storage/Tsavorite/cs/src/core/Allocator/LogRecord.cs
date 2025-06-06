@@ -138,34 +138,16 @@ namespace Tsavorite.core
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#pragma warning disable IDE0251 // Make member 'readonly': not doing so because it modifies internal state
-        public void ClearValueObject(Action<IHeapObject> disposer)
-#pragma warning restore IDE0251
-        {
-            Debug.Assert(Info.ValueIsObject, "ClearValueObject() is not valid for Span Values");
-            if (Info.ValueIsObject)
-            {
-                objectIdMap.ClearAt(ValueObjectId, disposer);
-                if (!Info.ValueIsInline)
-                    *ValueObjectIdAddress = ObjectIdMap.InvalidObjectId;
-            }
-        }
+        public readonly bool IsMemoryLogRecord => true;
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool AsLogRecord(out LogRecord logRecord)
-        {
-            logRecord = this;
-            return true;
-        }
+        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref Unsafe.AsRef(in this);
 
         /// <inheritdoc/>
-        public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
-        {
-            diskLogRecord = default;
-            return false;
-        }
+        public readonly bool IsDiskLogRecord => false;
+
+        /// <inheritdoc/>
+        public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => throw new InvalidOperationException("Cannot cast a memory LogRecord to a DiskLogRecord.");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -615,7 +597,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool RemoveETag()
+        public readonly bool RemoveETag()
         {
             if (!Info.HasETag)
                 return true;
@@ -708,7 +690,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool RemoveExpiration()
+        public readonly bool RemoveExpiration()
         {
             if (!Info.HasExpiration)
                 return true;
@@ -785,27 +767,33 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearOptionals()
+        public readonly void ClearOptionals()
         {
             _ = RemoveExpiration();
             _ = RemoveETag();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FreeKeyOverflow()
+        internal readonly bool ClearKeyIfOverflow()
         {
             if (!Info.KeyIsOverflow)
                 return false;
-            LogField.FreeObjectIdAndConvertToInline(ref InfoRef, KeyAddress, objectIdMap, isKey: true);
+            LogField.ClearObjectIdAndConvertToInline(ref InfoRef, KeyAddress, objectIdMap, isKey: true);
             return true;
         }
 
+        /// <summary>
+        /// Clears any heap-allocated value: Object or Overflow
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FreeValueOverflow()
+        public readonly bool ClearValueIfHeap(Action<IHeapObject> objectDisposer)
         {
-            if (!Info.ValueIsOverflow)
+            if (Info.ValueIsInline)
                 return false;
-            LogField.FreeObjectIdAndConvertToInline(ref InfoRef, ValueAddress, objectIdMap, isKey: false);
+            var objectId = ValueObjectId;
+            if (Info.ValueIsObject)
+                objectIdMap.ClearAt(objectId, objectDisposer);
+            LogField.ClearObjectIdAndConvertToInline(ref InfoRef, ValueAddress, objectIdMap, isKey: false);
             return true;
         }
 

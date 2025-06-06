@@ -649,8 +649,7 @@ namespace Garnet.server
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
-                StoreWrapper.clusterProvider.SafeTruncateAOF(full, checkpointCoveredAofAddress,
-                    checkpointResult.token, checkpointResult.token);
+                StoreWrapper.clusterProvider.SafeTruncateAOF(full, checkpointCoveredAofAddress, checkpointResult.token, checkpointResult.token);
             }
             else
             {
@@ -668,7 +667,7 @@ namespace Garnet.server
                 {
                     var valueObject = iter1.ValueObject;
                     if (valueObject != null)
-                        ((GarnetObjectBase)iter1.ValueObject).serialized = null;
+                        ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
                 }
             }
 

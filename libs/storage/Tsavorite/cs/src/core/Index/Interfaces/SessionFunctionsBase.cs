@@ -95,7 +95,7 @@ namespace Tsavorite.core
         public virtual bool InitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo)
         {
             if (dstLogRecord.Info.ValueIsObject)
-                dstLogRecord.ClearValueObject(_ => { });
+                dstLogRecord.ClearValueIfHeap(static _ => { });
             return true;
         }
         public virtual void PostInitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo) { }

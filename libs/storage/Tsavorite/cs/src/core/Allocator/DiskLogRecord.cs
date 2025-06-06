@@ -6,12 +6,13 @@ using System.Buffers;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace Tsavorite.core
 {
+    using static Utility;
+
     /// <summary>The record on the disk: header, optional fields, key, value</summary>
     /// <remarks>The space is laid out as one of:
     ///     <list>
@@ -348,21 +349,16 @@ namespace Tsavorite.core
         public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress() : 0;
 
         /// <inheritdoc/>
-        public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Nothing done here; we dispose the object in the pending operation completion
+        public readonly bool IsMemoryLogRecord => false;
 
         /// <inheritdoc/>
-        public readonly bool AsLogRecord(out LogRecord logRecord)
-        {
-            logRecord = default;
-            return false;
-        }
+        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a DiskLogRecord to a memory LogRecord.");
 
         /// <inheritdoc/>
-        public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
-        {
-            diskLogRecord = this;
-            return true;
-        }
+        public readonly bool IsDiskLogRecord => true;
+
+        /// <inheritdoc/>
+        public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in this);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -806,17 +802,19 @@ namespace Tsavorite.core
         public static void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueSerializer, ref SpanByteAndMemory output, MemoryPool<byte> memoryPool)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (srcLogRecord.AsLogRecord(out var logRecord))
+            if (srcLogRecord.IsMemoryLogRecord)
             {
-                if (logRecord.Info.RecordIsInline)
-                    DirectCopyRecord(logRecord.physicalAddress, logRecord.ActualRecordSize, ref output, memoryPool);
+                ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                if (inMemoryLogRecord.Info.RecordIsInline)
+                    DirectCopyRecord(inMemoryLogRecord.physicalAddress, inMemoryLogRecord.ActualRecordSize, ref output, memoryPool);
                 else
-                    _ = SerializeVarbyteRecord(in logRecord, logRecord.physicalAddress, valueSerializer, ref output, memoryPool);
+                    _ = SerializeVarbyteRecord(in inMemoryLogRecord, inMemoryLogRecord.physicalAddress, valueSerializer, ref output, memoryPool);
                 return;
             }
 
-            if (!srcLogRecord.AsDiskLogRecord(out var diskLogRecord))
+            if (!srcLogRecord.IsDiskLogRecord)
                 throw new TsavoriteException("Unknown TSourceLogRecord type");
+            ref var diskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
             Debug.Assert(diskLogRecord.Info.KeyIsInline, "DiskLogRecord key should always be inline");
 
             var valueInfo = diskLogRecord.ValueInfo;
