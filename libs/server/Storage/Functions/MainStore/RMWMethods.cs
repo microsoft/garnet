@@ -194,6 +194,8 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
+                    // Ensure new-record space is zero-init'd before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
+                    value.AsSpan().Clear();
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
@@ -204,6 +206,8 @@ namespace Garnet.server
                 case RespCommand.BITFIELD_RO:
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
                     value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs_RO));
+                    // Ensure new-record space is zero-init'd before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
+                    value.AsSpan().Clear();
                     var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, value.ToPointer(), value.Length);
                     CopyRespNumber(bitfieldReturnValue_RO, ref output);
                     break;
@@ -211,6 +215,11 @@ namespace Garnet.server
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                    if (offset > 0)
+                    {
+                        // If the offset is greater than 0, we need to zero-fill the gap (e.g. new record might have been revivified).
+                        value.AsSpan().Slice(0, offset).Clear();
+                    }
                     newValue.CopyTo(value.AsSpan().Slice(offset));
 
                     CopyValueLengthToOutput(ref value, ref output, 0);
@@ -1312,10 +1321,18 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
+                    var oldValuePtr = oldValue.ToPointer() + functionsState.etagState.etagSkippedStart;
+                    var newValuePtr = newValue.ToPointer() + functionsState.etagState.etagSkippedStart;
+                    var oldValueLength = oldValue.Length - functionsState.etagState.etagSkippedStart;
+                    var newValueLength = newValue.Length - functionsState.etagState.etagSkippedStart;
+                    Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValueLength, oldValueLength);
+                    if (newValueLength > oldValueLength)
+                    {
+                        // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
+                        new Span<byte>(newValuePtr + oldValueLength, newValueLength - oldValueLength).Clear();
+                    }
                     Buffer.MemoryCopy(oldValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart, oldValue.Length - functionsState.etagState.etagSkippedStart);
-                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs,
-                                            newValue.ToPointer() + functionsState.etagState.etagSkippedStart,
-                                            newValue.Length - functionsState.etagState.etagSkippedStart);
+                    var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValueLength);
 
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
@@ -1325,11 +1342,18 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD_RO:
                     var bitFieldArgs_RO = GetBitFieldArguments(ref input);
+                    oldValuePtr = oldValue.ToPointer() + functionsState.etagState.etagSkippedStart;
+                    newValuePtr = newValue.ToPointer() + functionsState.etagState.etagSkippedStart;
+                    oldValueLength = oldValue.Length - functionsState.etagState.etagSkippedStart;
+                    newValueLength = newValue.Length - functionsState.etagState.etagSkippedStart;
+                    Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValueLength, oldValueLength);
+                    if (newValueLength > oldValueLength)
+                    {
+                        // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
+                        new Span<byte>(newValuePtr + oldValueLength, newValueLength - oldValueLength).Clear();
+                    }
                     Buffer.MemoryCopy(oldValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart, oldValue.Length - functionsState.etagState.etagSkippedStart);
-                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO,
-                                            newValue.ToPointer() + functionsState.etagState.etagSkippedStart,
-                                            newValue.Length - functionsState.etagState.etagSkippedStart
-                                            );
+                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, newValuePtr, newValueLength);
 
                     CopyRespNumber(bitfieldReturnValue_RO, ref output);
                     break;
@@ -1363,7 +1387,15 @@ namespace Garnet.server
                     oldValue.CopyTo(ref newValue);
 
                     newInputValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                    newInputValue.CopyTo(newValue.AsSpan(functionsState.etagState.etagSkippedStart).Slice(offset));
+                    var oldValueDataSpan = oldValue.AsSpan(functionsState.etagState.etagSkippedStart);
+                    var newValueDataSpan = newValue.AsSpan(functionsState.etagState.etagSkippedStart);
+                    if (oldValueDataSpan.Length < offset)
+                    {
+                        // If the offset is greater than the old value, we need to zero-fill the gap (e.g. new record might have been revivified).
+                        var zeroFillLength = offset - oldValueDataSpan.Length;
+                        newValueDataSpan.Slice(oldValueDataSpan.Length, zeroFillLength).Clear();
+                    }
+                    newInputValue.CopyTo(newValueDataSpan.Slice(offset));
 
                     CopyValueLengthToOutput(ref newValue, ref output, functionsState.etagState.etagSkippedStart);
                     break;

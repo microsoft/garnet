@@ -66,6 +66,12 @@ namespace Garnet.test
         }
     }
 
+    public enum RevivificationMode
+    {
+        NoReviv = 0,
+        UseReviv = 1,
+    }
+
     internal static class TestUtils
     {
         public static readonly int TestPort = 33278;
@@ -80,7 +86,6 @@ namespace Garnet.test
         /// </summary>
         static readonly bool useTestLogger = false;
 
-        private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
         internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
