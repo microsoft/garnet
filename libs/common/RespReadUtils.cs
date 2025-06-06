@@ -316,16 +316,13 @@ namespace Garnet.common
             if (ptr + 3 > end)
                 return false;
 
-            var readHead = ptr + 1;
-            var negative = *readHead == '-';
+            if (!TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil))
+                return false;
 
-            if (negative)
+            if (length < 0)
             {
                 RespParsingException.ThrowInvalidStringLength(length);
             }
-
-            if (!TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil))
-                return false;
 
             return true;
         }
@@ -924,7 +921,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
+        static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
             if (!TryReadSignedLengthHeader(out length, ref ptr, end))
