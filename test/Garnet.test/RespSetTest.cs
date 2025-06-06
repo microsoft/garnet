@@ -1007,7 +1007,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void CanDoSRANDMEMBERWithCountCommandLC()
+        public void CanDoSRANDMEMBERWithCountCommandLC()
         {
             var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
 
@@ -1041,7 +1041,7 @@ namespace Garnet.test
 
             ClassicAssert.IsTrue(results.All(a => myset.Contains((string)a)));
             ClassicAssert.IsTrue(results.Distinct().Count() != results.Length,
-                                 "At least two members are repeated.");
+                                 "At least two members must be repeated.");
         }
 
         [Test]
