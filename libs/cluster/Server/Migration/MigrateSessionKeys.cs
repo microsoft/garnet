@@ -29,15 +29,15 @@ namespace Garnet.cluster
             try
             {
                 // Transition keys to MIGRATING status
-                migrateScan[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
+                migrateTasks[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
                 WaitForConfigPropagation();
 
                 ////////////////
                 // Build Input//
                 ////////////////
                 var input = new RawStringInput(RespCommandAccessor.MIGRATE);
-                var keys = migrateScan[0].sketch.Keys;
-                for (var i = 0; i < migrateScan[0].sketch.Keys.Count; i++)
+                var keys = migrateTasks[0].sketch.Keys;
+                for (var i = 0; i < migrateTasks[0].sketch.Keys.Count; i++)
                 {
                     if (keys[i].Item2) continue;
                     var spanByte = keys[i].Item1.SpanByte;
@@ -81,7 +81,7 @@ namespace Garnet.cluster
                     o.Memory.Dispose();
                 buffer.Dispose();
 
-                migrateScan[0].sketch.SetStatus(SketchStatus.INITIALIZING);
+                migrateTasks[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
             return true;
         }
@@ -95,11 +95,11 @@ namespace Garnet.cluster
         {
             // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
             // Transition all QUEUED to MIGRATING state
-            migrateScan[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
+            migrateTasks[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
             WaitForConfigPropagation();
 
-            var keys = migrateScan[0].sketch.Keys;
-            for (var i = 0; i < migrateScan[0].sketch.Keys.Count; i++)
+            var keys = migrateTasks[0].sketch.Keys;
+            for (var i = 0; i < migrateTasks[0].sketch.Keys.Count; i++)
             {
                 if (keys[i].Item2) continue;
                 var keyByteArray = keys[i].Item1.ToArray();
@@ -142,10 +142,10 @@ namespace Garnet.cluster
                 goto migrated;
 
             // Transition to deleting to block read requests
-            migrateScan[0].sketch.SetStatus(SketchStatus.DELETING);
+            migrateTasks[0].sketch.SetStatus(SketchStatus.DELETING);
             WaitForConfigPropagation();
 
-            foreach (var pair in migrateScan[0].sketch.Keys)
+            foreach (var pair in migrateTasks[0].sketch.Keys)
             {
                 if (!pair.Item2) continue;
                 var spanByte = pair.Item1.SpanByte;
@@ -154,7 +154,7 @@ namespace Garnet.cluster
 
         migrated:
             // Transition to MIGRATED to release waiting operations
-            migrateScan[0].sketch.SetStatus(SketchStatus.MIGRATED);
+            migrateTasks[0].sketch.SetStatus(SketchStatus.MIGRATED);
             WaitForConfigPropagation();
         }
 
