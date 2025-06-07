@@ -187,7 +187,7 @@ namespace Garnet.server
         /// <summary>
         /// Executes a store-wide key collect operation
         /// </summary>
-        public void ExecuteKeyCollection();
+        public void ExpiredKeyDeletionScan();
 
         /// <summary>
         /// Start object size trackers for all active databases

@@ -301,8 +301,8 @@ namespace Garnet.server
             ExecuteObjectCollection(defaultDatabase, Logger);
 
         /// <inheritdoc/>
-        public override void ExecuteKeyCollection() =>
-            ExecuteKeyCollection(defaultDatabase, Logger);
+        public override void ExpiredKeyDeletionScan() =>
+            ExpiredKeyDeletionScan(defaultDatabase, Logger);
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>

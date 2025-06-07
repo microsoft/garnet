@@ -698,18 +698,18 @@ namespace Garnet.server
             }
         }
 
-        async Task KeyCollectTask(int keyCollectFrequencySecs, CancellationToken token = default)
+        async Task ExpiredKeyDeletionScanTask(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(keyCollectFrequencySecs > 0);
+            Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
             try
             {
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
 
-                    databaseManager.ExecuteKeyCollection();
+                    databaseManager.ExpiredKeyDeletionScan();
 
-                    await Task.Delay(TimeSpan.FromSeconds(keyCollectFrequencySecs), token);
+                    await Task.Delay(TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), token);
                 }
             }
             catch (TaskCanceledException) when (token.IsCancellationRequested)
@@ -718,7 +718,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogCritical(ex, "Unknown exception received for background key collect task. Key collect task won't be resumed.");
+                logger?.LogCritical(ex, "Unknown exception received for background expired key deletion scan task. The task won't be resumed.");
             }
         }
 
@@ -782,7 +782,7 @@ namespace Garnet.server
 
             if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                Task.Run(async () => await KeyCollectTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, ctsCommit.Token));
+                Task.Run(async () => await ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

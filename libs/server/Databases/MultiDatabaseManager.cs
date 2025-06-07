@@ -521,7 +521,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void ExecuteKeyCollection()
+        public override void ExpiredKeyDeletionScan()
         {
             var databasesMapSnapshot = databases.Map;
 
@@ -531,7 +531,7 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
-                ExecuteKeyCollection(databasesMapSnapshot[dbId], Logger);
+                ExpiredKeyDeletionScan(databasesMapSnapshot[dbId], Logger);
             }
         }
 

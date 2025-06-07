@@ -80,7 +80,7 @@ namespace Garnet.server
         public abstract void ExecuteObjectCollection();
 
         /// <inheritdoc/>
-        public abstract void ExecuteKeyCollection();
+        public abstract void ExpiredKeyDeletionScan();
 
         /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
@@ -421,11 +421,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Executes a store-wide key collect operation for the specified database
+        /// Execute a expired key deletion scan operation for the specified database
         /// </summary>
-        /// <param name="db">Database for object collection</param>
+        /// <param name="db">Database</param>
         /// <param name="logger">Logger</param>
-        protected void ExecuteKeyCollection(GarnetDatabase db, ILogger logger = null)
+        protected void ExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
         {
             _ = MainStoreExpiredKeyDeletionScan(db, logger);
 
