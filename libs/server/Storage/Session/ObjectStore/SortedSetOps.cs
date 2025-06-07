@@ -347,7 +347,7 @@ namespace Garnet.server
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(header, count, 2);
 
             var output = new GarnetObjectStoreOutput();
 

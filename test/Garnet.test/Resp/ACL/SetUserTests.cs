@@ -27,7 +27,7 @@ namespace Garnet.test.Resp.ACL
 
             // Check user is authenticated as default
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "+default\r\n";
+            var expectedResponse = "$7\r\ndefault\r\n";
             var response = lightClientRequest.SendCommand("ACL WHOAMI");
 
             // Correctness check

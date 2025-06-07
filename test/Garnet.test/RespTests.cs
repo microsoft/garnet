@@ -3848,7 +3848,7 @@ namespace Garnet.test
         [Test]
         [TestCase([2, "$-1\r\n", "$1\r\n", "*4", '*'], Description = "RESP2 output")]
         [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
-        public async Task RespOutputTests(int respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
+        public async Task RespOutputTests(byte respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
         {
             using var c = TestUtils.GetGarnetClientSession(raw: true);
             c.Connect();
@@ -3885,8 +3885,8 @@ namespace Garnet.test
             response = await c.ExecuteAsync("LCS", "s1", "s2", "IDX");
             ClassicAssert.AreEqual(mapPrefix + "\r\n$7\r\nmatches\r\n*0\r\n$3\r\nlen\r\n:0\r\n", response);
 
-            response = await c.ExecuteAsync("ZADD", "z", "0", "a");
-            ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b");
+            ClassicAssert.AreEqual(":2\r\n", response);
             response = await c.ExecuteAsync("ZSCORE", "z", "a");
             ClassicAssert.AreEqual(doublePrefix + "0\r\n", response);
         }
@@ -3907,12 +3907,12 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                int keyCount = 5;
-                int valLen = 256;
-                int keyLen = 8;
+                var keyCount = 5;
+                var valLen = 256;
+                var keyLen = 8;
 
                 List<Tuple<string, string>> data = [];
-                for (int i = 0; i < keyCount; i++)
+                for (var i = 0; i < keyCount; i++)
                 {
                     lastKey = GetRandomString(keyLen);
                     lastValue = GetRandomString(valLen);
@@ -3932,7 +3932,7 @@ namespace Garnet.test
 
             var expectedNewlineCount = 30; // 30 '\n' characters expected in response
             var response = lightClientRequest.Execute($"hello 3", expectedNewlineCount);
-            ClassicAssert.IsTrue(response.Length is > 180 and < 190);
+            ClassicAssert.IsTrue(response.Length is > 175 and < 190);
 
             // Switch to byte counting in response
             lightClientRequest.countResponseType = CountResponseType.Bytes;
@@ -4014,28 +4014,32 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ClientInfoTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void ClientInfoTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var result = (string)db.Execute("CLIENT", "INFO");
-            AssertExpectedClientFields(result);
+            AssertExpectedClientFields(result, protocol);
 
             var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("CLIENT", "INFO", "foo"));
             ClassicAssert.AreEqual("ERR wrong number of arguments for 'client|info' command", exc.Message);
         }
 
         [Test]
-        public void ClientListTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void ClientListTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             // List everything
             {
                 var list = (string)db.Execute("CLIENT", "LIST");
-                AssertExpectedClientFields(list);
+                AssertExpectedClientFields(list, protocol);
             }
 
             // List by id
@@ -4043,13 +4047,13 @@ namespace Garnet.test
                 var id = (long)db.Execute("CLIENT", "ID");
 
                 var list = (string)db.Execute("CLIENT", "LIST", "ID", id, 123);
-                AssertExpectedClientFields(list);
+                AssertExpectedClientFields(list, protocol);
             }
 
             // List by type
             {
                 var list = (string)db.Execute("CLIENT", "LIST", "TYPE", "NORMAL");
-                AssertExpectedClientFields(list);
+                AssertExpectedClientFields(list, protocol);
             }
         }
 
@@ -4438,7 +4442,7 @@ namespace Garnet.test
             var result = (string)db.Execute("CLIENT", "SETINFO", option, value);
             ClassicAssert.AreEqual("OK", result);
 
-            var actual = ((string)db.Execute("CLIENT", "INFO")).Split(" ").First(x => x.StartsWith(option, StringComparison.OrdinalIgnoreCase)).Substring(option.Length + 1);
+            var actual = ((string)db.Execute("CLIENT", "INFO")).Split(" ").First(x => x.StartsWith(option, StringComparison.OrdinalIgnoreCase)).Substring(option.Length + 1).TrimEnd('\n');
             ClassicAssert.AreEqual(value, actual);
         }
 
@@ -4455,10 +4459,16 @@ namespace Garnet.test
         /// <summary>
         /// Check that list is non-empty, and has the minimum required fields.
         /// </summary>
-        private static void AssertExpectedClientFields(string list)
+        private static void AssertExpectedClientFields(string list, RedisProtocol protocol = RedisProtocol.Resp2)
         {
-            var lines = list.Split("\n");
+            var lines = list.Split("\n", StringSplitOptions.RemoveEmptyEntries);
             ClassicAssert.IsTrue(lines.Length >= 1);
+
+            if (protocol == RedisProtocol.Resp3)
+            {
+                ClassicAssert.IsTrue(lines[0].StartsWith("txt:"));
+                lines[0] = lines[0][4..];
+            }
 
             foreach (var line in lines)
             {

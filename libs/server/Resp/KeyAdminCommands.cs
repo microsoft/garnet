@@ -34,9 +34,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetInt(parseState.Count - 2, out var expiry))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
             }
 
             var value = parseState.GetArgSliceByRef(2);
@@ -245,9 +243,7 @@ namespace Garnet.server
             {
                 if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
                 {
-                    while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(2)}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
                 }
 
                 withEtag = true;
@@ -289,9 +285,7 @@ namespace Garnet.server
             {
                 if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
                 {
-                    while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {parseState.GetString(2)}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
                 }
 
                 withEtag = true;
@@ -399,9 +393,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             if (!parseState.TryGetInt(1, out _))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             var expireOption = ExpireOption.None;
@@ -409,22 +401,14 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
-                    var optionStr = parseState.GetString(2);
-
-                    while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
                 }
 
                 if (parseState.Count > 3)
                 {
                     if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                     {
-                        var optionStr = parseState.GetString(3);
-
-                        while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
                     }
 
                     if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT ||
@@ -486,9 +470,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             if (!parseState.TryGetLong(1, out _))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             var expireOption = ExpireOption.None;
@@ -497,11 +479,7 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetExpireOption(2, out expireOption))
                 {
-                    var optionStr = parseState.GetString(2);
-
-                    while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
                 }
             }
 
@@ -509,11 +487,7 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
                 {
-                    var optionStr = parseState.GetString(3);
-
-                    while (!RespWriteUtils.TryWriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(3)));
                 }
 
                 if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT || additionExpireOption == ExpireOption.LT))

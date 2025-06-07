@@ -241,53 +241,84 @@ namespace Garnet.server
                 fixed (byte* outputPtr = outputSpan)
                 {
                     var refPtr = outputPtr;
+                    var c = (char)*refPtr;
+                    var end = outputPtr + outputSpan.Length;
 
-                    if (*refPtr == '-')
+                    if (c == '-')
                     {
-                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, end))
                             return default;
                     }
-                    else if (*refPtr == '*')
+                    else if ((c == '*') || (c == '~') || (c == '%'))
                     {
                         if (isScanOutput)
                         {
                             // Read the first two elements
-                            if (!RespReadUtils.TryReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out var outerArraySize, ref refPtr, end, c))
                                 return default;
 
                             element = null;
                             len = 0;
                             // Read cursor value
-                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                                 return default;
                         }
 
                         // Get the number of elements
-                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadUnsignedLengthHeader(out var arraySize, ref refPtr, end, c))
                             return default;
 
                         // Create the argslice[]
-                        elements = new ArgSlice[isScanOutput ? arraySize + 1 : arraySize];
+                        System.Collections.Generic.List<ArgSlice> elemlist = new(isScanOutput ? arraySize + 1 : arraySize);
 
-                        int i = 0;
+                        var i = 0;
                         if (isScanOutput)
-                            elements[i++] = new ArgSlice(element, len);
+                            elemlist.Add(new ArgSlice(element, len));
 
-                        for (; i < elements.Length; i++)
+                        for (; i < arraySize; i++)
                         {
                             element = null;
                             len = 0;
-                            if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                            var outerLen = 1;
+                            c = (char)*refPtr;
+
+                            if ((c == '*') || (c == '~') || (c == '%'))
                             {
-                                elements[i] = new ArgSlice(element, len);
+                                if (!RespReadUtils.TryReadUnsignedLengthHeader(out outerLen, ref refPtr, end, c))
+                                    return default;
+                            }
+
+                            for (var k = 0; k < outerLen; ++k)
+                            {
+                                if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
+                                {
+                                    elemlist.Add(new ArgSlice(element, len));
+                                }
                             }
                         }
+
+                        elements = [.. elemlist];
+                    }
+                    else if (c == ',')
+                    {
+                        if (refPtr == end)
+                            return default;
+
+                        var start = ++refPtr;
+
+                        if (!RespReadUtils.TryReadAsSpan(out var res, ref refPtr, end))
+                            return default;
+
+                        if (!double.TryParse(res, out _))
+                            return default;
+
+                        elements = [new ArgSlice(start, res.Length)];
                     }
                     else
                     {
                         byte* result = null;
                         len = 0;
-                        if (!RespReadUtils.TryReadPtrWithLengthHeader(ref result, ref len, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.TryReadPtrWithLengthHeader(ref result, ref len, ref refPtr, end))
                             return default;
                         elements = [new ArgSlice(result, len)];
                     }

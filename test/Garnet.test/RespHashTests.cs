@@ -540,9 +540,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoRandomField()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void CanDoRandomField(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var hashKey = new RedisKey("user:user1");
@@ -1612,6 +1614,31 @@ namespace Garnet.test
         }
         #endregion
 
+        [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task HRespOutput(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+
+            response = await c.ExecuteAsync("HSET", "h", "a", "0");
+            ClassicAssert.AreEqual(":1\r\n", response);
+
+            response = await c.ExecuteAsync("HGETALL", "h");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("%1\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+
+            response = await c.ExecuteAsync("HRANDFIELD", "h", "1", "WITHVALUES");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+        }
 
         #region TxnTests
 

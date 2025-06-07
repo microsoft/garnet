@@ -17,8 +17,7 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.");
             }
 
             List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
