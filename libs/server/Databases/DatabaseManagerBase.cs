@@ -80,6 +80,9 @@ namespace Garnet.server
         public abstract void ExecuteObjectCollection();
 
         /// <inheritdoc/>
+        public abstract void ExpiredKeyDeletionScan();
+
+        /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <inheritdoc/>
@@ -406,15 +409,30 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         protected void ExecuteObjectCollection(GarnetDatabase db, ILogger logger = null)
         {
-            if (db.DatabaseStorageSession == null)
+            if (db.ObjectStoreCollectionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferManager();
-                db.DatabaseStorageSession =
+                db.ObjectStoreCollectionDbStorageSession =
                     new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            ExecuteHashCollect(db.DatabaseStorageSession);
-            ExecuteSortedSetCollect(db.DatabaseStorageSession);
+            ExecuteHashCollect(db.ObjectStoreCollectionDbStorageSession);
+            ExecuteSortedSetCollect(db.ObjectStoreCollectionDbStorageSession);
+        }
+
+        /// <summary>
+        /// Execute a store-wide expired key deletion scan operation for the specified database
+        /// </summary>
+        /// <param name="db">Database</param>
+        /// <param name="logger">Logger</param>
+        protected void ExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
+        {
+            _ = MainStoreExpiredKeyDeletionScan(db, logger);
+
+            if (StoreWrapper.serverOptions.DisableObjects)
+                return;
+
+            _ = ObjectStoreExpiredKeyDeletionScan(db, logger);
         }
 
         /// <summary>
@@ -690,6 +708,39 @@ namespace Garnet.server
         {
             storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
             storageSession.scratchBufferManager.Reset();
+        }
+
+        /// <inheritdoc/>
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId, ILogger logger = null);
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) MainStoreExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
+        {
+            if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
+            (var deletedCount, var totalCount) = db.MainStoreExpiredKeyDeletionDbStorageSession.MainStoreExpiredKeyDeletionScan(scanFrom);
+            logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
+
+            return (deletedCount, totalCount);
+        }
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) ObjectStoreExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
+        {
+            if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferManager();
+                db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
+            (var deletedCount, var totalCount) = db.ObjectStoreExpiredKeyDeletionDbStorageSession.ObjectStoreExpiredKeyDeletionScan(scanFrom);
+            logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
+
+            return (deletedCount, totalCount);
         }
     }
 }
