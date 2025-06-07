@@ -203,15 +203,6 @@ namespace Garnet.server
                         CopyDefaultResp(functionsState.nilResp, ref output);
                     break;
 
-                case RespCommand.BITFIELD_RO:
-                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
-                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs_RO));
-                    // Ensure new-record space is zero-init'd before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
-                    value.AsSpan().Clear();
-                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, value.ToPointer(), value.Length);
-                    CopyRespNumber(bitfieldReturnValue_RO, ref output);
-                    break;
-
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
@@ -729,22 +720,6 @@ namespace Garnet.server
                     }
 
                     CopyRespNumber(bitfieldReturnValue, ref output);
-                    break;
-                case RespCommand.BITFIELD_RO:
-                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
-                    v = value.ToPointer() + functionsState.etagState.etagSkippedStart;
-
-                    if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs_RO, value.Length - functionsState.etagState.etagSkippedStart))
-                        return false;
-
-                    rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-                    value.UnmarkExtraMetadata();
-                    value.ShrinkSerializedLength(value.Length + value.MetadataSize);
-                    rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
-
-                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, v,
-                                                    value.Length - functionsState.etagState.etagSkippedStart);
-                    CopyRespNumber(bitfieldReturnValue_RO, ref output);
                     break;
 
                 case RespCommand.PFADD:
@@ -1337,23 +1312,6 @@ namespace Garnet.server
                         CopyRespNumber(bitfieldReturnValue, ref output);
                     else
                         CopyDefaultResp(functionsState.nilResp, ref output);
-                    break;
-
-                case RespCommand.BITFIELD_RO:
-                    var bitFieldArgs_RO = GetBitFieldArguments(ref input);
-                    oldValuePtr = oldValue.ToPointer() + functionsState.etagState.etagSkippedStart;
-                    newValuePtr = newValue.ToPointer() + functionsState.etagState.etagSkippedStart;
-                    oldValueLength = oldValue.Length - functionsState.etagState.etagSkippedStart;
-                    newValueLength = newValue.Length - functionsState.etagState.etagSkippedStart;
-                    Buffer.MemoryCopy(oldValuePtr, newValuePtr, newValueLength, oldValueLength);
-                    if (newValueLength > oldValueLength)
-                    {
-                        // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
-                        new Span<byte>(newValuePtr + oldValueLength, newValueLength - oldValueLength).Clear();
-                    }
-                    var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, newValuePtr, newValueLength);
-
-                    CopyRespNumber(bitfieldReturnValue_RO, ref output);
                     break;
 
                 case RespCommand.PFADD:
