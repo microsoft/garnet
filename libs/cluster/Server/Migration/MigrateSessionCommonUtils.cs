@@ -12,19 +12,10 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        /// <summary>
-        /// Write to network buffer or send if full the previous payload and then write to network before the associated kv-pair.
-        /// </summary>
-        /// <param name="gcs"></param>
-        /// <param name="localServerSession"></param>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="o"></param>
-        /// <returns></returns>
-        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory o)
+        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory o, out GarnetStatus status)
         {
             // Read value for key
-            var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
+            status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
 
             // Skip if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
@@ -64,13 +55,13 @@ namespace Garnet.cluster
             }
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref ArgSlice key, ref SpanByteAndMemory o)
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref ArgSlice key, out GarnetStatus status)
         {
             var keyByteArray = key.ToArray();
 
             ObjectInput input = default;
             GarnetObjectStoreOutput value = default;
-            var status = localServerSessions[0].BasicGarnetApi.Read_ObjectStore(ref keyByteArray, ref input, ref value);
+            status = localServerSession.BasicGarnetApi.Read_ObjectStore(ref keyByteArray, ref input, ref value);
 
             // Skip if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
@@ -101,54 +92,6 @@ namespace Garnet.cluster
                 }
                 return true;
             }
-        }
-
-        /// <summary>
-        /// Write main store key-value pair directly to client buffer or flush buffer to make space and try again writing.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <returns>True on success, else false</returns>
-        private bool WriteOrSendMainStoreKeyValuePair(ref SpanByte key, ref SpanByte value)
-        {
-            // Check if we need to initialize cluster migrate command arguments
-            if (_gcs.NeedsInitialization)
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
-
-            // Try write serialized key value to client buffer
-            while (!_gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
-            {
-                // Flush key value pairs in the buffer
-                if (!HandleMigrateTaskResponse(task))
-                    return false;
-
-                // re-initialize cluster migrate command parameters
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Write object store key-value pair directly to client buffer or flush buffer to make space and try again writing.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="expiration"></param>
-        /// <returns></returns>
-        private bool WriteOrSendObjectStoreKeyValuePair(byte[] key, byte[] value, long expiration)
-        {
-            // Check if we need to initialize cluster migrate command arguments
-            if (_gcs.NeedsInitialization)
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
-
-            while (!_gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
-            {
-                // Flush key value pairs in the buffer
-                if (!HandleMigrateTaskResponse(task))
-                    return false;
-                _gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
-            }
-            return true;
         }
 
         /// <summary>

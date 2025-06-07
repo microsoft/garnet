@@ -78,8 +78,6 @@ namespace Garnet.cluster
         /// </summary>
         public LimitedFixedBufferPool GetNetworkPool => clusterProvider.migrationManager.GetNetworkPool;
 
-        readonly GarnetClientSession _gcs;
-
         /// <summary>
         /// Check for overlapping slots between migrate sessions
         /// </summary>
@@ -94,14 +92,9 @@ namespace Garnet.cluster
         readonly TransferOption transferOption;
 
         /// <summary>
-        /// MigrateSlotsScan for background slot migrate tasks
+        /// MigrateTask for background slot migrate tasks
         /// </summary>
         readonly MigrateTask[] migrateTasks;
-
-        /// <summary>
-        /// LocalServerSessions for background slot migrate tasks
-        /// </summary>
-        readonly LocalServerSession[] localServerSessions;
 
         /// <summary>
         /// MigrateSession Constructor
@@ -154,25 +147,16 @@ namespace Garnet.cluster
 
             Status = MigrateState.PENDING;
 
-            // Single key value size + few bytes for command header and arguments
-            _gcs = GetGarnetClient();
-
             if (transferOption == TransferOption.SLOTS)
             {
                 migrateTasks = new MigrateTask[clusterProvider.serverOptions.ParallelMigrateTasks];
-                localServerSessions = new LocalServerSession[clusterProvider.serverOptions.ParallelMigrateTasks];
                 for (var i = 0; i < migrateTasks.Length; i++)
-                {
                     migrateTasks[i] = new MigrateTask(this);
-                    localServerSessions[i] = new LocalServerSession(clusterProvider.storeWrapper);
-                }
             }
             else
             {
                 migrateTasks = new MigrateTask[1];
                 migrateTasks[0] = new MigrateTask(this, sketch: sketch);
-                localServerSessions = new LocalServerSession[1];
-                localServerSessions[0] = new LocalServerSession(clusterProvider.storeWrapper);
             }
         }
 
@@ -197,26 +181,22 @@ namespace Garnet.cluster
             if (!_disposed.TryWriteLock()) return;
             _cts?.Cancel();
             _cts?.Dispose();
-            _gcs.Dispose();
 
             for (var i = 0; i < migrateTasks.Length; i++)
-            {
                 migrateTasks[i].Dispose();
-                localServerSessions[i].Dispose();
-            }
         }
 
-        private bool CheckConnection()
+        private bool CheckConnection(GarnetClientSession client)
         {
-            bool status = true;
-            if (!_gcs.IsConnected)
+            var status = true;
+            if (!client.IsConnected)
             {
-                _gcs.Reconnect((int)_timeout.TotalMilliseconds);
+                client.Reconnect((int)_timeout.TotalMilliseconds);
                 if (_passwd != null)
                 {
                     try
                     {
-                        status = _gcs.Authenticate(_username, _passwd).ContinueWith(resp =>
+                        status = client.Authenticate(_username, _passwd).ContinueWith(resp =>
                         {
                             // Check if authenticate succeeded
                             if (!resp.Result.Equals("OK", StringComparison.Ordinal))
@@ -274,9 +254,10 @@ namespace Garnet.cluster
         public bool TrySetSlotRanges(string nodeid, MigrateState state)
         {
             var status = false;
+            var client = migrateTasks[0].Client;
             try
             {
-                if (!CheckConnection())
+                if (!CheckConnection(client))
                     return false;
                 var stateBytes = state switch
                 {
@@ -286,7 +267,7 @@ namespace Garnet.cluster
                     _ => throw new Exception("Invalid SETSLOT Operation"),
                 };
 
-                status = _gcs.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
+                status = client.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
                 {
                     // Check if setslotsrange executed correctly
                     if (!resp.Result.Equals("OK", StringComparison.Ordinal))

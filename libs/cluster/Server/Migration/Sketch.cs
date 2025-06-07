@@ -50,22 +50,11 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         public unsafe void HashAndStore(ref ArgSlice key)
         {
-            Hash(key.SpanByte.ToPointer(), key.Length);
-            Keys.Add((key, false));
-        }
-
-        /// <summary>
-        /// Hash key to bloomfilter
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        public unsafe void Hash(byte* key, int length)
-        {
-            var slot = (int)HashUtils.MurmurHash2x64A(key, length) & (size - 1);
+            var slot = (int)HashUtils.MurmurHash2x64A(key.Span) & (size - 1);
             var byteOffset = slot >> 3;
             var bitOffset = slot & 7;
             bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
+            Keys.Add((key, false));
         }
 
         /// <summary>
@@ -90,6 +79,7 @@ namespace Garnet.cluster
         /// </summary>
         public void Clear()
         {
+            argSliceVector.Clear();
             for (var i = 0; i < (size >> 3); i++)
                 bitmap[i] = 0;
             Status = SketchStatus.INITIALIZING;
