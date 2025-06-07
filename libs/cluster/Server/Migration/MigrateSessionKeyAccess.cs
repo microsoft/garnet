@@ -38,9 +38,9 @@ namespace Garnet.cluster
                 return true;
 
             var state = SketchStatus.INITIALIZING;
-            foreach (var migrateScan in migrateTasks)
+            foreach (var migrateTask in migrateTasks)
             {
-                if (migrateScan.sketch.Probe(key.SpanByte, out state))
+                if (migrateTask.sketch.Probe(key.SpanByte, out state))
                     goto found;
             }
 
