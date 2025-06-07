@@ -25,52 +25,20 @@ namespace Garnet.cluster
             var bufPtr = buffer.GetValidPointer();
             var bufPtrEnd = bufPtr + bufferSize;
             var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
+            var migrateTask = migrateTasks[0];
 
             try
             {
                 // Transition keys to MIGRATING status
-                migrateTasks[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
+                migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
                 WaitForConfigPropagation();
 
-                ////////////////
-                // Build Input//
-                ////////////////
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
-                var keys = migrateTasks[0].sketch.Keys;
-                for (var i = 0; i < migrateTasks[0].sketch.Keys.Count; i++)
+                // Transmit keys from main store
+                if (!migrateTask.TransmitKeys(StoreType.Main))
                 {
-                    if (keys[i].Item2) continue;
-                    var spanByte = keys[i].Item1.SpanByte;
-
-                    // Read value for key
-                    var status = localServerSessions[0].BasicGarnetApi.Read_MainStore(ref spanByte, ref input, ref o);
-
-                    // Skip if key NOTFOUND
-                    if (status == GarnetStatus.NOTFOUND)
-                        continue;
-
-                    // Get SpanByte from stack if any
-                    ref var value = ref o.SpanByte;
-                    if (!o.IsSpanByte)
-                    {
-                        // Reinterpret heap memory to SpanByte
-                        value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
-                    }
-
-                    // Write key to network buffer if it has not expired
-                    if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(ref spanByte, ref value))
-                        return false;
-
-                    // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                    o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
-
-                    // Mark for deletion
-                    keys[i] = (keys[i].Item1, true);
-                }
-
-                // Flush data in client buffer
-                if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
+                    logger?.LogError("Failed transmitting keys from main store");
                     return false;
+                }
 
                 DeleteKeys();
             }
@@ -93,40 +61,18 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromObjectStore()
         {
-            // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
-            // Transition all QUEUED to MIGRATING state
-            migrateTasks[0].sketch.SetStatus(SketchStatus.TRANSMITTING);
+            var migrateTask = migrateTasks[0];
+            // NOTE: Any keys not found in main store are automatically set to INITIALIZING before this method is called
+            // Transition all INITIALIZING to TRANSMITTING state
+            migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
             WaitForConfigPropagation();
 
-            var keys = migrateTasks[0].sketch.Keys;
-            for (var i = 0; i < migrateTasks[0].sketch.Keys.Count; i++)
+            // Transmit keys from object store
+            if (!migrateTask.TransmitKeys(StoreType.Object))
             {
-                if (keys[i].Item2) continue;
-                var keyByteArray = keys[i].Item1.ToArray();
-
-                ObjectInput input = default;
-                GarnetObjectStoreOutput value = default;
-                var status = localServerSessions[0].BasicGarnetApi.Read_ObjectStore(ref keyByteArray, ref input, ref value);
-
-                // Skip if key NOTFOUND
-                if (status == GarnetStatus.NOTFOUND)
-                    continue;
-
-                if (!ClusterSession.Expired(ref value.GarnetObject))
-                {
-                    var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
-
-                    if (!WriteOrSendObjectStoreKeyValuePair(keyByteArray, objectData, value.GarnetObject.Expiration))
-                        return false;
-                }
-
-                // Mark for deletion
-                keys[i] = (keys[i].Item1, true);
-            }
-
-            // Flush data in client buffer
-            if (!HandleMigrateTaskResponse(_gcs.SendAndResetIterationBuffer()))
+                logger?.LogError("Failed transmitting keys from object store");
                 return false;
+            }
 
             // Delete keys if COPY option is false or transition KEYS from MIGRATING to MIGRATED status
             DeleteKeys();
@@ -138,23 +84,16 @@ namespace Garnet.cluster
         /// </summary>
         private void DeleteKeys()
         {
-            if (_copyOption)
-                goto migrated;
-
-            // Transition to deleting to block read requests
-            migrateTasks[0].sketch.SetStatus(SketchStatus.DELETING);
+            var migrateTask = migrateTasks[0];
+            // Transition to deleting to block read requests                
+            migrateTask.sketch.SetStatus(SketchStatus.DELETING);
             WaitForConfigPropagation();
 
-            foreach (var pair in migrateTasks[0].sketch.Keys)
-            {
-                if (!pair.Item2) continue;
-                var spanByte = pair.Item1.SpanByte;
-                _ = localServerSessions[0].BasicGarnetApi.DELETE(ref spanByte);
-            }
+            // Delete keys
+            migrateTask.DeleteKeys();
 
-        migrated:
             // Transition to MIGRATED to release waiting operations
-            migrateTasks[0].sketch.SetStatus(SketchStatus.MIGRATED);
+            migrateTask.sketch.SetStatus(SketchStatus.MIGRATED);
             WaitForConfigPropagation();
         }
 
@@ -162,27 +101,22 @@ namespace Garnet.cluster
         /// Method used to migrate keys from main and object stores.
         /// This method is used to process the MIGRATE KEYS transfer option.
         /// </summary>
-        /// <param name="storeType"></param>
         /// <returns></returns>
-        public bool MigrateKeys(StoreType storeType = StoreType.All)
+        public bool MigrateKeys()
         {
             try
             {
-                if (!CheckConnection())
+                var migrateTask = migrateTasks[0];
+                if (!migrateTask.Initialize())
                     return false;
 
-                if (storeType is StoreType.All or StoreType.Main)
-                {
-                    // Migrate main store keys
-                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
-                    if (!MigrateKeysFromMainStore())
-                        return false;
-                }
+                // Migrate main store keys
+                if (!MigrateKeysFromMainStore())
+                    return false;
 
                 // Migrate object store keys
-                if (!clusterProvider.serverOptions.DisableObjects && storeType is StoreType.All or StoreType.Object)
+                if (!clusterProvider.serverOptions.DisableObjects)
                 {
-                    _gcs.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
                     if (!MigrateKeysFromObjectStore())
                         return false;
                 }

@@ -66,7 +66,8 @@ namespace Garnet.cluster
 
                 workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
                 workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
-                migrateTask.Initialize();
+                if (!migrateTask.Initialize())
+                    return Task.FromResult(false);
 
                 var cursor = workerStartAddress;
                 while (true)
@@ -88,7 +89,7 @@ namespace Garnet.cluster
                     WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateTask.Transmit(storeType);
+                    migrateTask.TrasmitSlots(storeType);
 
                     // Transition EPSM to DELETING
                     migrateTask.sketch.SetStatus(SketchStatus.DELETING);
@@ -97,7 +98,7 @@ namespace Garnet.cluster
                     // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
                     migrateTask.DeleteKeys();
 
-                    migrateTask.sketch.argSliceVector.Clear();
+                    migrateTask.sketch.Clear();
                     cursor = current;
                 }
 
