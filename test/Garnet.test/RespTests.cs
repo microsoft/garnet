@@ -3907,12 +3907,12 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                int keyCount = 5;
-                int valLen = 256;
-                int keyLen = 8;
+                var keyCount = 5;
+                var valLen = 256;
+                var keyLen = 8;
 
                 List<Tuple<string, string>> data = [];
-                for (int i = 0; i < keyCount; i++)
+                for (var i = 0; i < keyCount; i++)
                 {
                     lastKey = GetRandomString(keyLen);
                     lastValue = GetRandomString(valLen);
@@ -3932,7 +3932,7 @@ namespace Garnet.test
 
             var expectedNewlineCount = 30; // 30 '\n' characters expected in response
             var response = lightClientRequest.Execute($"hello 3", expectedNewlineCount);
-            ClassicAssert.IsTrue(response.Length is > 180 and < 190);
+            ClassicAssert.IsTrue(response.Length is > 175 and < 190);
 
             // Switch to byte counting in response
             lightClientRequest.countResponseType = CountResponseType.Bytes;

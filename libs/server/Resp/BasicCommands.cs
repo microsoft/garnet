@@ -1569,8 +1569,8 @@ namespace Garnet.server
                     ("server", "redis"),
                     ("version", storeWrapper.redisProtocolVersion),
                     ("garnet_version", storeWrapper.version),
-                    ("proto", this.respProtocolVersion),
-                    ("id", 63),
+                    ("proto", (long)this.respProtocolVersion),
+                    ("id", Id),
                     ("mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
                     ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
                 ];
@@ -1580,9 +1580,9 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
                     SendAndReset();
-                if (helloResult[i].Item2 is int intValue)
+                if (helloResult[i].Item2 is long value)
                 {
-                    while (!RespWriteUtils.TryWriteInt32(intValue, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(value, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -1593,7 +1593,7 @@ namespace Garnet.server
             }
             while (!RespWriteUtils.TryWriteAsciiBulkString("modules", ref dcurr, dend))
                 SendAndReset();
-            while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                 SendAndReset();
         }
 
