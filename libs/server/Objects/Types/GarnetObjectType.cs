@@ -34,7 +34,7 @@ namespace Garnet.server
         // Any new special type inserted here should update GarnetObjectTypeExtensions.FirstSpecialObjectType
 
         /// <summary>
-        /// Special type indicating DELIFEXPIM commande, a conditional deletion when a key is in memory and expired
+        /// Special type indicating DELIFEXPIM command, a conditional deletion when a key is in memory and expired
         /// </summary>
         DelIfExpIm = 0xf7,
 
