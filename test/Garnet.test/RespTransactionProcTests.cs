@@ -310,15 +310,16 @@ namespace Garnet.test
         [Test]
         public void TransactionListsOperTest()
         {
-            server.Register.NewTransactionProc("LISTPROC", () => new TestProcedureLists(), new RespCommandsInfo { Arity = 13 });
+            server.Register.NewTransactionProc("LISTPROC", () => new TestProcedureLists(), new RespCommandsInfo { Arity = 14 });
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             string lstA = "listA";
             string lstB = "listB";
+            string lstC = "listC";
 
-            var result = db.Execute("LISTPROC", lstA, lstB, "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9", "item10");
+            var result = db.Execute("LISTPROC", lstA, lstB, lstC, "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9", "item10");
 
             ClassicAssert.AreEqual("SUCCESS", (string)result);
 

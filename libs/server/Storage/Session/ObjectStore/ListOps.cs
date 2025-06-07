@@ -94,7 +94,7 @@ namespace Garnet.server
            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var status = ListPop(key, 1, lop, ref objectStoreContext, out var elements);
-            element = elements?.FirstOrDefault() ?? default;
+            element = status == GarnetStatus.OK ? elements.FirstOrDefault() : default;
             return status;
         }
 

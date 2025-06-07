@@ -519,6 +519,9 @@ namespace Garnet.server
                     if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr,
                             outputPtr + outputSpan.Length))
                         return default;
+                    if (len < 0)
+                        return default;
+
                     result = new ArgSlice(element, len);
                 }
             }
