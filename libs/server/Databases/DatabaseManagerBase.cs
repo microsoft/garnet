@@ -421,7 +421,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Execute a expired key deletion scan operation for the specified database
+        /// Execute a store-wide expired key deletion scan operation for the specified database
         /// </summary>
         /// <param name="db">Database</param>
         /// <param name="logger">Logger</param>

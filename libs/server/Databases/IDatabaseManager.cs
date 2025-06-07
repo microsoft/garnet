@@ -185,7 +185,7 @@ namespace Garnet.server
         public void ExecuteObjectCollection();
 
         /// <summary>
-        /// Executes a store-wide key collect operation
+        /// Executes a store-wide expired key deletion scan operation
         /// </summary>
         public void ExpiredKeyDeletionScan();
 
