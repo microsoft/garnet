@@ -265,7 +265,7 @@ namespace Garnet.test
             int slowLogThreshold = 0,
             TextWriter logTo = null,
             bool enableCluster = false,
-            int activeExpirationFrequencySecs = -1,
+            int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false
             )
         {
@@ -352,7 +352,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
-                ExpiredKeyCollectionFrequencySecs = activeExpirationFrequencySecs,
+                ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))

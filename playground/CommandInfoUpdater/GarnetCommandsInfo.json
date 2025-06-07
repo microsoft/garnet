@@ -1,7 +1,7 @@
 ﻿[
   {
-    "Command": "ACTEXP",
-    "Name": "ACTEXP",
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
     "Arity": -1,
     "Flags": "Admin, NoScript, NoMulti, ReadOnly",
     "FirstKey": 1,

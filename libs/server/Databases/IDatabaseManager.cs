@@ -266,6 +266,6 @@ namespace Garnet.server
         /// <summary>
         /// On Demand Expired Keys collection, for a db given its ID
         /// </summary>
-        public (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null);
+        public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId, ILogger logger = null);
     }
 }

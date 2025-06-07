@@ -54,7 +54,7 @@ namespace Garnet.server
                 RespCommand.SLOWLOG_RESET => NetworkSlowLogReset(),
                 RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
-                RespCommand.ACTEXP => NetworkACTEXP(),
+                RespCommand.EXPDELSCAN => NetworkEXPDELSCAN(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
@@ -893,21 +893,21 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// ACTEXP [DBID]
-        /// Scan the mutable region and tombstone all expired keys actively instead of lazy.
-        /// This is meant to be able to let users do on-demand active expiration, and even build their own schedulers
+        /// EXPDELSCAN [DBID]
+        /// Scan the mutable region and delete all expired keys.
+        /// This is meant to be able to let users do on-demand expiration, and even build their own schedulers
         /// for calling expiration based on their known workload patterns.
         /// </summary>
-        private bool NetworkACTEXP()
+        private bool NetworkEXPDELSCAN()
         {
             if (parseState.Count > 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ACTEXP));
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPDELSCAN));
             }
 
-            if (storeWrapper.serverOptions.ExpiredKeyCollectionFrequencySecs > 0)
+            if (storeWrapper.serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_ACTEXP_INVALID);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_EXPDELSCAN_INVALID);
             }
 
             // Default database as default choice.
@@ -918,7 +918,7 @@ namespace Garnet.server
                     return true;
             }
 
-            (var recordsExpired, var recordsScanned) = storeWrapper.OnDemandExpiredKeyCollection(dbId);
+            (var recordsExpired, var recordsScanned) = storeWrapper.ExpiredKeyDeletionScan(dbId);
 
             // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
             int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;

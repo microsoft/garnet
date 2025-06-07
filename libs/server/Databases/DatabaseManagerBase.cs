@@ -409,15 +409,15 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         protected void ExecuteObjectCollection(GarnetDatabase db, ILogger logger = null)
         {
-            if (db.ObjectStoreCollectionDatabaseStorageSession == null)
+            if (db.ObjectStoreCollectionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferManager();
-                db.ObjectStoreCollectionDatabaseStorageSession =
+                db.ObjectStoreCollectionDbStorageSession =
                     new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            ExecuteHashCollect(db.ObjectStoreCollectionDatabaseStorageSession);
-            ExecuteSortedSetCollect(db.ObjectStoreCollectionDatabaseStorageSession);
+            ExecuteHashCollect(db.ObjectStoreCollectionDbStorageSession);
+            ExecuteSortedSetCollect(db.ObjectStoreCollectionDbStorageSession);
         }
 
         /// <summary>
@@ -427,12 +427,12 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         protected void ExecuteKeyCollection(GarnetDatabase db, ILogger logger = null)
         {
-            _ = CollectExpiredMainStoreKeys(db, logger);
+            _ = MainStoreExpiredKeyDeletionScan(db, logger);
 
             if (StoreWrapper.serverOptions.DisableObjects)
                 return;
 
-            _ = CollectExpiredObjectStoreKeys(db, logger);
+            _ = ObjectStoreExpiredKeyDeletionScan(db, logger);
         }
 
         /// <summary>
@@ -711,33 +711,33 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public abstract (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null);
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId, ILogger logger = null);
 
-        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredMainStoreKeys(GarnetDatabase db, ILogger logger = null)
+        protected (long numExpiredKeysFound, long totalRecordsScanned) MainStoreExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
         {
-            if (db.MainStoreActiveExpDbStorageSession == null)
+            if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferManager();
-                db.MainStoreActiveExpDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
             var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
-            (var deletedCount, var totalCount) = db.MainStoreActiveExpDbStorageSession.ScanExpiredKeysMainStore(scanFrom);
+            (var deletedCount, var totalCount) = db.MainStoreExpiredKeyDeletionDbStorageSession.MainStoreExpiredKeyDeletionScan(scanFrom);
             logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
 
             return (deletedCount, totalCount);
         }
 
-        protected (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredObjectStoreKeys(GarnetDatabase db, ILogger logger = null)
+        protected (long numExpiredKeysFound, long totalRecordsScanned) ObjectStoreExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
         {
-            if (db.ObjStoreActiveExpDbStorageSession == null)
+            if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferManager();
-                db.ObjStoreActiveExpDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
             var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
-            (var deletedCount, var totalCount) = db.ObjStoreActiveExpDbStorageSession.ScanExpiredKeysObjectStore(scanFrom);
+            (var deletedCount, var totalCount) = db.ObjectStoreExpiredKeyDeletionDbStorageSession.ObjectStoreExpiredKeyDeletionScan(scanFrom);
             logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
 
             return (deletedCount, totalCount);

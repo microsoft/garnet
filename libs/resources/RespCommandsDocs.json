@@ -113,9 +113,9 @@
     ]
   },
   {
-    "Command": "ACTEXP",
-    "Name": "ACTEXP",
-    "Summary": "Iterates over all mutable records and deletes the expired ones.",
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
+    "Summary": "Scans mutable records to delete expired ones.",
     "Group": "Generic",
     "Complexity": "O(1) for every call. O(N) for a complete iteration. N is the number of records in memory.",
     "Arguments": [

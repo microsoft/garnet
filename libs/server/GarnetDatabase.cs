@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
 using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
@@ -100,17 +103,17 @@ namespace Garnet.server
         /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
-        internal StorageSession ObjectStoreCollectionDatabaseStorageSession;
+        internal StorageSession ObjectStoreCollectionDbStorageSession;
 
         /// <summary>
-        /// Storage session intended for main-store expired key collection operations
+        /// Storage session intended for main-store expired key deletion operations
         /// </summary>
-        internal StorageSession MainStoreActiveExpDbStorageSession;
+        internal StorageSession MainStoreExpiredKeyDeletionDbStorageSession;
 
         /// <summary>
-        /// Storage session intended for object-store expired key collection operations
+        /// Storage session intended for object-store expired key deletion operations
         /// </summary>
-        internal StorageSession ObjStoreActiveExpDbStorageSession;
+        internal StorageSession ObjectStoreExpiredKeyDeletionDbStorageSession;
 
         bool disposed = false;
 
@@ -175,9 +178,9 @@ namespace Garnet.server
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
-            ObjectStoreCollectionDatabaseStorageSession?.Dispose();
-            MainStoreActiveExpDbStorageSession?.Dispose();
-            ObjStoreActiveExpDbStorageSession?.Dispose();
+            ObjectStoreCollectionDbStorageSession?.Dispose();
+            MainStoreExpiredKeyDeletionDbStorageSession?.Dispose();
+            ObjectStoreExpiredKeyDeletionDbStorageSession?.Dispose();
 
             if (ObjectStoreSizeTracker != null)
             {

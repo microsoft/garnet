@@ -11,9 +11,9 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     [TestFixture]
-    class ActiveExpirationTests
+    class ExpiredKeyDeletionTests
     {
-        private const int ActiveExpirationFreqSecs = 10;
+        private const int ExpiredKeyDeletionScanFrequencySecs = 10;
 
         private const int TotalNumKeysToCreate = 100;
 
@@ -22,7 +22,7 @@ namespace Garnet.test
         [SetUp]
         public void Setup()
         {
-            SetupServer(ActiveExpirationFreqSecs);
+            SetupServer(ExpiredKeyDeletionScanFrequencySecs);
         }
 
         [TearDown]
@@ -33,28 +33,28 @@ namespace Garnet.test
         }
 
 
-        private void SetupServer(int activeExpSchedule)
+        private void SetupServer(int expiredKeyDeletionScanFrequencySecs)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             // create server with active expiration enabled, TODO: need to turn on reviv to see log growth minimized from reviv
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, activeExpirationFrequencySecs: activeExpSchedule, useReviv: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, expiredKeyDeletionScanFrequencySecs: expiredKeyDeletionScanFrequencySecs, useReviv: true);
             server.Start();
         }
 
         [Test]
-        public Task TestOnDemandActiveExpiration()
+        public Task TestOnDemandExpiredKeyDeletionScan()
         {
             TearDown();
 
             // setup with scheduled active exp off
             SetupServer(-1);
 
-            return TestActiveExpirationAsync(async (db, expectedKeysToExpire) =>
+            return TestExpiredKeyDeletionScanAsync(async (db, expectedKeysToExpire) =>
             {
                 // wait for the expiration of the items that were put in.
-                await Task.Delay(TimeSpan.FromSeconds(ActiveExpirationFreqSecs));
+                await Task.Delay(TimeSpan.FromSeconds(ExpiredKeyDeletionScanFrequencySecs));
 
-                RedisResult[] res = (RedisResult[])db.Execute("ACTEXP");
+                RedisResult[] res = (RedisResult[])db.Execute("EXPDELSCAN");
 
                 ClassicAssert.IsTrue(int.Parse(res[0].ToString()) == expectedKeysToExpire);
                 ClassicAssert.IsTrue(int.Parse(res[1].ToString()) == TotalNumKeysToCreate);
@@ -62,10 +62,10 @@ namespace Garnet.test
         }
 
         [Test]
-        public Task TestScheduledActiveExpirationViaSimulation()
-            => TestActiveExpirationAsync((_, expectedKeysToExpire) => Task.Delay(TimeSpan.FromSeconds(ActiveExpirationFreqSecs)));
+        public Task TestScheduledExpiredKeyDeletionViaSimulation()
+            => TestExpiredKeyDeletionScanAsync((_, expectedKeysToExpire) => Task.Delay(TimeSpan.FromSeconds(ExpiredKeyDeletionScanFrequencySecs)));
 
-        private async Task TestActiveExpirationAsync(Func<IDatabase, int, Task> activeExpirationInvocation)
+        private async Task TestExpiredKeyDeletionScanAsync(Func<IDatabase, int, Task> expiredKeyDeletionScanInvocation)
         {
             var untombstonedRecords = new List<string>();
             var tombstonedRecords = new List<string>();
@@ -81,7 +81,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                // Before Active expiration cycle no reviv has happened
+                // Before expired key deletion scan cycle, no reviv has happened
                 ClassicAssert.AreEqual(0, server.Provider.StoreWrapper.store.RevivificationManager.stats.successfulTakes, "stats should not be populated at the start");
 
                 int totalKeysThatWillExpire =
@@ -89,25 +89,25 @@ namespace Garnet.test
                     PopulateStore(untombstonedRecords, db, (300, 400), forceExpirationaddition: false)
                     +
                     // add a set of records that MUST expire within the duration of the test.
-                    PopulateStore(tombstonedRecords, db, (6, ActiveExpirationFreqSecs), forceExpirationaddition: true);
+                    PopulateStore(tombstonedRecords, db, (6, ExpiredKeyDeletionScanFrequencySecs), forceExpirationaddition: true);
 
                 var tailAddr = server.Provider.StoreWrapper.store.Log.TailAddress;
 
-                // Pre Active expiration EVERYTHING exists
+                // Pre expired key deletion scan, EVERYTHING exists
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, true, "All to be expired should still exist");
                 CheckExistenceConditionOnAllKeys(db, untombstonedRecords, true, "All to be not expired should still exist");
 
-                await activeExpirationInvocation(db, totalKeysThatWillExpire);
+                await expiredKeyDeletionScanInvocation(db, totalKeysThatWillExpire);
 
-                // merge reviv stats across sessions
+                // Merge reviv stats across sessions
                 server.Provider.StoreWrapper.store.DumpRevivificationStats();
                 server.Provider.StoreWrapper.objectStore.DumpRevivificationStats();
 
-                // check that revivification happened for expired record 
+                // Check that revivification happened for expired record 
                 ClassicAssert.IsTrue(server.Provider.StoreWrapper.store.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for main store as expected");
                 ClassicAssert.IsTrue(server.Provider.StoreWrapper.objectStore.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for obj store as expected");
 
-                // Post active expiration, expired records don't exist for sure. This can be fooled by passive expiration too, so check reviv metrics too
+                // Post expired key deletion scan, expired records don't exist for sure. This can be fooled by passive expiration too, so check reviv metrics too
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, false, "All to be expired should no longer exist post gc");
                 CheckExistenceConditionOnAllKeys(db, untombstonedRecords, true, "All to be not expired should exist post gc too");
 
@@ -138,7 +138,7 @@ namespace Garnet.test
 
                 if (hasExpiration || forceExpirationaddition)
                 {
-                    if (expirationOrScore < ActiveExpirationFreqSecs)
+                    if (expirationOrScore < ExpiredKeyDeletionScanFrequencySecs)
                         totalKeysThatWillExpire++;
 
                     ClassicAssert.IsTrue(db.KeyExpire(keys[i], TimeSpan.FromSeconds(expirationOrScore)));

@@ -83,8 +83,8 @@
     ]
   },
   {
-    "Command": "ACTEXP",
-    "Name": "ACTEXP",
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
     "Arity": -1,
     "Flags": "Admin, NoMulti, NoScript, ReadOnly",
     "FirstKey": 1,

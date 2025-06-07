@@ -722,8 +722,13 @@ namespace Garnet.server
             }
         }
 
-        public (long numExpiredKeysFound, long totalRecordsScanned) OnDemandExpiredKeyCollection(int dbId)
-            => databaseManager.CollectExpiredKeys(dbId, logger);
+        /// <summary>
+        /// Expired key deletion scan for a specific database ID.
+        /// </summary>
+        /// <param name="dbId"></param>
+        /// <returns></returns>
+        public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
+            => databaseManager.ExpiredKeyDeletionScan(dbId, logger);
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
         /// <param name="token"></param>
@@ -775,9 +780,9 @@ namespace Garnet.server
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
             }
 
-            if (serverOptions.ExpiredKeyCollectionFrequencySecs > 0)
+            if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                Task.Run(async () => await KeyCollectTask(serverOptions.ExpiredKeyCollectionFrequencySecs, ctsCommit.Token));
+                Task.Run(async () => await KeyCollectTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

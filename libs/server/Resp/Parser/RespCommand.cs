@@ -276,7 +276,7 @@ namespace Garnet.server
         TIME,
         ROLE,
         SAVE,
-        ACTEXP,
+        EXPDELSCAN,
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
@@ -2333,9 +2333,9 @@ namespace Garnet.server
             {
                 return RespCommand.SAVE;
             }
-            else if (command.SequenceEqual(CmdStrings.ACTEXP))
+            else if (command.SequenceEqual(CmdStrings.EXPDELSCAN))
             {
-                return RespCommand.ACTEXP;
+                return RespCommand.EXPDELSCAN;
             }
             else if (command.SequenceEqual(CmdStrings.LASTSAVE))
             {

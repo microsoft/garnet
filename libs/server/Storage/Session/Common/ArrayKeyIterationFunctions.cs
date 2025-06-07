@@ -16,8 +16,10 @@ namespace Garnet.server
         // Iterators for SCAN command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
-        private ArrayKeyIterationFunctions.MainStoreGetExpiredKeys mainStoreDbExpiredScanFuncs;
-        private ArrayKeyIterationFunctions.ObjectStoreGetExpiredKeys objectStoreDbExpiredScanFuncs;
+
+        // Iterators for expired key deletion
+        private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan mainStoreExpiredKeyDeletionScanFuncs;
+        private ArrayKeyIterationFunctions.ObjectStoreExpiredKeyDeletionScan objectStoreExpiredKeyDeletionScanFuncs;
 
         // Iterators for KEYS command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
@@ -114,23 +116,23 @@ namespace Garnet.server
         /// <summary>
         /// Iterates over main store memory collecting expired records.
         /// </summary>
-        internal (long, long) ScanExpiredKeysMainStore(long fromAddress)
+        internal (long, long) MainStoreExpiredKeyDeletionScan(long fromAddress)
         {
-            mainStoreDbExpiredScanFuncs ??= new();
-            mainStoreDbExpiredScanFuncs.Initialize(this);
-            _ = basicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, mainStoreDbExpiredScanFuncs);
-            return (mainStoreDbExpiredScanFuncs.deletedCount, mainStoreDbExpiredScanFuncs.totalCount);
+            mainStoreExpiredKeyDeletionScanFuncs ??= new();
+            mainStoreExpiredKeyDeletionScanFuncs.Initialize(this);
+            _ = basicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, mainStoreExpiredKeyDeletionScanFuncs);
+            return (mainStoreExpiredKeyDeletionScanFuncs.deletedCount, mainStoreExpiredKeyDeletionScanFuncs.totalCount);
         }
 
         /// <summary>
         /// Iterates over object store memory collecting expired records.
         /// </summary>
-        internal (long, long) ScanExpiredKeysObjectStore(long fromAddress)
+        internal (long, long) ObjectStoreExpiredKeyDeletionScan(long fromAddress)
         {
-            objectStoreDbExpiredScanFuncs ??= new();
-            objectStoreDbExpiredScanFuncs.Initialize(this);
-            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, objectStoreDbExpiredScanFuncs);
-            return (objectStoreDbExpiredScanFuncs.deletedCount, objectStoreDbExpiredScanFuncs.totalCount);
+            objectStoreExpiredKeyDeletionScanFuncs ??= new();
+            objectStoreExpiredKeyDeletionScanFuncs.Initialize(this);
+            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, objectStoreExpiredKeyDeletionScanFuncs);
+            return (objectStoreExpiredKeyDeletionScanFuncs.deletedCount, objectStoreExpiredKeyDeletionScanFuncs.totalCount);
         }
 
         /// <summary>
@@ -235,7 +237,7 @@ namespace Garnet.server
                 }
             }
 
-            internal sealed class ObjectStoreGetExpiredKeys : ExpiredKeysBase<byte[], IGarnetObject>
+            internal sealed class ObjectStoreExpiredKeyDeletionScan : ExpiredKeysBase<byte[], IGarnetObject>
             {
                 protected override bool IsExpired(ref IGarnetObject value) => value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value);
                 protected override bool DeleteIfExpiredInMemory(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata)
@@ -246,7 +248,7 @@ namespace Garnet.server
                 }
             }
 
-            internal sealed class MainStoreGetExpiredKeys : ExpiredKeysBase<SpanByte, SpanByte>
+            internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase<SpanByte, SpanByte>
             {
                 protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
                 protected override bool DeleteIfExpiredInMemory(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata)

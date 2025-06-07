@@ -111,9 +111,9 @@ namespace Garnet.server
         public int CommitFrequencyMs = 0;
 
         /// <summary>
-        /// Frequency of background expired key collection in seconds.
+        /// Frequency of background scan for expired key deletion, in seconds.
         /// </summary>
-        public int ExpiredKeyCollectionFrequencySecs = -1;
+        public int ExpiredKeyDeletionScanFrequencySecs = -1;
 
         /// <summary>
         /// Index resize check frequency in seconds.

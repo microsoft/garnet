@@ -397,11 +397,11 @@ namespace Garnet.server
             return checkpointsPaused;
         }
 
-        public override (long numExpiredKeysFound, long totalRecordsScanned) CollectExpiredKeys(int dbId, ILogger logger = null)
+        public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId, ILogger logger = null)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-            var (k1, t1) = CollectExpiredMainStoreKeys(DefaultDatabase, logger);
-            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : CollectExpiredObjectStoreKeys(DefaultDatabase, logger);
+            var (k1, t1) = MainStoreExpiredKeyDeletionScan(DefaultDatabase, logger);
+            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(DefaultDatabase, logger);
             return (k1 + k2, t1 + t2);
         }
 

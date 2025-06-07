@@ -320,16 +320,16 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task ActExpACLsAsync()
+        public async Task ExpDelScanACLsAsync()
         {
             await CheckCommandsAsync(
-                "ACTEXP",
-                [DoActExpAsync]
+                "EXPDELSCAN",
+                [DoExpDelScanAsync]
             );
 
-            static async Task DoActExpAsync(GarnetClient client)
+            static async Task DoExpDelScanAsync(GarnetClient client)
             {
-                await client.ExecuteForStringResultAsync("ACTEXP");
+                await client.ExecuteForStringResultAsync("EXPDELSCAN");
             }
         }
 

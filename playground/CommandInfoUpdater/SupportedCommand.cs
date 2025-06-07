@@ -24,7 +24,7 @@ namespace CommandInfoUpdater
                 new("ACL|USERS", RespCommand.ACL_USERS),
                 new("ACL|WHOAMI", RespCommand.ACL_WHOAMI),
             ]),
-            new("ACTEXP", RespCommand.ACTEXP),
+            new("EXPDELSCAN", RespCommand.EXPDELSCAN),
             new("APPEND", RespCommand.APPEND),
             new("ASKING", RespCommand.ASKING),
             new("ASYNC", RespCommand.ASYNC),
