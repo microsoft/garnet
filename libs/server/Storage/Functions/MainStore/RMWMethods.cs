@@ -1331,7 +1331,6 @@ namespace Garnet.server
                         // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
                         new Span<byte>(newValuePtr + oldValueLength, newValueLength - oldValueLength).Clear();
                     }
-                    Buffer.MemoryCopy(oldValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart, oldValue.Length - functionsState.etagState.etagSkippedStart);
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValueLength);
 
                     if (!overflow)
@@ -1352,7 +1351,6 @@ namespace Garnet.server
                         // Zero-init the rest of the new value before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
                         new Span<byte>(newValuePtr + oldValueLength, newValueLength - oldValueLength).Clear();
                     }
-                    Buffer.MemoryCopy(oldValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.ToPointer() + functionsState.etagState.etagSkippedStart, newValue.Length - functionsState.etagState.etagSkippedStart, oldValue.Length - functionsState.etagState.etagSkippedStart);
                     var bitfieldReturnValue_RO = BitmapManager.BitFieldExecute_RO(bitFieldArgs_RO, newValuePtr, newValueLength);
 
                     CopyRespNumber(bitfieldReturnValue_RO, ref output);
