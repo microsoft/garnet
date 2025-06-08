@@ -505,6 +505,26 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CustomCommandCaseInsensitiveTest()
+        {
+            var x = server.Register.NewCommand("A.SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
+
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var key = "mykey";
+            var origValue = "foovalue0";
+            c.Execute("SET", key, origValue);
+
+            var newValue1 = "foovalue1";
+            var response = await c.ExecuteAsync("a.setifpm", key, newValue1, "foo");
+
+            // This conditional set should pass (prefix matches)
+            var retValue = await c.ExecuteAsync("GET", key);
+            ClassicAssert.AreEqual(newValue1, retValue);
+        }
+
+        [Test]
         public void CustomObjectCommandTest1()
         {
             // Register sample custom command on object

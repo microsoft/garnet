@@ -86,4 +86,30 @@ public static class AsciiUtils
         }
         return true;
     }
+
+    /// <summary>
+    /// Check if two byte spans are equal, where right is an all-upper-case span, ignoring case if there are ASCII bytes.
+    /// </summary>
+    public static bool EqualsUpperCaseSpanIgnoringCase(this ReadOnlySpan<byte> left, ReadOnlySpan<byte> right, bool allowNonLetterChars)
+    {
+        if (!allowNonLetterChars)
+            return EqualsUpperCaseSpanIgnoringCase(left, right);
+
+        if (left.Length != right.Length)
+            return false;
+
+        if (left.SequenceEqual(right))
+            return true;
+
+        for (var i = 0; i < left.Length; i++)
+        {
+            var b1 = left[i];
+            var b2 = right[i];
+
+            if ((b1 != b2) && ((b2 < 'A') || (b2 > 'Z') || (b1 - 32 != b2)))
+                return false;
+        }
+
+        return true;
+    }
 }
