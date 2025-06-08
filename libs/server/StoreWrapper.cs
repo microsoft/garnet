@@ -148,6 +148,8 @@ namespace Garnet.server
         // True if StoreWrapper instance is disposed
         bool disposed;
 
+        internal readonly StreamManager streamManager;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -260,6 +262,11 @@ namespace Garnet.server
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
+            // initialize stream manager
+            if (serverOptions.EnableStreams)
+            {
+                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
+            }
         }
 
         /// <summary>
