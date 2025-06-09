@@ -543,6 +543,10 @@ namespace Garnet
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [OptionValidation]
+        [Option("enable-module-command", Required = false, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections")]
+        public ConnectionProtectionOption EnableModuleCommand { get; set; }
+
+        [OptionValidation]
         [Option("protected-mode", Required = false, HelpText = "Enable protected mode.")]
         public CommandLineBooleanOption ProtectedMode { get; set; }
 
@@ -886,6 +890,7 @@ namespace Garnet
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
+                EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
