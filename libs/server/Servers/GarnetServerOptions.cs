@@ -418,6 +418,11 @@ namespace Garnet.server
         public ConnectionProtectionOption EnableDebugCommand;
 
         /// <summary>
+        /// Enables the MODULE command
+        /// </summary>
+        public ConnectionProtectionOption EnableModuleCommand;
+
+        /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
         /// </summary>
         public string[] ExtensionBinPaths;

@@ -355,6 +355,22 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkRegisterCs(CustomCommandManager customCommandManager)
         {
+            if (parseState.Count < 6)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.REGISTERCS));
+            }
+
+            if (
+                    (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No)
+                 || (
+                        (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local)
+                      && !networkSender.IsLocalConnection()
+                    )
+               )
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.REGISTERCS, "enable-module-command");
+            }
+
             var readPathsOnly = false;
             var optionalParamsRead = 0;
 
@@ -366,9 +382,6 @@ namespace Garnet.server
             var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
 
             ReadOnlySpan<byte> errorMsg = null;
-
-            if (parseState.Count < 6)
-                errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands
             // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
@@ -519,8 +532,18 @@ namespace Garnet.server
         {
             if (parseState.Count < 1) // At least module path is required
             {
-                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
-                return true;
+                return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
+            }
+
+            if (
+                    (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No)
+                 || (
+                        (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local)
+                      && !networkSender.IsLocalConnection()
+                    )
+               )
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
             }
 
             // Read path to module file
@@ -712,10 +735,7 @@ namespace Garnet.server
                     )
                )
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.DEBUG, "enable-debug-command");
             }
 
             var command = parseState.GetArgSliceByRef(0).ReadOnlySpan;

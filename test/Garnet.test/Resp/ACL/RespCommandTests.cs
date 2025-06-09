@@ -32,7 +32,8 @@ namespace Garnet.test.Resp.ACL
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true, enableLua: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword,
+                                                  useAcl: true, enableLua: true, enableModuleCommand: true);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
@@ -5238,7 +5239,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception e)
                 {
-                    if (e.Message == "ERR malformed REGISTERCS command.")
+                    if (e.Message == "ERR wrong number of arguments for 'REGISTERCS' command")
                     {
                         return;
                     }
