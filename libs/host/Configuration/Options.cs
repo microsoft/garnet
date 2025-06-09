@@ -551,11 +551,11 @@ namespace Garnet
         public CommandLineBooleanOption ProtectedMode { get; set; }
 
         [DirectoryPathsValidation(true, false)]
-        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
+        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "Set directories on server from which custom command binaries can be loaded by admin users from list")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
 
         [ModuleFilePathValidation(true, true, false)]
-        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "List of modules to be loaded")]
+        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "Load modules from list")]
         public IEnumerable<string> LoadModuleCS { get; set; }
 
         [Option("extension-allow-unsigned", Required = false, HelpText = "Allow loading custom commands from digitally unsigned assemblies (not recommended)")]

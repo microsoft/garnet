@@ -321,7 +321,7 @@ namespace Garnet
 
                 var modulePath = moduleCSData[0];
                 var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
-                if (ModuleUtils.LoadAssemblies([modulePath], null, true, out var loadedAssemblies, out var errorMsg))
+                if (ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg))
                 {
                     ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
                 }
