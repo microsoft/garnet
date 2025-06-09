@@ -698,7 +698,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "*0\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.EMPTYARRAY);
             return true;
         }
 
@@ -710,7 +710,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "%0\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.EMPTYMAP);
             return true;
         }
 
@@ -722,7 +722,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "~0\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.EMPTYSET);
             return true;
         }
 
@@ -767,7 +767,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "#t\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.RESP3_TRUE);
             return true;
         }
 
@@ -779,7 +779,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "#f\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.RESP3_FALSE);
             return true;
         }
 
@@ -791,7 +791,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, ":0\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.INTEGERZERO);
             return true;
         }
 
@@ -803,7 +803,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, ":1\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.INTEGERONE);
             return true;
         }
 
