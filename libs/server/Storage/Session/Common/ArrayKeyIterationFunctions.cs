@@ -116,22 +116,22 @@ namespace Garnet.server
         /// <summary>
         /// Iterates over main store memory collecting expired records.
         /// </summary>
-        internal (long, long) MainStoreExpiredKeyDeletionScan(long fromAddress)
+        internal (long, long) MainStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
         {
             mainStoreExpiredKeyDeletionScanFuncs ??= new();
             mainStoreExpiredKeyDeletionScanFuncs.Initialize(this);
-            _ = basicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, mainStoreExpiredKeyDeletionScanFuncs);
+            _ = basicContext.Session.ScanCursor(ref fromAddress, untilAddress, mainStoreExpiredKeyDeletionScanFuncs);
             return (mainStoreExpiredKeyDeletionScanFuncs.deletedCount, mainStoreExpiredKeyDeletionScanFuncs.totalCount);
         }
 
         /// <summary>
         /// Iterates over object store memory collecting expired records.
         /// </summary>
-        internal (long, long) ObjectStoreExpiredKeyDeletionScan(long fromAddress)
+        internal (long, long) ObjectStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
         {
             objectStoreExpiredKeyDeletionScanFuncs ??= new();
             objectStoreExpiredKeyDeletionScanFuncs.Initialize(this);
-            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, long.MaxValue, objectStoreExpiredKeyDeletionScanFuncs);
+            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, objectStoreExpiredKeyDeletionScanFuncs);
             return (objectStoreExpiredKeyDeletionScanFuncs.deletedCount, objectStoreExpiredKeyDeletionScanFuncs.totalCount);
         }
 

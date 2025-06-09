@@ -531,7 +531,7 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
-                ExpiredKeyDeletionScan(databasesMapSnapshot[dbId], Logger);
+                ExpiredKeyDeletionScan(databasesMapSnapshot[dbId]);
             }
         }
 
@@ -1055,10 +1055,10 @@ namespace Garnet.server
             activeDbIds.mapLock.CloseLock();
         }
 
-        public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId, ILogger logger = null)
+        public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
         {
-            var (k1, t1) = MainStoreExpiredKeyDeletionScan(GetDbById(dbId), logger);
-            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(GetDbById(dbId), logger);
+            var (k1, t1) = MainStoreExpiredKeyDeletionScan(GetDbById(dbId));
+            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(GetDbById(dbId));
             return (k1 + k2, t1 + t2);
         }
 

@@ -424,15 +424,14 @@ namespace Garnet.server
         /// Execute a store-wide expired key deletion scan operation for the specified database
         /// </summary>
         /// <param name="db">Database</param>
-        /// <param name="logger">Logger</param>
-        protected void ExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
+        protected void ExpiredKeyDeletionScan(GarnetDatabase db)
         {
-            _ = MainStoreExpiredKeyDeletionScan(db, logger);
+            _ = MainStoreExpiredKeyDeletionScan(db);
 
             if (StoreWrapper.serverOptions.DisableObjects)
                 return;
 
-            _ = ObjectStoreExpiredKeyDeletionScan(db, logger);
+            _ = ObjectStoreExpiredKeyDeletionScan(db);
         }
 
         /// <summary>
@@ -711,9 +710,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public abstract (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId, ILogger logger = null);
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
 
-        protected (long numExpiredKeysFound, long totalRecordsScanned) MainStoreExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
+        protected (long numExpiredKeysFound, long totalRecordsScanned) MainStoreExpiredKeyDeletionScan(GarnetDatabase db)
         {
             if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
             {
@@ -722,13 +721,14 @@ namespace Garnet.server
             }
 
             var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
-            (var deletedCount, var totalCount) = db.MainStoreExpiredKeyDeletionDbStorageSession.MainStoreExpiredKeyDeletionScan(scanFrom);
-            logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
+            var scanUntil = StoreWrapper.store.Log.TailAddress;
+            (var deletedCount, var totalCount) = db.MainStoreExpiredKeyDeletionDbStorageSession.MainStoreExpiredKeyDeletionScan(scanFrom, scanUntil);
+            Logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
 
             return (deletedCount, totalCount);
         }
 
-        protected (long numExpiredKeysFound, long totalRecordsScanned) ObjectStoreExpiredKeyDeletionScan(GarnetDatabase db, ILogger logger = null)
+        protected (long numExpiredKeysFound, long totalRecordsScanned) ObjectStoreExpiredKeyDeletionScan(GarnetDatabase db)
         {
             if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
             {
@@ -737,8 +737,9 @@ namespace Garnet.server
             }
 
             var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
-            (var deletedCount, var totalCount) = db.ObjectStoreExpiredKeyDeletionDbStorageSession.ObjectStoreExpiredKeyDeletionScan(scanFrom);
-            logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to tail for DB {id}", deletedCount, totalCount, scanFrom, db.Id);
+            var scanUntil = StoreWrapper.store.Log.TailAddress;
+            (var deletedCount, var totalCount) = db.ObjectStoreExpiredKeyDeletionDbStorageSession.ObjectStoreExpiredKeyDeletionScan(scanFrom, scanUntil);
+            Logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
 
             return (deletedCount, totalCount);
         }
