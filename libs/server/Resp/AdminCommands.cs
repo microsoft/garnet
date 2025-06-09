@@ -11,6 +11,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server.Auth.Settings;
 using Garnet.server.Custom;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -567,8 +568,7 @@ namespace Garnet.server
             {
                 if (!errorMsg.IsEmpty)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(errorMsg);
                 }
 
                 return true;
@@ -591,8 +591,7 @@ namespace Garnet.server
 
             if (!errorMsg.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
 
             return true;
@@ -742,53 +741,57 @@ namespace Garnet.server
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PANIC))
                 // Throwing an exception is intentional and desirable for this command.
-                throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
+                throw new GarnetException(LogLevel.Debug, panic: true);
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ERROR))
             {
                 if (parseState.Count != 2)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithWrongNumberOfArguments("error");
                 }
 
-                while (!RespWriteUtils.TryWriteError(parseState.GetString(1), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(parseState.GetString(1));
+                return true;
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LOG))
+            {
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArguments("log");
+                }
+
+                logger?.LogInformation("DEBUG LOG: {LOG}", parseState.GetString(1));
+
+                WriteDirect(CmdStrings.RESP_OK);
                 return true;
             }
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
-                var help = new List<string>()
+                var help = new string[]
                 {
                     "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
-                    "PANIC",
-                    "\tCrash the server simulating a panic.",
                     "ERROR <string>",
                     "\tReturn a Redis protocol error with <string> as message. Useful for clients",
                     "\tunit tests to simulate Redis errors.",
+                    "LOG <message>",
+                    "\tWrite <message> to the server log.",
+                    "PANIC",
+                    "\tCrash the server simulating a panic.",
                     "HELP",
                     "\tPrints this help"
                 };
 
-                while (!RespWriteUtils.TryWriteArrayLength(help.Count, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteArrayLength(help.Length);
                 foreach (var line in help)
                 {
-                    while (!RespWriteUtils.TryWriteSimpleString(line, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSimpleString(line);
                 }
-
                 return true;
             }
 
-            var error = string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG));
-            while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
-                SendAndReset();
-
+            WriteError(string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG)));
             return true;
         }
 
