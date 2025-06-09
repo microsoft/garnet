@@ -110,6 +110,7 @@ namespace Garnet.server
             // Expired data
             if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
+                value = null;
                 rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return false;
             }
