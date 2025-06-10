@@ -161,6 +161,7 @@ namespace Garnet.server
 
                         if (output.HasRemoveKey)
                         {
+                            value = null;
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
