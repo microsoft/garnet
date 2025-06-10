@@ -382,11 +382,11 @@ namespace Garnet.server
                         if (arraySize < 0)
                             return default;
 
-                        if (c == '%') // RESP3 Map
-                            arraySize *= 2;
-
                         if (!isScanOutput && arraySize == 0)
                             return [];
+
+                        if (c == '%') // RESP3 Map
+                            arraySize *= 2;
 
                         // It is possible that the array elements consist of nested arrays.
                         // This code only supports nested arrays of a consistent dimension (i.e. not jagged), so we use the first element's dimension to infer the rest.
