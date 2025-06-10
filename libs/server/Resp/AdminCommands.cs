@@ -54,6 +54,7 @@ namespace Garnet.server
                 RespCommand.SLOWLOG_RESET => NetworkSlowLogReset(),
                 RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
+                RespCommand.EXPDELSCAN => NetworkEXPDELSCAN(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
@@ -887,6 +888,49 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// EXPDELSCAN [DBID]
+        /// Scan the mutable region and delete all expired keys.
+        /// This is meant to be able to let users do on-demand expiration, and even build their own schedulers
+        /// for calling expiration based on their known workload patterns.
+        /// </summary>
+        private bool NetworkEXPDELSCAN()
+        {
+            if (parseState.Count > 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPDELSCAN));
+            }
+
+            if (storeWrapper.serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_EXPDELSCAN_INVALID);
+            }
+
+            // Default database as default choice.
+            int dbId = 0;
+            if (parseState.Count > 0)
+            {
+                if (!TryParseDatabaseId(0, out dbId))
+                    return true;
+            }
+
+            (var recordsExpired, var recordsScanned) = storeWrapper.ExpiredKeyDeletionScan(dbId);
+
+            // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
+            int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
+
+            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsScanned, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
