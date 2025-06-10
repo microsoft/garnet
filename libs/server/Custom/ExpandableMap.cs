@@ -295,7 +295,7 @@ namespace Garnet.server
             for (var i = 0; i < mapSize; i++)
             {
                 var currCmd = map[i];
-                if (currCmd?.Name != null && cmd.EqualsUpperCaseSpanIgnoringCase(currCmd.Name, true))
+                if (currCmd != null && cmd.SequenceEqual(new ReadOnlySpan<byte>(currCmd.Name)))
                 {
                     value = currCmd;
                     return true;
