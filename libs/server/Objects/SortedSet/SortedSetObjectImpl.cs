@@ -300,6 +300,7 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
+            // It's useful to fix RESP2 in the internal API as that just reads back the output.
             if (input.arg2 > 0)
                 respProtocolVersion = (byte)input.arg2;
 
