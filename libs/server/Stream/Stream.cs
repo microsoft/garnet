@@ -218,11 +218,11 @@ namespace Garnet.server
         /// <returns>True if entry is added successfully</returns>
         public unsafe void AddEntry(byte* value, int valueLength, ArgSlice idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
-            byte* ptr = output.SpanByte.ToPointer();
-            var curr = ptr;
-            var end = curr + output.Length;
-            MemoryHandle ptrHandle = default;
-            bool isMemory = false;
+            // byte* ptr = output.SpanByte.ToPointer();
+            // var curr = ptr;
+            // var end = curr + output.Length;
+            // MemoryHandle ptrHandle = default;
+            // bool isMemory = false;
             byte* tmpPtr = null;
             StreamID id = default;
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
@@ -281,8 +281,8 @@ namespace Garnet.server
             {
                 // log.Commit();
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
+                // if (isMemory) ptrHandle.Dispose();
+                // output.Length = (int)(curr - ptr) + sizeof(ObjectOutputHeader);
                 _lock.WriteUnlock();
 
             }
