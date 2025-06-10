@@ -31,6 +31,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
+            value = null;
             return true;
         }
     }

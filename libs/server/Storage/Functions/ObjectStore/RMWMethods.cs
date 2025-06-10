@@ -110,6 +110,7 @@ namespace Garnet.server
             // Expired data
             if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
                 value = null;
                 rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return false;
@@ -161,6 +162,7 @@ namespace Garnet.server
 
                         if (output.HasRemoveKey)
                         {
+                            functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
                             value = null;
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
