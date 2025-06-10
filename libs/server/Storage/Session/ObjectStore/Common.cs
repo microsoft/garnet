@@ -224,16 +224,110 @@ namespace Garnet.server
         /// <param name="error">A description of the error, if there is any</param>
         /// <param name="isScanOutput">True when the output comes from HSCAN, ZSCAN OR SSCAN command</param>
         /// <returns></returns>
-        /// <remarks>An array in array will be flattened into the return array. RESP3 map/set types will be returned as arrays.</remarks>
+        /// <remarks>An RESP3 array in array will be flattened into the return array. RESP3 map/set types will be returned as arrays.</remarks>
         /// <example>"*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n" will return [a, 0, b, 1]</example>
         unsafe ArgSlice[] ProcessRespArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput = false)
+        {
+            if (functionsState.respProtocolVersion >= 3)
+                return ProcessResp3ArrayOutput(output, out error, isScanOutput);
+
+            return ProcessResp2ArrayOutput(output, out error, isScanOutput);
+        }
+
+        /// <summary>
+        /// Converts an array of elements in RESP format to ArgSlice[] type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <param name="error">A description of the error, if there is any</param>
+        /// <param name="isScanOutput">True when the output comes from HSCAN, ZSCAN OR SSCAN command</param>
+        /// <returns></returns>
+        private unsafe ArgSlice[] ProcessResp2ArrayOutput(GarnetObjectStoreOutput outputFooter, out string error, bool isScanOutput)
         {
             ArgSlice[] elements = default;
             error = default;
 
             // For reading the elements in the output
             byte* element = null;
-            int len = 0;
+            var len = 0;
+
+            var outputSpan = outputFooter.SpanByteAndMemory.IsSpanByte ?
+                             outputFooter.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.SpanByteAndMemory.AsMemoryReadOnlySpan();
+
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+                    var end = outputPtr + outputSpan.Length;
+
+                    if (*refPtr == '-')
+                    {
+                        if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, end))
+                            return default;
+                    }
+                    else if (*refPtr == '*')
+                    {
+                        if (isScanOutput)
+                        {
+                            // Read the first two elements
+                            if (!RespReadUtils.TryReadUnsignedArrayLength(out var outerArraySize, ref refPtr, end))
+                                return default;
+
+                            element = null;
+                            len = 0;
+                            // Read cursor value
+                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
+                                return default;
+                        }
+
+                        // Get the number of elements
+                        if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, end))
+                            return default;
+
+                        // Create the argslice[]
+                        elements = new ArgSlice[isScanOutput ? arraySize + 1 : arraySize];
+
+                        var i = 0;
+                        if (isScanOutput)
+                            elements[i++] = new ArgSlice(element, len);
+
+                        for (; i < elements.Length; i++)
+                        {
+                            element = null;
+                            len = 0;
+                            if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
+                            {
+                                elements[i] = new ArgSlice(element, len);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        byte* result = null;
+                        len = 0;
+                        if (!RespReadUtils.TryReadPtrWithLengthHeader(ref result, ref len, ref refPtr, end))
+                            return default;
+                        elements = [new ArgSlice(result, len)];
+                    }
+                }
+            }
+            finally
+            {
+                if (!outputFooter.SpanByteAndMemory.IsSpanByte)
+                    outputFooter.SpanByteAndMemory.Memory.Dispose();
+            }
+
+            return elements;
+        }
+
+        private unsafe ArgSlice[] ProcessResp3ArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput)
+        {
+            ArgSlice[] elements = default;
+            error = default;
+
+            // For reading the elements in the output
+            byte* element = null;
+            var len = 0;
 
             var outputSpan = output.SpanByteAndMemory.IsSpanByte ?
                              output.SpanByteAndMemory.SpanByte.AsReadOnlySpan() : output.SpanByteAndMemory.AsMemoryReadOnlySpan();
@@ -246,11 +340,18 @@ namespace Garnet.server
                     var c = (char)*refPtr;
                     var end = outputPtr + outputSpan.Length;
 
+                    if (c == '_')
+                    {
+                        // RESP3 NULL
+                        return default;
+                    }
+
                     if (c == '-')
                     {
                         if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, end))
                             return default;
                     }
+
                     // We support arrays ('*'), RSEP3 sets ('~') and RESP3 maps ('%').
                     // All are returned as arrays.
                     // Returning other types will lead to unnecessary duplication of code,
@@ -271,29 +372,49 @@ namespace Garnet.server
                         }
 
                         // Get the number of elements
-                        if (!RespReadUtils.TryReadUnsignedLengthHeader(out var arraySize, ref refPtr, end, c))
+                        if (!RespReadUtils.TryReadSignedLengthHeader(out var arraySize, ref refPtr, end, c))
                             return default;
 
-                        // Create an argslice list. Since we support array-in-array, we do not know the number of
-                        // elements in advance.
-                        System.Collections.Generic.List<ArgSlice> elemlist = new(isScanOutput ? arraySize + 1 : arraySize);
+                        if (arraySize < 0)
+                            return default;
+
+                        if (c == '%') // RESP3 Map
+                            arraySize *= 2;
+
+                        if (!isScanOutput && arraySize == 0)
+                            return [];
+
+                        // RESP3 command can output array-in-array cases.
+                        // We'll assume that if there's an array-in-array, it's always the first element
+                        // and that the shape is constant so as to calculate the required length in advance.
+                        var outerLen = 1;
+                        c = (char)*refPtr;
+                        if ((c == '*') || (c == '~') || (c == '%'))
+                        {
+                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out outerLen, ref refPtr, end, c))
+                                return default;
+                            if (c == '%')
+                                outerLen *= 2;
+                        }
+
+                        // Create the argslice[]
+                        elements = new ArgSlice[(arraySize * outerLen) + (isScanOutput ? 1 : 0)];
 
                         var i = 0;
                         if (isScanOutput)
-                            elemlist.Add(new ArgSlice(element, len));
+                            elements[i++] = new ArgSlice(element, len);
 
-                        for (; i < arraySize; i++)
+                        for (; i < elements.Length; i++)
                         {
                             element = null;
                             len = 0;
 
-                            // Handle array-in-array. We accept the RESP3 types for same reasons as above.
-                            var outerLen = 1;
                             c = (char)*refPtr;
 
+                            // We still need to read the field to advance the pointer.
                             if ((c == '*') || (c == '~') || (c == '%'))
                             {
-                                if (!RespReadUtils.TryReadUnsignedLengthHeader(out outerLen, ref refPtr, end, c))
+                                if (!RespReadUtils.TryReadUnsignedLengthHeader(out _, ref refPtr, end, c))
                                     return default;
                             }
 
@@ -301,12 +422,10 @@ namespace Garnet.server
                             {
                                 if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                                 {
-                                    elemlist.Add(new ArgSlice(element, len));
+                                    elements[i] = new ArgSlice(element, len);
                                 }
                             }
                         }
-
-                        elements = [.. elemlist];
                     }
                     // RESP3 double, e.g. ",1.2345\r\n"
                     else if (c == ',')
