@@ -117,6 +117,7 @@ namespace Garnet.server
         DECR,
         DECRBY,
         DEL,
+        DELIFEXPIM,
         DELIFGREATER,
         EXPIRE,
         EXPIREAT,
@@ -275,6 +276,7 @@ namespace Garnet.server
         TIME,
         ROLE,
         SAVE,
+        EXPDELSCAN,
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
@@ -2330,6 +2332,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.SAVE))
             {
                 return RespCommand.SAVE;
+            }
+            else if (command.SequenceEqual(CmdStrings.EXPDELSCAN))
+            {
+                return RespCommand.EXPDELSCAN;
             }
             else if (command.SequenceEqual(CmdStrings.LASTSAVE))
             {

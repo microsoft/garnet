@@ -185,6 +185,11 @@ namespace Garnet.server
         public void ExecuteObjectCollection();
 
         /// <summary>
+        /// Executes a store-wide expired key deletion scan operation
+        /// </summary>
+        public void ExpiredKeyDeletionScan();
+
+        /// <summary>
         /// Start object size trackers for all active databases
         /// </summary>
         public void StartObjectSizeTrackers(CancellationToken token = default);
@@ -257,5 +262,10 @@ namespace Garnet.server
         /// <param name="dbId">Database ID</param>
         /// <returns>Functions state</returns>
         internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
+
+        /// <summary>
+        /// On Demand Expired Keys collection, for a db given its ID
+        /// </summary>
+        public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
     }
 }
