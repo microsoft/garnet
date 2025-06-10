@@ -430,27 +430,10 @@ namespace Garnet.server
                             {
                                 if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                                 {
-                                    elements[i+j] = new ArgSlice(element, len);
+                                    elements[i + j] = new ArgSlice(element, len);
                                 }
                             }
                         }
-                    }
-                    // RESP3 double, e.g. ",1.2345\r\n"
-                    else if (c == ',')
-                    {
-                        if (refPtr == end)
-                            return default;
-
-                        // Skip the comma.
-                        var start = ++refPtr;
-
-                        if (!RespReadUtils.TryReadAsSpan(out var res, ref refPtr, end))
-                            return default;
-
-                        if (!double.TryParse(res, out _))
-                            return default;
-
-                        elements = [new ArgSlice(start, res.Length)];
                     }
                     // Bulk string is assumed here.
                     else
@@ -685,12 +668,33 @@ namespace Garnet.server
                 fixed (byte* outputPtr = outputSpan)
                 {
                     var refPtr = outputPtr;
+                    var end = outputPtr + outputSpan.Length;
 
-                    if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr,
-                            outputPtr + outputSpan.Length) || len < 0)
-                        return default;
+                    // RESP3 double, e.g. ",1.2345\r\n"
+                    if (*refPtr == ',')
+                    {
+                        if (refPtr == end)
+                            return default;
 
-                    result = new ArgSlice(element, len);
+                        // Skip the comma.
+                        var start = ++refPtr;
+
+                        if (!RespReadUtils.TryReadAsSpan(out var res, ref refPtr, end))
+                            return default;
+
+                        if (!double.TryParse(res, out _))
+                            return default;
+
+                        result = new ArgSlice(start, res.Length);
+                    }
+                    else
+                    {
+                        if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr, end)
+                         || len < 0)
+                            return default;
+
+                        result = new ArgSlice(element, len);
+                    }
                 }
             }
             finally

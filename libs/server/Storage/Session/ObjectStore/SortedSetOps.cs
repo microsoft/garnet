@@ -400,11 +400,11 @@ namespace Garnet.server
             // Process output
             if (status == GarnetStatus.OK)
             {
-                var result = ProcessRespArrayOutput(output, out var error);
-                if (error == default)
+                var result = ProcessRespSingleTokenOutput(output);
+                if (result.length > 0)
                 {
                     // get the new score
-                    _ = NumUtils.TryParse(result[0].ReadOnlySpan, out newScore);
+                    _ = NumUtils.TryParse(result.ReadOnlySpan, out newScore);
                 }
             }
 
