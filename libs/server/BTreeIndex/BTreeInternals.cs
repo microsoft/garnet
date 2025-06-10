@@ -142,7 +142,7 @@ namespace Garnet.server.BTreeIndex
 
             return node;
         }
- 
+
         public byte* GetKey(int index)
         {
             byte* keyAddress = keys + (index * KEY_SIZE);

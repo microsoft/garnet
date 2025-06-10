@@ -46,7 +46,7 @@ namespace Garnet.test
 
             // free the leaf
             BTree.FreeNode(ref leaf);
-            
+
             leaf = null;
         }
 

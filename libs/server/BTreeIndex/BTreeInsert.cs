@@ -25,7 +25,7 @@ namespace Garnet.server.BTreeIndex
             return InsertToLeafNode(ref leaf, ref rootToTailLeaf, key, value, true);
         }
 
-        public bool Insert(byte* key,ReadOnlySpan<byte> keySpan, Value value)
+        public bool Insert(byte* key, ReadOnlySpan<byte> keySpan, Value value)
         {
             BTreeNode* leaf = null;
             stats.totalFastInserts++;
@@ -38,7 +38,7 @@ namespace Garnet.server.BTreeIndex
         public bool InsertToLeafNode(ref BTreeNode* leaf, ref BTreeNode*[] nodesTraversed, byte* key, Value value, bool appendToLeaf = false)
         {
             int index;
-            if(appendToLeaf)
+            if (appendToLeaf)
             {
                 // if leaf has space 
                 if (leaf->info->count < BTreeNode.LEAF_CAPACITY)
@@ -53,7 +53,7 @@ namespace Garnet.server.BTreeIndex
                 index = leaf->info->count;
                 return SplitLeafNode(ref leaf, ref nodesTraversed, key, value, index);
             }
-            
+
             // find the index where the key should be inserted
             index = leaf->LowerBound(key);
             if (index < leaf->info->count && BTreeNode.Compare(key, leaf->GetKey(index)) == 0)
@@ -69,7 +69,7 @@ namespace Garnet.server.BTreeIndex
                 var sourceSpan = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, (leaf->info->count - index) * BTreeNode.KEY_SIZE);
                 var destinationSpan = new Span<byte>(leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index) * BTreeNode.KEY_SIZE);
                 sourceSpan.CopyTo(destinationSpan);
-                
+
                 leaf->SetKey(index, key);
                 leaf->SetValue(index, value);
                 leaf->info->count++;
@@ -84,7 +84,7 @@ namespace Garnet.server.BTreeIndex
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             stats.numAllocates++;
             BTreeNode* newLeaf = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
-    
+
             leaf->info->count = SPLIT_LEAF_POSITION;
             newLeaf->info->previous = leaf;
             newLeaf->info->next = leaf->info->next;
@@ -108,7 +108,7 @@ namespace Garnet.server.BTreeIndex
             {
                 // new key goes to the new leaf
                 var newIndex = index - leaf->info->count;
-                
+
                 // move the keys from old node to the new node using ReadOnlySpan
                 var sourceSpan = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, newIndex * BTreeNode.KEY_SIZE);
                 var destinationSpan = new Span<byte>(newLeaf->keys, newIndex * BTreeNode.KEY_SIZE);
@@ -125,7 +125,7 @@ namespace Garnet.server.BTreeIndex
                 var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newIndex * sizeof(Value));
                 existingLeafValuesSpan.CopyTo(newLeafValuesSpan);
                 newLeaf->SetValue(newIndex, value);
-                
+
                 var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
                 var newLeafValuesSpan2 = new Span<Value>(newLeaf->data.values + newIndex + 1, (BTreeNode.LEAF_CAPACITY - index) * sizeof(Value));
                 existingLeafValuesSpan2.CopyTo(newLeafValuesSpan2);
@@ -136,7 +136,7 @@ namespace Garnet.server.BTreeIndex
                 var existingLeafKeysSpan = new ReadOnlySpan<byte>(leaf->keys + (leaf->info->count - 1) * BTreeNode.KEY_SIZE, newLeaf->info->count * BTreeNode.KEY_SIZE);
                 var newLeafKeysSpan = new Span<byte>(newLeaf->keys, newLeaf->info->count * BTreeNode.KEY_SIZE);
                 existingLeafKeysSpan.CopyTo(newLeafKeysSpan);
-                
+
                 var existingLeafKeysSpan2 = new ReadOnlySpan<byte>(leaf->keys + index * BTreeNode.KEY_SIZE, (leaf->info->count - index - 1) * BTreeNode.KEY_SIZE);
                 var newLeafKeysSpan2 = new Span<byte>(leaf->keys + ((index + 1) * BTreeNode.KEY_SIZE), (leaf->info->count - index - 1) * BTreeNode.KEY_SIZE);
                 existingLeafKeysSpan2.CopyTo(newLeafKeysSpan2);
@@ -145,14 +145,14 @@ namespace Garnet.server.BTreeIndex
                 var existingLeafValuesSpan = new ReadOnlySpan<Value>(leaf->data.values + leaf->info->count - 1, newLeaf->info->count * sizeof(Value));
                 var newLeafValuesSpan = new Span<Value>(newLeaf->data.values, newLeaf->info->count * sizeof(Value));
                 existingLeafValuesSpan.CopyTo(newLeafValuesSpan);
-                
+
                 var existingLeafValuesSpan2 = new ReadOnlySpan<Value>(leaf->data.values + index, (leaf->info->count - index - 1) * sizeof(Value));
                 var newLeafValuesSpan2 = new Span<Value>(leaf->data.values + index + 1, (leaf->info->count - index - 1) * sizeof(Value));
                 existingLeafValuesSpan2.CopyTo(newLeafValuesSpan2);
                 leaf->SetValue(index, value);
                 leaf->info->validCount++;
             }
-            
+
             uint validCount = 0;
             // the leaf that is split will also be the tail node; so update the tail pointer
             if (leaf == tail)
@@ -168,7 +168,7 @@ namespace Garnet.server.BTreeIndex
             // update the parent node with the new key
             PushUpKeyInInternalNode(ref nodesTraversed, newLeaf->GetKey(0), ref newLeaf, SPLIT_INTERNAL_POSITION, validCount);
             return true;
-        } 
+        }
 
         public void PushUpKeyInInternalNode(ref BTreeNode*[] nodesTraversed, byte* key, ref BTreeNode* child, int splitPos, uint newValidCount)
         {
@@ -211,7 +211,7 @@ namespace Garnet.server.BTreeIndex
             var sourceSpan = new ReadOnlySpan<byte>(node->keys + index * BTreeNode.KEY_SIZE, (node->info->count - index) * BTreeNode.KEY_SIZE);
             var destinationSpan = new Span<byte>(node->keys + ((index + 1) * BTreeNode.KEY_SIZE), (node->info->count - index) * BTreeNode.KEY_SIZE);
             sourceSpan.CopyTo(destinationSpan);
-            
+
             // move all children starting from index+1 to the right using a for loop
             for (var j = node->info->count; j > index; j--)
             {
@@ -260,16 +260,16 @@ namespace Garnet.server.BTreeIndex
                 var sourceSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + (nodeToSplit->info->count + 1) * BTreeNode.KEY_SIZE, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE);
                 var destinationSpan = new Span<byte>(newNode->keys, (index - nodeToSplit->info->count - 1) * BTreeNode.KEY_SIZE);
                 sourceSpan.CopyTo(destinationSpan);
-                
+
                 var existingNodeKeysSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
                 var newNodeKeysSpan = new Span<byte>(newNode->keys + (index - nodeToSplit->info->count) * BTreeNode.KEY_SIZE, (BTreeNode.INTERNAL_CAPACITY - index) * BTreeNode.KEY_SIZE);
                 existingNodeKeysSpan.CopyTo(newNodeKeysSpan);
                 newNode->SetKey(index - nodeToSplit->info->count - 1, key);
-                
+
                 var existingNodeChildrenSpan = new ReadOnlySpan<byte>(nodeToSplit->data.children + 1 + nodeToSplit->info->count, (index - nodeToSplit->info->count) * sizeof(BTreeNode*));
                 var newNodeChildrenSpan = new Span<byte>(newNode->data.children, (index - nodeToSplit->info->count) * sizeof(BTreeNode*));
                 existingNodeChildrenSpan.CopyTo(newNodeChildrenSpan);
-                
+
                 var existingNodeChildrenSpan2 = new ReadOnlySpan<byte>(nodeToSplit->data.children + 1 + index, newNode->info->count * sizeof(BTreeNode*));
                 var newNodeChildrenSpan2 = new Span<byte>(newNode->data.children + 1 + index - nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*));
                 existingNodeChildrenSpan2.CopyTo(newNodeChildrenSpan2);
@@ -281,7 +281,7 @@ namespace Garnet.server.BTreeIndex
                 var sourceSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + nodeToSplit->info->count * BTreeNode.KEY_SIZE, newNode->info->count * BTreeNode.KEY_SIZE);
                 var destinationSpan = new Span<byte>(newNode->keys, newNode->info->count * BTreeNode.KEY_SIZE);
                 sourceSpan.CopyTo(destinationSpan);
-                
+
                 var existingNodeChildrenSpan = new ReadOnlySpan<byte>(nodeToSplit->data.children + 1 + nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*));
                 var newNodeChildrenSpan = new Span<byte>(newNode->data.children + 1, newNode->info->count * sizeof(BTreeNode*));
                 existingNodeChildrenSpan.CopyTo(newNodeChildrenSpan);
@@ -293,16 +293,16 @@ namespace Garnet.server.BTreeIndex
                 var sourceSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + nodeToSplit->info->count * BTreeNode.KEY_SIZE, newNode->info->count * BTreeNode.KEY_SIZE);
                 var destinationSpan = new Span<byte>(newNode->keys, newNode->info->count * BTreeNode.KEY_SIZE);
                 sourceSpan.CopyTo(destinationSpan);
-                
+
                 var existingNodeKeysSpan = new ReadOnlySpan<byte>(nodeToSplit->keys + index * BTreeNode.KEY_SIZE, (nodeToSplit->info->count - index) * BTreeNode.KEY_SIZE);
                 var newNodeKeysSpan = new Span<byte>(nodeToSplit->keys + ((index + 1) * BTreeNode.KEY_SIZE), (nodeToSplit->info->count - index) * BTreeNode.KEY_SIZE);
                 existingNodeKeysSpan.CopyTo(newNodeKeysSpan);
                 nodeToSplit->SetKey(index, key);
-                
+
                 var existingNodeChildrenSpan = new ReadOnlySpan<byte>(nodeToSplit->data.children + nodeToSplit->info->count, newNode->info->count * sizeof(BTreeNode*));
                 var newNodeChildrenSpan = new Span<byte>(newNode->data.children, newNode->info->count * sizeof(BTreeNode*));
                 existingNodeChildrenSpan.CopyTo(newNodeChildrenSpan);
-                
+
                 var existingNodeChildrenSpan2 = new ReadOnlySpan<byte>(nodeToSplit->data.children + index + 1, (nodeToSplit->info->count - index + 1) * sizeof(BTreeNode*));
                 var newNodeChildrenSpan2 = new Span<byte>(nodeToSplit->data.children + index + 2, (nodeToSplit->info->count - index + 1) * sizeof(BTreeNode*));
                 existingNodeChildrenSpan2.CopyTo(newNodeChildrenSpan2);

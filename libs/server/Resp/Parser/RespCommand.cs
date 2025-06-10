@@ -976,7 +976,7 @@ namespace Garnet.server
                                             return RespCommand.XDEL;
                                         }
                                         break;
-                                        
+
                                     case 'Z':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
                                         {
@@ -1330,7 +1330,7 @@ namespace Garnet.server
                                             return RespCommand.UNLINK;
                                         }
                                         break;
-                                        
+
                                     case 'X':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XRANGE\r\n"u8))
                                         {

@@ -142,7 +142,7 @@ namespace Garnet.server.BTreeIndex
                         i++;
                     }
                 }
-               
+
                 if (leaf == endLeaf || scanComplete)
                 {
                     break;
