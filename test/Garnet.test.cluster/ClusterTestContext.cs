@@ -312,7 +312,7 @@ namespace Garnet.test.cluster
                         logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                         var node = nodes[i];
                         nodes[i] = null;
-                        node.Dispose();
+                        node.Dispose(true);
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }
                 });
