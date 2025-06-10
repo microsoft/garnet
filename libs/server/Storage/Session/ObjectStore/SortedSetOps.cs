@@ -391,7 +391,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(header, ref parseState, arg2: 2);
 
             var output = new GarnetObjectStoreOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,

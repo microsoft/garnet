@@ -300,6 +300,9 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
+            if (input.arg2 > 0)
+                respProtocolVersion = (byte)input.arg2;
+
             // ZINCRBY key increment member
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 

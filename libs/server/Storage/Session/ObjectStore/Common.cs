@@ -670,31 +670,11 @@ namespace Garnet.server
                     var refPtr = outputPtr;
                     var end = outputPtr + outputSpan.Length;
 
-                    // RESP3 double, e.g. ",1.2345\r\n"
-                    if (*refPtr == ',')
-                    {
-                        if (refPtr == end)
-                            return default;
+                    if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr, end)
+                        || len < 0)
+                        return default;
 
-                        // Skip the comma.
-                        var start = ++refPtr;
-
-                        if (!RespReadUtils.TryReadAsSpan(out var res, ref refPtr, end))
-                            return default;
-
-                        if (!double.TryParse(res, out _))
-                            return default;
-
-                        result = new ArgSlice(start, res.Length);
-                    }
-                    else
-                    {
-                        if (!RespReadUtils.TryReadPtrWithSignedLengthHeader(ref element, ref len, ref refPtr, end)
-                         || len < 0)
-                            return default;
-
-                        result = new ArgSlice(element, len);
-                    }
+                    result = new ArgSlice(element, len);
                 }
             }
             finally
