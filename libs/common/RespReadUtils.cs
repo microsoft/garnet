@@ -921,7 +921,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
+        public static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
             if (!TryReadSignedLengthHeader(out length, ref ptr, end))

@@ -229,9 +229,9 @@ namespace Garnet.server
         unsafe ArgSlice[] ProcessRespArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput = false)
         {
             if (functionsState.respProtocolVersion >= 3)
-                return ProcessResp3ArrayOutput(output, out error, isScanOutput);
+                return __ProcessResp3ArrayOutput(output, out error, isScanOutput);
 
-            return ProcessResp2ArrayOutput(output, out error, isScanOutput);
+            return __ProcessResp2ArrayOutput(output, out error, isScanOutput);
         }
 
         /// <summary>
@@ -241,7 +241,7 @@ namespace Garnet.server
         /// <param name="error">A description of the error, if there is any</param>
         /// <param name="isScanOutput">True when the output comes from HSCAN, ZSCAN OR SSCAN command</param>
         /// <returns></returns>
-        private unsafe ArgSlice[] ProcessResp2ArrayOutput(GarnetObjectStoreOutput outputFooter, out string error, bool isScanOutput)
+        private unsafe ArgSlice[] __ProcessResp2ArrayOutput(GarnetObjectStoreOutput outputFooter, out string error, bool isScanOutput)
         {
             ArgSlice[] elements = default;
             error = default;
@@ -320,8 +320,13 @@ namespace Garnet.server
             return elements;
         }
 
-        private unsafe ArgSlice[] ProcessResp3ArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput)
+        private unsafe ArgSlice[] __ProcessResp3ArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput)
         {
+            bool IsSupportedArrayType(char c)
+            {
+                return c is '*' or '~' or '%';
+            }
+
             ArgSlice[] elements = default;
             error = default;
 
@@ -356,18 +361,17 @@ namespace Garnet.server
                     // All are returned as arrays.
                     // Returning other types will lead to unnecessary duplication of code,
                     // as we need to support RESP2 arrays in all cases anyway.
-                    else if ((c == '*') || (c == '~') || (c == '%'))
+                    else if (IsSupportedArrayType(c))
                     {
                         if (isScanOutput)
                         {
-                            // Read the first two elements
-                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out var outerArraySize, ref refPtr, end, c))
-                                return default;
-
                             element = null;
                             len = 0;
+                            // Read the first two elements
+                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out var outerArraySize, ref refPtr, end, c)
                             // Read cursor value
-                            if (!RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
+                             || !RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end)
+                                )
                                 return default;
                         }
 
@@ -384,45 +388,49 @@ namespace Garnet.server
                         if (!isScanOutput && arraySize == 0)
                             return [];
 
-                        // RESP3 command can output array-in-array cases.
-                        // We'll assume that if there's an array-in-array, it's always the first element
-                        // and that the shape is constant so as to calculate the required length in advance.
-                        var outerLen = 1;
+                        // It is possible that the array elements consist of nested arrays.
+                        // This code only supports nested arrays of a consistent dimension (i.e. not jagged), so we use the first element's dimension to infer the rest.
+                        var innerLen = 1;
+                        var isNestedArray = false;
                         c = (char)*refPtr;
-                        if ((c == '*') || (c == '~') || (c == '%'))
+                        if (IsSupportedArrayType(c))
                         {
-                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out outerLen, ref refPtr, end, c))
+                            isNestedArray = true;
+                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out innerLen, ref refPtr, end, c))
                                 return default;
                             if (c == '%')
-                                outerLen *= 2;
+                                innerLen *= 2;
                         }
 
                         // Create the argslice[]
-                        elements = new ArgSlice[(arraySize * outerLen) + (isScanOutput ? 1 : 0)];
+                        elements = new ArgSlice[(arraySize * innerLen) + (isScanOutput ? 1 : 0)];
 
                         var i = 0;
                         if (isScanOutput)
                             elements[i++] = new ArgSlice(element, len);
 
-                        for (; i < elements.Length; i++)
+                        for (; i < elements.Length; i += innerLen)
                         {
                             element = null;
                             len = 0;
 
-                            c = (char)*refPtr;
-
-                            // We still need to read the field to advance the pointer.
-                            if ((c == '*') || (c == '~') || (c == '%'))
+                            if (isNestedArray && (i != 0))
                             {
-                                if (!RespReadUtils.TryReadUnsignedLengthHeader(out _, ref refPtr, end, c))
+                                c = (char)*refPtr;
+                                Debug.Assert(IsSupportedArrayType(c));
+
+                                // We still need to read the field to advance the pointer.
+                                if (!RespReadUtils.TryReadUnsignedLengthHeader(out var nestedArrayLen, ref refPtr, end, c))
                                     return default;
+
+                                Debug.Assert(nestedArrayLen == innerLen);
                             }
 
-                            for (var k = 0; k < outerLen; ++k)
+                            for (var j = 0; j < innerLen; ++j)
                             {
                                 if (RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                                 {
-                                    elements[i] = new ArgSlice(element, len);
+                                    elements[i+j] = new ArgSlice(element, len);
                                 }
                             }
                         }
