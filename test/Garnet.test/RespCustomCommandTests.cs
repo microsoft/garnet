@@ -507,7 +507,7 @@ namespace Garnet.test
         [Test]
         public async Task CustomCommandCaseInsensitiveTest()
         {
-            var x = server.Register.NewCommand("A.SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
+            server.Register.NewCommand("A.SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
@@ -518,8 +518,10 @@ namespace Garnet.test
 
             var newValue1 = "foovalue1";
             var response = await c.ExecuteAsync("a.setifpm", key, newValue1, "foo");
+            // Test the command was recognized.
+            ClassicAssert.AreEqual("OK", response);
 
-            // This conditional set should pass (prefix matches)
+            // Test the command did something.
             var retValue = await c.ExecuteAsync("GET", key);
             ClassicAssert.AreEqual(newValue1, retValue);
         }
