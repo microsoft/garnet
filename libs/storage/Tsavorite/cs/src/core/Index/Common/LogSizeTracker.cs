@@ -51,7 +51,6 @@ namespace Tsavorite.core
             while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
             {
                 Debug.Assert(key != null);
-                Debug.Assert(value != null);
 
                 size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(info, key, value);
             }
@@ -147,7 +146,6 @@ namespace Tsavorite.core
             while (records.GetNext(out RecordInfo info, out TKey key, out TValue value))
             {
                 Debug.Assert(key != null);
-                Debug.Assert(value != null);
 
                 size += LogSizeCalculator.CalculateRecordSize(info, key, value);
             }
