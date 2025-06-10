@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 using System;
 using System.Collections.Generic;
@@ -24,7 +26,18 @@ namespace Garnet.test
         {
             r = new Random(674386);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false);
+
+            var useReviv = false;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is RevivificationMode revivMode)
+                {
+                    useReviv = revivMode == RevivificationMode.UseReviv;
+                    continue;
+                }
+            }
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, useReviv: useReviv);
             server.Start();
         }
 
@@ -1947,7 +1960,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetRangeTestForEtagSetData()
+        public void SetRangeTestForEtagSetData([Values] RevivificationMode revivificationModeUsedBySetupOnly)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

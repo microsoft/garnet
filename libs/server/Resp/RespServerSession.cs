@@ -173,6 +173,7 @@ namespace Garnet.server
         /// Name of the client library.
         /// </summary>
         string clientLibName = null;
+
         /// <summary>
         /// Version of the client library.
         /// </summary>
