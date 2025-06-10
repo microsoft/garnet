@@ -224,6 +224,8 @@ namespace Garnet.server
         /// <param name="error">A description of the error, if there is any</param>
         /// <param name="isScanOutput">True when the output comes from HSCAN, ZSCAN OR SSCAN command</param>
         /// <returns></returns>
+        /// <remarks>An array in array will be flattened into the return array. RESP3 map/set types will be returned as arrays.</remarks>
+        /// <example>"*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n" will return [a, 0, b, 1]</example>
         unsafe ArgSlice[] ProcessRespArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput = false)
         {
             ArgSlice[] elements = default;
@@ -249,6 +251,10 @@ namespace Garnet.server
                         if (!RespReadUtils.TryReadErrorAsString(out error, ref refPtr, end))
                             return default;
                     }
+                    // We support arrays ('*'), RSEP3 sets ('~') and RESP3 maps ('%').
+                    // All are returned as arrays.
+                    // Returning other types will lead to unnecessary duplication of code,
+                    // as we need to support RESP2 arrays in all cases anyway.
                     else if ((c == '*') || (c == '~') || (c == '%'))
                     {
                         if (isScanOutput)
@@ -268,7 +274,8 @@ namespace Garnet.server
                         if (!RespReadUtils.TryReadUnsignedLengthHeader(out var arraySize, ref refPtr, end, c))
                             return default;
 
-                        // Create the argslice[]
+                        // Create an argslice list. Since we support array-in-array, we do not know the number of
+                        // elements in advance.
                         System.Collections.Generic.List<ArgSlice> elemlist = new(isScanOutput ? arraySize + 1 : arraySize);
 
                         var i = 0;
@@ -279,6 +286,8 @@ namespace Garnet.server
                         {
                             element = null;
                             len = 0;
+
+                            // Handle array-in-array. We accept the RESP3 types for same reasons as above.
                             var outerLen = 1;
                             c = (char)*refPtr;
 
@@ -299,11 +308,13 @@ namespace Garnet.server
 
                         elements = [.. elemlist];
                     }
+                    // RESP3 double, e.g. ",1.2345\r\n"
                     else if (c == ',')
                     {
                         if (refPtr == end)
                             return default;
 
+                        // Skip the comma.
                         var start = ++refPtr;
 
                         if (!RespReadUtils.TryReadAsSpan(out var res, ref refPtr, end))
@@ -314,6 +325,7 @@ namespace Garnet.server
 
                         elements = [new ArgSlice(start, res.Length)];
                     }
+                    // Bulk string is assumed here.
                     else
                     {
                         byte* result = null;
