@@ -16,11 +16,11 @@ namespace Garnet.server
     /// and returning an <see cref="ArgSlice"/> to the caller.
     /// Whenever the current buffer runs out of space, a new buffer is allocated, without copying the previous buffer data.
     /// The previous allocated buffers are kept rooted in a stack by the manager, so that each <see cref="ArgSlice"/> that wasn't explicitly
-    /// re-winded is not going to be GCed.
+    /// rewound is not going to be GCed.
     ///
     /// The manager is meant to be called from a single-threaded context (i.e. one manager per session).
     /// Each call to CreateArgSlice will copy the data to the current or new buffer that could contain the data in its entirety,
-    /// so re-winding the <see cref="ArgSlice"/> (i.e. releasing the memory) should be called in reverse order to assignment.
+    /// so rewinding the <see cref="ArgSlice"/> (i.e. releasing the memory) should be called in reverse order to assignment.
     /// 
     /// Note: Use <see cref="ScratchBufferManager"/> if you need all data to remain in a continuous chunk of memory (which is not promised by
     /// <see cref="ScratchAllocationManager"/>) and you do not need to reuse previously returned <see cref="ArgSlice"/> structs
@@ -116,7 +116,7 @@ namespace Garnet.server
                 // Pop and reset any previous buffers
                 while (previousScratchBuffers.Count > 0)
                 {
-                    ref var prevBuffer = ref previousScratchBuffers.Pop();
+                    var prevBuffer = previousScratchBuffers.Pop();
                     prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
 
                     // If we've reached the last buffer in the stack, we'll set it as the current.
@@ -158,7 +158,7 @@ namespace Garnet.server
                     SaveCurrentBufferAsBackupIfNeeded();
 
                     // Pop the previous buffer and set it as the current buffer
-                    ref var prevBuffer = ref previousScratchBuffers.Pop();
+                    var prevBuffer = previousScratchBuffers.Pop();
                     prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
                     currScratchBuffer = prevBuffer;
                 }

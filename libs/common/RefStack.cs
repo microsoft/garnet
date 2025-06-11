@@ -7,6 +7,7 @@ namespace Garnet.common
 {
     /// <summary>
     /// Stack implementation supporting data access by reference
+    /// Note: this implementation is not thread-safe
     /// </summary>
     public class RefStack<T> where T : struct
     {
@@ -32,7 +33,7 @@ namespace Garnet.common
         /// Push item to stack
         /// </summary>
         /// <param name="item">Reference to item</param>
-        public void Push(T item)
+        public void Push(in T item)
         {
             if (count == buffer.Length)
                 ExtendStackBuffer();
@@ -54,12 +55,12 @@ namespace Garnet.common
         /// <summary>
         /// Pop top item in stack
         /// </summary>
-        /// <returns>Reference to top item in stack</returns>
-        public ref T Pop()
+        /// <returns>Top item in stack</returns>
+        public T Pop()
         {
             if (count == 0) throw new InvalidOperationException("Stack contains no elements.");
 
-            return ref buffer[--count];
+            return buffer[--count];
         }
 
         /// <summary>
