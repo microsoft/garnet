@@ -211,16 +211,24 @@ namespace Garnet.server
 #else
                     .ToByteArray();
 #endif
-                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
+                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.AsReadOnlySpan();
 
                 if (!TryGetValue(key, out var hashValue))
                 {
-                    Add(key, value);
+                    Add(key, value.ToArray());
                     output.Header.result1++;
                 }
                 else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
                 {
-                    Set(key, value);
+                    if (hashValue.Length == value.Length)
+                    {
+                        value.CopyTo(hashValue);
+                        Set(key, hashValue);
+                    }
+                    else
+                    {
+                        Set(key, value.ToArray());
+                    }
                 }
             }
         }
