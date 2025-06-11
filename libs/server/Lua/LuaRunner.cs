@@ -93,7 +93,7 @@ namespace Garnet.server
                 this.bufferManager = bufferManager;
                 this.bufferManager.Reset();
 
-                var scratchSpace = bufferManager.CurrentFullBuffer();
+                var scratchSpace = bufferManager.FullBuffer();
 
                 origin = curHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
                 BufferEnd = curHead + scratchSpace.Length;
@@ -120,7 +120,7 @@ namespace Garnet.server
                 {
                     var len = (int)(curHead - origin);
 
-                    var full = bufferManager.CurrentFullBuffer();
+                    var full = bufferManager.FullBuffer();
 
                     return full[..len];
                 }
@@ -137,7 +137,7 @@ namespace Garnet.server
                 // we need to signal that the buffer has data to copy
                 bufferManager.GrowBuffer(copyLengthOverride: len);
 
-                var scratchSpace = bufferManager.CurrentFullBuffer();
+                var scratchSpace = bufferManager.FullBuffer();
 
                 origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
                 BufferEnd = origin + scratchSpace.Length;

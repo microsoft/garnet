@@ -63,6 +63,7 @@ namespace Garnet.server
 
         readonly StoreWrapper storeWrapper;
         internal readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchAllocationManager scratchAllocationManager;
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
@@ -225,6 +226,9 @@ namespace Garnet.server
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
             this.scratchBufferManager = new ScratchBufferManager();
+
+            // Initialize session-local scratch allocation of size 64 bytes, used for constructing arguments in GarnetApi
+            this.scratchAllocationManager = new ScratchAllocationManager();
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -461,6 +465,7 @@ namespace Garnet.server
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
                 scratchBufferManager.Reset();
+                scratchAllocationManager.Reset();
             }
 
             if (txnManager.IsSkippingOperations())
@@ -986,7 +991,7 @@ namespace Garnet.server
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
                         .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
-                            scratchBufferManager, out _));
+                            scratchAllocationManager, out _));
                 currentCustomTransaction = null;
                 return true;
             }
@@ -1600,7 +1605,7 @@ namespace Garnet.server
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger, dbId);
+                dbStorageSession, scratchAllocationManager, storeWrapper.serverOptions.EnableCluster, logger, dbId);
             dbStorageSession.txnManager = transactionManager;
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);

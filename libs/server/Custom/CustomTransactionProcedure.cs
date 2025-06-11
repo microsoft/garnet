@@ -12,7 +12,7 @@ namespace Garnet.server
     /// </summary>
     public abstract class CustomTransactionProcedure : CustomProcedureBase
     {
-        internal ScratchBufferManager scratchBufferManager;
+        internal ScratchAllocationManager scratchAllocationManager;
         internal TransactionManager txnManager;
 
         /// <summary>
@@ -48,19 +48,19 @@ namespace Garnet.server
         /// if it contains the given ArgSlice
         /// </summary>
         protected bool RewindScratchBuffer(ref ArgSlice slice)
-            => scratchBufferManager.RewindScratchBuffer(ref slice);
+            => scratchAllocationManager.RewindScratchBuffer(ref slice);
 
         /// <summary>
         /// Create ArgSlice in scratch buffer, from given ReadOnlySpan
         /// </summary>
         protected ArgSlice CreateArgSlice(ReadOnlySpan<byte> bytes)
-            => scratchBufferManager.CreateArgSlice(bytes);
+            => scratchAllocationManager.CreateArgSlice(bytes);
 
         /// <summary>
         /// Create ArgSlice in UTF8 format in scratch buffer, from given string
         /// </summary>
         protected ArgSlice CreateArgSlice(string str)
-            => scratchBufferManager.CreateArgSlice(str);
+            => scratchAllocationManager.CreateArgSlice(str);
 
         /// <summary>
         /// Prepare phase: define read/write set

@@ -299,7 +299,8 @@ namespace Garnet.server
 
             try
             {
-                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager, scratchBufferManager, out arity);
+                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager,
+                    scratchAllocationManager, out arity);
             }
             catch (Exception e)
             {

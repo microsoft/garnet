@@ -11,43 +11,28 @@ using Garnet.common;
 
 namespace Garnet.server
 {
-    internal unsafe struct ScratchBuffer
-    {
-        /// <summary>
-        /// Session-local scratch buffer to hold temporary arguments in transactions and GarnetApi
-        /// </summary>
-        internal byte[] scratchBuffer;
-
-        /// <summary>
-        /// Pointer to head of scratch buffer
-        /// </summary>
-        internal byte* scratchBufferHead;
-
-        /// <summary>
-        /// Current offset in scratch buffer
-        /// </summary>
-        internal int scratchBufferOffset;
-
-        internal int Length => scratchBuffer.Length;
-
-        internal bool IsDefault => scratchBuffer == null;
-    }
-
     /// <summary>
     /// Utils for scratch buffer management - one per session (single threaded access)
     /// </summary>
     internal sealed unsafe class ScratchBufferManager
     {
-        ScratchBuffer currScratchBuffer;
-
-        readonly RefStack<ScratchBuffer> previousScratchBuffers = new();
-
-        int prevScratchBuffersOffset = 0;
+        /// <summary>
+        /// Session-local scratch buffer to hold temporary arguments in transactions and GarnetApi
+        /// </summary>
+        byte[] scratchBuffer;
 
         /// <summary>
-        /// Combined offset in all live scratch buffers
+        /// Pointer to head of scratch buffer
         /// </summary>
-        internal int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
+        byte* scratchBufferHead;
+
+        /// <summary>
+        /// Current offset in scratch buffer
+        /// </summary>
+        int scratchBufferOffset;
+
+        /// <summary>Current offset in scratch buffer</summary>
+        internal int ScratchBufferOffset => scratchBufferOffset;
 
         public ScratchBufferManager()
         {
@@ -56,23 +41,13 @@ namespace Garnet.server
         /// <summary>
         /// Reset scratch buffer - loses all ArgSlice instances created on the scratch buffer
         /// </summary>
-        public void Reset()
-        {
-            currScratchBuffer.scratchBufferOffset = 0;
-
-            while (previousScratchBuffers.Count > 0)
-            {
-                ref var buffer = ref previousScratchBuffers.Pop();
-                prevScratchBuffersOffset -= buffer.scratchBufferOffset;
-            }
-
-            Debug.Assert(ScratchBufferOffset == 0);
-        }
+        public void Reset() => scratchBufferOffset = 0;
 
         /// <summary>
         /// Return the full buffer managed by this <see cref="ScratchBufferManager"/>.
         /// </summary>
-        public Span<byte> CurrentFullBuffer() => currScratchBuffer.scratchBuffer;
+        public Span<byte> FullBuffer()
+        => scratchBuffer;
 
         /// <summary>
         /// Rewind (pop) the last entry of scratch buffer (rewinding the current scratch buffer offset),
@@ -80,18 +55,10 @@ namespace Garnet.server
         /// </summary>
         public bool RewindScratchBuffer(ref ArgSlice slice)
         {
-            if (slice.ptr + slice.Length == currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset)
+            if (slice.ptr + slice.Length == scratchBufferHead + scratchBufferOffset)
             {
-                currScratchBuffer.scratchBufferOffset -= slice.Length;
+                scratchBufferOffset -= slice.Length;
                 slice = default; // invalidate the given ArgSlice
-
-                if (currScratchBuffer.scratchBufferOffset == 0 && previousScratchBuffers.Count > 0)
-                {
-                    ref var buffer = ref previousScratchBuffers.Pop();
-                    prevScratchBuffersOffset -= buffer.scratchBufferOffset;
-                    currScratchBuffer = buffer;
-                }
-
                 return true;
             }
             return false;
@@ -104,16 +71,10 @@ namespace Garnet.server
         /// <returns>True if successful, else false</returns>
         public bool ResetScratchBuffer(int offset)
         {
-            if (offset < 0 || offset > ScratchBufferOffset)
+            if (offset < 0 || offset > scratchBufferOffset)
                 return false;
 
-            while (prevScratchBuffersOffset > offset)
-            {
-                currScratchBuffer = previousScratchBuffers.Pop();
-                prevScratchBuffersOffset -= currScratchBuffer.scratchBufferOffset;
-            }
-
-            currScratchBuffer.scratchBufferOffset = offset - prevScratchBuffersOffset;
+            scratchBufferOffset = offset;
             return true;
         }
 
@@ -124,11 +85,9 @@ namespace Garnet.server
         {
             ExpandScratchBufferIfNeeded(bytes.Length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, bytes.Length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, bytes.Length);
             bytes.CopyTo(retVal.Span);
-
-            currScratchBuffer.scratchBufferOffset += bytes.Length;
-
+            scratchBufferOffset += bytes.Length;
             return retVal;
         }
 
@@ -138,7 +97,7 @@ namespace Garnet.server
         /// <param name="length"></param>
         public void MoveOffset(int length)
         {
-            currScratchBuffer.scratchBufferOffset += length;
+            scratchBufferOffset += length;
         }
 
         /// <summary>
@@ -146,13 +105,12 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice CreateArgSlice(string str)
         {
-            var length = Encoding.UTF8.GetByteCount(str);
+            int length = Encoding.UTF8.GetByteCount(str);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             Encoding.UTF8.GetBytes(str, retVal.Span);
-            currScratchBuffer.scratchBufferOffset += length;
-
+            scratchBufferOffset += length;
             return retVal;
         }
 
@@ -161,7 +119,7 @@ namespace Garnet.server
             // We'll always need AT LEAST this many bytes
             ExpandScratchBufferIfNeeded(str.Length);
 
-            var space = CurrentFullBuffer()[currScratchBuffer.scratchBufferOffset..];
+            var space = FullBuffer()[scratchBufferOffset..];
 
             // Attempt to fit in the existing buffer first
             if (!Encoding.UTF8.TryGetBytes(str, space, out var written))
@@ -170,7 +128,7 @@ namespace Garnet.server
                 var neededBytes = Encoding.UTF8.GetByteCount(str);
                 ExpandScratchBufferIfNeeded(neededBytes);
 
-                space = CurrentFullBuffer()[currScratchBuffer.scratchBufferOffset..];
+                space = FullBuffer()[scratchBufferOffset..];
                 written = Encoding.UTF8.GetBytes(str, space);
             }
 
@@ -182,20 +140,20 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice FormatScratchAsResp(int headerSize, ArgSlice arg1, ArgSlice arg2)
         {
-            var length = headerSize + GetRespFormattedStringLength(arg1) + GetRespFormattedStringLength(arg2);
+            int length = headerSize + GetRespFormattedStringLength(arg1) + GetRespFormattedStringLength(arg2);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
-            var ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length);
+            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
+            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
-            success = RespWriteUtils.TryWriteBulkString(arg2.Span, ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length);
+            success = RespWriteUtils.TryWriteBulkString(arg2.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
 
-            currScratchBuffer.scratchBufferOffset += length;
-            Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
+            scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
         }
 
@@ -204,18 +162,18 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice FormatScratchAsResp(int headerSize, ArgSlice arg1)
         {
-            var length = headerSize + GetRespFormattedStringLength(arg1);
+            int length = headerSize + GetRespFormattedStringLength(arg1);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
-            var ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset + headerSize;
-            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length);
+            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
+            var success = RespWriteUtils.TryWriteBulkString(arg1.Span, ref ptr, scratchBufferHead + scratchBuffer.Length);
             Debug.Assert(success);
 
-            currScratchBuffer.scratchBufferOffset += length;
-            Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
+            scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
         }
 
@@ -224,17 +182,17 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice FormatScratch(int headerSize, ArgSlice arg)
         {
-            var length = headerSize + arg.Length;
+            int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
-            byte* ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset + headerSize;
+            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
             arg.ReadOnlySpan.CopyTo(new Span<byte>(ptr, arg.Length));
 
-            currScratchBuffer.scratchBufferOffset += length;
-            Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
+            scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
         }
 
@@ -245,9 +203,9 @@ namespace Garnet.server
         {
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
-            currScratchBuffer.scratchBufferOffset += length;
-            Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
+            scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
         }
 
@@ -259,14 +217,12 @@ namespace Garnet.server
         public ArgSlice ViewRemainingArgSlice(int minLength = 0)
         {
             ExpandScratchBufferIfNeeded(minLength);
-
-            return new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset,
-                currScratchBuffer.Length - currScratchBuffer.scratchBufferOffset);
+            return new ArgSlice(scratchBufferHead + scratchBufferOffset, scratchBuffer.Length - scratchBufferOffset);
         }
 
         public ArgSlice ViewFullArgSlice()
         {
-            return new ArgSlice(currScratchBuffer.scratchBufferHead, currScratchBuffer.scratchBufferOffset);
+            return new ArgSlice(scratchBufferHead, scratchBufferOffset);
         }
 
         /// <summary>
@@ -274,17 +230,17 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice FormatScratch(int headerSize, ReadOnlySpan<byte> arg)
         {
-            var length = headerSize + arg.Length;
+            int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
-            var ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset + headerSize;
+            byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
             arg.CopyTo(new Span<byte>(ptr, arg.Length));
 
-            currScratchBuffer.scratchBufferOffset += length;
-            Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
+            scratchBufferOffset += length;
+            Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
             return retVal;
         }
 
@@ -295,24 +251,24 @@ namespace Garnet.server
         /// </summary>
         public void StartCommand(ReadOnlySpan<byte> cmd, int argCount)
         {
-            if (currScratchBuffer.IsDefault)
+            if (scratchBuffer == null)
                 ExpandScratchBuffer(64);
 
-            var ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+            var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.TryWriteArrayLength(argCount + 1, ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteArrayLength(argCount + 1, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(currScratchBuffer.Length + 1);
-                ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
             }
-            currScratchBuffer.scratchBufferOffset = (int)(ptr - currScratchBuffer.scratchBufferHead);
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
 
-            while (!RespWriteUtils.TryWriteBulkString(cmd, ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteBulkString(cmd, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(currScratchBuffer.Length + 1);
-                ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
             }
-            currScratchBuffer.scratchBufferOffset = (int)(ptr - currScratchBuffer.scratchBufferHead);
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         /// <summary>
@@ -320,15 +276,15 @@ namespace Garnet.server
         /// </summary>
         public void WriteNullArgument()
         {
-            var ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+            var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.TryWriteNull(ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteNull(ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(currScratchBuffer.Length + 1);
-                ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            currScratchBuffer.scratchBufferOffset = (int)(ptr - currScratchBuffer.scratchBufferHead);
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         /// <summary>
@@ -336,15 +292,15 @@ namespace Garnet.server
         /// </summary>
         public void WriteArgument(ReadOnlySpan<byte> arg)
         {
-            var ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+            var ptr = scratchBufferHead + scratchBufferOffset;
 
-            while (!RespWriteUtils.TryWriteBulkString(arg, ref ptr, currScratchBuffer.scratchBufferHead + currScratchBuffer.Length))
+            while (!RespWriteUtils.TryWriteBulkString(arg, ref ptr, scratchBufferHead + scratchBuffer.Length))
             {
-                ExpandScratchBuffer(currScratchBuffer.Length + 1);
-                ptr = currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset;
+                ExpandScratchBuffer(scratchBuffer.Length + 1);
+                ptr = scratchBufferHead + scratchBufferOffset;
             }
 
-            currScratchBuffer.scratchBufferOffset = (int)(ptr - currScratchBuffer.scratchBufferHead);
+            scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
         /// <summary>
@@ -359,47 +315,57 @@ namespace Garnet.server
 
         void ExpandScratchBufferIfNeeded(int newLength)
         {
-            if (currScratchBuffer.IsDefault || newLength > currScratchBuffer.Length - currScratchBuffer.scratchBufferOffset)
-                ExpandScratchBuffer(newLength);
+            if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
+                ExpandScratchBuffer(scratchBufferOffset + newLength);
         }
 
-        void ExpandScratchBuffer(int newLength)
+        void ExpandScratchBuffer(int newLength, int? copyLengthOverride = null)
         {
             if (newLength < 64) newLength = 64;
             else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
-            var newBuffer = GC.AllocateArray<byte>(newLength, true);
-            var newBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(newBuffer));
+            var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
+            var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));
 
-            var newScratchBuffer = new ScratchBuffer
+            var copyLength = copyLengthOverride ?? scratchBufferOffset;
+            if (copyLength > 0)
             {
-                scratchBuffer = newBuffer, 
-                scratchBufferHead = newBufferHead
-            };
-
-            if (!currScratchBuffer.IsDefault)
-            {
-                previousScratchBuffers.Push(currScratchBuffer);
+                new ReadOnlySpan<byte>(scratchBufferHead, copyLength).CopyTo(new Span<byte>(_scratchBufferHead, copyLength));
             }
-            
-            currScratchBuffer = newScratchBuffer;
+            scratchBuffer = _scratchBuffer;
+            scratchBufferHead = _scratchBufferHead;
+        }
+
+        /// <summary>
+        /// Returns a new <see cref="ArgSlice"/>
+        /// with the <paramref name="length"/> bytes of the buffer;
+        /// these are the most recently added bytes.
+        /// </summary>
+        /// <param name="length">Length for the new slice</param>
+        /// <remarks>This is called by functions that add multiple items to the buffer,
+        /// after all items have been added and all reallocations have been done.
+        /// </remarks>
+        public ArgSlice GetSliceFromTail(int length)
+        {
+            return new ArgSlice(scratchBufferHead + scratchBufferOffset - length, length);
         }
 
         /// <summary>
         /// Force backing buffer to grow.
+        /// 
         /// <paramref name="copyLengthOverride"/> provides a way to force a chunk at the start of the
         /// previous buffer be copied into the new buffer, even if this <see cref="ScratchBufferManager"/>
         /// doesn't consider that chunk in use.
         /// </summary>
         public void GrowBuffer(int? copyLengthOverride = null)
         {
-            if (currScratchBuffer.IsDefault)
+            if (scratchBuffer == null)
             {
                 ExpandScratchBuffer(64);
             }
             else
             {
-                ExpandScratchBuffer(currScratchBuffer.Length + 1);
+                ExpandScratchBuffer(scratchBuffer.Length + 1, copyLengthOverride);
             }
         }
     }
