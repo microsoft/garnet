@@ -732,7 +732,7 @@ namespace Garnet.test.cluster
         {
             startOffset = startOffset == -1 ? 0 : startOffset;
             endOffset = endOffset == -1 ? data.Length : endOffset;
-            for (int i = startOffset; i < endOffset; i++)
+            for (var i = startOffset; i < endOffset; i++)
                 data[i] = ascii_chars[r.Next(ascii_chars.Length)];
         }
 
@@ -1701,6 +1701,13 @@ namespace Garnet.test.cluster
             return null;
         }
 
+        public void MigrateSlotsIndex(int sourceNodeIndex, int targetNodeIndex, List<int> slots, bool range = false, string authPassword = null, ILogger logger = null)
+        {
+            var srcPort = GetPortFromNodeIndex(sourceNodeIndex);
+            var dstPort = GetPortFromNodeIndex(targetNodeIndex);
+            MigrateSlots(srcPort, dstPort, slots, range, authPassword, logger);
+        }
+
         public void MigrateSlots(int sourcePort, int targetPort, List<int> slots, bool range = false, string authPassword = null, ILogger logger = null)
         {
             var sourceEndPoint = GetEndPointFromPort(sourcePort);
@@ -1750,7 +1757,7 @@ namespace Garnet.test.cluster
             {
                 target.Address.ToString(),
                 target.Port,
-                $"\"\"",
+                $"",
                 0,
                 -1,
                 "KEYS"
