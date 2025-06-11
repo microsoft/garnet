@@ -208,6 +208,8 @@ namespace Garnet.cluster
                     clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
                 }
 
+                logger?.LogCheckpointEntry(LogLevel.Error, "Deleting outdated checkpoint", curr);
+
                 // At least one token can always be deleted thus invalidating the in-memory entry
                 var next = curr.next;
                 curr.next = null;
