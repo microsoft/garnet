@@ -174,6 +174,7 @@ namespace Garnet.server
         /// Name of the client library.
         /// </summary>
         string clientLibName = null;
+
         /// <summary>
         /// Version of the client library.
         /// </summary>
@@ -655,7 +656,7 @@ namespace Garnet.server
                 if (*tmp > 64) // found string
                 {
                     var ret = false;
-                    while (*tmp > 64 && *tmp < 123 && tmp < (ptr + len))
+                    while (*tmp > 32 && *tmp < 123 && tmp < (ptr + len))
                     {
                         if (*tmp > 96) { ret = true; *tmp -= 32; }
                         tmp++;

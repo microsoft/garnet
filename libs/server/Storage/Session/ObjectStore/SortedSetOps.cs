@@ -525,7 +525,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<ArgSlice> keys, out Dictionary<byte[], double> pairs)
+        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<ArgSlice> keys, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -547,7 +547,17 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetDifference(keys, ref objectContext, out pairs);
+                var status = SortedSetDifference(keys, ref objectContext, out var result);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new(SortedSetComparer.Instance);
+                    foreach (var pair in result)
+                    {
+                        pairs.Add((pair.Value, pair.Key));
+                    }
+                }
+
+                return status;
             }
             finally
             {
@@ -1025,7 +1035,7 @@ namespace Garnet.server
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
            => ReadObjectStoreOperationWithOutput(key, ref input, ref objectStoreContext, ref output);
 
-        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -1047,7 +1057,18 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetUnion(keys, ref objectContext, out pairs, weights, aggregateType);
+                var status = SortedSetUnion(keys, ref objectContext, out var result, weights, aggregateType);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new(SortedSetComparer.Instance);
+
+                    foreach (var pair in result)
+                    {
+                        pairs.Add((pair.Value, pair.Key));
+                    }
+                }
+
+                return status;
             }
             finally
             {
@@ -1387,7 +1408,7 @@ namespace Garnet.server
         /// <summary>
         /// Computes the intersection of multiple sorted sets and returns the result with optional weights and aggregate type.
         /// </summary>
-        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -1409,7 +1430,17 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out pairs);
+                var status = SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out var result);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new(SortedSetComparer.Instance);
+                    foreach (var pair in result)
+                    {
+                        pairs.Add((pair.Value, pair.Key));
+                    }
+                }
+
+                return status;
             }
             finally
             {

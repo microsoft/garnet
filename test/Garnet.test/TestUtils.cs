@@ -66,6 +66,12 @@ namespace Garnet.test
         }
     }
 
+    public enum RevivificationMode
+    {
+        NoReviv = 0,
+        UseReviv = 1,
+    }
+
     internal static class TestUtils
     {
         public static readonly int TestPort = 33278;
@@ -80,7 +86,6 @@ namespace Garnet.test
         /// </summary>
         static readonly bool useTestLogger = false;
 
-        private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
         internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
@@ -259,7 +264,10 @@ namespace Garnet.test
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
             TextWriter logTo = null,
-            bool enableCluster = false)
+            bool enableCluster = false,
+            int expiredKeyDeletionScanFrequencySecs = -1,
+            bool useReviv = false
+            )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -344,6 +352,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
+                ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -394,6 +403,18 @@ namespace Garnet.test
                 });
             }
 
+            if (useReviv)
+            {
+                opts.UseRevivBinsPowerOf2 = true;
+                opts.RevivBinBestFitScanLimit = 0;
+                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivifiableFraction = 1;
+                opts.RevivInChainOnly = false;
+                opts.RevivBinRecordCounts = [];
+                opts.RevivBinRecordSizes = [];
+                opts.RevivObjBinRecordCount = 256;
+            }
+
             return new GarnetServer(opts, loggerFactory);
         }
 
@@ -437,6 +458,7 @@ namespace Garnet.test
             string AofMemorySize = "64m",
             bool OnDemandCheckpoint = false,
             int CommitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
@@ -452,6 +474,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             EndPoint clusterAnnounceEndpoint = null)
@@ -484,6 +507,7 @@ namespace Garnet.test
                     aofMemorySize: AofMemorySize,
                     onDemandCheckpoint: OnDemandCheckpoint,
                     commitFrequencyMs: CommitFrequencyMs,
+                    useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
                     enableIncrementalSnapshots: EnableIncrementalSnapshots,
                     fastCommit: FastCommit,
@@ -499,6 +523,7 @@ namespace Garnet.test
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
                     replicaDisklessSyncDelay: replicaDisklessSyncDelay,
+                    replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint);
@@ -542,6 +567,7 @@ namespace Garnet.test
             string aofMemorySize = "64m",
             bool onDemandCheckpoint = false,
             int commitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool disableStorageTier = false,
             bool enableIncrementalSnapshots = false,
             bool fastCommit = true,
@@ -556,6 +582,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
@@ -660,6 +687,7 @@ namespace Garnet.test
                 AofMemorySize = aofMemorySize,
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
+                UseAofNullDevice = useAofNullDevice,
                 EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
@@ -670,6 +698,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
+                ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
             };
 
