@@ -2750,6 +2750,11 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
+            // Underlying issue is that KEYS/ARGV resizing left the stack misaligned
+            //
+            // In order to trigger the issue, you need enough KEYS to force a re-allocation
+            // but without enough ARGVs to do the same.
+
             var res =
                 (string)db.ScriptEvaluate(
                     "return ARGV[3]",
