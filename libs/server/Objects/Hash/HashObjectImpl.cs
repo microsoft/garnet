@@ -19,7 +19,12 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).SpanByte
+#if NET9_0_OR_GREATER
+                .AsReadOnlySpan();
+#else
+                .ToByteArray();
+#endif
 
             if (TryGetValue(key, out var hashValue))
             {
@@ -41,7 +46,12 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).SpanByte
+#if NET9_0_OR_GREATER
+                    .AsReadOnlySpan();
+#else
+                    .ToByteArray();
+#endif
 
                 if (TryGetValue(key, out var hashValue))
                 {
@@ -80,7 +90,12 @@ namespace Garnet.server
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).SpanByte
+#if NET9_0_OR_GREATER
+                    .AsReadOnlySpan();
+#else
+                    .ToByteArray();
+#endif
 
                 if (Remove(key, out var hashValue))
                 {
@@ -96,13 +111,23 @@ namespace Garnet.server
 
         private void HashStrLength(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).SpanByte
+#if NET9_0_OR_GREATER
+                .AsReadOnlySpan();
+#else
+                .ToByteArray();
+#endif
             output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
         private void HashExists(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var field = input.parseState.GetArgSliceByRef(0).SpanByte
+#if NET9_0_OR_GREATER
+                .AsReadOnlySpan();
+#else
+                .ToByteArray();
+#endif
             output.Header.result1 = ContainsKey(field) ? 1 : 0;
         }
 
@@ -180,7 +205,12 @@ namespace Garnet.server
             var hop = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = input.parseState.GetArgSliceByRef(i).SpanByte
+#if NET9_0_OR_GREATER
+                    .AsReadOnlySpan();
+#else
+                    .ToByteArray();
+#endif
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
 
                 if (!TryGetValue(key, out var hashValue))
@@ -242,7 +272,12 @@ namespace Garnet.server
             // This value is used to indicate partial command execution
             output.Header.result1 = int.MinValue;
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var key = input.parseState.GetArgSliceByRef(0).SpanByte
+#if NET9_0_OR_GREATER
+                .AsReadOnlySpan();
+#else
+                .ToByteArray();
+#endif
             var incrSlice = input.parseState.GetArgSliceByRef(1);
 
             var valueExists = TryGetValue(key, out var value);
@@ -254,7 +289,7 @@ namespace Garnet.server
                     return;
                 }
 
-                byte[] resultBytes;
+                ReadOnlySpan<byte> resultBytes;
 
                 if (valueExists)
                 {
@@ -273,13 +308,25 @@ namespace Garnet.server
 
                     resultSpan = resultSpan.Slice(0, bytesWritten);
 
-                    resultBytes = resultSpan.ToArray();
-                    SetWithoutPersist(key, resultBytes);
+                    if (resultSpan.Length == value.Length)
+                    {
+                        // instead of allocating a new byte array of the same size, we can reuse the existing one
+                        resultSpan.CopyTo(value);
+                        DeleteExpiredItems();
+                        resultBytes = value;
+                    }
+                    else
+                    {
+                        var resultByteArray = resultSpan.ToArray();
+                        SetWithoutPersist(key, resultByteArray);
+                        resultBytes = resultByteArray;
+                    }
                 }
                 else
                 {
-                    resultBytes = incrSlice.SpanByte.ToByteArray();
-                    Add(key, resultBytes);
+                    var resultByteArray = incrSlice.SpanByte.ToByteArray();
+                    Add(key, resultByteArray);
+                    resultBytes = resultByteArray;
                 }
 
                 writer.WriteIntegerFromBytes(resultBytes);
@@ -332,7 +379,11 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters.Slice(1))
             {
+#if NET9_0_OR_GREATER
+                var result = SetExpiration(item.ReadOnlySpan, expiration, expireOption);
+#else
                 var result = SetExpiration(item.ToArray(), expiration, expireOption);
+#endif
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
@@ -352,7 +403,11 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
+#if NET9_0_OR_GREATER
+                var result = GetExpiration(item.ReadOnlySpan);
+#else
                 var result = GetExpiration(item.ToArray());
+#endif
 
                 if (result >= 0)
                 {
@@ -391,7 +446,11 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
+#if NET9_0_OR_GREATER
+                var result = Persist(item.ReadOnlySpan);
+#else
                 var result = Persist(item.ToArray());
+#endif
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
