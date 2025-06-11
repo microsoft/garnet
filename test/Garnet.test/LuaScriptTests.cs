@@ -2743,6 +2743,23 @@ return cjson.encode(nested)");
         }
 
         [Test]
+        public void Issue1235()
+        {
+            // See: https://github.com/microsoft/garnet/issues/1235
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var res =
+                (string)db.ScriptEvaluate(
+                    "return ARGV[3]",
+                    ["a", "b", "c", "d", "e", "f",],
+                    ["0", "1", "2", "3", "4", "5",]
+            );
+            ClassicAssert.AreEqual("2", res);
+        }
+
+        [Test]
         [Ignore("Long running, disabled by default")]
         public void StressTimeouts()
         {
