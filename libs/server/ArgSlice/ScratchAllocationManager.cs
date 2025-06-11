@@ -97,7 +97,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Reset all scratch buffers managed by the <see cref="ScratchAllocationManager"/>.
-        /// Loses all <see cref="ArgSlice"/> instances created on the scratch buffers.
+        /// Loses all <see cref="ArgSlice"/>s created on the scratch buffers.
         /// </summary>
         public void Reset()
         {
