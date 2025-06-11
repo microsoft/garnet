@@ -2274,7 +2274,7 @@ namespace Garnet.test
                     if (overflow) values.Add(0);
                     else values.Add(expectedResult);
                 }
-                
+
                 for (int i = 0; i < tests; i++)
                 {
                     offset = i;

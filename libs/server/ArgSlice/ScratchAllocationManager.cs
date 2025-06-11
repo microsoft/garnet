@@ -12,12 +12,13 @@ using Garnet.common;
 namespace Garnet.server
 {
     /// <summary>
-    /// <see cref="ScratchAllocationManager"/> is responsible for allocating and copying data into a buffer and returning an <see cref="ArgSlice"/>
-    /// to the caller. Whenever the current buffer runs out of space, a new buffer is allocated, without copying the previous buffer data.
+    /// <see cref="ScratchAllocationManager"/> is responsible for allocating sufficient memory and copying data into a buffer
+    /// and returning an <see cref="ArgSlice"/> to the caller.
+    /// Whenever the current buffer runs out of space, a new buffer is allocated, without copying the previous buffer data.
     /// The previous allocated buffers are kept rooted in a stack by the manager, so that each <see cref="ArgSlice"/> that wasn't explicitly
     /// re-winded is not going to be GCed.
     ///
-    /// The manager is meant to be called from a single-threaded context (one per session).
+    /// The manager is meant to be called from a single-threaded context (i.e. one manager per session).
     /// Each call to CreateArgSlice will copy the data to the current or new buffer that could contain the data in its entirety,
     /// so re-winding the <see cref="ArgSlice"/> (i.e. releasing the memory) should be called in reverse order to assignment.
     /// 
