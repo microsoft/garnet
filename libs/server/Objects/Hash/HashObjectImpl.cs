@@ -132,12 +132,10 @@ namespace Garnet.server
                 if (countParameter > 0 && countParameter > count)
                     countParameter = count;
 
-                const int StackallocThreshold = 256;
-
                 var indexCount = Math.Abs(countParameter);
 
-                var indexes = indexCount <= StackallocThreshold ?
-                    stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+                var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
 
                 RandomUtils.PickKRandomIndexes(count, indexes, seed, countParameter > 0);
 

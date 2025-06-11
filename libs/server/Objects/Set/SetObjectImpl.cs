@@ -156,8 +156,6 @@ namespace Garnet.server
 
         private void SetRandomMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            const int StackallocThreshold = 256;
-
             var count = input.arg1;
             var seed = input.arg2;
 
@@ -171,8 +169,8 @@ namespace Garnet.server
                 var countParameter = count > Set.Count ? Set.Count : count;
 
                 // The order of fields in the reply is not truly random
-                var indexes = countParameter <= StackallocThreshold ?
-                    stackalloc int[StackallocThreshold].Slice(0, countParameter) : new int[countParameter];
+                var indexes = countParameter <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, countParameter) : new int[countParameter];
 
                 RandomUtils.PickKRandomIndexes(countParameter, indexes, seed);
 
@@ -208,8 +206,8 @@ namespace Garnet.server
                 // Return an array with potentially duplicate elements
                 var countParameter = Math.Abs(count);
 
-                var indexes = countParameter <= StackallocThreshold ?
-                    stackalloc int[StackallocThreshold].Slice(0, countParameter) : new int[countParameter];
+                var indexes = countParameter <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, countParameter) : new int[countParameter];
 
                 RandomUtils.PickKRandomIndexes(Set.Count, indexes, seed, false);
 

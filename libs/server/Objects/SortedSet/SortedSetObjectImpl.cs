@@ -614,13 +614,10 @@ namespace Garnet.server
             {
                 writer.WriteArrayLength(arrayLength);
             }
-
-            const int StackallocThreshold = 256;
-
             var indexCount = Math.Abs(count);
 
-            var indexes = indexCount <= StackallocThreshold ?
-                stackalloc int[StackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+            var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
 
             RandomUtils.PickKRandomIndexes(sortedSetCount, indexes, seed, count > 0);
 
