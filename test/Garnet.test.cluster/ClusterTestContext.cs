@@ -131,6 +131,7 @@ namespace Garnet.test.cluster
             bool OnDemandCheckpoint = false,
             string AofMemorySize = "64m",
             int CommitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
@@ -146,6 +147,7 @@ namespace Garnet.test.cluster
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             bool useHostname = false)
@@ -172,6 +174,7 @@ namespace Garnet.test.cluster
                 FastAofTruncate: FastAofTruncate,
                 AofMemorySize: AofMemorySize,
                 CommitFrequencyMs: CommitFrequencyMs,
+                useAofNullDevice: useAofNullDevice,
                 DisableStorageTier: DisableStorageTier,
                 OnDemandCheckpoint: OnDemandCheckpoint,
                 EnableIncrementalSnapshots: EnableIncrementalSnapshots,
@@ -187,6 +190,7 @@ namespace Garnet.test.cluster
                 asyncReplay: asyncReplay,
                 enableDisklessSync: enableDisklessSync,
                 replicaDisklessSyncDelay: replicaDisklessSyncDelay,
+                replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit);
 
@@ -293,16 +297,17 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                for (var i = 0; i < nodes.Length; i++)
+                _ = Parallel.For(0, nodes.Length, i =>
                 {
                     if (nodes[i] != null)
                     {
                         logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
-                        nodes[i].Dispose();
+                        var node = nodes[i];
                         nodes[i] = null;
+                        node.Dispose();
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }
-                }
+                });
             }
         }
 

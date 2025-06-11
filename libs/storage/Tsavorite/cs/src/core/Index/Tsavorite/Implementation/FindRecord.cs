@@ -96,8 +96,8 @@ namespace Tsavorite.core
                 if (!TryTransientSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
                     return needIO = false;
             }
-            else
-                stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
             try
             {

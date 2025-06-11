@@ -107,34 +107,26 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<SyncStatusInfo> ReplicationSyncDriver(ReplicaSyncSession replicaSyncSession)
         {
-            var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
-
             try
             {
+                var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
                 // Give opportunity to other replicas to attach for streaming sync
-                if (ClusterProvider.serverOptions.ReplicaDisklessSyncDelay > 0)
+                // Only leader waits because it is the one that initiates the sync driver, so everybody else will wait for it to complete.
+                if (ClusterProvider.serverOptions.ReplicaDisklessSyncDelay > 0 && isLeader)
                     Thread.Sleep(TimeSpan.FromSeconds(ClusterProvider.serverOptions.ReplicaDisklessSyncDelay));
 
-                // Started syncing
+                // Signal syncing in-progress
                 replicaSyncSession.SetStatus(SyncStatus.INPROGRESS);
 
-                // Only one thread should be the leader who initiates the sync driver
-                var isLeader = GetSessionStore.IsFirst(replicaSyncSession);
+                // Only one thread should be the leader who initiates the sync driver.
+                // This will be the task added first in the replica sync session array.
                 if (isLeader)
                 {
-                    if (disklessRepl)
-                    {
-                        // Launch a background task to sync the attached replicas using streaming snapshot
-                        _ = Task.Run(() => StreamingSnapshotDriver());
-                    }
-                    else
-                    {
-                        // TODO: refactor to use disk-based replication
-                        throw new NotImplementedException();
-                    }
+                    // Launch a background task to sync the attached replicas using streaming snapshot
+                    _ = Task.Run(MainStreamingSnapshotDriver);
                 }
 
-                // Wait for main sync task to complete
+                // Wait for main sync driver to complete
                 await replicaSyncSession.WaitForSyncCompletion();
 
                 // If session faulted return early
@@ -160,10 +152,9 @@ namespace Garnet.cluster
         /// Streaming snapshot driver
         /// </summary>
         /// <returns></returns>
-        async Task StreamingSnapshotDriver()
+        async Task MainStreamingSnapshotDriver()
         {
             // Parameters for sync operation
-            var disklessRepl = ClusterProvider.serverOptions.ReplicaDisklessSync;
             var disableObjects = ClusterProvider.serverOptions.DisableObjects;
 
             try
@@ -175,7 +166,7 @@ namespace Garnet.cluster
                 NumSessions = GetSessionStore.GetNumSessions();
                 Sessions = GetSessionStore.GetSessions();
 
-                // Wait for all replicas to reach initializing state
+                // Wait for all replicas to reach InProgress state
                 for (var i = 0; i < NumSessions; i++)
                 {
                     while (!Sessions[i].InProgress)
@@ -186,10 +177,14 @@ namespace Garnet.cluster
                 while (!ClusterProvider.storeWrapper.TryPauseCheckpoints())
                     await Task.Yield();
 
-                // Get sync metadata for checkpoint
+                // Choose to perform a full sync or not
                 var fullSync = await PrepareForSync();
 
-                // Stream checkpoint to replicas
+                // If at least one replica requires a full sync, take a streaming checkpoint
+                // NOTE:
+                //      This is operation does not block all waiting tasks, only those that require full sync.
+                //      It is possible that some replicas may not require a full sync and can continue with partial sync.
+                //      See #chooseBetweenFullAndPartialSync
                 if (fullSync)
                     await TakeStreamingCheckpoint();
 
@@ -199,7 +194,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "{method} faulted", nameof(StreamingSnapshotDriver));
+                logger?.LogError(ex, "{method} faulted", nameof(MainStreamingSnapshotDriver));
                 for (var i = 0; i < NumSessions; i++)
                     Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
             }
@@ -218,69 +213,64 @@ namespace Garnet.cluster
             // Acquire checkpoint and lock AOF if possible
             async Task<bool> PrepareForSync()
             {
-                if (disklessRepl)
+                // Try to lock AOF address to avoid truncation
+                #region pauseAofTruncation
+                while (true)
                 {
-                    #region pauseAofTruncation
-                    while (true)
+                    // Minimum address that we can serve assuming aof-locking and no aof-null-device
+                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
+
+                    // Lock AOF address for sync streaming
+                    // If clusterProvider.allowDataLoss is set the addition never fails,
+                    // otherwise failure occurs if AOF has been truncated beyond minServiceableAofAddress
+                    if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), minServiceableAofAddress))
+                        break;
+
+                    // Retry if failed to lock AOF address because truncation occurred
+                    await Task.Yield();
+                }
+                #endregion
+
+                #region chooseBetweenFullAndPartialSync
+                var fullSync = false;
+                for (var i = 0; i < NumSessions; i++)
+                {
+                    try
                     {
-                        // Minimum address that we can serve assuming aof-locking and no aof-null-device
-                        var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
+                        // Initialize connections
+                        Sessions[i].Connect();
 
-                        // Lock AOF address for sync streaming
-                        if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), minServiceableAofAddress))
-                            break;
+                        // Set store version to operate on
+                        Sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
+                        Sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
 
-                        // Retry if failed to lock AOF address because truncation occurred
-                        await Task.Yield();
-                    }
-                    #endregion
-
-                    #region initializeConnection
-                    var fullSync = false;
-                    for (var i = 0; i < NumSessions; i++)
-                    {
-                        try
+                        // If checkpoint is not needed mark this sync session as complete
+                        // to avoid waiting for other replicas which may need to receive the latest checkpoint
+                        if (!Sessions[i].NeedToFullSync())
                         {
-                            // Initialize connections
-                            Sessions[i].Connect();
-
-                            // Set store version to operate on
-                            Sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
-                            Sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
-
-                            // If checkpoint is not needed mark this sync session as complete
-                            // to avoid waiting for other replicas which may need to receive the latest checkpoint
-                            if (!Sessions[i].NeedToFullSync())
-                            {
-                                Sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
-                                Sessions[i] = null;
-                            }
-                            else
-                            {
-                                // Reset replica database in preparation for full sync
-                                Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["CLUSTER", "FLUSHALL"]));
-                                fullSync = true;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
+                            Sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
                             Sessions[i] = null;
                         }
+                        else
+                        {
+                            // Reset replica database in preparation for full sync
+                            Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["CLUSTER", "FLUSHALL"]));
+                            fullSync = true;
+                        }
                     }
-
-                    await WaitForFlush();
-                    #endregion
-
-                    return fullSync;
+                    catch (Exception ex)
+                    {
+                        Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
+                        Sessions[i] = null;
+                    }
                 }
-                else
-                {
-                    // TODO: disk-based replication
-                    throw new NotImplementedException();
-                }
+
+                // Flush network buffers for all active sessions
+                await WaitForFlush();
+                #endregion
+
+                return fullSync;
             }
-
 
             // Stream Diskless
             async Task TakeStreamingCheckpoint()
@@ -306,10 +296,7 @@ namespace Garnet.cluster
                         throw new InvalidOperationException("Object store checkpoint stream failed!");
                 }
 
-                // Aggressively truncate AOF when MainMemoryReplication flag is set.
-                // Otherwise, we rely on background disk-based checkpoints to truncate the AOF
-                if (!ClusterProvider.serverOptions.FastAofTruncate)
-                    _ = ClusterProvider.replicationManager.SafeTruncateAof(manager.CheckpointCoveredAddress);
+                // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
 
                 async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
                 {

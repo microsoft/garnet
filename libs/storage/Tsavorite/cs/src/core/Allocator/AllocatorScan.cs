@@ -286,20 +286,28 @@ namespace Tsavorite.core
             {
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
-                RecordMetadata recordMetadata = new(recordInfo, stackCtx.recSrc.LogicalAddress);
-                var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
-                    ? !scanCursorState.functions.ConcurrentReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
-                    : !scanCursorState.functions.SingleReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
-                if (stop)
-                    scanCursorState.stop = true;
-                else
+                epoch.Suspend();
+                try
                 {
-                    if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
-                        Interlocked.Increment(ref scanCursorState.acceptedCount);
-                    if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
-                        scanCursorState.endBatch = true;
-                    if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
-                        scanCursorState.retryLastRecord = true;
+                    RecordMetadata recordMetadata = new(recordInfo, stackCtx.recSrc.LogicalAddress);
+                    var stop = (stackCtx.recSrc.LogicalAddress >= HeadAddress)
+                        ? !scanCursorState.functions.ConcurrentReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult)
+                        : !scanCursorState.functions.SingleReader(ref key, ref value, recordMetadata, scanCursorState.acceptedCount, out cursorRecordResult);
+                    if (stop)
+                        scanCursorState.stop = true;
+                    else
+                    {
+                        if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
+                            Interlocked.Increment(ref scanCursorState.acceptedCount);
+                        if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
+                            scanCursorState.endBatch = true;
+                        if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
+                            scanCursorState.retryLastRecord = true;
+                    }
+                }
+                finally
+                {
+                    epoch.Resume();
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }
