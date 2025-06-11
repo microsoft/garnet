@@ -2760,7 +2760,7 @@ return cjson.encode(nested)");
                     "return ARGV[3]",
                     ["a", "b", "c", "d", "e", "f",],
                     ["0", "1", "2", "3", "4", "5",]
-            );
+                );
             ClassicAssert.AreEqual("2", res);
         }
 
