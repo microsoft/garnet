@@ -628,7 +628,10 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.EnableCluster)
                     StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
                 else
+                {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
+                    StoreWrapper.store.CheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
+                }
 
                 if (checkpointCoveredAofAddress > 0)
                     logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);

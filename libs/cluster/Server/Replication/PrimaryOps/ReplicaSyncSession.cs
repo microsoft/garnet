@@ -428,12 +428,12 @@ namespace Garnet.cluster
                                 {
                                     var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
                                     deltaLog.InitializeForReads();
-                                    checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, deltaLog, true, -1, withoutCookie: false);
+                                    checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, deltaLog, true, -1);
                                     break;
                                 }
                             }
                         }
-                        checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, false, -1, withoutCookie: false);
+                        checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
                         break;
                     case CheckpointFileType.STORE_INDEX:
                     case CheckpointFileType.OBJ_STORE_INDEX:

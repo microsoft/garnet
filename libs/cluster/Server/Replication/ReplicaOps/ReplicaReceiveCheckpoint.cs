@@ -187,7 +187,7 @@ namespace Garnet.cluster
             {
                 case CheckpointFileType.STORE_SNAPSHOT:
                 case CheckpointFileType.OBJ_STORE_SNAPSHOT:
-                    ckptManager.CommiLogCheckpointWithCookie(fileToken, checkpointMetadata);
+                    ckptManager.CommiLogCheckpointSendFromPrimary(fileToken, checkpointMetadata);
                     break;
                 case CheckpointFileType.STORE_INDEX:
                 case CheckpointFileType.OBJ_STORE_INDEX:

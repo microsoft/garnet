@@ -40,9 +40,22 @@ namespace Garnet.cluster
         {
             head = tail = GetLatestCheckpointEntryFromDisk();
 
-            if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1) head = tail = null;
+            if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1)
+            {
+                head = tail = null;
+            }
+            else
+            {
+                clusterProvider.storeWrapper.store.CheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                clusterProvider.storeWrapper.store.CheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
+                if (!storeWrapper.serverOptions.DisableObjects)
+                {
+                    clusterProvider.storeWrapper.objectStore.CheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                    clusterProvider.storeWrapper.objectStore.CheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
+                }
+            }
 
-            // This purge does not check for active readers
+            // This purge does not check for active
             // 1. If primary is initializing then we will not have any active readers since not connections are established at recovery
             // 2. If replica is initializing during failover we do this before allowing other replicas to attach.
             if (safelyRemoveOutdated)
