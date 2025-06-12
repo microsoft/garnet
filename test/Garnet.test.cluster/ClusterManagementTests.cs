@@ -538,8 +538,8 @@ namespace Garnet.test.cluster
                 var replicaList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "REPLICA"]);
                 var masterList = (string)context.clusterTestUtils.Execute((IPEndPoint)context.endpoints[nodeIx], "CLIENT", ["LIST", "TYPE", "MASTER"]);
 
-                ClassicAssert.AreEqual(numReplica, replicaList.Split("\n").Length, $"nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
-                ClassicAssert.AreEqual(numMaster, masterList.Split("\n").Length, $"nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.AreEqual(numReplica, replicaList.Split("\n", StringSplitOptions.RemoveEmptyEntries).Length, $"nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
+                ClassicAssert.AreEqual(numMaster, masterList.Split("\n", StringSplitOptions.RemoveEmptyEntries).Length, $"nodeIx={nodeIx}, normal={numNormal}, replica={numReplica}, master={numMaster}");
             }
 
             ClassicAssert.AreEqual(2, numWithTwoMasterConnections);

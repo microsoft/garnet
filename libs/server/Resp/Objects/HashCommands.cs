@@ -231,9 +231,7 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(1, out paramCount))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
                 includedCount = true;
@@ -245,9 +243,7 @@ namespace Garnet.server
 
                     if (!withValuesSlice.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHVALUES))
                     {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
+                        return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
                     }
 
                     withValues = true;
