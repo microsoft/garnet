@@ -377,7 +377,8 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    if (replayAsReplica) respServerSession.clusterSession.SetReadOnlySession();
+                    if (replayAsReplica)
+                        respServerSession.clusterSession.SetReadOnlySession();
                 }
             }
         }
