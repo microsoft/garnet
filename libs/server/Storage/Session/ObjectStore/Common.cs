@@ -229,9 +229,9 @@ namespace Garnet.server
         unsafe ArgSlice[] ProcessRespArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput = false)
         {
             if (functionsState.respProtocolVersion >= 3)
-                return __ProcessResp3ArrayOutput(output, out error, isScanOutput);
+                return ProcessResp3ArrayOutput(output, out error, isScanOutput);
 
-            return __ProcessResp2ArrayOutput(output, out error, isScanOutput);
+            return ProcessResp2ArrayOutput(output, out error, isScanOutput);
         }
 
         /// <summary>
@@ -241,7 +241,7 @@ namespace Garnet.server
         /// <param name="error">A description of the error, if there is any</param>
         /// <param name="isScanOutput">True when the output comes from HSCAN, ZSCAN OR SSCAN command</param>
         /// <returns></returns>
-        private unsafe ArgSlice[] __ProcessResp2ArrayOutput(GarnetObjectStoreOutput outputFooter, out string error, bool isScanOutput)
+        private unsafe ArgSlice[] ProcessResp2ArrayOutput(GarnetObjectStoreOutput outputFooter, out string error, bool isScanOutput)
         {
             ArgSlice[] elements = default;
             error = default;
@@ -320,9 +320,13 @@ namespace Garnet.server
             return elements;
         }
 
-        private unsafe ArgSlice[] __ProcessResp3ArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput)
+        private unsafe ArgSlice[] ProcessResp3ArrayOutput(GarnetObjectStoreOutput output, out string error, bool isScanOutput)
         {
-            bool IsSupportedArrayType(char c)
+            // We support arrays ('*'), RSEP3 sets ('~') and RESP3 maps ('%').
+            // All are returned as arrays.
+            // Returning other types will lead to unnecessary duplication of code,
+            // as we need to support RESP2 arrays in all cases anyway.
+            static bool IsSupportedArrayType(char c)
             {
                 return c is '*' or '~' or '%';
             }
@@ -357,21 +361,15 @@ namespace Garnet.server
                             return default;
                     }
 
-                    // We support arrays ('*'), RSEP3 sets ('~') and RESP3 maps ('%').
-                    // All are returned as arrays.
-                    // Returning other types will lead to unnecessary duplication of code,
-                    // as we need to support RESP2 arrays in all cases anyway.
                     else if (IsSupportedArrayType(c))
                     {
                         if (isScanOutput)
                         {
                             element = null;
                             len = 0;
-                            // Read the first two elements
-                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out var outerArraySize, ref refPtr, end, c)
-                            // Read cursor value
-                             || !RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end)
-                                )
+                            // Try to read the array length and cursor value
+                            if (!RespReadUtils.TryReadUnsignedLengthHeader(out var outerArraySize, ref refPtr, end, c) ||
+                                !RespReadUtils.TryReadPtrWithLengthHeader(ref element, ref len, ref refPtr, end))
                                 return default;
                         }
 
