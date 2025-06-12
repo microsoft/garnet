@@ -187,8 +187,7 @@ namespace Garnet.server
                                 SendAndReset();
                             for (var i = 0; i < inputCount; i++)
                             {
-                                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                                    SendAndReset();
+                                WriteNullArray();
                             }
                             break;
                     }
@@ -263,9 +262,7 @@ namespace Garnet.server
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(errorMessage);
             }
 
             GarnetStatus status;

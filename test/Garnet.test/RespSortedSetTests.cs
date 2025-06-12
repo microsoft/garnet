@@ -357,9 +357,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void AddWithOptionsErrorConditions()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void AddWithOptionsErrorConditions(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var key = "SortedSet_Add";
@@ -1336,9 +1338,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void TestCheckSortedSetRangeStoreWithExistingDestinationKeySE()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void TestCheckSortedSetRangeStoreWithExistingDestinationKeySE(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             var sourceKey = "sourceKey";
@@ -1446,9 +1450,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SortedSetMultiPopWithFirstKeyEmptyOnSecondPopTest()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public void SortedSetMultiPopWithFirstKeyEmptyOnSecondPopTest(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             string[] keys = ["board1", "board2"];
@@ -2449,9 +2455,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ZMPopWithExpiredItems()
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public async Task ZMPopWithExpiredItems(RedisProtocol protocol)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase(0);
 
             db.SortedSetAdd("key0", "x", 1);
@@ -2990,6 +2998,44 @@ namespace Garnet.test
 
             result = db.Execute("ZREVRANK", "key1", "b");
             ClassicAssert.AreEqual(2, (int)result); // "b" should be at reverse rank 2
+        }
+
+        [Test]
+        [TestCase(2, Description = "RESP2 output")]
+        [TestCase(3, Description = "RESP3 output")]
+        public async Task ZRespOutput(byte respVersion)
+        {
+            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
+
+            response = await c.ExecuteAsync("ZADD", "z", "0", "a", "1", "b");
+            ClassicAssert.AreEqual(":2\r\n", response);
+
+            var expectedResponse = (respVersion >= 3) ?
+                        "*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n" :
+                        "*4\r\n$1\r\na\r\n$1\r\n0\r\n$1\r\nb\r\n$1\r\n1\r\n";
+            response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("ZUNION", "2", "z", "nx", "WITHSCORES");
+            ClassicAssert.AreEqual(expectedResponse, response);
+
+            response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n,0\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\nz\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n0\r\n", response);
+            response = await c.ExecuteAsync("ZRANDMEMBER", "z", "1", "WITHSCORES");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\nb\r\n,1\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\nb\r\n$1\r\n1\r\n", response);
+            response = await c.ExecuteAsync("ZPOPMAX", "z", "1");
+            if (respVersion >= 3)
+                ClassicAssert.AreEqual("*1\r\n*2\r\n$1\r\nb\r\n,1\r\n", response);
+            else
+                ClassicAssert.AreEqual("*2\r\n$1\r\nb\r\n$1\r\n1\r\n", response);
         }
 
         [Test]

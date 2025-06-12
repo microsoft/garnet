@@ -56,24 +56,21 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|list");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
+            while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var userHandle in userHandles)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var userHandles = aclAuthenticator.GetAccessControlList().GetUserHandles();
-                while (!RespWriteUtils.TryWriteArrayLength(userHandles.Count, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
                     SendAndReset();
-
-                foreach (var userHandle in userHandles)
-                {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
-                        SendAndReset();
-                }
             }
 
             return true;
@@ -88,24 +85,21 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL USERS.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|users");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
+            while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var user in users)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var users = aclAuthenticator.GetAccessControlList().GetUserHandles();
-                while (!RespWriteUtils.TryWriteArrayLength(users.Count, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
                     SendAndReset();
-
-                foreach (var user in users)
-                {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
-                        SendAndReset();
-                }
             }
 
             return true;
@@ -120,22 +114,19 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var categories = ACLParser.ListCategories();
+            RespWriteUtils.TryWriteArrayLength(categories.Count, ref dcurr, dend);
+
+            foreach (var category in categories)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var categories = ACLParser.ListCategories();
-                RespWriteUtils.TryWriteArrayLength(categories.Count, ref dcurr, dend);
-
-                foreach (var category in categories)
-                {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(category, ref dcurr, dend))
-                        SendAndReset();
-                }
+                while (!RespWriteUtils.TryWriteAsciiBulkString(category, ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -150,74 +141,71 @@ namespace Garnet.server
             // Have to have at least the username
             if (parseState.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SETUSER.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|setuser");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+
+            // REQUIRED: username
+            var username = parseState.GetString(0);
+
+            var ops = new string[parseState.Count];
+            for (var i = 1; i < parseState.Count; i++)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-
-                // REQUIRED: username
-                var username = parseState.GetString(0);
-
-                var ops = new string[parseState.Count];
-                for (var i = 1; i < parseState.Count; i++)
-                {
-                    ops[i] = parseState.GetString(i);
-                }
-
-                try
-                {
-                    // Modify or create the user with the given username
-                    var userHandle = aclAuthenticator.GetAccessControlList().GetUserHandle(username);
-
-                    if (userHandle == null)
-                    {
-                        userHandle = new UserHandle(new User(username));
-
-                        try
-                        {
-                            aclAuthenticator.GetAccessControlList().AddUserHandle(userHandle);
-                        }
-                        catch (ACLUserAlreadyExistsException)
-                        {
-                            // If AddUser failed, retrieve the concurrently created user
-                            userHandle = aclAuthenticator.GetAccessControlList().GetUserHandle(username);
-                        }
-                    }
-
-                    User newUser;
-                    User currentUser;
-                    do
-                    {
-                        // Modifications to user permissions must be performed against the effective user.
-                        currentUser = userHandle.User;
-                        newUser = new User(currentUser);
-
-                        // Remaining parameters are ACL operations
-                        for (var i = 1; i < ops.Length; i++)
-                        {
-                            ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
-                        }
-
-                    }
-                    while (!userHandle.TrySetUser(newUser, currentUser));
-                }
-                catch (ACLException exception)
-                {
-                    // Abort command execution
-                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
-                }
-
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                ops[i] = parseState.GetString(i);
             }
+
+            try
+            {
+                // Modify or create the user with the given username
+                var userHandle = aclAuthenticator.GetAccessControlList().GetUserHandle(username);
+
+                if (userHandle == null)
+                {
+                    userHandle = new UserHandle(new User(username));
+
+                    try
+                    {
+                        aclAuthenticator.GetAccessControlList().AddUserHandle(userHandle);
+                    }
+                    catch (ACLUserAlreadyExistsException)
+                    {
+                        // If AddUser failed, retrieve the concurrently created user
+                        userHandle = aclAuthenticator.GetAccessControlList().GetUserHandle(username);
+                    }
+                }
+
+                User newUser;
+                User currentUser;
+                do
+                {
+                    // Modifications to user permissions must be performed against the effective user.
+                    currentUser = userHandle.User;
+                    newUser = new User(currentUser);
+
+                    // Remaining parameters are ACL operations
+                    for (var i = 1; i < ops.Length; i++)
+                    {
+                        ACLParser.ApplyACLOpToUser(ref newUser, ops[i]);
+                    }
+
+                }
+                while (!userHandle.TrySetUser(newUser, currentUser));
+            }
+            catch (ACLException exception)
+            {
+                // Abort command execution
+                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
@@ -231,45 +219,42 @@ namespace Garnet.server
             // Have to have at least the username
             if (parseState.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|deluser");
             }
-            else
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            var successfulDeletes = 0;
+
+            try
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                var successfulDeletes = 0;
-
-                try
+                // Attempt to delete the users with the given names
+                for (var i = 0; i < parseState.Count; i++)
                 {
-                    // Attempt to delete the users with the given names
-                    for (var i = 0; i < parseState.Count; i++)
-                    {
-                        var username = parseState.GetString(i);
+                    var username = parseState.GetString(i);
 
-                        if (aclAuthenticator.GetAccessControlList().DeleteUserHandle(username))
-                        {
-                            successfulDeletes += 1;
-                        }
+                    if (aclAuthenticator.GetAccessControlList().DeleteUserHandle(username))
+                    {
+                        successfulDeletes += 1;
                     }
                 }
-                catch (ACLException exception)
-                {
-                    logger?.LogDebug("ACLException: {message}", exception.Message);
-
-                    // Abort command execution
-                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
-                }
-
-                // Return the number of successful deletes
-                while (!RespWriteUtils.TryWriteInt32(successfulDeletes, ref dcurr, dend))
-                    SendAndReset();
             }
+            catch (ACLException exception)
+            {
+                logger?.LogDebug("ACLException: {message}", exception.Message);
+
+                // Abort command execution
+                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            // Return the number of successful deletes
+            while (!RespWriteUtils.TryWriteInt32(successfulDeletes, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
@@ -283,22 +268,18 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|whoami");
             }
-            else
-            {
-                if (!ValidateACLAuthenticator())
-                    return true;
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            if (!ValidateACLAuthenticator())
+                return true;
 
-                // Return the name of the currently authenticated user.
-                Debug.Assert(aclAuthenticator.GetUserHandle()?.User != null);
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
-                while (!RespWriteUtils.TryWriteSimpleString(aclAuthenticator.GetUserHandle().User.Name, ref dcurr, dend))
-                    SendAndReset();
-            }
+            // Return the name of the currently authenticated user.
+            Debug.Assert(aclAuthenticator.GetUserHandle()?.User != null);
+
+            WriteAsciiBulkString(aclAuthenticator.GetUserHandle().User.Name);
 
             return true;
         }
@@ -312,36 +293,33 @@ namespace Garnet.server
             // No additional args allowed
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.", ref dcurr, dend))
+                return AbortWithWrongNumberOfArguments("acl|load");
+            }
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            if (!ValidateACLFileUse())
+                return true;
+
+            // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
+            Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
+            Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+            var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
+
+            // Try to reload the configured ACL configuration file
+            try
+            {
+                logger?.LogInformation("Reading updated ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
+                storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
+
+                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
-            else
+            catch (ACLException exception)
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
-
-                if (!ValidateACLFileUse())
-                    return true;
-
-                // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
-                Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
-                Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
-                var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
-
-                // Try to reload the configured ACL configuration file
-                try
-                {
-                    logger?.LogInformation("Reading updated ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
-                    storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
-
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-                catch (ACLException exception)
-                {
-                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
-                        SendAndReset();
-                }
+                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;
@@ -355,8 +333,7 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.", ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("acl|save");
             }
 
             if (!ValidateACLAuthenticator())
@@ -399,72 +376,69 @@ namespace Garnet.server
             // The username must be provided.
             if (parseState.Count != 1)
             {
-                while (!RespWriteUtils.TryWriteError($"ERR Unknown subcommand or wrong number of arguments for ACL GETUSER.", ref dcurr, dend))
+                return AbortWithWrongNumberOfArguments("acl|getuser");
+            }
+
+            if (!ValidateACLAuthenticator())
+                return true;
+
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            User user = null;
+
+            try
+            {
+                var userHandle = aclAuthenticator
+                    .GetAccessControlList()
+                    .GetUserHandle(parseState.GetString(0));
+
+                if (userHandle != null)
+                {
+                    user = new User(userHandle.User);
+                }
+            }
+            catch (ACLException exception)
+            {
+                // Abort command execution
+                while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
                     SendAndReset();
+
+                return true;
+            }
+
+            if (user is null)
+            {
+                WriteNull();
             }
             else
             {
-                if (!ValidateACLAuthenticator())
-                    return true;
+                WriteMapLength(3);
 
-                var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-                User user = null;
+                while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
+                    SendAndReset();
 
-                try
+                WriteSetLength(1);
+
+                while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
+                    SendAndReset();
+
+                var passwords = user.Passwords;
+                while (!RespWriteUtils.TryWriteAsciiBulkString("passwords", ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.TryWriteArrayLength(passwords.Count, ref dcurr, dend))
+                    SendAndReset();
+
+                foreach (var password in passwords)
                 {
-                    var userHandle = aclAuthenticator
-                        .GetAccessControlList()
-                        .GetUserHandle(parseState.GetString(0));
-
-                    if (userHandle != null)
-                    {
-                        user = new User(userHandle.User);
-                    }
-                }
-                catch (ACLException exception)
-                {
-                    // Abort command execution
-                    while (!RespWriteUtils.TryWriteError($"ERR {exception.Message}", ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString($"#{password.ToString()}", ref dcurr, dend))
                         SendAndReset();
-
-                    return true;
                 }
 
-                if (user is null)
-                {
-                    WriteNull();
-                }
-                else
-                {
-                    WriteMapLength(3);
+                while (!RespWriteUtils.TryWriteAsciiBulkString("commands", ref dcurr, dend))
+                    SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteAsciiBulkString("flags", ref dcurr, dend))
-                        SendAndReset();
-
-                    WriteSetLength(1);
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.IsEnabled ? "on" : "off", ref dcurr, dend))
-                        SendAndReset();
-
-                    var passwords = user.Passwords;
-                    while (!RespWriteUtils.TryWriteAsciiBulkString("passwords", ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteArrayLength(passwords.Count, ref dcurr, dend))
-                        SendAndReset();
-
-                    foreach (var password in passwords)
-                    {
-                        while (!RespWriteUtils.TryWriteAsciiBulkString($"#{password.ToString()}", ref dcurr, dend))
-                            SendAndReset();
-                    }
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString("commands", ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(user.GetEnabledCommandsDescription(), ref dcurr, dend))
-                        SendAndReset();
-                }
+                while (!RespWriteUtils.TryWriteAsciiBulkString(user.GetEnabledCommandsDescription(), ref dcurr, dend))
+                    SendAndReset();
             }
 
             return true;

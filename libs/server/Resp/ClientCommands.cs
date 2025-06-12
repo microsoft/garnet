@@ -158,9 +158,9 @@ namespace Garnet.server
                         first = false;
                     }
 
+                    resultSb.Append("\n");
                     var result = resultSb.ToString();
-                    while (!RespWriteUtils.TryWriteUtf8BulkString(result, ref dcurr, dend))
-                        SendAndReset();
+                    WriteVerbatimString(Encoding.ASCII.GetBytes(result));
 
                     return true;
                 }
@@ -192,9 +192,9 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
+            resultSb.Append("\n");
             var result = resultSb.ToString();
-            while (!RespWriteUtils.TryWriteSimpleString(result, ref dcurr, dend))
-                SendAndReset();
+            WriteVerbatimString(Encoding.ASCII.GetBytes(result));
 
             return true;
         }
@@ -505,7 +505,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(this.clientName, ref dcurr, dend))
                     SendAndReset();
             }
 
