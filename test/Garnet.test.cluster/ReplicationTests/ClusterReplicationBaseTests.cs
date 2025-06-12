@@ -1237,7 +1237,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(new string[] { "X", "Y" }, (string[])resp);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
-            var replicaServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
             resp = replicaServer.Execute("KEYS", ["*"]);
             ClassicAssert.AreEqual(new string[] { "X", "Y" }, (string[])resp);
         }
