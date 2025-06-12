@@ -46,12 +46,12 @@ namespace Garnet.cluster
             }
             else
             {
-                clusterProvider.storeWrapper.store.CheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
-                clusterProvider.storeWrapper.store.CheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
+                clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
                 if (!storeWrapper.serverOptions.DisableObjects)
                 {
-                    clusterProvider.storeWrapper.objectStore.CheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
-                    clusterProvider.storeWrapper.objectStore.CheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
+                    clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                    clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
                 }
             }
 

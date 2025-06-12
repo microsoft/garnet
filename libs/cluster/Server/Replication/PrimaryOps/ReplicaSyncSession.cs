@@ -408,7 +408,7 @@ namespace Garnet.cluster
             return (cEntry, aofSyncTaskInfo);
         }
 
-        private async Task SendCheckpointMetadata(GarnetClientSession gcs, ClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
+        private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
             logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
             var checkpointMetadata = Array.Empty<byte>();

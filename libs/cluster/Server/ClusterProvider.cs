@@ -419,13 +419,13 @@ namespace Garnet.cluster
         public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
             => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
 
-        internal ClusterCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
+        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
         {
             Debug.Assert(serverOptions.EnableCluster);
             return storeType switch
             {
-                StoreType.Main => (ClusterCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
+                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }

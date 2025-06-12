@@ -4,13 +4,14 @@
 using System;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
-namespace Tsavorite.core
+namespace Garnet.server
 {
     /// <summary>
     /// Log commit manager for a generic IDevice
     /// </summary>
-    public class StandaloneCheckpointManager : DeviceLogCommitCheckpointManager
+    public class GarnetCheckpointManager : DeviceLogCommitCheckpointManager
     {
         public string CurrentHistoryId { get; set; }
         public string RecoveredHistoryId { get; set; }
@@ -26,7 +27,7 @@ namespace Tsavorite.core
         /// <param name="removeOutdated">Remote older Tsavorite log commits</param>
         /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Remote older Tsavorite log commits</param>
-        public StandaloneCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
+        public GarnetCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
             : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated, fastCommitThrottleFreq, logger)
         {
             CurrentHistoryId = null;

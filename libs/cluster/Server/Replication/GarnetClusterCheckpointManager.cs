@@ -6,12 +6,16 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ClusterCheckpointManager : StandaloneCheckpointManager, IDisposable
+    /// <summary>
+    /// Checkpoint manager for Garnet cluster, inherits from GarnetCheckpointManager.
+    /// </summary>
+    internal sealed class GarnetClusterCheckpointManager : GarnetCheckpointManager, IDisposable
     {
         readonly bool isMainStore;
         public Action<bool, long, long, bool> checkpointVersionShiftStart;
@@ -21,7 +25,7 @@ namespace Garnet.cluster
 
         readonly ILogger logger;
 
-        public ClusterCheckpointManager(
+        public GarnetClusterCheckpointManager(
             INamedDeviceFactoryCreator deviceFactoryCreator,
             ICheckpointNamingScheme checkpointNamingScheme,
             bool isMainStore,

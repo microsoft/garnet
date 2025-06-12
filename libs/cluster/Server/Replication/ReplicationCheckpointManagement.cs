@@ -89,11 +89,11 @@ namespace Garnet.cluster
             => checkpointStore.GetLatestCheckpointFromDiskInfo();
         #endregion
 
-        public long StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.store.CheckpointManager.CurrentSafeAofAddress;
-        public long ObjectStoreCurrentSafeAofAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.objectStore.CheckpointManager.CurrentSafeAofAddress;
+        public long StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
+        public long ObjectStoreCurrentSafeAofAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
 
-        public long StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.store.CheckpointManager.RecoveredSafeAofAddress;
-        public long ObjectStoreRecoveredSafeAofTailAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.objectStore.CheckpointManager.RecoveredSafeAofAddress;
+        public long StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
+        public long ObjectStoreRecoveredSafeAofTailAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
 
         /// <summary>
         /// Update current aof address for pending commit.
@@ -102,9 +102,9 @@ namespace Garnet.cluster
         /// <param name="safeAofTailAddress"></param>
         public void UpdateCommitSafeAofAddress(long safeAofTailAddress)
         {
-            clusterProvider.storeWrapper.store.CheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
+            clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
             if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.storeWrapper.objectStore.CheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
+                clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
         }
 
         /// <summary>
@@ -113,9 +113,9 @@ namespace Garnet.cluster
         /// </summary>
         public void SetPrimaryReplicationId()
         {
-            clusterProvider.storeWrapper.store.CheckpointManager.CurrentHistoryId = PrimaryReplId;
+            clusterProvider.storeWrapper.StoreCheckpointManager.CurrentHistoryId = PrimaryReplId;
             if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.storeWrapper.objectStore.CheckpointManager.CurrentHistoryId = PrimaryReplId;
+                clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentHistoryId = PrimaryReplId;
         }
     }
 }
