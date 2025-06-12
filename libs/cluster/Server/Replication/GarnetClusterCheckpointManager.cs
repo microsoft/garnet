@@ -153,7 +153,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="logToken"></param>
         /// <param name="checkpointMetadata"></param>
-        public void CommiLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
+        public void CommitLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
         {
             var recoveryInfo = ConvertMetadata(checkpointMetadata);
             CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
@@ -168,7 +168,7 @@ namespace Garnet.cluster
         /// <param name="recoverTo"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public unsafe (long, string) GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
+        public unsafe (long RecoveredSafeAofAddress, string RecoveredReplicationId) GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             var metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo);
             var hlri = ConvertMetadata(metadata);

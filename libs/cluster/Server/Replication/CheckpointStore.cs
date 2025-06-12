@@ -286,7 +286,7 @@ namespace Garnet.cluster
             };
             return entry;
 
-            (long, string) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
+            (long RecoveredSafeAofAddress, string RecoveredReplicationId) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
             {
                 if (fileToken == default) return (0, null);
                 var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
