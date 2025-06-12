@@ -30,18 +30,6 @@ namespace Tsavorite.core
     /// </summary>
     public interface ICheckpointManager : IDisposable
     {
-        string CurrentHistoryId { get; set; }
-        string RecoveredHistoryId { get; set; }
-
-        long CurrentSafeAofAddress { get; set; }
-        long RecoveredSafeAofAddress { get; set; }
-
-        /// <summary>
-        /// Add create cookie action
-        /// </summary>
-        /// <param name="createCookieDelegate"></param>
-        void SetCookieDelegate(Func<byte[]> createCookieDelegate);
-
         /// <summary>
         /// Get current cookie
         /// </summary>

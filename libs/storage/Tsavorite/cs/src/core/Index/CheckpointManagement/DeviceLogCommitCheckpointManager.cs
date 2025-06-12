@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -21,12 +20,6 @@ namespace Tsavorite.core
         const byte logTokenCount = 1;
         const byte flogCommitCount = 1;
 
-        public string CurrentHistoryId { get; set; }
-        public string RecoveredHistoryId { get; set; }
-
-        public long CurrentSafeAofAddress { get; set; }
-        public long RecoveredSafeAofAddress { get; set; }
-
         /// <summary>
         /// deviceFactory
         /// </summary>
@@ -37,11 +30,6 @@ namespace Tsavorite.core
         /// </summary>
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
         private readonly SemaphoreSlim semaphore;
-
-        /// <summary>
-        /// Delegate used to create custom cookie
-        /// </summary>
-        protected Func<byte[]> createCookieDelegate;
 
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
@@ -87,24 +75,6 @@ namespace Tsavorite.core
                 logTokenHistory = new Guid[logTokenCount];
                 // // We only keep the latest TsavoriteLog commit
                 flogCommitHistory = new long[flogCommitCount];
-            }
-
-            unsafe
-            {
-                createCookieDelegate = () =>
-                {
-                    if (CurrentHistoryId == null) return null;
-                    var cookie = new byte[sizeof(int) + sizeof(long) + CurrentHistoryId.Length];
-                    var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentHistoryId);
-                    fixed (byte* ptr = cookie)
-                    fixed (byte* pridPtr = primaryReplIdBytes)
-                    {
-                        *(int*)ptr = sizeof(long) + CurrentHistoryId.Length;
-                        *(long*)(ptr + 4) = CurrentSafeAofAddress;
-                        Buffer.MemoryCopy(pridPtr, ptr + 12, primaryReplIdBytes.Length, primaryReplIdBytes.Length);
-                    }
-                    return cookie;
-                };
             }
         }
 
@@ -198,10 +168,7 @@ namespace Tsavorite.core
         #region ICheckpointManager
 
         /// <inheritdoc />
-        public void SetCookieDelegate(Func<byte[]> createCookieDelegate) => this.createCookieDelegate = createCookieDelegate;
-
-        /// <inheritdoc />
-        public byte[] GetCookie() => createCookieDelegate?.Invoke();
+        public virtual byte[] GetCookie() => null;
 
         /// <inheritdoc />
         public unsafe void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)

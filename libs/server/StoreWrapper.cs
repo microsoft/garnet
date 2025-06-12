@@ -154,6 +154,16 @@ namespace Garnet.server
         bool disposed;
 
         /// <summary>
+        /// Garnet checkpoint manager for main store
+        /// </summary>
+        public StandaloneCheckpointManager StoreCheckpointManager => (StandaloneCheckpointManager)store.CheckpointManager;
+
+        /// <summary>
+        /// Garnet checkpoint manager for object store
+        /// </summary>
+        public StandaloneCheckpointManager ObjectStoreCheckpointManager => (StandaloneCheckpointManager)objectStore.CheckpointManager;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public StoreWrapper(
@@ -250,8 +260,8 @@ namespace Garnet.server
             if (!serverOptions.EnableCluster)
             {
                 runId = Generator.CreateHexId();
-                store.CheckpointManager.CurrentHistoryId = runId;
-                if (!serverOptions.DisableObjects) objectStore.CheckpointManager.CurrentHistoryId = runId;
+                StoreCheckpointManager.CurrentHistoryId = runId;
+                if (!serverOptions.DisableObjects) ObjectStoreCheckpointManager.CurrentHistoryId = runId;
             }
         }
 

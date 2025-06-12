@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-
 namespace Tsavorite.core
 {
     public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
@@ -10,12 +8,6 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
         internal long lastVersion;
-
-        /// <summary>
-        /// Add cookie delegate
-        /// </summary>
-        /// <param name="cookieCreationDelegate"></param>
-        public void SetCookieDelegate(Func<byte[]> cookieCreationDelegate) => checkpointManager.SetCookieDelegate(cookieCreationDelegate);
 
         private byte[] recoveredCommitCookie;
         /// <summary>

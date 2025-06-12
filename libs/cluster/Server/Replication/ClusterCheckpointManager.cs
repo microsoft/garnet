@@ -11,7 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ReplicationLogCheckpointManager : DeviceLogCommitCheckpointManager, IDisposable
+    internal sealed class ClusterCheckpointManager : StandaloneCheckpointManager, IDisposable
     {
         readonly bool isMainStore;
         public Action<bool, long, long, bool> checkpointVersionShiftStart;
@@ -21,7 +21,7 @@ namespace Garnet.cluster
 
         readonly ILogger logger;
 
-        public ReplicationLogCheckpointManager(
+        public ClusterCheckpointManager(
             INamedDeviceFactoryCreator deviceFactoryCreator,
             ICheckpointNamingScheme checkpointNamingScheme,
             bool isMainStore,
@@ -65,7 +65,7 @@ namespace Garnet.cluster
 
         #region ICheckpointManager
 
-        private HybridLogRecoveryInfo ConverMetadata(byte[] checkpointMetadata)
+        private HybridLogRecoveryInfo ConvertMetadata(byte[] checkpointMetadata)
         {
             // NOTE: this conversion should be simplified after suspending support for the old format which assumed the cookie is stored in the prefix.
             var success = true;
@@ -151,7 +151,7 @@ namespace Garnet.cluster
         /// <param name="checkpointMetadata"></param>
         public void CommiLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
         {
-            var recoveryInfo = ConverMetadata(checkpointMetadata);
+            var recoveryInfo = ConvertMetadata(checkpointMetadata);
             CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
         }
 
@@ -167,7 +167,7 @@ namespace Garnet.cluster
         public unsafe (long, string) GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
             var metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo);
-            var hlri = ConverMetadata(metadata);
+            var hlri = ConvertMetadata(metadata);
             var bytesRead = GetCookieData(hlri, out var RecoveredSafeAofAddress, out var RecoveredReplicationId);
             Debug.Assert(bytesRead == 52);
             return (RecoveredSafeAofAddress, RecoveredReplicationId);
@@ -216,7 +216,7 @@ namespace Garnet.cluster
                                 fixed (byte* m = metadata)
                                     Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
-                            hlri = ConverMetadata(metadata);
+                            hlri = ConvertMetadata(metadata);
                             if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo) goto LoopEnd;
                             continue;
                         default:
@@ -241,7 +241,7 @@ namespace Garnet.cluster
             device.Dispose();
 
             body = body.AsSpan().Slice(sizeof(int), size).ToArray();
-            hlri = ConverMetadata(body);
+            hlri = ConvertMetadata(body);
             return hlri.ToByteArray();
         }
 
