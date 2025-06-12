@@ -9,6 +9,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1178,6 +1179,7 @@ namespace Garnet.test.cluster
             }
         }
 
+
         [Test, Order(24)]
         [Category("REPLICATION")]
         public void ClusterReplicationLua([Values] bool luaTransactionMode)
@@ -1188,6 +1190,7 @@ namespace Garnet.test.cluster
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
+
             context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableLua: true, luaTransactionMode: luaTransactionMode);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -1204,6 +1207,39 @@ namespace Garnet.test.cluster
 
             ClassicAssert.AreEqual("bar", res1);
             ClassicAssert.AreEqual("buzz", res2);
+        }
+
+        [Test, Order(23)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationStoredProc()
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            context.nodes[primaryNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+            context.nodes[replicaNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var resp = primaryServer.Execute("RATELIMIT", ["X", "1000000000", "1000000000"]);
+            ClassicAssert.AreEqual("ALLOWED", (string)resp);
+            resp = primaryServer.Execute("RATELIMIT", ["Y", "1000000000", "1000000000"]);
+            ClassicAssert.AreEqual("ALLOWED", (string)resp);
+
+            resp = primaryServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(new string[] { "X", "Y" }, (string[])resp);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            var replicaServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            resp = replicaServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(new string[] { "X", "Y" }, (string[])resp);
         }
     }
 }
