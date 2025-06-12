@@ -89,14 +89,14 @@ namespace Tsavorite.test
 
         protected void BaseTearDown()
         {
+            device?.Dispose();
+            device = null;
             log?.Dispose();
             log = null;
             if (!deleteOnClose)
                 manager.RemoveAllCommits();
             manager?.Dispose();
             manager = null;
-            device?.Dispose();
-            device = null;
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
@@ -1035,8 +1035,6 @@ namespace Tsavorite.test
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
-
-            log.Dispose();
         }
     }
 
