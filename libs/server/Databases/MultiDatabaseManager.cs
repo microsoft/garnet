@@ -409,7 +409,7 @@ namespace Garnet.server
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
-            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
+            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
 
             long replicationOffset = 0;
             try
