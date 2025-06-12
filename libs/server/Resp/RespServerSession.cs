@@ -1274,18 +1274,6 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
-        {
-            while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
-                SendAndReset();
-
-            WriteDirectLarge(message);
-
-            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
-                SendAndReset();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLarge(ReadOnlySpan<byte> src)
         {
             // Repeat while we have bytes left to write
@@ -1312,96 +1300,6 @@ namespace Garnet.server
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDoubleNumeric(double value)
-        {
-            if (respProtocolVersion >= 3)
-            {
-                while (!RespWriteUtils.TryWriteDoubleNumeric(value, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDoubleBulkString(value, ref dcurr, dend))
-                    SendAndReset();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteEmptySet()
-        {
-            if (respProtocolVersion >= 3)
-            {
-                while (!RespWriteUtils.TryWriteEmptySet(ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteMapLength(int count)
-        {
-            if (respProtocolVersion >= 3)
-            {
-                while (!RespWriteUtils.TryWriteMapLength(count, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteArrayLength(count * 2, ref dcurr, dend))
-                    SendAndReset();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteNull()
-        {
-            if (respProtocolVersion >= 3)
-            {
-                while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WritePushLength(int count)
-        {
-            if (respProtocolVersion >= 3)
-            {
-                while (!RespWriteUtils.TryWritePushLength(count, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
-                    SendAndReset();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteSetLength(int count)
-        {
-            if (respProtocolVersion >= 3)
-            {
-                while (!RespWriteUtils.TryWriteSetLength(count, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteArrayLength(count, ref dcurr, dend))
-                    SendAndReset();
             }
         }
 
@@ -1461,20 +1359,6 @@ namespace Garnet.server
 
                 sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
             }
-        }
-
-        /// <summary>
-        /// Writes current output object
-        /// </summary>
-        /// <param name="output"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe void ProcessOutput(SpanByteAndMemory output)
-        {
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
-            else
-                dcurr += output.Length;
         }
 
         /// <summary>

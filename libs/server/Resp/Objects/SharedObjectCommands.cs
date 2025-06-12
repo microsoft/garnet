@@ -40,9 +40,7 @@ namespace Garnet.server
             // Get cursor value
             if (!parseState.TryGetLong(1, out var cursorValue) || cursorValue < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
             var header = new RespInputHeader(objectType);
