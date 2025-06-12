@@ -59,6 +59,7 @@ namespace Garnet.server
         /// </summary>
         public AofProcessor(
             StoreWrapper storeWrapper,
+            IClusterProvider clusterProvider = null,
             bool recordToAof = false,
             ILogger logger = null)
         {
@@ -67,7 +68,7 @@ namespace Garnet.server
             var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.activeDbId = 0;
-            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
+            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -322,12 +323,12 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool ReplayOp(byte* entryPtr, int length, bool asReplica)
+        private unsafe bool ReplayOp(byte* entryPtr, int length, bool replayAsReplica)
         {
             AofHeader header = *(AofHeader*)entryPtr;
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(entryPtr, length, asReplica)) return false;
+            if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
             switch (header.opType)
             {
@@ -356,6 +357,29 @@ namespace Garnet.server
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
             return true;
+
+            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
+            {
+                var curr = ptr + sizeof(AofHeader);
+
+                // Reconstructing CustomProcedureInput
+
+                // input
+                customProcInput.DeserializeFrom(curr);
+
+                try
+                {
+                    // Mark this txn run as a read-write session if we are replaying as a replica
+                    // This is necessary to ensure that the stored procedure can perform write operations if needed
+                    if (replayAsReplica)
+                        respServerSession.clusterSession.SetReadWriteSession();
+                    respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
+                }
+                finally
+                {
+                    if (replayAsReplica) respServerSession.clusterSession.SetReadOnlySession();
+                }
+            }
         }
 
         private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
@@ -377,18 +401,6 @@ namespace Garnet.server
                     objectStoreBasicContext = objectStoreSession.BasicContext;
                 this.activeDbId = db.Id;
             }
-        }
-
-        void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
-        {
-            var curr = ptr + sizeof(AofHeader);
-
-            // Reconstructing CustomProcedureInput
-
-            // input
-            customProcInput.DeserializeFrom(curr);
-
-            respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
         }
 
         static void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
