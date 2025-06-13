@@ -335,7 +335,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(14, count);
 
             // CH - Modify the return value from the number of new elements added, to the total number of elements changed
-            var testArgs = new object[]
+            var testArgs = new string[]
             {
                 key, "CH",
                 "1", "a",
@@ -349,11 +349,38 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, changed);
 
             // INCR - When this option is specified ZADD acts like ZINCRBY
-            testArgs = [key, "INCR", "3.5", "a"];
+            testArgs = ["INCR", "3.5", "a"];
 
-            resp = db.Execute("ZADD", testArgs);
-            ClassicAssert.IsTrue(double.TryParse(resp.ToString(), CultureInfo.InvariantCulture, out var newVal));
-            ClassicAssert.AreEqual(4.5, newVal);
+            // INCR as ZINCRBY
+            resp = db.Execute("ZADD", [key, .. testArgs]);
+            ClassicAssert.AreEqual(4.5, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
+
+            // Test NX option.
+            resp = db.Execute("ZADD", [key, "NX", .. testArgs]);
+            ClassicAssert.IsTrue(resp.IsNull);
+
+            resp = db.Execute("ZADD", [key + '2', "NX", .. testArgs]);
+            ClassicAssert.AreEqual(3.5, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
+
+            // INCR + LT/GT combination should prevent update when condition fails and key exists.
+            resp = db.Execute("ZADD", [key, "LT", .. testArgs]);
+            ClassicAssert.IsTrue(resp.IsNull);
+
+            // Condition does not prevent creation of new value though.
+            resp = db.Execute("ZADD", [key + '3', "LT", .. testArgs]);
+            ClassicAssert.AreEqual(3.5, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
+
+            // Test GT option.
+            resp = db.Execute("ZADD", [key, "GT", .. testArgs]);
+            ClassicAssert.AreEqual(8, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
+
+            // Test negative values.
+            testArgs = ["INCR", "-4", "a"];
+            resp = db.Execute("ZADD", [key, "GT", .. testArgs]);
+            ClassicAssert.IsTrue(resp.IsNull);
+
+            resp = db.Execute("ZADD", [key, "LT", .. testArgs]);
+            ClassicAssert.AreEqual(4, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
         }
 
         [Test]
