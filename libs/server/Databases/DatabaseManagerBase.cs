@@ -411,7 +411,7 @@ namespace Garnet.server
         {
             if (db.ObjectStoreCollectionDbStorageSession == null)
             {
-                var scratchBufferManager = new ScratchBufferManager();
+                var scratchBufferManager = new ScratchBufferBuilder();
                 db.ObjectStoreCollectionDbStorageSession =
                     new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
@@ -700,13 +700,13 @@ namespace Garnet.server
 
             ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
             storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
-            storageSession.scratchBufferManager.Reset();
+            storageSession.scratchBufferBuilder.Reset();
         }
 
         private static void ExecuteSortedSetCollect(StorageSession storageSession)
         {
             storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
-            storageSession.scratchBufferManager.Reset();
+            storageSession.scratchBufferBuilder.Reset();
         }
 
         /// <inheritdoc/>
@@ -716,7 +716,7 @@ namespace Garnet.server
         {
             if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
             {
-                var scratchBufferManager = new ScratchBufferManager();
+                var scratchBufferManager = new ScratchBufferBuilder();
                 db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
@@ -732,7 +732,7 @@ namespace Garnet.server
         {
             if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
             {
-                var scratchBufferManager = new ScratchBufferManager();
+                var scratchBufferManager = new ScratchBufferBuilder();
                 db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 

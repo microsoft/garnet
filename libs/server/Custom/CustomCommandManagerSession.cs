@@ -65,12 +65,12 @@ namespace Garnet.server
         /// <param name="id">The transaction ID</param>
         /// <param name="respServerSession">The current session</param>
         /// <param name="txnManager">txnManager</param>
-        /// <param name="scratchAllocationManager">scratchAllocationManager</param>
+        /// <param name="scratchBufferAllocator">scratchBufferAllocator</param>
         /// <param name="arity">The arity of the transaction</param>
         /// <returns>The per-session instance of the transaction</returns>
         /// <exception cref="GarnetException"></exception>
         public CustomTransactionProcedure GetCustomTransactionProcedure(int id, RespServerSession respServerSession,
-            TransactionManager txnManager, ScratchAllocationManager scratchAllocationManager, out int arity)
+            TransactionManager txnManager, ScratchBufferAllocator scratchBufferAllocator, out int arity)
         {
             // Check if we already have a cached entry of the per-session custom transaction instance
             if (sessionTransactionProcMap.TryGetValue(id, out var tranToArity))
@@ -88,7 +88,7 @@ namespace Garnet.server
             // Create the session-specific instance and add it to the cache
             var customTranProc = entry.proc();
             customTranProc.txnManager = txnManager;
-            customTranProc.scratchAllocationManager = scratchAllocationManager;
+            customTranProc.scratchBufferAllocator = scratchBufferAllocator;
             customTranProc.respServerSession = respServerSession;
 
             arity = entry.arity;

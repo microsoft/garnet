@@ -12,7 +12,7 @@ using Garnet.common;
 namespace Garnet.server
 {
     /// <summary>
-    /// <see cref="ScratchAllocationManager"/> is responsible for allocating sufficient memory and copying data into a buffer
+    /// <see cref="ScratchBufferAllocator"/> is responsible for allocating sufficient memory and copying data into a buffer
     /// and returning an <see cref="ArgSlice"/> to the caller.
     /// Whenever the current buffer runs out of space, a new buffer is allocated, without copying the previous buffer data.
     /// The previous allocated buffers are kept rooted in a stack by the manager, so that each <see cref="ArgSlice"/> that wasn't explicitly
@@ -22,14 +22,14 @@ namespace Garnet.server
     /// Each call to CreateArgSlice will copy the data to the current or new buffer that could contain the data in its entirety,
     /// so rewinding the <see cref="ArgSlice"/> (i.e. releasing the memory) should be called in reverse order to assignment.
     /// 
-    /// Note: Use <see cref="ScratchBufferManager"/> if you need all data to remain in a continuous chunk of memory (which is not promised by
-    /// <see cref="ScratchAllocationManager"/>) and you do not need to reuse previously returned <see cref="ArgSlice"/> structs
+    /// Note: Use <see cref="ScratchBufferBuilder"/> if you need all data to remain in a continuous chunk of memory (which is not promised by
+    /// <see cref="ScratchBufferAllocator"/>) and you do not need to reuse previously returned <see cref="ArgSlice"/> structs
     /// (as consequent allocations may cause them to point to GCed areas in memory).
     /// </summary>
-    internal sealed unsafe class ScratchAllocationManager
+    internal sealed unsafe class ScratchBufferAllocator
     {
         /// <summary>
-        /// <see cref="ScratchBuffer"/> represents a buffer managed by <see cref="ScratchAllocationManager"/>
+        /// <see cref="ScratchBuffer"/> represents a buffer managed by <see cref="ScratchBufferAllocator"/>
         /// </summary>
         private struct ScratchBuffer
         {
@@ -97,18 +97,18 @@ namespace Garnet.server
         internal int TotalLength => totalLength;
 
         /// <summary>
-        /// Creates an instance of <see cref="ScratchAllocationManager"/>
+        /// Creates an instance of <see cref="ScratchBufferAllocator"/>
         /// </summary>
         /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 2)</param>
         /// <param name="maxInitialCapacity">Max size of previously allocated unused buffer to keep upon reset (Default: no limit)</param>
-        public ScratchAllocationManager(int minSizeBuffer = 2, int maxInitialCapacity = int.MaxValue)
+        public ScratchBufferAllocator(int minSizeBuffer = 2, int maxInitialCapacity = int.MaxValue)
         {
             this.minSizeBuffer = minSizeBuffer;
             this.maxInitialCapacity = maxInitialCapacity;
         }
 
         /// <summary>
-        /// Reset all scratch buffers managed by the <see cref="ScratchAllocationManager"/>.
+        /// Reset all scratch buffers managed by the <see cref="ScratchBufferAllocator"/>.
         /// Loses all <see cref="ArgSlice"/>s created on the scratch buffers.
         /// </summary>
         public void Reset()

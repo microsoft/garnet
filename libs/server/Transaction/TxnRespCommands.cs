@@ -300,7 +300,7 @@ namespace Garnet.server
             try
             {
                 proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager,
-                    scratchAllocationManager, out arity);
+                    scratchBufferAllocator, out arity);
             }
             catch (Exception e)
             {

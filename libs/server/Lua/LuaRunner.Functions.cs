@@ -98,7 +98,7 @@ namespace Garnet.server
                 {
                     // equivalent to KEYS[i+1] = keys[i]
                     var key = keys[i];
-                    PrepareString(key, scratchBufferManager, out var encoded);
+                    PrepareString(key, scratchBufferBuilder, out var encoded);
 
                     if (!state.TryPushBuffer(encoded))
                     {
@@ -131,7 +131,7 @@ namespace Garnet.server
                 {
                     // equivalent to ARGV[i+1] = keys[i]
                     var arg = argv[i];
-                    PrepareString(arg, scratchBufferManager, out var encoded);
+                    PrepareString(arg, scratchBufferBuilder, out var encoded);
 
                     if (!state.TryPushBuffer(encoded))
                     {
@@ -147,7 +147,7 @@ namespace Garnet.server
             return 0;
 
             // Convert string into a span, using buffer for storage
-            static void PrepareString(string raw, ScratchBufferManager buffer, out ReadOnlySpan<byte> strBytes)
+            static void PrepareString(string raw, ScratchBufferBuilder buffer, out ReadOnlySpan<byte> strBytes)
             {
                 // Try to fit in the existing buffer
                 var into = buffer.FullBuffer();
@@ -1114,7 +1114,7 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.BadArgEncode);
             }
 
-            scratchBufferManager.Reset();
+            scratchBufferBuilder.Reset();
             var ret = Encode(this, 0);
 
             if (ret == 1)
@@ -1123,7 +1123,7 @@ namespace Garnet.server
                 state.ExpectLuaStackEmpty();
 
                 // Push the encoded string
-                var result = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
+                var result = scratchBufferBuilder.ViewFullArgSlice().ReadOnlySpan;
                 if (!state.TryPushBuffer(result))
                 {
                     return LuaWrappedError(1, constStrs.OutOfMemory);
@@ -1174,9 +1174,9 @@ namespace Garnet.server
 
                 var data = self.state.ToBoolean(self.state.StackTop) ? "true"u8 : "false"u8;
 
-                var into = self.scratchBufferManager.ViewRemainingArgSlice(data.Length).Span;
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(data.Length).Span;
                 data.CopyTo(into);
-                self.scratchBufferManager.MoveOffset(data.Length);
+                self.scratchBufferBuilder.MoveOffset(data.Length);
 
                 self.state.Pop(1);
 
@@ -1188,9 +1188,9 @@ namespace Garnet.server
             {
                 Debug.Assert(self.state.Type(self.state.StackTop) == LuaType.Nil, "Expected nil on top of stack");
 
-                var into = self.scratchBufferManager.ViewRemainingArgSlice(4).Span;
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(4).Span;
                 "null"u8.CopyTo(into);
-                self.scratchBufferManager.MoveOffset(4);
+                self.scratchBufferBuilder.MoveOffset(4);
 
                 self.state.Pop(1);
 
@@ -1211,9 +1211,9 @@ namespace Garnet.server
                     return self.LuaWrappedError(1, self.constStrs.UnableToFormatNumber);
                 }
 
-                var into = self.scratchBufferManager.ViewRemainingArgSlice(written).Span;
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(written).Span;
                 space[..written].CopyTo(into);
-                self.scratchBufferManager.MoveOffset(written);
+                self.scratchBufferBuilder.MoveOffset(written);
 
                 self.state.Pop(1);
 
@@ -1227,13 +1227,13 @@ namespace Garnet.server
 
                 self.state.KnownStringToBuffer(self.state.StackTop, out var buff);
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'"';
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)'"';
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 var escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
                 while (escapeIx != -1)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(escapeIx + 2).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(escapeIx + 2).Span;
                     buff[..escapeIx].CopyTo(into);
 
                     into[escapeIx] = (byte)'\\';
@@ -1248,16 +1248,16 @@ namespace Garnet.server
                         into[escapeIx + 1] = (byte)'\\';
                     }
 
-                    self.scratchBufferManager.MoveOffset(escapeIx + 2);
+                    self.scratchBufferBuilder.MoveOffset(escapeIx + 2);
 
                     buff = buff[(escapeIx + 1)..];
                     escapeIx = buff.IndexOfAny((byte)'"', (byte)'\\');
                 }
 
-                var tailInto = self.scratchBufferManager.ViewRemainingArgSlice(buff.Length + 1).Span;
+                var tailInto = self.scratchBufferBuilder.ViewRemainingArgSlice(buff.Length + 1).Span;
                 buff.CopyTo(tailInto);
                 tailInto[buff.Length] = (byte)'"';
-                self.scratchBufferManager.MoveOffset(buff.Length + 1);
+                self.scratchBufferBuilder.MoveOffset(buff.Length + 1);
 
                 self.state.Pop(1);
 
@@ -1337,15 +1337,15 @@ namespace Garnet.server
 
                 var tableIndex = self.state.StackTop;
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'[';
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)'[';
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 for (var ix = 1; ix <= length; ix++)
                 {
                     if (ix != 1)
                     {
-                        self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)',';
-                        self.scratchBufferManager.MoveOffset(1);
+                        self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)',';
+                        self.scratchBufferBuilder.MoveOffset(1);
                     }
 
                     _ = self.state.RawGetInteger(null, tableIndex, ix);
@@ -1356,8 +1356,8 @@ namespace Garnet.server
                     }
                 }
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)']';
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)']';
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 // Remove table
                 self.state.Pop(1);
@@ -1380,8 +1380,8 @@ namespace Garnet.server
 
                 var tableIndex = self.state.StackTop;
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'{';
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)'{';
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 var firstValue = true;
 
@@ -1401,8 +1401,8 @@ namespace Garnet.server
 
                     if (!firstValue)
                     {
-                        self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)',';
-                        self.scratchBufferManager.MoveOffset(1);
+                        self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)',';
+                        self.scratchBufferBuilder.MoveOffset(1);
                     }
 
                     // Copy key to top of stack
@@ -1428,8 +1428,8 @@ namespace Garnet.server
                         return r1;
                     }
 
-                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)':';
-                    self.scratchBufferManager.MoveOffset(1);
+                    self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)':';
+                    self.scratchBufferBuilder.MoveOffset(1);
 
                     // Encode value
                     var r2 = Encode(self, depth + 1);
@@ -1441,8 +1441,8 @@ namespace Garnet.server
                     firstValue = false;
                 }
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)'}';
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)'}';
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 // Remove table
                 self.state.Pop(1);
@@ -1545,8 +1545,8 @@ namespace Garnet.server
                     case JsonValueKind.String:
                         var str = value.GetValue<string>();
 
-                        self.scratchBufferManager.Reset();
-                        var buf = self.scratchBufferManager.UTF8EncodeString(str);
+                        self.scratchBufferBuilder.Reset();
+                        var buf = self.scratchBufferBuilder.UTF8EncodeString(str);
 
                         if (!self.state.TryPushBuffer(buf))
                         {
@@ -1623,8 +1623,8 @@ namespace Garnet.server
                 foreach (var (key, value) in obj)
                 {
                     // Decode key to string
-                    self.scratchBufferManager.Reset();
-                    var buf = self.scratchBufferManager.UTF8EncodeString(key);
+                    self.scratchBufferBuilder.Reset();
+                    var buf = self.scratchBufferBuilder.UTF8EncodeString(key);
                     if (!self.state.TryPushBuffer(buf))
                     {
                         return self.LuaWrappedError(1, self.constStrs.OutOfMemory);
@@ -1664,7 +1664,7 @@ namespace Garnet.server
             //
             // Somewhat odd, but we match that behavior
 
-            scratchBufferManager.Reset();
+            scratchBufferBuilder.Reset();
 
             for (var argIx = 1; argIx <= numLuaArgs; argIx++)
             {
@@ -1679,7 +1679,7 @@ namespace Garnet.server
             // After all encoding, stack should be empty
             state.ExpectLuaStackEmpty();
 
-            var ret = scratchBufferManager.ViewFullArgSlice().ReadOnlySpan;
+            var ret = scratchBufferBuilder.ViewFullArgSlice().ReadOnlySpan;
             if (!state.TryPushBuffer(ret))
             {
                 return LuaWrappedError(1, constStrs.OutOfMemory);
@@ -1702,8 +1702,8 @@ namespace Garnet.server
                             // Redis treats a too deeply nested table as a null
                             //
                             // This is weird, but we match it
-                            self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = 0xC0;
-                            self.scratchBufferManager.MoveOffset(1);
+                            self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = 0xC0;
+                            self.scratchBufferBuilder.MoveOffset(1);
 
                             self.state.Remove(stackIndex);
 
@@ -1729,8 +1729,8 @@ namespace Garnet.server
             {
                 Debug.Assert(self.state.Type(stackIndex) is not (LuaType.Boolean or LuaType.Number or LuaType.String or LuaType.Table), "Expected null-ish type");
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = 0xC0;
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = 0xC0;
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 self.state.Remove(stackIndex);
 
@@ -1745,8 +1745,8 @@ namespace Garnet.server
 
                 var value = (byte)(self.state.ToBoolean(stackIndex) ? 0xC3 : 0xC2);
 
-                self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = value;
-                self.scratchBufferManager.MoveOffset(1);
+                self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = value;
+                self.scratchBufferBuilder.MoveOffset(1);
 
                 self.state.Remove(stackIndex);
 
@@ -1782,8 +1782,8 @@ namespace Garnet.server
                 // positive 7-bit fixint
                 if ((byte)(value & 0b0111_1111) == value)
                 {
-                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
-                    self.scratchBufferManager.MoveOffset(1);
+                    self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                    self.scratchBufferBuilder.MoveOffset(1);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1792,8 +1792,8 @@ namespace Garnet.server
                 // negative 5-bit fixint
                 if ((sbyte)(value | 0b1110_0000) == value)
                 {
-                    self.scratchBufferManager.ViewRemainingArgSlice(1).Span[0] = (byte)value;
-                    self.scratchBufferManager.MoveOffset(1);
+                    self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                    self.scratchBufferBuilder.MoveOffset(1);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1802,11 +1802,11 @@ namespace Garnet.server
                 // 8-bit int
                 if (value is >= sbyte.MinValue and <= sbyte.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(2).Span;
 
                     into[0] = 0xD0;
                     into[1] = (byte)value;
-                    self.scratchBufferManager.MoveOffset(2);
+                    self.scratchBufferBuilder.MoveOffset(2);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1815,11 +1815,11 @@ namespace Garnet.server
                 // 8-bit uint
                 if (value is >= byte.MinValue and <= byte.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(2).Span;
 
                     into[0] = 0xCC;
                     into[1] = (byte)value;
-                    self.scratchBufferManager.MoveOffset(2);
+                    self.scratchBufferBuilder.MoveOffset(2);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1828,11 +1828,11 @@ namespace Garnet.server
                 // 16-bit int
                 if (value is >= short.MinValue and <= short.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(3).Span;
 
                     into[0] = 0xD1;
                     BinaryPrimitives.WriteInt16BigEndian(into[1..], (short)value);
-                    self.scratchBufferManager.MoveOffset(3);
+                    self.scratchBufferBuilder.MoveOffset(3);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1841,11 +1841,11 @@ namespace Garnet.server
                 // 16-bit uint
                 if (value is >= ushort.MinValue and <= ushort.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(3).Span;
 
                     into[0] = 0xCD;
                     BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)value);
-                    self.scratchBufferManager.MoveOffset(3);
+                    self.scratchBufferBuilder.MoveOffset(3);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1854,11 +1854,11 @@ namespace Garnet.server
                 // 32-bit int
                 if (value is >= int.MinValue and <= int.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(5).Span;
 
                     into[0] = 0xD2;
                     BinaryPrimitives.WriteInt32BigEndian(into[1..], (int)value);
-                    self.scratchBufferManager.MoveOffset(5);
+                    self.scratchBufferBuilder.MoveOffset(5);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1867,11 +1867,11 @@ namespace Garnet.server
                 // 32-bit uint
                 if (value is >= uint.MinValue and <= uint.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(5).Span;
 
                     into[0] = 0xCE;
                     BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)value);
-                    self.scratchBufferManager.MoveOffset(5);
+                    self.scratchBufferBuilder.MoveOffset(5);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1880,11 +1880,11 @@ namespace Garnet.server
                 // 64-bit uint
                 if (value > uint.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(9).Span;
 
                     into[0] = 0xCF;
                     BinaryPrimitives.WriteUInt64BigEndian(into[1..], (ulong)value);
-                    self.scratchBufferManager.MoveOffset(9);
+                    self.scratchBufferBuilder.MoveOffset(9);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1892,11 +1892,11 @@ namespace Garnet.server
 
                 // 64-bit int
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(9).Span;
 
                     into[0] = 0xD3;
                     BinaryPrimitives.WriteInt64BigEndian(into[1..], value);
-                    self.scratchBufferManager.MoveOffset(9);
+                    self.scratchBufferBuilder.MoveOffset(9);
 
                     constStrRegisteryIndex = -1;
                     return true;
@@ -1909,11 +1909,11 @@ namespace Garnet.server
                 // While Redis has code that attempts to pack doubles into floats
                 // it doesn't appear to do anything, so we just always write a double
 
-                var into = self.scratchBufferManager.ViewRemainingArgSlice(9).Span;
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(9).Span;
 
                 into[0] = 0xCB;
                 BinaryPrimitives.WriteDoubleBigEndian(into[1..], value);
-                self.scratchBufferManager.MoveOffset(9);
+                self.scratchBufferBuilder.MoveOffset(9);
 
                 constStrRegisteryIndex = -1;
                 return true;
@@ -1928,38 +1928,38 @@ namespace Garnet.server
 
                 if (data.Length < 32)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1 + data.Length).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(1 + data.Length).Span;
 
                     into[0] = (byte)(0xA0 | data.Length);
                     data.CopyTo(into[1..]);
-                    self.scratchBufferManager.MoveOffset(1 + data.Length);
+                    self.scratchBufferBuilder.MoveOffset(1 + data.Length);
                 }
                 else if (data.Length <= byte.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(2 + data.Length).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(2 + data.Length).Span;
 
                     into[0] = 0xD9;
                     into[1] = (byte)data.Length;
                     data.CopyTo(into[2..]);
-                    self.scratchBufferManager.MoveOffset(2 + data.Length);
+                    self.scratchBufferBuilder.MoveOffset(2 + data.Length);
                 }
                 else if (data.Length <= ushort.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3 + data.Length).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(3 + data.Length).Span;
 
                     into[0] = 0xDA;
                     BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)data.Length);
                     data.CopyTo(into[3..]);
-                    self.scratchBufferManager.MoveOffset(3 + data.Length);
+                    self.scratchBufferBuilder.MoveOffset(3 + data.Length);
                 }
                 else
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5 + data.Length).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(5 + data.Length).Span;
 
                     into[0] = 0xDB;
                     BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)data.Length);
                     data.CopyTo(into[5..]);
-                    self.scratchBufferManager.MoveOffset(5 + data.Length);
+                    self.scratchBufferBuilder.MoveOffset(5 + data.Length);
                 }
 
                 self.state.Remove(stackIndex);
@@ -2045,25 +2045,25 @@ namespace Garnet.server
                 // Encode length
                 if (count <= 15)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span;
                     into[0] = (byte)(0b1001_0000 | count);
-                    self.scratchBufferManager.MoveOffset(1);
+                    self.scratchBufferBuilder.MoveOffset(1);
                 }
                 else if (count <= ushort.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(3).Span;
 
                     into[0] = 0xDC;
                     BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)count);
-                    self.scratchBufferManager.MoveOffset(3);
+                    self.scratchBufferBuilder.MoveOffset(3);
                 }
                 else
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(5).Span;
 
                     into[0] = 0xDD;
                     BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)count);
-                    self.scratchBufferManager.MoveOffset(5);
+                    self.scratchBufferBuilder.MoveOffset(5);
                 }
 
                 // Write each element out
@@ -2105,26 +2105,26 @@ namespace Garnet.server
                 // Encode length
                 if (count <= 15)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(1).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span;
 
                     into[0] = (byte)(0b1000_0000 | count);
-                    self.scratchBufferManager.MoveOffset(1);
+                    self.scratchBufferBuilder.MoveOffset(1);
                 }
                 else if (count <= ushort.MaxValue)
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(3).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(3).Span;
 
                     into[0] = 0xDE;
                     BinaryPrimitives.WriteUInt16BigEndian(into[1..], (ushort)count);
-                    self.scratchBufferManager.MoveOffset(3);
+                    self.scratchBufferBuilder.MoveOffset(3);
                 }
                 else
                 {
-                    var into = self.scratchBufferManager.ViewRemainingArgSlice(5).Span;
+                    var into = self.scratchBufferBuilder.ViewRemainingArgSlice(5).Span;
 
                     into[0] = 0xDF;
                     BinaryPrimitives.WriteUInt32BigEndian(into[1..], (uint)count);
-                    self.scratchBufferManager.MoveOffset(5);
+                    self.scratchBufferBuilder.MoveOffset(5);
                 }
 
                 self.state.PushNil();
@@ -2860,7 +2860,7 @@ namespace Garnet.server
                         default: throw new InvalidOperationException($"Unexpected BITOP sub command: {subCommand}");
                     }
 
-                    var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, info, cmdSpan, luaArgCount: 2);
+                    var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, info, cmdSpan, luaArgCount: 2);
 
                     // Remove the BITOP sub command
                     state.Pop(1);
@@ -2940,7 +2940,7 @@ namespace Garnet.server
                             return LuaWrappedError(1, constStrs.OutOfMemory);
                         }
 
-                        var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, subCommand, cmdSpan, luaArgCount: 2);
+                        var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, subCommand, cmdSpan, luaArgCount: 2);
 
                         // Remove the extra sub-command
                         state.Pop(1);
@@ -2977,7 +2977,7 @@ namespace Garnet.server
             }
             else
             {
-                var (parsedCommand, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferManager, info, cmdSpan, luaArgCount);
+                var (parsedCommand, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, info, cmdSpan, luaArgCount);
 
                 if (badArg)
                 {
@@ -3003,7 +3003,7 @@ namespace Garnet.server
             static (RespCommand Parsed, bool BadArg) PrepareAndCheckRespRequest(
                 ref LuaStateWrapper state,
                 RespServerSession respServerSession,
-                ScratchBufferManager scratchBufferManager,
+                ScratchBufferBuilder scratchBufferManager,
                 RespCommandsInfo cmdInfo,
                 ReadOnlySpan<byte> cmdSpan,
                 int luaArgCount
@@ -3263,8 +3263,8 @@ namespace Garnet.server
                 // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
                 // in future to provide parse state directly.
 
-                scratchBufferManager.Reset();
-                scratchBufferManager.StartCommand(cmdSpan, argCount - 1);
+                scratchBufferBuilder.Reset();
+                scratchBufferBuilder.StartCommand(cmdSpan, argCount - 1);
 
                 for (var i = 0; i < argCount - 1; i++)
                 {
@@ -3273,12 +3273,12 @@ namespace Garnet.server
                     var argType = state.Type(argIx);
                     if (argType == LuaType.Nil)
                     {
-                        scratchBufferManager.WriteNullArgument();
+                        scratchBufferBuilder.WriteNullArgument();
                     }
                     else if (argType is LuaType.String)
                     {
                         state.KnownStringToBuffer(argIx, out var span);
-                        scratchBufferManager.WriteArgument(span);
+                        scratchBufferBuilder.WriteArgument(span);
                     }
                     else if (argType is LuaType.Number)
                     {
@@ -3286,7 +3286,7 @@ namespace Garnet.server
                         {
                             return LuaWrappedError(1, constStrs.OutOfMemory);
                         }
-                        scratchBufferManager.WriteArgument(span);
+                        scratchBufferBuilder.WriteArgument(span);
                     }
                     else
                     {
@@ -3294,7 +3294,7 @@ namespace Garnet.server
                     }
                 }
 
-                var request = scratchBufferManager.ViewFullArgSlice();
+                var request = scratchBufferBuilder.ViewFullArgSlice();
 
                 // Once the request is formatted, we can release all the args on the Lua stack
                 //
