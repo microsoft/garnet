@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -17,15 +18,34 @@ namespace Tsavorite.test.recovery.sumstore
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
     using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
 
+    public class CheckpointManagerWithCookie : DeviceLogCommitCheckpointManager
+    {
+        /// <summary>
+        /// Cookie
+        /// </summary>
+        public readonly byte[] Cookie;
+
+        public CheckpointManagerWithCookie(bool testCommitCookie, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
+            : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated, fastCommitThrottleFreq, logger)
+        {
+            if (testCommitCookie)
+            {
+                // Generate a new unique byte sequence for test
+                Cookie = Guid.NewGuid().ToByteArray();
+            }
+        }
+
+        public override byte[] GetCookie() => Cookie;
+    }
+
     [TestFixture]
     class RecoveryTests
     {
         const int NumOps = 5000;
         AdId[] inputArray;
 
-        private byte[] commitCookie;
         string checkpointDir;
-        ICheckpointManager checkpointManager;
+        CheckpointManagerWithCookie checkpointManager;
 
         private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store1;
         private TsavoriteKV<AdId, NumClicks, StructStoreFunctions, StructAllocator> store2;
@@ -64,7 +84,8 @@ namespace Tsavorite.test.recovery.sumstore
             [Values] CompletionSyncMode completionSyncMode, [Values] bool testCommitCookie)
         {
             IgnoreIfNotRunningAzureTests();
-            checkpointManager = new DeviceLogCommitCheckpointManager(
+            checkpointManager = new CheckpointManagerWithCookie(
+                testCommitCookie,
                 TestUtils.AzureStorageNamedDeviceFactoryCreator,
                 new AzureCheckpointNamingScheme($"{AzureTestContainer}/{AzureTestDirectory}"));
             await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
@@ -81,34 +102,16 @@ namespace Tsavorite.test.recovery.sumstore
             [Values] CompletionSyncMode completionSyncMode,
             [Values] bool testCommitCookie)
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(
+            checkpointManager = new CheckpointManagerWithCookie(
+                testCommitCookie,
                 new LocalStorageNamedDeviceFactoryCreator(),
                 new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "chkpt")));
             await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
             checkpointManager.PurgeAll();
         }
 
-        [Test]
-        [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask SimpleRecoveryTest1(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] CompletionSyncMode completionSyncMode,
-            [Values] bool testCommitCookie)
-        {
-            await SimpleRecoveryTest1_Worker(checkpointType, completionSyncMode, testCommitCookie);
-        }
-
         private async ValueTask SimpleRecoveryTest1_Worker(CheckpointType checkpointType, CompletionSyncMode completionSyncMode, bool testCommitCookie)
         {
-            if (testCommitCookie)
-            {
-                // Generate a new unique byte sequence for test
-                commitCookie = Guid.NewGuid().ToByteArray();
-            }
-
-            if (checkpointManager is null)
-                checkpointDir = Path.Join(MethodTestDir, "checkpoints");
-
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
             store1 = new(new()
@@ -148,8 +151,6 @@ namespace Tsavorite.test.recovery.sumstore
                 _ = bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
-            if (testCommitCookie)
-                store1.CommitCookie = commitCookie;
             _ = store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             if (completionSyncMode == CompletionSyncMode.Sync)
                 store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -163,7 +164,7 @@ namespace Tsavorite.test.recovery.sumstore
                 _ = await store2.RecoverAsync(token);
 
             if (testCommitCookie)
-                ClassicAssert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(commitCookie));
+                ClassicAssert.IsTrue(store2.RecoveredCommitCookie.SequenceEqual(checkpointManager.Cookie));
             else
                 ClassicAssert.Null(store2.RecoveredCommitCookie);
 
@@ -196,7 +197,7 @@ namespace Tsavorite.test.recovery.sumstore
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] CompletionSyncMode completionSyncMode)
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
+            checkpointManager = new CheckpointManagerWithCookie(false, new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints4")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
 
             store1 = new(new()
@@ -322,7 +323,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask SimpleReadAndUpdateInfoTest([Values] CompletionSyncMode completionSyncMode)
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
+            checkpointManager = new CheckpointManagerWithCookie(false, new LocalStorageNamedDeviceFactoryCreator(), new DefaultCheckpointNamingScheme(Path.Join(MethodTestDir, "checkpoints")), false);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
 
             store1 = new(new()

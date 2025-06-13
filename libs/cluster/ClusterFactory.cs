@@ -14,7 +14,7 @@ namespace Garnet.cluster
     {
         /// <inheritdoc />
         public DeviceLogCommitCheckpointManager CreateCheckpointManager(INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool isMainStore, ILogger logger = default)
-            => new ReplicationLogCheckpointManager(deviceFactoryCreator, checkpointNamingScheme, isMainStore, logger: logger);
+            => new GarnetClusterCheckpointManager(deviceFactoryCreator, checkpointNamingScheme, isMainStore, logger: logger);
 
         /// <inheritdoc />
         public IClusterProvider CreateClusterProvider(StoreWrapper store)
