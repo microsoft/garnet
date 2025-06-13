@@ -347,7 +347,7 @@ namespace Garnet.server
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(header, count, 2);
 
             var output = new GarnetObjectStoreOutput();
 
@@ -391,7 +391,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(header, ref parseState, arg2: 2);
 
             var output = new GarnetObjectStoreOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
@@ -400,11 +400,11 @@ namespace Garnet.server
             // Process output
             if (status == GarnetStatus.OK)
             {
-                var result = ProcessRespArrayOutput(output, out var error);
-                if (error == default)
+                var result = ProcessRespSingleTokenOutput(output);
+                if (result.length > 0)
                 {
                     // get the new score
-                    _ = NumUtils.TryParse(result[0].ReadOnlySpan, out newScore);
+                    _ = NumUtils.TryParse(result.ReadOnlySpan, out newScore);
                 }
             }
 

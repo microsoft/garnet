@@ -82,12 +82,12 @@ namespace Garnet.cluster
         public RecoveryStatus currentRecoveryStatus;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReplicationLogCheckpointManager GetCkptManager(StoreType storeType)
+        public GarnetClusterCheckpointManager GetCkptManager(StoreType storeType)
         {
             return storeType switch
             {
-                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
+                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }

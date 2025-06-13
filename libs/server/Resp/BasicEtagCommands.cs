@@ -90,9 +90,7 @@ namespace Garnet.server
             SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
             if (!parseState.TryGetLong(1, out long givenEtag) || givenEtag < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_ETAG, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_ETAG);
             }
 
             // Conditional delete is not natively supported for records in the stable region.

@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -585,7 +584,7 @@ namespace Garnet.common
             }
 
             Span<byte> buffer = stackalloc byte[32];
-            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
+            if (!value.TryFormat(buffer, out var bytesWritten))
                 return false;
 
             var itemDigits = NumUtils.CountDigits(bytesWritten);
@@ -619,10 +618,9 @@ namespace Garnet.common
             }
 
             Span<byte> buffer = stackalloc byte[32];
-            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
+            if (!value.TryFormat(buffer, out var bytesWritten))
                 return false;
 
-            var itemDigits = NumUtils.CountDigits(bytesWritten);
             int totalLen = 1 + bytesWritten + 2;
             if (totalLen > (int)(end - curr))
                 return false;
@@ -700,7 +698,19 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "*0\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.EMPTYARRAY);
+            return true;
+        }
+
+        /// <summary>
+        /// Write empty map
+        /// </summary>
+        public static bool TryWriteEmptyMap(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, RespStrings.EMPTYMAP);
             return true;
         }
 
@@ -712,7 +722,40 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "~0\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.EMPTYSET);
+            return true;
+        }
+
+        /// <summary>
+        /// Write verbatim string
+        /// </summary>
+        public static bool TryWriteVerbatimString(ReadOnlySpan<byte> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
+        {
+            Debug.Assert(ext.Length == 3);
+
+            // Verbatim string length includes the type metadata.
+            // So ext (3 bytes) + ':' (1 byte separator) + str
+            var actualLength = 3 + 1 + str.Length;
+            var itemDigits = NumUtils.CountDigits(actualLength);
+
+            // '=' (1 byte separator) + itemDigits (length of digits describing length) +
+            // '\r\n' (2 bytes separator) + actualLength (length of string including metadata) +
+            // '\r\n' (2 bytes separator)
+            var totalLen = 1 + itemDigits + 2 + actualLength + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'=';
+            NumUtils.WriteInt32(actualLength, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            ext.CopyTo(new Span<byte>(curr, 3));
+            curr += 3;
+            *curr++ = (byte)':';
+
+            str.CopyTo(new Span<byte>(curr, str.Length));
+            curr += str.Length;
+            WriteNewline(ref curr);
+
             return true;
         }
 
@@ -724,7 +767,7 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "#t\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.RESP3_TRUE);
             return true;
         }
 
@@ -736,7 +779,31 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            WriteBytes<uint>(ref curr, "#f\r\n"u8);
+            WriteBytes<uint>(ref curr, RespStrings.RESP3_FALSE);
+            return true;
+        }
+
+        /// <summary>
+        /// Write integer zero
+        /// </summary>
+        public static bool TryWriteZero(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, RespStrings.INTEGERZERO);
+            return true;
+        }
+
+        /// <summary>
+        /// Write integer one
+        /// </summary>
+        public static bool TryWriteOne(ref byte* curr, byte* end)
+        {
+            if (4 > (int)(end - curr))
+                return false;
+
+            WriteBytes<uint>(ref curr, RespStrings.INTEGERONE);
             return true;
         }
 

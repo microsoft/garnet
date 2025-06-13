@@ -1426,6 +1426,9 @@ namespace Garnet.server
             var ignored = 0;
             state.RawSet(1, sandboxEnvIndex, ref ignored);
 
+            // Get sandbox_env off the stack
+            state.Pop(1);
+
             keysArrCapacity = length;
 
             return true;
@@ -1455,6 +1458,9 @@ namespace Garnet.server
             // Save it, which should have NO allocation impact because we're updating an existing slot
             var ignored = 0;
             state.RawSet(1, sandboxEnvIndex, ref ignored);
+
+            // Get sandbox_env off the stack
+            state.Pop(1);
 
             argvArrCapacity = length;
 
