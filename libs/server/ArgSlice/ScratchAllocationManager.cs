@@ -190,7 +190,7 @@ namespace Garnet.server
 
                 // If this buffer is now empty, and it is the only buffer remaining -
                 // If the buffer is over the max initial capacity we get rid of it (similarly to Reset)
-                if (currScratchBuffer.scratchBufferOffset == 0 && 
+                if (currScratchBuffer.scratchBufferOffset == 0 &&
                     previousScratchBuffers.Count == 0 &&
                     currScratchBuffer.Length > maxInitialCapacity)
                 {
