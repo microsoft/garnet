@@ -57,17 +57,28 @@ namespace Garnet.server
             /// True if buffer was not yet allocated
             /// </summary>
             internal bool IsDefault => scratchBuffer == null;
+
+            /// <summary>
+            /// Initializes the scratch buffer to a specified length
+            /// </summary>
+            /// <param name="length">The length of the buffer</param>
+            internal void Initialize(int length)
+            {
+                scratchBuffer = GC.AllocateArray<byte>(length, true);
+                scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(scratchBuffer));
+                scratchBufferOffset = 0;
+            }
         }
 
         ScratchBuffer currScratchBuffer;
 
         readonly RefStack<ScratchBuffer> previousScratchBuffers = new();
 
-        // Max size of previously allocated unused buffer that we can reuse as necessary
-        readonly int backupScratchBufferMaxSize;
+        // Max size of previously allocated unused buffer that we can reuse upon reset
+        readonly int maxInitialCapacity;
 
-        // A previously allocated unused buffer that we can reuse as necessary
-        ScratchBuffer backupScratchBuffer;
+        // Min size that can be allocated for a single buffer
+        readonly int minSizeBuffer;
 
         // Total offset of buffers in the stack
         int prevScratchBuffersOffset;
@@ -81,18 +92,19 @@ namespace Garnet.server
         internal int ScratchBufferOffset => prevScratchBuffersOffset + currScratchBuffer.scratchBufferOffset;
 
         /// <summary>
-        /// Total length of all currently managed buffers (including backup buffer)
+        /// Total length of all currently managed buffers
         /// </summary>
         internal int TotalLength => totalLength;
 
         /// <summary>
         /// Creates an instance of <see cref="ScratchAllocationManager"/>
         /// </summary>
-        /// <param name="backupScratchBufferMaxSize">Max size of previously allocated unused buffer to keep for future use
-        /// (Default: -1 to not use a backup buffer)</param>
-        public ScratchAllocationManager(int backupScratchBufferMaxSize = -1)
+        /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 2)</param>
+        /// <param name="maxInitialCapacity">Max size of previously allocated unused buffer to keep upon reset (Default: no limit)</param>
+        public ScratchAllocationManager(int minSizeBuffer = 2, int maxInitialCapacity = int.MaxValue)
         {
-            this.backupScratchBufferMaxSize = backupScratchBufferMaxSize;
+            this.minSizeBuffer = minSizeBuffer;
+            this.maxInitialCapacity = maxInitialCapacity;
         }
 
         /// <summary>
@@ -106,34 +118,44 @@ namespace Garnet.server
             // Invalidate the current buffer
             currScratchBuffer.scratchBufferOffset = 0;
 
-            if (previousScratchBuffers.Count > 0)
+            var isCurrBufferSet = false;
+
+            // If max capacity is not set or the current buffer is under the max capacity - 
+            // we keep it as the current buffer
+            if (currScratchBuffer.Length <= maxInitialCapacity)
+            {
+                isCurrBufferSet = true;
+            }
+            else
             {
                 totalLength -= currScratchBuffer.Length;
+            }
 
-                // Save the current buffer for future use, if needed.
-                SaveCurrentBufferAsBackupIfNeeded();
+            // Pop and reset any previous buffers
+            while (previousScratchBuffers.Count > 0)
+            {
+                var prevBuffer = previousScratchBuffers.Pop();
+                prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
 
-                // Pop and reset any previous buffers
-                while (previousScratchBuffers.Count > 0)
+                // Check if we need to set this scratch buffer as the current
+                // i.e. if this is the largest buffer under the max capacity limit
+                if (!isCurrBufferSet && prevBuffer.Length <= maxInitialCapacity)
                 {
-                    var prevBuffer = previousScratchBuffers.Pop();
-                    prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
-
-                    // If we've reached the last buffer in the stack, we'll set it as the current.
-                    if (previousScratchBuffers.Count == 0)
-                    {
-                        currScratchBuffer = prevBuffer;
-                        currScratchBuffer.scratchBufferOffset = 0;
-                    }
-                    else
-                    {
-                        totalLength -= prevBuffer.Length;
-                    }
+                    currScratchBuffer = prevBuffer;
+                    currScratchBuffer.scratchBufferOffset = 0;
+                    isCurrBufferSet = true;
+                }
+                else
+                {
+                    totalLength -= prevBuffer.Length;
                 }
             }
 
-            Debug.Assert(ScratchBufferOffset == 0);
-            Debug.Assert(TotalLength == currScratchBuffer.Length + (backupScratchBuffer.IsDefault ? 0 : backupScratchBuffer.Length));
+            if (!isCurrBufferSet)
+                currScratchBuffer = default;
+
+            Debug.Assert(currScratchBuffer.IsDefault || ScratchBufferOffset == 0);
+            Debug.Assert(TotalLength == (currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length));
         }
 
         /// <summary>
@@ -144,23 +166,36 @@ namespace Garnet.server
         /// <returns>True if successful</returns>
         public bool RewindScratchBuffer(ref ArgSlice slice)
         {
+            if (currScratchBuffer.IsDefault) return false;
+
+            // If the current buffer is empty, try to pop a previous buffer
+            if (currScratchBuffer.scratchBufferOffset == 0)
+            {
+                // No previous buffers to pop
+                if (previousScratchBuffers.Count == 0)
+                    return false;
+
+                totalLength -= currScratchBuffer.Length;
+
+                // Pop the previous buffer and set it as the current buffer
+                var prevBuffer = previousScratchBuffers.Pop();
+                prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
+                currScratchBuffer = prevBuffer;
+            }
+
             if (slice.ptr + slice.Length == currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset)
             {
                 currScratchBuffer.scratchBufferOffset -= slice.Length;
                 slice = default; // Invalidate the given ArgSlice
 
-                // If the current buffer is now empty, try to pop a previous buffer
-                if (currScratchBuffer.scratchBufferOffset == 0 && previousScratchBuffers.Count > 0)
+                // If this buffer is now empty, and it is the only buffer remaining -
+                // If the buffer is over the max initial capacity we get rid of it (similarly to Reset)
+                if (currScratchBuffer.scratchBufferOffset == 0 && 
+                    previousScratchBuffers.Count == 0 &&
+                    currScratchBuffer.Length > maxInitialCapacity)
                 {
                     totalLength -= currScratchBuffer.Length;
-
-                    // Save the current buffer for future use, if needed.
-                    SaveCurrentBufferAsBackupIfNeeded();
-
-                    // Pop the previous buffer and set it as the current buffer
-                    var prevBuffer = previousScratchBuffers.Pop();
-                    prevScratchBuffersOffset -= prevBuffer.scratchBufferOffset;
-                    currScratchBuffer = prevBuffer;
+                    currScratchBuffer = default;
                 }
 
                 return true;
@@ -185,7 +220,6 @@ namespace Garnet.server
 
             return retVal;
         }
-
 
         /// <summary>
         /// Create an <see cref="ArgSlice"/> in UTF8 format from the given string
@@ -219,19 +253,6 @@ namespace Garnet.server
             return retVal;
         }
 
-        void SaveCurrentBufferAsBackupIfNeeded()
-        {
-            if (backupScratchBufferMaxSize != -1 && currScratchBuffer.Length <= backupScratchBufferMaxSize &&
-                (backupScratchBuffer.IsDefault || backupScratchBuffer.Length < currScratchBuffer.Length))
-            {
-                totalLength += backupScratchBuffer.IsDefault
-                    ? currScratchBuffer.Length
-                    : (backupScratchBuffer.Length - currScratchBuffer.Length);
-
-                backupScratchBuffer = currScratchBuffer;
-            }
-        }
-
         void ExpandScratchBufferIfNeeded(int requiredLength)
         {
             if (currScratchBuffer.IsDefault || requiredLength > currScratchBuffer.Length - currScratchBuffer.scratchBufferOffset)
@@ -240,35 +261,13 @@ namespace Garnet.server
 
         void ExpandScratchBuffer(int requiredLength)
         {
-            ScratchBuffer newScratchBuffer;
+            var currLength = currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length;
 
-            // First, see if we can use the backup scratch buffer, if exists and can fit the data
-            if (!backupScratchBuffer.IsDefault && backupScratchBuffer.Length >= requiredLength)
-            {
-                newScratchBuffer = backupScratchBuffer;
-                backupScratchBuffer = default;
-            }
-            // If we cannot use the backup buffer, we'll allocate a new buffer
-            else
-            {
-                // Length of new buffer is:
-                // If there is no current buffer - the closest power of 2 to the data length that is at least 64
-                // If there is a current buffer - the max between the closest power of 2 to the data length and twice the size of the current buffer.
-                var newLength = currScratchBuffer.IsDefault
-                    ? requiredLength < 64 ? 64 : (int)BitOperations.RoundUpToPowerOf2((uint)requiredLength + 1)
-                    : (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(currScratchBuffer.Length, requiredLength) + 1);
+            ScratchBuffer newScratchBuffer = default;
+            InitializeScratchBuffer(ref newScratchBuffer, requiredLength: Math.Max(minSizeBuffer, requiredLength),
+                currentLength: currLength);
 
-                var newBuffer = GC.AllocateArray<byte>(newLength, true);
-                var newBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(newBuffer));
-
-                newScratchBuffer = new ScratchBuffer
-                {
-                    scratchBuffer = newBuffer,
-                    scratchBufferHead = newBufferHead
-                };
-
-                totalLength += newLength;
-            }
+            totalLength += newScratchBuffer.Length;
 
             if (!currScratchBuffer.IsDefault)
             {
@@ -278,15 +277,26 @@ namespace Garnet.server
                     previousScratchBuffers.Push(currScratchBuffer);
                     prevScratchBuffersOffset += currScratchBuffer.scratchBufferOffset;
                 }
-                // If current buffer is empty, we'll attempt to use it as a backup buffer
+                // If current buffer is empty, we'll just get rid of it
                 else
                 {
                     totalLength -= currScratchBuffer.Length;
-                    SaveCurrentBufferAsBackupIfNeeded();
                 }
             }
 
             currScratchBuffer = newScratchBuffer;
+        }
+
+        private static void InitializeScratchBuffer(ref ScratchBuffer buffer, int requiredLength, int currentLength = 0)
+        {
+            // Length of new buffer is:
+            // If there is no current buffer - the closest power of 2 to the data length
+            // If there is a current buffer - the max between the closest power of 2 to the data length and twice the size of the current buffer.
+            var newLength = currentLength == 0
+                ? (int)BitOperations.RoundUpToPowerOf2((uint)requiredLength + 1)
+                : (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(currentLength, requiredLength) + 1);
+
+            buffer.Initialize(newLength);
         }
     }
 }
