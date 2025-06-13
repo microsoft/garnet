@@ -400,7 +400,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            var destination = scratchBufferManager.CreateArgSlice(key);
+            var destination = scratchBufferBuilder.CreateArgSlice(key);
 
             var createTransaction = false;
 
@@ -577,7 +577,7 @@ namespace Garnet.server
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
-            var destination = scratchBufferManager.CreateArgSlice(key);
+            var destination = scratchBufferBuilder.CreateArgSlice(key);
 
             var createTransaction = false;
 
@@ -841,7 +841,7 @@ namespace Garnet.server
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
-            var destination = scratchBufferManager.CreateArgSlice(key);
+            var destination = scratchBufferBuilder.CreateArgSlice(key);
 
             var createTransaction = false;
 

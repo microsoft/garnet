@@ -150,7 +150,7 @@ namespace Garnet.server
                              countLength;
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(sliceBytes);
             var paramsSpan = paramsSlice.Span;
             var paramsSpanOffset = 0;
 
@@ -207,7 +207,7 @@ namespace Garnet.server
             var output = new GarnetObjectStoreOutput();
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext, ref output);
 
-            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
             items = default;
             if (status == GarnetStatus.OK)
