@@ -247,7 +247,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.INCRBYFLOAT:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
+                    if (!input.parseState.TryGetDouble(0, out var incrByFloat, false))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         return true;
@@ -667,7 +667,7 @@ namespace Garnet.server
 
                 case RespCommand.INCRBYFLOAT:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
+                    if (!input.parseState.TryGetDouble(0, out var incrByFloat, false))
                     {
                         output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                         // reset etag state that may have been initialized earlier
@@ -1274,7 +1274,7 @@ namespace Garnet.server
 
                 case RespCommand.INCRBYFLOAT:
                     // Check if input contains a valid number
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
+                    if (!input.parseState.TryGetDouble(0, out var incrByFloat, false))
                     {
                         // Move to tail of the log
                         oldValue.CopyTo(ref newValue);

@@ -1306,5 +1306,45 @@ namespace Garnet.common
 
             return true;
         }
+
+        /// <summary>
+        /// Read infinity value to number
+        /// </summary>
+        /// <param name="value">input data</param>
+        /// <param name="number">If parsing was successful,contains positive or negative infinity</param>
+        /// <returns>True is infinity was read, false otherwise</returns>
+        public static bool TryReadInfinity(ReadOnlySpan<byte> value, out double number)
+        {
+            if (value.Length == 3)
+            {
+                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY_UPPERCASE))
+                {
+                    number = double.PositiveInfinity;
+                    return true;
+                }
+            }
+            else if (value.Length == 4)
+            {
+                if (value[0] == '+')
+                {
+                    if (value.Slice(1, 3).EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY_UPPERCASE))
+                    {
+                        number = double.PositiveInfinity;
+                        return true;
+                    }
+                }
+                else if (value[0] == '-')
+                {
+                    if (value.Slice(1, 3).EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY_UPPERCASE))
+                    {
+                        number = double.NegativeInfinity;
+                        return true;
+                    }
+                }
+            }
+
+            number = default;
+            return false;
+        }
     }
 }

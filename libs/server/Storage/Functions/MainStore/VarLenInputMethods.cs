@@ -108,7 +108,7 @@ namespace Garnet.server
 
                     return sizeof(int) + ndigits + (isNegative ? 1 : 0);
                 case RespCommand.INCRBYFLOAT:
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
+                    if (!input.parseState.TryGetDouble(0, out var incrByFloat, false))
                         return sizeof(int);
 
                     ndigits = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
@@ -166,7 +166,7 @@ namespace Garnet.server
                         return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.INCRBYFLOAT:
                         // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
-                        var incrByFloat = input.parseState.GetDouble(0);
+                        var incrByFloat = input.parseState.GetDouble(0, false);
 
                         NumUtils.TryReadDouble(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var currVal);
                         var nextVal = currVal + incrByFloat;
