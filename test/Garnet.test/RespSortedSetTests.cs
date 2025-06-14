@@ -386,6 +386,71 @@ namespace Garnet.test
         [Test]
         [TestCase(RedisProtocol.Resp2)]
         [TestCase(RedisProtocol.Resp3)]
+        public void AddInfinites(RedisProtocol protocol)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_Add";
+            var key2 = "SortedSet_Inter";
+
+            // Test accepting variations of inf, -inf, +inf.
+            var response = db.Execute("ZADD", key, "inf", "a", "-inf", "b", "+inf", "c", "iNF", "d", "+Inf", "e");
+            ClassicAssert.AreEqual(5, int.Parse(response.ToString()));
+
+            //Test addition
+            response = db.Execute("ZADD", key, "INCR", "inf", "a");
+            ClassicAssert.AreEqual("inf", response.ToString());
+
+            ClassicAssert.AreEqual(double.PositiveInfinity, db.SortedSetIncrement(key, "a", double.PositiveInfinity));
+            ClassicAssert.AreEqual(double.NegativeInfinity, db.SortedSetIncrement(key, "b", double.NegativeInfinity));
+
+            response = db.Execute("ZINCRBY", key, "+1", "b");
+            ClassicAssert.AreEqual("-inf", response.ToString());
+
+            response = db.Execute("ZADD", key, "INCR", "-1", "c");
+            ClassicAssert.AreEqual("inf", response.ToString());
+
+            ClassicAssert.AreEqual(3, db.SortedSetAdd(key2,
+            [
+                new SortedSetEntry("a", double.PositiveInfinity),
+                new SortedSetEntry("b", 0),
+                new SortedSetEntry("c", double.NegativeInfinity)
+            ]));
+
+            var responses = db.SortedSetCombineWithScores(SetOperation.Intersect, [key, key2]);
+            ClassicAssert.AreEqual(3, responses.Length);
+            ClassicAssert.AreEqual("b", responses[0].Element.ToString());
+            ClassicAssert.AreEqual(double.NegativeInfinity, responses[0].Score);
+            ClassicAssert.AreEqual("c", responses[1].Element.ToString());
+            ClassicAssert.AreEqual(0, responses[1].Score);
+            ClassicAssert.AreEqual("a", responses[2].Element.ToString());
+            ClassicAssert.AreEqual(double.PositiveInfinity, responses[2].Score);
+
+            //These should blow up
+            var expectedErrorMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+            try
+            {
+                db.Execute("ZADD", key, "INCR", "-inf", "a");
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
+            }
+
+            try
+            {
+                db.Execute("ZINCRBY", key, "+inf", "b");
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
+            }
+        }
+
+        [Test]
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
         public void AddWithOptionsErrorConditions(RedisProtocol protocol)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
