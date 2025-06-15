@@ -242,6 +242,10 @@ namespace Garnet.server
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
             ctsCommit = new();
             runId = Generator.CreateHexId();
+            if (serverOptions.EnableStreams)
+            {
+                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
+            }
         }
 
         /// <summary>

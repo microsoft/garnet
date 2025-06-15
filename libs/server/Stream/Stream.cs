@@ -236,8 +236,9 @@ namespace Garnet.server
                 {
                     // while (!RespWriteUtils.TryWriteError("ERR Syntax", ref curr, end))
                     //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    // _lock.WriteUnlock();
                     writer.WriteError("ERR Syntax");
-                    _lock.WriteUnlock();
+
                     return;
                 }
 
@@ -249,7 +250,7 @@ namespace Garnet.server
                         // while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
                         //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         writer.WriteError("ERR StreamAdd failed");
-                        _lock.WriteUnlock();
+                        // _lock.WriteUnlock();
                         return;
                     }
 
@@ -262,7 +263,7 @@ namespace Garnet.server
                         // while (!RespWriteUtils.TryWriteError("ERR StreamAdd failed", ref curr, end))
                         //     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         writer.WriteError("ERR StreamAdd failed");
-                        _lock.WriteUnlock();
+                        // _lock.WriteUnlock();
                         return;
                     }
                     // copy encoded ms and seq
