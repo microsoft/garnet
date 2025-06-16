@@ -626,7 +626,7 @@ namespace Garnet.server
                 if (cmdLen <= 6 && (ptr + 4 + cmdLen + sizeof(ulong)) <= (ptr + len))
                 {
                     var firstUlong = *(ulong*)(ptr + 4);
-                    var secondUlong = *((ulong*)ptr + 4 + cmdLen);
+                    var secondUlong = *(ulong*)(ptr + 4 + cmdLen);
 
                     // Ye olde bit twiddling to check if any sub-byte is > 95
                     // See: https://graphics.stanford.edu/~seander/bithacks.html#HasMoreInWord

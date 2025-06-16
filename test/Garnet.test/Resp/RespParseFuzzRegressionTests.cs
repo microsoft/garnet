@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common.Parsing;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -16,6 +17,7 @@ namespace Garnet.test.Resp
     public class RespParseFuzzRegressionTests
     {
         [Test]
+        [Category("FUZZING")]
         public void MakeUpperCaseAccessViolation()
         {
             const int Iterations = 1_000;
@@ -38,8 +40,7 @@ namespace Garnet.test.Resp
                     var copy = GC.AllocateUninitializedArray<byte>(ex.Length, pinned: true);
                     ex.AsSpan().CopyTo(copy);
 
-                    var parseSuccess = session.FuzzParseCommandBuffer(copy, out _);
-                    ClassicAssert.False(parseSuccess);
+                    _ = ClassicAssert.Throws<RespParsingException>(() => session.FuzzParseCommandBuffer(copy, out _));
                 }
             }
         }
