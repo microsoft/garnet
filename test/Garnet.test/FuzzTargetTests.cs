@@ -18,6 +18,8 @@ namespace Garnet.test
         [Test]
         public void TestsForAllTargets()
         {
+            // Ensure that all targets added in the future also have tests here
+
             var res = new StringBuilder();
 
             foreach (var target in Enum.GetValues<FuzzTargets>())

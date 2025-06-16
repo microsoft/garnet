@@ -42,12 +42,12 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => this.databaseManager.MainStore;
 
         /// <summary>
         /// Object store (of DB 0)
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => this.databaseManager.ObjectStore;
 
         /// <summary>
         /// AOF (of DB 0)
@@ -260,8 +260,15 @@ namespace Garnet.server
             if (!serverOptions.EnableCluster)
             {
                 runId = Generator.CreateHexId();
-                StoreCheckpointManager.CurrentHistoryId = runId;
-                if (!serverOptions.DisableObjects) ObjectStoreCheckpointManager.CurrentHistoryId = runId;
+                if (StoreCheckpointManager != null)
+                {
+                    StoreCheckpointManager.CurrentHistoryId = runId;
+                }
+
+                if (!serverOptions.DisableObjects && ObjectStoreCheckpointManager != null)
+                {
+                    ObjectStoreCheckpointManager.CurrentHistoryId = runId;
+                }
             }
         }
 

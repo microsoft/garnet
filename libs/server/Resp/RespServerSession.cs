@@ -283,8 +283,8 @@ namespace Garnet.server
                 [],
                 cmdManager,
                 new(),
-                null,
-                createDatabaseDelegate: delegate { return null; }
+                subscribeBroker: null,
+                createDatabaseDelegate: delegate { return new(); }
             );
         }
 
