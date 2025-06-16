@@ -478,7 +478,8 @@ namespace Garnet.test
             string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -528,7 +529,8 @@ namespace Garnet.test
                     replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
-                    clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                    clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                    luaTransactionMode: luaTransactionMode);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -593,7 +595,8 @@ namespace Garnet.test
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -696,6 +699,7 @@ namespace Garnet.test
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,

@@ -1177,5 +1177,33 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsNull(resp);
             }
         }
+
+        [Test, Order(24)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationLua([Values] bool luaTransactionMode)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            ClassicAssert.IsTrue(primary_count > 0);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableLua: true, luaTransactionMode: luaTransactionMode);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "foo", "bar");
+            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "fizz", "buzz");
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+            var res1 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "foo");
+            var res2 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "fizz");
+
+            ClassicAssert.AreEqual("bar", res1);
+            ClassicAssert.AreEqual("buzz", res2);
+        }
     }
 }
