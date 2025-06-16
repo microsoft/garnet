@@ -1179,7 +1179,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(24)]
+        [Test, Order(23)]
         [Category("REPLICATION")]
         public void ClusterReplicationLua([Values] bool luaTransactionMode)
         {
@@ -1208,7 +1208,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("buzz", res2);
         }
 
-        [Test, Order(23)]
+        [Test, Order(24)]
         [Category("REPLICATION")]
         public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst)
         {
@@ -1217,6 +1217,7 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + (primary_count * replica_count);
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
+
             var expectedKeys = new[] { "X", "Y" };
             ClassicAssert.IsTrue(primary_count > 0);
 
@@ -1269,6 +1270,78 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
                 resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
+            }
+        }
+
+        [Test, Order(25)]
+        [Category("REPLICATION")]
+        public async Task ClusterReplicationMultiRestartRecover()
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, cleanClusterConfig: false);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+            var keyCount = 1000;
+
+            var taskCount = 4;
+            var tasks = new List<Task>();
+            for (var i = 0; i < taskCount; i++)
+                tasks.Add(Task.Run(() => RunWorkload(i * keyCount, (i + 1) * keyCount)));
+            var restartRecover = 10;
+            tasks.Add(Task.Run(() => RestartRecover(restartRecover)));
+
+            await Task.WhenAll(tasks);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
+            // Validate that replica has the same keys as primary
+            var resp = primaryServer.Execute("KEYS", ["*"]);
+            var resp2 = replicaServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(resp.Length, resp2.Length);
+            for (var i = 0; i < resp.Length; i++)
+                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+
+            // Run write workload at primary
+            void RunWorkload(int start, int count)
+            {
+                var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+                var end = start + count;
+                while (start++ < end)
+                {
+                    var key = keyCount.ToString();
+                    var resp = primaryServer.Execute("SET", [key, key]);
+                    ClassicAssert.AreEqual("OK", (string)resp);
+                    resp = primaryServer.Execute("GET", key);
+                    ClassicAssert.AreEqual(key, (string)resp);
+                }
+            }
+
+            // Restart and recover replica multiple times
+            void RestartRecover(int iteration)
+            {
+                //if (iteration > 0) return;
+                while (iteration-- > 0)
+                {
+                    context.nodes[replicaNodeIndex].Dispose(false);
+                    context.nodes[replicaNodeIndex] = context.CreateInstance(
+                        context.clusterTestUtils.GetEndPoint(replicaNodeIndex),
+                        disableObjects: false,
+                        enableAOF: true,
+                        useTLS: useTLS,
+                        asyncReplay: asyncReplay,
+                        tryRecover: true,
+                        cleanClusterConfig: false);
+                    context.nodes[replicaNodeIndex].Start();
+                }
             }
         }
     }
