@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#nullable disable
+
 using Garnet;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
