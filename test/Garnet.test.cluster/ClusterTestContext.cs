@@ -118,6 +118,7 @@ namespace Garnet.test.cluster
         /// <param name="luaMemoryMode"></param>
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
+        /// <param name="luaTransactionMode"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -152,7 +153,8 @@ namespace Garnet.test.cluster
             string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            bool useHostname = false)
+            bool useHostname = false,
+            bool luaTransactionMode = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -195,7 +197,8 @@ namespace Garnet.test.cluster
                 replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                 replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                 luaMemoryMode: luaMemoryMode,
-                luaMemoryLimit: luaMemoryLimit);
+                luaMemoryLimit: luaMemoryLimit,
+                luaTransactionMode: luaTransactionMode);
 
             foreach (var node in nodes)
                 node.Start();
