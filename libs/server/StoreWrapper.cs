@@ -156,12 +156,12 @@ namespace Garnet.server
         /// <summary>
         /// Garnet checkpoint manager for main store
         /// </summary>
-        public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store.CheckpointManager;
+        public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
 
         /// <summary>
         /// Garnet checkpoint manager for object store
         /// </summary>
-        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore.CheckpointManager;
+        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
         /// <summary>
         /// Constructor
