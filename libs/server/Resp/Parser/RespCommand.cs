@@ -828,7 +828,6 @@ namespace Garnet.server
                 {
                     // Extract length from string header
                     var length = ptr[1] - '0';
-                    Debug.Assert(length is > 0 and <= 9);
 
                     // Ensure that the complete command string is contained in the package. Otherwise exit early.
                     // Include 6 bytes to account for command string header and name terminator.

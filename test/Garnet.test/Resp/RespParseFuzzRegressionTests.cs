@@ -48,9 +48,9 @@ namespace Garnet.test.Resp
         }
 
         [Test]
-        public void FastParseArrayCommandAssertFailure()
+        public void FastParseArrayCommandLongCommandAssertFailure()
         {
-            Span<byte> example = [0x2A, 0x32, 0x0D, 0x0A, 0x24, 0x36, 0x25, 0x0D, 0x0A, 0x43, 0x34, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x87];
+            ReadOnlySpan<byte> example = [0x2A, 0x32, 0x0D, 0x0A, 0x24, 0x36, 0x25, 0x0D, 0x0A, 0x43, 0x34, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x87];
 
             // Memory must be pinned
             var copy = GC.AllocateUninitializedArray<byte>(example.Length, pinned: true);
@@ -69,6 +69,33 @@ namespace Garnet.test.Resp
                 example.CopyTo(copy);
                 copy[6] = (byte)val;
 
+                _ = ClassicAssert.Throws<RespParsingException>(() => session.FuzzParseCommandBuffer(copy, out _));
+            }
+
+            GC.KeepAlive(copy);
+        }
+
+        [Test]
+        public void FastParseArrayCommandShortCommandAssertFailure()
+        {
+            ReadOnlySpan<byte> example = [0x2A, 0x32, 0x30, 0x0D, 0x0A, 0x24, 0x3C, 0x0D, 0x0A, 0x24, 0x32, 0x0D, 0x0A];
+
+            // Memory must be pinned
+            var copy = GC.AllocateUninitializedArray<byte>(example.Length, pinned: true);
+
+            var session = new RespServerSession();
+            for (var val = 0; val <= byte.MaxValue; val++)
+            {
+                if (val is >= '1' and <= '9')
+                {
+                    // Numbers (but not a leading 0) are valid, and should be ignored
+                    continue;
+                }
+
+                example.CopyTo(copy);
+                copy[6] = (byte)val;
+
+                // All values must correctly be rejected after the assert was removed
                 _ = ClassicAssert.Throws<RespParsingException>(() => session.FuzzParseCommandBuffer(copy, out _));
             }
 
