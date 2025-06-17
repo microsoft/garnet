@@ -86,6 +86,7 @@ namespace Garnet.test.cluster
         public Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning},
+            {"ClusterReplicationMultiRestartRecover", LogLevel.Trace}
         };
 
         [SetUp]
@@ -1317,7 +1318,7 @@ namespace Garnet.test.cluster
                 var end = start + count;
                 while (start++ < end)
                 {
-                    var key = keyCount.ToString();
+                    var key = start.ToString();
                     var resp = primaryServer.Execute("SET", [key, key]);
                     ClassicAssert.AreEqual("OK", (string)resp);
                     resp = primaryServer.Execute("GET", key);
@@ -1328,7 +1329,6 @@ namespace Garnet.test.cluster
             // Restart and recover replica multiple times
             void RestartRecover(int iteration)
             {
-                //if (iteration > 0) return;
                 while (iteration-- > 0)
                 {
                     context.nodes[replicaNodeIndex].Dispose(false);
@@ -1341,6 +1341,88 @@ namespace Garnet.test.cluster
                         tryRecover: true,
                         cleanClusterConfig: false);
                     context.nodes[replicaNodeIndex].Start();
+                }
+            }
+        }
+
+        [Test, Order(25)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, cleanClusterConfig: false);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+            var offset = 0;
+            var keyCount = 100;
+
+            RunWorkload(primaryServer, offset, keyCount);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            // Validate that replica has the same keys as primary
+            var resp = primaryServer.Execute("KEYS", ["*"]);
+            var resp2 = replicaServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(resp.Length, resp2.Length);
+            for (var i = 0; i < resp.Length; i++)
+                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+
+            // Kill primary
+            context.nodes[primaryNodeIndex].Dispose(false);
+            // Kill replica
+            context.nodes[replicaNodeIndex].Dispose(false);
+
+            // Restart primary and do not recover
+            context.nodes[primaryNodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(primaryNodeIndex),
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                tryRecover: false,
+                cleanClusterConfig: false);
+            context.nodes[primaryNodeIndex].Start();
+
+            offset += keyCount;
+            // Populate primary with different history
+            RunWorkload(primaryServer, offset, keyCount / 2);
+
+            // Restart replica with recover to be ahead of primary but without checkpoint
+            context.nodes[replicaNodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(replicaNodeIndex),
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                tryRecover: true,
+                cleanClusterConfig: false);
+            context.nodes[replicaNodeIndex].Start();
+
+            // Validate that replica has the same keys as primary
+            resp = primaryServer.Execute("KEYS", ["*"]);
+            resp2 = replicaServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(resp.Length, resp2.Length);
+            for (var i = 0; i < resp.Length; i++)
+                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+
+            // Run write workload at primary
+            void RunWorkload(IServer server, int start, int count)
+            {
+                var end = start + count;
+                while (start++ < end)
+                {
+                    var key = start.ToString();
+                    var resp = server.Execute("SET", [key, key]);
+                    ClassicAssert.AreEqual("OK", (string)resp);
+                    resp = server.Execute("GET", key);
+                    ClassicAssert.AreEqual(key, (string)resp);
                 }
             }
         }
