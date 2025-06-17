@@ -623,8 +623,12 @@ namespace Garnet.server
             {
                 writer.WriteArrayLength(arrayLength);
             }
+            var indexCount = Math.Abs(count);
 
-            var indexes = RandomUtils.PickKRandomIndexes(sortedSetCount, Math.Abs(count), seed, count > 0);
+            var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+            RandomUtils.PickKRandomIndexes(sortedSetCount, indexes, seed, count > 0);
 
             foreach (var item in indexes)
             {
