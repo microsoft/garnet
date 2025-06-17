@@ -73,11 +73,6 @@ namespace Garnet.server
         public int ParallelMigrateTasks = 1;
 
         /// <summary>
-        /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
-        /// </summary>
-        public bool FastMigrate = false;
-
-        /// <summary>
         /// Authentication settings
         /// </summary>
         public IAuthenticationSettings AuthSettings = null;
