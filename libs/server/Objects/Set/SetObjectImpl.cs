@@ -163,15 +163,16 @@ namespace Garnet.server
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            Span<int> indexes = default;
-
             if (count > 0)
             {
                 // Return an array of distinct elements
                 var countParameter = count > Set.Count ? Set.Count : count;
 
                 // The order of fields in the reply is not truly random
-                indexes = RandomUtils.PickKRandomIndexes(Set.Count, countParameter, seed);
+                var indexes = countParameter <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, countParameter) : new int[countParameter];
+
+                RandomUtils.PickKRandomIndexes(countParameter, indexes, seed);
 
                 // Write the size of the array reply
                 writer.WriteSetLength(countParameter);
@@ -205,7 +206,10 @@ namespace Garnet.server
                 // Return an array with potentially duplicate elements
                 var countParameter = Math.Abs(count);
 
-                indexes = RandomUtils.PickKRandomIndexes(Set.Count, countParameter, seed, false);
+                var indexes = countParameter <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, countParameter) : new int[countParameter];
+
+                RandomUtils.PickKRandomIndexes(Set.Count, indexes, seed, false);
 
                 if (Set.Count > 0)
                 {

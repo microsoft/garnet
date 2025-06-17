@@ -11,27 +11,36 @@ namespace Garnet.common
     /// </summary>
     public static class RandomUtils
     {
+        /// <summary>
+        /// Stack allocation size threshold for integer arrays.
+        /// </summary>
+        public const int IndexStackallocThreshold = 1024 / sizeof(int);
+
         // Threshold of k / n for choosing the random picking algorithm
-        private static readonly double KOverNThreshold = 0.1;
+        private const double KOverNThreshold = 0.1;
 
         /// <summary>
-        /// Pick k indexes from a collection of n items
+        /// Pick k indexes from a collection of n items into a given span of length k
         /// </summary>
         /// <param name="n">Number of items in the collection</param>
-        /// <param name="k">Number of items to pick</param>
+        /// <param name="indexes">Span of indexes to pick.</param>
         /// <param name="seed">Random seed</param>
         /// <param name="distinct">Whether items returned should be distinct (default: true)</param>
         /// <returns>K indexes picked</returns>
-        public static Span<int> PickKRandomIndexes(int n, int k, int seed, bool distinct = true)
+        public static void PickKRandomIndexes(int n, Span<int> indexes, int seed, bool distinct = true)
         {
-            if (k < 0) throw new ArgumentOutOfRangeException(nameof(k));
-            if (n < 0) throw new ArgumentOutOfRangeException(nameof(n));
-            if (distinct && k > n) throw new ArgumentException(
-                    $"{nameof(k)} cannot be larger than {nameof(n)} when indexes should be distinct.");
+            ArgumentOutOfRangeException.ThrowIfNegative(n);
+            if (distinct && indexes.Length > n) throw new ArgumentException(
+                    $"{nameof(indexes)} cannot be larger than {nameof(n)} when indexes should be distinct.");
 
-            return !distinct || (double)k / n < KOverNThreshold
-                ? PickKRandomIndexesIteratively(n, k, seed, distinct)
-                : PickKRandomDistinctIndexesWithShuffle(n, k, seed);
+            if (!distinct || (double)indexes.Length / n < KOverNThreshold)
+            {
+                PickKRandomIndexesIteratively(n, indexes, seed, distinct);
+            }
+            else
+            {
+                PickKRandomDistinctIndexesWithShuffle(n, indexes, seed);
+            }
         }
 
         /// <summary>
@@ -43,46 +52,37 @@ namespace Garnet.common
         public static int PickRandomIndex(int n, int rand)
             => rand % n;
 
-        private static Span<int> PickKRandomIndexesIteratively(int n, int k, int seed, bool distinct)
+        private static void PickKRandomIndexesIteratively(int n, Span<int> indexes, int seed, bool distinct)
         {
             var random = new Random(seed);
-            var result = new int[k];
             HashSet<int> pickedIndexes = default;
             if (distinct) pickedIndexes = [];
 
             var i = 0;
-            while (i < k)
+            while (i < indexes.Length)
             {
                 var nextIdx = random.Next(n);
                 if (!distinct || pickedIndexes.Add(nextIdx))
                 {
-                    result[i] = nextIdx;
+                    indexes[i] = nextIdx;
                     i++;
                 }
             }
-
-            return result;
         }
 
-        private static Span<int> PickKRandomDistinctIndexesWithShuffle(int n, int k, int seed)
+        private static void PickKRandomDistinctIndexesWithShuffle(int n, Span<int> indexes, int seed)
         {
             var random = new Random(seed);
-            var shuffledIndexes = new int[n];
-            for (var i = 0; i < n; i++)
+            var shuffledIndexes = n <= IndexStackallocThreshold ?
+                stackalloc int[IndexStackallocThreshold].Slice(0, n) : new int[n];
+
+            for (var i = 0; i < shuffledIndexes.Length; i++)
             {
                 shuffledIndexes[i] = i;
             }
 
-            // Fisher-Yates shuffle
-            for (var i = n - 1; i > 0; i--)
-            {
-                // Get a random index from 0 to i
-                var j = random.Next(i + 1);
-                // Swap shuffledIndexes[i] and shuffledIndexes[j]
-                (shuffledIndexes[i], shuffledIndexes[j]) = (shuffledIndexes[j], shuffledIndexes[i]);
-            }
-
-            return new Span<int>(shuffledIndexes, 0, k);
+            random.Shuffle(shuffledIndexes);
+            shuffledIndexes.Slice(0, indexes.Length).CopyTo(indexes);
         }
     }
 }
