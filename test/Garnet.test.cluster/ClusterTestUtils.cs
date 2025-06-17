@@ -2950,6 +2950,16 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var role = RoleCommand(nodeIndex, logger);
+                if (role.Value.Equals("master")) break;
+                BackOff(cancellationToken: context.cts.Token);
+            }
+        }
+
         public void Checkpoint(int nodeIndex, ILogger logger = null)
             => Checkpoint((IPEndPoint)endpoints[nodeIndex], logger: logger);
 

@@ -266,6 +266,16 @@ namespace Garnet.cluster
                                 replayUntilAddress = clusterProvider.replicationManager.ReplicationOffset2;
                             checkpointAofBeginAddress = replayUntilAddress;
                         }
+
+                        var sameMainStoreCheckpointHistory = !string.IsNullOrEmpty(replicaCheckpointEntry.metadata.storePrimaryReplId) && replicaCheckpointEntry.metadata.storePrimaryReplId.Equals(localEntry.metadata.storePrimaryReplId);
+                        var sameObjectStoreCheckpointHistory = !string.IsNullOrEmpty(replicaCheckpointEntry.metadata.objectStorePrimaryReplId) && replicaCheckpointEntry.metadata.objectStorePrimaryReplId.Equals(localEntry.metadata.objectStorePrimaryReplId);
+                        if (!sameMainStoreCheckpointHistory || !sameObjectStoreCheckpointHistory)
+                        {
+                            // If we are not in the same checkpoint history, we need to stream the AOF from the primary's beginning address
+                            checkpointAofBeginAddress = beginAddress;
+                            replayAOF = false;
+                            logger?.LogInformation("ReplicaSyncSession: not in same checkpoint history, will replay from beginning address {checkpointAofBeginAddress}", checkpointAofBeginAddress);
+                        }
                     }
                 }
 
