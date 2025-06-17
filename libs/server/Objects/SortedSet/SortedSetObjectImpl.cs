@@ -309,6 +309,10 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
+            // It's useful to fix RESP2 in the internal API as that just reads back the output.
+            if (input.arg2 > 0)
+                respProtocolVersion = (byte)input.arg2;
+
             // ZINCRBY key increment member
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -361,6 +365,11 @@ namespace Garnet.server
                 Reverse = (rangeOpts & SortedSetRangeOpts.Reverse) != 0,
                 WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
             };
+
+            // The ZRANGESTORE code will read our output and store it, it's used to RESP2 output.
+            // Since in that case isn't displayed to the user, we can override the version to let it work.
+            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOpts.Store) != 0)
+                respProtocolVersion = 2;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -618,23 +627,30 @@ namespace Garnet.server
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             // The count parameter can have a negative value, but the array length can't
-            var arrayLength = Math.Abs(withScores ? count * 2 : count);
+            var arrayLength = Math.Abs((withScores && respProtocolVersion == 2) ? count * 2 : count);
             if (arrayLength > 1 || (arrayLength == 1 && includedCount))
             {
                 writer.WriteArrayLength(arrayLength);
             }
+            var indexCount = Math.Abs(count);
 
-            var indexes = RandomUtils.PickKRandomIndexes(sortedSetCount, Math.Abs(count), seed, count > 0);
+            var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+            RandomUtils.PickKRandomIndexes(sortedSetCount, indexes, seed, count > 0);
 
             foreach (var item in indexes)
             {
                 var (element, score) = ElementAt(item);
 
+                if (withScores && (respProtocolVersion >= 3))
+                    writer.WriteArrayLength(2);
+
                 writer.WriteBulkString(element);
 
                 if (withScores)
                 {
-                    writer.WriteDoubleBulkString(score);
+                    writer.WriteDoubleNumeric(score);
                 }
             }
 
@@ -709,7 +725,7 @@ namespace Garnet.server
                 {
                     writer.WriteArrayLength(2); // Rank and score
                     writer.WriteInt32(rank);
-                    writer.WriteDoubleBulkString(score);
+                    writer.WriteDoubleNumeric(score);
                 }
                 else
                 {
@@ -762,6 +778,10 @@ namespace Garnet.server
             if (sortedSet.Count < count)
                 count = sortedSet.Count;
 
+            if (input.arg2 > 0)
+                respProtocolVersion = (byte)input.arg2;
+
+            // When the output will be read later by ProcessRespArrayOutputAsPairs we force RESP version to 2.
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (count == 0)

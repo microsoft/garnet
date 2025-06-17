@@ -846,6 +846,7 @@ namespace Garnet.server
             }
 
             var aofDir = GetAppendOnlyFileDirectory(dbId);
+            // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(aofDir),

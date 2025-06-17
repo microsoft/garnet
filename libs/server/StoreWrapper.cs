@@ -143,10 +143,25 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string runId;
 
+        /// <summary>
+        /// Run ID identifies instance history when taking a checkpoint.
+        /// </summary>
+        public string RunId => serverOptions.EnableCluster ? clusterProvider.GetRunId() : runId;
+
         internal readonly CancellationTokenSource ctsCommit;
 
         // True if StoreWrapper instance is disposed
         bool disposed;
+
+        /// <summary>
+        /// Garnet checkpoint manager for main store
+        /// </summary>
+        public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store.CheckpointManager;
+
+        /// <summary>
+        /// Garnet checkpoint manager for object store
+        /// </summary>
+        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore.CheckpointManager;
 
         /// <summary>
         /// Constructor
@@ -241,7 +256,13 @@ namespace Garnet.server
             if (clusterFactory != null)
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
             ctsCommit = new();
-            runId = Generator.CreateHexId();
+
+            if (!serverOptions.EnableCluster)
+            {
+                runId = Generator.CreateHexId();
+                StoreCheckpointManager.CurrentHistoryId = runId;
+                if (!serverOptions.DisableObjects) ObjectStoreCheckpointManager.CurrentHistoryId = runId;
+            }
         }
 
         /// <summary>

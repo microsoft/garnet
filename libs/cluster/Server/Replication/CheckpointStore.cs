@@ -40,7 +40,20 @@ namespace Garnet.cluster
         {
             head = tail = GetLatestCheckpointEntryFromDisk();
 
-            if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1) head = tail = null;
+            if (tail.metadata.storeVersion == -1 && tail.metadata.objectStoreVersion == -1)
+            {
+                head = tail = null;
+            }
+            else
+            {
+                clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
+                if (!storeWrapper.serverOptions.DisableObjects)
+                {
+                    clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress = tail.metadata.storeCheckpointCoveredAofAddress;
+                    clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredHistoryId = tail.metadata.storePrimaryReplId;
+                }
+            }
 
             // This purge does not check for active readers
             // 1. If primary is initializing then we will not have any active readers since not connections are established at recovery
@@ -273,7 +286,7 @@ namespace Garnet.cluster
             };
             return entry;
 
-            (long, string) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
+            (long RecoveredSafeAofAddress, string RecoveredReplicationId) GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken)
             {
                 if (fileToken == default) return (0, null);
                 var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);

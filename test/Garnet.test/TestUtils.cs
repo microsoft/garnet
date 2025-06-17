@@ -441,6 +441,7 @@ namespace Garnet.test
         public static GarnetServer[] CreateGarnetCluster(
             string checkpointDir,
             EndPointCollection endpoints,
+            bool enableCluster = true,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -477,7 +478,8 @@ namespace Garnet.test
             string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -490,6 +492,7 @@ namespace Garnet.test
                     checkpointDir,
                     checkpointDir,
                     endpoint,
+                    enableCluster: enableCluster,
                     disablePubSub,
                     disableObjects,
                     tryRecover,
@@ -526,7 +529,8 @@ namespace Garnet.test
                     replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
-                    clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                    clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                    luaTransactionMode: luaTransactionMode);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -550,6 +554,7 @@ namespace Garnet.test
             string checkpointDir,
             string logDir,
             EndPoint endpoint,
+            bool enableCluster = true,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -590,7 +595,8 @@ namespace Garnet.test
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -650,7 +656,7 @@ namespace Garnet.test
                 Recover = tryRecover,
                 IndexSize = "1m",
                 ObjectStoreIndexSize = "16k",
-                EnableCluster = true,
+                EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
                 QuietMode = true,
@@ -693,6 +699,7 @@ namespace Garnet.test
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,

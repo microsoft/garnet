@@ -84,11 +84,9 @@ namespace Garnet.server
             if (parseState.Count == 2)
             {
                 // Read count
-                if (!parseState.TryGetInt(1, out popCount))
+                if (!parseState.TryGetInt(1, out popCount) || (popCount < 0))
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
                 }
             }
 
@@ -280,8 +278,7 @@ namespace Garnet.server
 
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -334,8 +331,7 @@ namespace Garnet.server
 
             if (!result.Found)
             {
-                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                    SendAndReset();
+                WriteNullArray();
             }
             else
             {
