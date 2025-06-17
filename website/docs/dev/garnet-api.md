@@ -45,4 +45,10 @@ Info for Garnet-only commands is retrieved from ```CommandInfoUpdater/GarnetComm
 To add command info to Garnet, follow these steps:
 1. Add the supported command and its supported sub-commands (if applicable) to ```CommandInfoUpdater/SupportedCommands.cs```.
 2. If you are adding a Garnet-specific command, add its info to ```CommandInfoUpdater/GarnetCommandsInfo.json```.
-3. Build & run the tool (for syntax help run the tool with `-h` or `--help`).
+3. Start some RESP server locally.
+4. Build & run the tool (for syntax help run the tool with `-h` or `--help`).
+
+```bash
+cd playground/CommandInfoUpdater
+dotnet run -- --output ../../libs/resources
+```

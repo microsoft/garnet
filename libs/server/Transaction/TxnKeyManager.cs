@@ -154,12 +154,12 @@ namespace Garnet.server
                 RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
                 RespCommand.SETRANGE => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.PFCOUNT => ListKeys(inputCount, false, LockType.Shared),
-                RespCommand.PFMERGE => ListKeys(inputCount, false, LockType.Exclusive),
+                RespCommand.PFCOUNT => ListKeys(inputCount, StoreType.Main, LockType.Shared),
+                RespCommand.PFMERGE => ListKeys(inputCount, StoreType.Main, LockType.Exclusive),
                 RespCommand.SETEX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXNX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.SETEXXX => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.DEL => ListKeys(inputCount, false, LockType.Exclusive),
+                RespCommand.DEL => ListKeys(inputCount, StoreType.All, LockType.Exclusive),
                 RespCommand.DELIFGREATER => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.EXISTS => SingleKey(1, false, LockType.Shared),
                 RespCommand.RENAME => SingleKey(1, false, LockType.Exclusive),
@@ -176,10 +176,10 @@ namespace Garnet.server
                 RespCommand.EXPIRE => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PEXPIRE => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PERSIST => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.MGET => ListKeys(inputCount, false, LockType.Shared),
+                RespCommand.MGET => ListKeys(inputCount, StoreType.Main, LockType.Shared),
                 RespCommand.MSET => MSETKeys(inputCount, false, LockType.Exclusive),
                 RespCommand.MSETNX => MSETKeys(inputCount, false, LockType.Exclusive),
-                RespCommand.UNLINK => ListKeys(inputCount, false, LockType.Exclusive),
+                RespCommand.UNLINK => ListKeys(inputCount, StoreType.All, LockType.Exclusive),
                 RespCommand.GETDEL => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.APPEND => SingleKey(1, false, LockType.Exclusive),
                 _ => AdminCommands(command)
@@ -275,7 +275,7 @@ namespace Garnet.server
                 SortedSetOperation.ZLEXCOUNT => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZPOPMIN => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZRANDMEMBER => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZDIFF => ListKeys(inputCount, true, LockType.Exclusive),
+                SortedSetOperation.ZDIFF => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
                 SortedSetOperation.GEOADD => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.GEOHASH => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.GEODIST => SingleKey(1, true, LockType.Shared),
@@ -339,12 +339,12 @@ namespace Garnet.server
                 SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
                 SetOperation.SMISMEMBER => SingleKey(1, true, LockType.Shared),
-                SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
+                SetOperation.SUNION => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
-                SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
+                SetOperation.SDIFF => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
-                SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
-                SetOperation.SINTER => ListKeys(inputCount, true, LockType.Shared),
+                SetOperation.SMOVE => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
+                SetOperation.SINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 SetOperation.SINTERSTORE => XSTOREKeys(inputCount, true),
                 _ => -1
             };
@@ -364,12 +364,15 @@ namespace Garnet.server
         /// <summary>
         /// Returns a list of keys for commands: MGET, DEL, UNLINK
         /// </summary>
-        private int ListKeys(int inputCount, bool isObject, LockType type)
+        private int ListKeys(int inputCount, StoreType storeType, LockType type)
         {
             for (var i = 0; i < inputCount; i++)
             {
                 var key = respSession.parseState.GetArgSliceByRef(i);
-                SaveKeyEntryToLock(key, isObject, type);
+                if (storeType is StoreType.Main or StoreType.All)
+                    SaveKeyEntryToLock(key, false, type);
+                if (storeType is StoreType.Object or StoreType.All && !objectStoreBasicContext.IsNull)
+                    SaveKeyEntryToLock(key, true, type);
                 SaveKeyArgSlice(key);
             }
             return inputCount;

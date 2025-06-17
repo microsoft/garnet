@@ -66,6 +66,12 @@ namespace Garnet.test
         }
     }
 
+    public enum RevivificationMode
+    {
+        NoReviv = 0,
+        UseReviv = 1,
+    }
+
     internal static class TestUtils
     {
         public static readonly int TestPort = 33278;
@@ -80,7 +86,6 @@ namespace Garnet.test
         /// </summary>
         static readonly bool useTestLogger = false;
 
-        private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
         internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
@@ -259,7 +264,10 @@ namespace Garnet.test
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
             TextWriter logTo = null,
-            bool enableCluster = false)
+            bool enableCluster = false,
+            int expiredKeyDeletionScanFrequencySecs = -1,
+            bool useReviv = false
+            )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -344,6 +352,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
+                ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
@@ -394,6 +403,18 @@ namespace Garnet.test
                 });
             }
 
+            if (useReviv)
+            {
+                opts.UseRevivBinsPowerOf2 = true;
+                opts.RevivBinBestFitScanLimit = 0;
+                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivifiableFraction = 1;
+                opts.RevivInChainOnly = false;
+                opts.RevivBinRecordCounts = [];
+                opts.RevivBinRecordSizes = [];
+                opts.RevivObjBinRecordCount = 256;
+            }
+
             return new GarnetServer(opts, loggerFactory);
         }
 
@@ -420,6 +441,7 @@ namespace Garnet.test
         public static GarnetServer[] CreateGarnetCluster(
             string checkpointDir,
             EndPointCollection endpoints,
+            bool enableCluster = true,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -456,7 +478,8 @@ namespace Garnet.test
             string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -469,6 +492,7 @@ namespace Garnet.test
                     checkpointDir,
                     checkpointDir,
                     endpoint,
+                    enableCluster: enableCluster,
                     disablePubSub,
                     disableObjects,
                     tryRecover,
@@ -505,7 +529,8 @@ namespace Garnet.test
                     replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
-                    clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                    clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                    luaTransactionMode: luaTransactionMode);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -529,6 +554,7 @@ namespace Garnet.test
             string checkpointDir,
             string logDir,
             EndPoint endpoint,
+            bool enableCluster = true,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -569,7 +595,8 @@ namespace Garnet.test
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -629,7 +656,7 @@ namespace Garnet.test
                 Recover = tryRecover,
                 IndexSize = "1m",
                 ObjectStoreIndexSize = "16k",
-                EnableCluster = true,
+                EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
                 QuietMode = true,
@@ -672,6 +699,7 @@ namespace Garnet.test
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,

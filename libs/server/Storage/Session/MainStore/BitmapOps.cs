@@ -416,7 +416,10 @@ namespace Garnet.server
             if (secondaryCommand == RespCommand.GET)
                 status = Read_MainStore(ref key, ref input, ref output, ref context);
             else
+            {
+                Debug.Assert(input.header.cmd != RespCommand.BITFIELD_RO);
                 status = RMW_MainStore(ref key, ref input, ref output, ref context);
+            }
             return status;
         }
 

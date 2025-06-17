@@ -148,5 +148,11 @@ namespace Garnet.server
         /// Get checkpoint info
         /// </summary>
         MetricsItem[] GetCheckpointInfo();
+
+        /// <summary>
+        /// RunID to identify checkpoint history
+        /// </summary>
+        /// <returns></returns>
+        string GetRunId();
     }
 }

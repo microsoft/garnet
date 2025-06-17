@@ -88,6 +88,7 @@ namespace Garnet.test.cluster
         /// Create instances with provided configuration
         /// </summary>
         /// <param name="shards"></param>
+        /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
@@ -117,8 +118,10 @@ namespace Garnet.test.cluster
         /// <param name="luaMemoryMode"></param>
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
+        /// <param name="luaTransactionMode"></param>
         public void CreateInstances(
             int shards,
+            bool enableCluster = true,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
             bool disableObjects = false,
@@ -150,7 +153,8 @@ namespace Garnet.test.cluster
             string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            bool useHostname = false)
+            bool useHostname = false,
+            bool luaTransactionMode = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -160,6 +164,7 @@ namespace Garnet.test.cluster
                 TestFolder,
                 disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
+                enableCluster: enableCluster,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
                 timeout: timeout,
@@ -192,7 +197,8 @@ namespace Garnet.test.cluster
                 replicaDisklessSyncDelay: replicaDisklessSyncDelay,
                 replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                 luaMemoryMode: luaMemoryMode,
-                luaMemoryLimit: luaMemoryLimit);
+                luaMemoryLimit: luaMemoryLimit,
+                luaTransactionMode: luaTransactionMode);
 
             foreach (var node in nodes)
                 node.Start();
@@ -204,6 +210,7 @@ namespace Garnet.test.cluster
         /// Create single cluster instance with corresponding options
         /// </summary>
         /// <param name="endpoint"></param>
+        /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
         /// <param name="disableObjects"></param>
@@ -229,6 +236,7 @@ namespace Garnet.test.cluster
         /// <returns></returns>
         public GarnetServer CreateInstance(
             EndPoint endpoint,
+            bool enableCluster = true,
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
             bool tryRecover = false,
@@ -259,6 +267,7 @@ namespace Garnet.test.cluster
                 TestFolder,
                 TestFolder,
                 endpoint,
+                enableCluster: enableCluster,
                 disablePubSub: true,
                 disableObjects: disableObjects,
                 enableAOF: enableAOF,
@@ -314,10 +323,12 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Establish connection to cluster.
         /// </summary>
+        /// <param name="enabledCluster"></param>
         /// <param name="useTLS"></param>
         /// <param name="certificates"></param>
         /// <param name="clientCreds"></param>
         public void CreateConnection(
+            bool enabledCluster = true,
             bool useTLS = false,
             X509CertificateCollection certificates = null,
             ServerCredential clientCreds = new ServerCredential())
@@ -331,7 +342,7 @@ namespace Garnet.test.cluster
                 authUsername: clientCreds.user,
                 authPassword: clientCreds.password,
                 certificates: certificates);
-            clusterTestUtils.Connect(logger);
+            clusterTestUtils.Connect(cluster: enabledCluster, logger: logger);
             clusterTestUtils.PingAll(logger);
         }
 

@@ -111,6 +111,11 @@ namespace Garnet.server
         public int CommitFrequencyMs = 0;
 
         /// <summary>
+        /// Frequency of background scan for expired key deletion, in seconds.
+        /// </summary>
+        public int ExpiredKeyDeletionScanFrequencySecs = -1;
+
+        /// <summary>
         /// Index resize check frequency in seconds.
         /// </summary>
         public int IndexResizeFrequencySecs = 60;
@@ -841,6 +846,7 @@ namespace Garnet.server
             }
 
             var aofDir = GetAppendOnlyFileDirectory(dbId);
+            // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(aofDir),
