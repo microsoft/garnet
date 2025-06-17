@@ -20,7 +20,7 @@ namespace Garnet.common
         private const double KOverNThreshold = 0.1;
 
         /// <summary>
-        /// Pick indexes from a collection of n items
+        /// Pick k indexes from a collection of n items into a given span of length k
         /// </summary>
         /// <param name="n">Number of items in the collection</param>
         /// <param name="indexes">Span of indexes to pick.</param>
