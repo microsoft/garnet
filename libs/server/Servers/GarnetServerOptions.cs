@@ -82,10 +82,14 @@ namespace Garnet.server
         /// </summary>
         public bool EnableAOF = false;
 
-        // Enable Lua scripts on server
+        /// <summary>
+        /// Enable Lua scripts on server
+        /// </summary>
         public bool EnableLua = false;
 
-        // Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        /// <summary>
+        /// Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        /// </summary>
         public bool LuaTransactionMode = false;
 
         /// <summary>
