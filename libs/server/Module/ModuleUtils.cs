@@ -34,7 +34,8 @@ namespace Garnet.server
             out ReadOnlySpan<byte> errorMessage,
             string[] ignoreFileNames = null,
             SearchOption searchOption = SearchOption.AllDirectories,
-            bool ignoreAssemblyLoadErrors = false)
+            bool ignoreAssemblyLoadErrors = false,
+            bool commandLine = false)
         {
             loadedAssemblies = null;
             errorMessage = default;
@@ -46,8 +47,13 @@ namespace Garnet.server
                 return false;
             }
 
+            if ((allowedExtensionPaths == null) && !commandLine)
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_MUST_DEFINE_ASSEMBLY_BINPATH;
+                return false;
+            }
             // Check that all binary files are contained in allowed binary paths
-            if (allowedExtensionPaths != null)
+            else if (allowedExtensionPaths != null)
             {
                 if (binaryFiles.Any(f =>
                         allowedExtensionPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))

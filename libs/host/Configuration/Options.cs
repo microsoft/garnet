@@ -543,7 +543,7 @@ namespace Garnet
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [OptionValidation]
-        [Option("enable-module-command", Required = false, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections")]
+        [Option("enable-module-command", Required = false, Hidden = true, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections")]
         public ConnectionProtectionOption EnableModuleCommand { get; set; }
 
         [OptionValidation]
