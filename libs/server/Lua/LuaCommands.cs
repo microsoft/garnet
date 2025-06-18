@@ -121,10 +121,26 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
             var scriptKey = new ScriptHashKey(digest);
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, out var runner, out _, out _))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, out var runner, out var digestOnHeap, out var compiledSource))
             {
                 // TryLoad will have written any errors out
                 return true;
+            }
+            else if (compiledSource != null)
+            {
+                // Add script to the store dictionary IF we didn't already have it cached for this session
+                //
+                // This may strike you as odd, but it is how Redis behaves
+                if (digestOnHeap == null)
+                {
+                    var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                    digest.CopyTo(newAlloc);
+                    _ = storeWrapper.storeScriptCache.TryAdd(new(newAlloc), compiledSource);
+                }
+                else
+                {
+                    _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, compiledSource);
+                }
             }
 
             if (runner == null)
