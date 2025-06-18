@@ -34,7 +34,7 @@ namespace Garnet.cluster
                 finally
                 {
                     if (!clusterProvider.migrationManager.TryRemoveMigrationTask(this))
-                        logger?.LogError("Could not remove MIGRATE KEYS session");
+                        LogSession(LogLevel.Error, "Could not remove MIGRATE KEYS session");
                 }
             }
             else
@@ -57,7 +57,6 @@ namespace Garnet.cluster
                 // Set target node to import state
                 if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
                 {
-                    logger?.LogError("Failed to set remote slots {slots} to import state", ClusterManager.GetRange([.. GetSlots]));
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
@@ -67,7 +66,6 @@ namespace Garnet.cluster
                 // Set source node to migrating state and wait for local threads to see changed state.
                 if (!TryPrepareLocalForMigration())
                 {
-                    logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
                     TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;

@@ -110,7 +110,7 @@ namespace Garnet.cluster
                         // Check if setslotsrange executed correctly
                         if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                         {
-                            logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
+                            LogSession(LogLevel.Error, $"HandleMigrateTaskResponse Failed {resp}.");
                             Status = MigrateState.FAIL;
                             return false;
                         }
@@ -119,7 +119,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "An error has occurred");
+                    LogSession(LogLevel.Error, $"HandleMigrateTaskResponse Exception {ex.Message}");
                     Status = MigrateState.FAIL;
                     return false;
                 }

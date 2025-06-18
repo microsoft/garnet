@@ -89,7 +89,7 @@ namespace Garnet.cluster
                         logger?.LogError("Key:{key} maps to non-importing slot: {slot}", Encoding.ASCII.GetString(key.AsSpan()), slot);
                         migrateState = 1;
                         i++;
-                        continue;
+                        break;
                     }
 
                     // Set if key replace flag is set or key does not exist
@@ -120,7 +120,7 @@ namespace Garnet.cluster
                         logger?.LogError("Key:{key} maps to non-importing slot: {slot}", Encoding.ASCII.GetString(key.AsSpan()), slot);
                         migrateState = 1;
                         i++;
-                        continue;
+                        break;
                     }
 
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);

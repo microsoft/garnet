@@ -36,7 +36,7 @@ namespace Garnet.cluster
                 // Transmit keys from main store
                 if (!migrateTask.TransmitKeys(StoreType.Main))
                 {
-                    logger?.LogError("Failed transmitting keys from main store");
+                    LogSession(LogLevel.Error, "Failed transmitting keys from main store");
                     return false;
                 }
 
@@ -70,7 +70,7 @@ namespace Garnet.cluster
             // Transmit keys from object store
             if (!migrateTask.TransmitKeys(StoreType.Object))
             {
-                logger?.LogError("Failed transmitting keys from object store");
+                LogSession(LogLevel.Error, "Failed transmitting keys from object store");
                 return false;
             }
 
@@ -123,7 +123,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                LogSession(LogLevel.Error, $"MigrateKeys Exception {ex.Message}");
             }
             return true;
         }

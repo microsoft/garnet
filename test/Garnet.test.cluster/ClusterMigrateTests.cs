@@ -599,7 +599,7 @@ namespace Garnet.test.cluster
 
             context.logger.LogDebug("3. Initiating async migration");
             // Initiate Migration            
-            context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, new List<int>() { slot }, logger: context.logger);
+            context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, [slot], logger: context.logger);
 
             context.logger.LogDebug("4. Checking keys starting");
             // Wait for keys to become available for reading

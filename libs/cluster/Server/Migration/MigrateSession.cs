@@ -129,7 +129,6 @@ namespace Garnet.cluster
             Sketch sketch,
             TransferOption transferOption)
         {
-            this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
             this.clusterSession = clusterSession;
             this.clusterProvider = clusterProvider;
             this._targetAddress = _targetAddress;
@@ -158,6 +157,19 @@ namespace Garnet.cluster
                 migrateTasks = new MigrateTask[1];
                 migrateTasks[0] = new MigrateTask(this, sketch: sketch);
             }
+
+            this.logger = clusterProvider.loggerFactory.CreateLogger($"MigrateSession - {GetHashCode()}"); ;
+        }
+
+        void LogSession(LogLevel logLevel, string msg)
+        {
+            logger?.Log(logLevel,
+                "[{msg}]: {sourceNodeId} -> {targetNodeId}\n" +
+                "slots: {slots}\n" +
+                "copy: {copy}, replace: {replace}, timeout: {timeout}, option: {option}",
+                msg, _sourceNodeId, _targetNodeId,
+                ClusterManager.GetRange([.. _sslots]),
+                _copyOption, _replaceOption, _timeout.TotalMilliseconds, transferOption);
         }
 
         public GarnetClientSession GetGarnetClient()
@@ -201,7 +213,7 @@ namespace Garnet.cluster
                             // Check if authenticate succeeded
                             if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                             {
-                                logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", resp);
+                                LogSession(LogLevel.Error, $"Authentication Failed {resp}");
                                 Status = MigrateState.FAIL;
                                 return false;
                             }
@@ -210,7 +222,7 @@ namespace Garnet.cluster
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "An error occurred");
+                        LogSession(LogLevel.Error, $"Authentication Exception {ex.Message}");
                         return false;
                     }
                 }
@@ -272,7 +284,7 @@ namespace Garnet.cluster
                     // Check if setslotsrange executed correctly
                     if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                     {
-                        logger?.LogError("TrySetSlot error: {error}", resp);
+                        LogSession(LogLevel.Error, $"TrySetSlotRanges {state} Failed {resp}");
                         Status = MigrateState.FAIL;
                         return false;
                     }
@@ -282,7 +294,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error occurred");
+                LogSession(LogLevel.Error, $"TrySetSlotRanges {state} Exception {ex.Message}");
                 return false;
             }
 
@@ -303,7 +315,7 @@ namespace Garnet.cluster
             if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(resp));
+                LogSession(LogLevel.Error, $"TryPrepareSlotsForMigration Failed: {Encoding.ASCII.GetString(resp)}");
                 return false;
             }
             return true;
@@ -330,7 +342,7 @@ namespace Garnet.cluster
             // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
             if (!TrySetSlotRanges(null, MigrateState.STABLE))
             {
-                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
+                LogSession(LogLevel.Error, "MigrateSession.RecoverFromFailure failed to make slots STABLE");
                 return false;
             }
 
