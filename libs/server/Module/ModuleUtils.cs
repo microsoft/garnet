@@ -25,6 +25,7 @@ namespace Garnet.server
         /// <param name="ignoreFileNames">File names to ignore (optional)</param>
         /// <param name="searchOption">In case path is a directory, determines whether to search only top directory or all subdirectories</param>
         /// <param name="ignoreAssemblyLoadErrors">False if method should return an error when at least one assembly was not loaded correctly (false by default)</param>
+        /// <param name="ignorePathCheckWhenUndefined">Ignore path check when path is undefined (default false).</param>
         /// <returns></returns>
         public static bool LoadAssemblies(
             IEnumerable<string> binaryPaths,
@@ -35,7 +36,7 @@ namespace Garnet.server
             string[] ignoreFileNames = null,
             SearchOption searchOption = SearchOption.AllDirectories,
             bool ignoreAssemblyLoadErrors = false,
-            bool commandLine = false)
+            bool ignorePathCheckWhenUndefined = false)
         {
             loadedAssemblies = null;
             errorMessage = default;
@@ -47,7 +48,7 @@ namespace Garnet.server
                 return false;
             }
 
-            if ((allowedExtensionPaths == null) && !commandLine)
+            if ((allowedExtensionPaths == null) && !ignorePathCheckWhenUndefined)
             {
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_MUST_DEFINE_ASSEMBLY_BINPATH;
                 return false;
