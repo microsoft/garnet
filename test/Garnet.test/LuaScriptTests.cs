@@ -971,6 +971,32 @@ return redis.status_reply("OK")
         }
 
         [Test]
+        public void MultiSessionScriptFlush()
+        {
+            using var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            var db1 = redis1.GetDatabase(0);
+            var db2 = redis2.GetDatabase(0);
+
+            var hash = (string)db1.Execute("SCRIPT", "LOAD", "return 2;");
+
+            var check1 = (int)db1.Execute("EVALSHA", hash, "0");
+            var check2 = (int)db2.Execute("EVALSHA", hash, "0");
+
+            ClassicAssert.AreEqual(2, check1);
+            ClassicAssert.AreEqual(2, check2);
+
+            _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db1.Execute("EVALSHA", hash, "0"));
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db2.Execute("EVALSHA", hash, "0"));
+
+            ClassicAssert.True(exc1.Message.StartsWith("NOSCRIPT "));
+            ClassicAssert.True(exc2.Message.StartsWith("NOSCRIPT "));
+        }
+
+        [Test]
         public void ScriptLoadErrors()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
