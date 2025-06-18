@@ -19,6 +19,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> MigrateSlotData()
         {
+            // BumpEpoch happens before this point, so it is safe to capture the following addresses
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
             var mainStorePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
@@ -34,6 +35,7 @@ namespace Garnet.cluster
             // Send object store
             if (!clusterProvider.serverOptions.DisableObjects)
             {
+                // BumpEpoch happens before this point, so it is safe to capture the following addresses
                 var objectStoreBeginAddress = clusterProvider.storeWrapper.objectStore.Log.BeginAddress;
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
