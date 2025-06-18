@@ -86,4 +86,28 @@ public static class AsciiUtils
         }
         return true;
     }
+
+    /// <summary>
+    /// Check if two byte spans are equal, where right is an all-lower-case span, ignoring case if there are ASCII bytes.
+    /// </summary>
+    public static bool EqualsLowerCaseSpanIgnoringCase(this ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+    {
+        if (left.SequenceEqual(right))
+            return true;
+        if (left.Length != right.Length)
+            return false;
+        for (int i = 0; i < left.Length; i++)
+        {
+            var b1 = left[i];
+            var b2 = right[i];
+
+            // Debug assert that b2 is a lower case letter 'a'-'z'
+            Debug.Assert(b2 is >= 97 and <= 122);
+
+            if (b1 == b2 || b1 + 32 == b2)
+                continue;
+            return false;
+        }
+        return true;
+    }
 }

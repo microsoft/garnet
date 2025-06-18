@@ -130,6 +130,12 @@ namespace Garnet.server
             string certPassword = null;
             string clusterUsername = null;
             string clusterPassword = null;
+            string memorySize = null;
+            string objLogMemory = null;
+            string objHeapMemory = null;
+            string index = null;
+            string objIndex = null;
+
             var unknownOption = false;
             var unknownKey = "";
 
@@ -138,13 +144,23 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
                 var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
 
-                if (key.SequenceEqual(CmdStrings.CertFileName))
+                if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Memory))
+                    memorySize = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjLogMemory))
+                    objLogMemory = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjHeapMemory))
+                    objHeapMemory = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Index))
+                    index = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjIndex))
+                    objIndex = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertFileName))
                     certFileName = Encoding.ASCII.GetString(value);
-                else if (key.SequenceEqual(CmdStrings.CertPassword))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertPassword))
                     certPassword = Encoding.ASCII.GetString(value);
-                else if (key.SequenceEqual(CmdStrings.ClusterUsername))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterUsername))
                     clusterUsername = Encoding.ASCII.GetString(value);
-                else if (key.SequenceEqual(CmdStrings.ClusterPassword))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterPassword))
                     clusterPassword = Encoding.ASCII.GetString(value);
                 else
                 {
@@ -156,10 +172,11 @@ namespace Garnet.server
                 }
             }
 
-            string errorMsg = null;
+            var sbErrorMsg = new StringBuilder();
+
             if (unknownOption)
             {
-                errorMsg = string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey);
+                sbErrorMsg.AppendLine(string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey));
             }
             else
             {
@@ -171,39 +188,78 @@ namespace Garnet.server
                         storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
                     else
                     {
-                        errorMsg = "ERR Cluster is disabled.";
+                        sbErrorMsg.AppendLine("ERR Cluster is disabled.");
                     }
                 }
+
                 if (certFileName != null || certPassword != null)
                 {
                     if (storeWrapper.serverOptions.TlsOptions != null)
                     {
                         if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
                         {
-                            if (errorMsg == null) errorMsg = "ERR " + certErrorMessage;
-                            else errorMsg += " " + certErrorMessage;
+                            sbErrorMsg.AppendLine($"ERR {certErrorMessage}");
                         }
                     }
                     else
                     {
-                        if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
-                        else errorMsg += " TLS is disabled.";
+                        sbErrorMsg.AppendLine("ERR TLS is disabled.");
                     }
                 }
+
+                if (memorySize != null)
+                    HandleMemorySizeChange(memorySize, sbErrorMsg);
+
+                if (objLogMemory != null)
+                    HandleMemorySizeChange(objLogMemory, sbErrorMsg, isObjStore: true);
             }
 
-            if (errorMsg == null)
+            if (sbErrorMsg.Length == 0)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
 
             return true;
+        }
+
+        private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool isObjStore = false)
+        {
+            var circularBufferSize = 64L * 1024 * 1024 * 1024;
+
+            if (!ServerOptions.TryParseSize(memorySize, out var updatedSize))
+            {
+                sbErrorMsg.AppendLine("ERR incorrect memory format.");
+            }
+            else
+            {
+                var adjustedSize = ServerOptions.PreviousPowerOf2(updatedSize);
+
+                if (updatedSize > circularBufferSize)
+                {
+                    sbErrorMsg.AppendLine(
+                        "ERR Cannot set dynamic memory size greater than configured circular buffer size of 64g");
+                    return;
+                }
+
+                var pageSize = ServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _);
+                pageSize = ServerOptions.PreviousPowerOf2(pageSize);
+
+                var emptyPageCount = (int)((circularBufferSize - adjustedSize) / pageSize);
+                if (isObjStore)
+                {
+                    storeWrapper.objectStore.Log.SetEmptyPageCount(emptyPageCount);
+                }
+                else
+                {
+                    storeWrapper.store.Log.SetEmptyPageCount(emptyPageCount);
+                }
+            }
         }
     }
 }

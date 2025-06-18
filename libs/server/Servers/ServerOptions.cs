@@ -125,7 +125,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int MemorySizeBits()
         {
-            long size = ParseSize(MemorySize);
+            long size = ParseSize(MemorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower log memory size than specified (power of 2)");
@@ -138,7 +138,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int PageSizeBits()
         {
-            long size = ParseSize(PageSize);
+            long size = ParseSize(PageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
@@ -151,7 +151,7 @@ namespace Garnet.server
         /// <returns></returns>
         public long PubSubPageSizeBytes()
         {
-            long size = ParseSize(PubSubPageSize);
+            long size = ParseSize(PubSubPageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower pub/sub page size than specified (power of 2)");
@@ -164,7 +164,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int SegmentSizeBits()
         {
-            long size = ParseSize(SegmentSize);
+            long size = ParseSize(SegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower disk segment size than specified (power of 2)");
@@ -177,7 +177,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int IndexSizeCachelines(string name, string indexSize)
         {
-            long size = ParseSize(indexSize);
+            long size = ParseSize(indexSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (adjustedSize < 64 || adjustedSize > (1L << 37)) throw new Exception($"Invalid {name}");
             if (size != adjustedSize)
@@ -235,16 +235,19 @@ namespace Garnet.server
         /// Parse size from string specification
         /// </summary>
         /// <param name="value"></param>
+        /// <param name="bytesRead"></param>
         /// <returns></returns>
-        public static long ParseSize(string value)
+        public static long ParseSize(string value, out int bytesRead)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
+            bytesRead = 0;
             foreach (char c in value)
             {
                 if (char.IsDigit(c))
                 {
                     result = result * 10 + (byte)c - '0';
+                    bytesRead++;
                 }
                 else
                 {
@@ -253,12 +256,25 @@ namespace Garnet.server
                         if (char.ToLower(c) == suffix[i])
                         {
                             result *= (long)Math.Pow(1024, i + 1);
+                            bytesRead++;
                             return result;
                         }
                     }
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Try to parse size from string specification
+        /// </summary>
+        /// <param name="value">String size value</param>
+        /// <param name="size">Parsed size</param>
+        /// <returns>True if successful</returns>
+        public static bool TryParseSize(string value, out long size)
+        {
+            size = ParseSize(value, out var charsRead);
+            return charsRead == value.Length || (charsRead == value.Length - 1 && char.ToLower(value[^1]) == 'b');
         }
 
         /// <summary>
@@ -300,7 +316,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="v"></param>
         /// <returns></returns>
-        protected static long PreviousPowerOf2(long v)
+        internal static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
             v |= v >> 2;
