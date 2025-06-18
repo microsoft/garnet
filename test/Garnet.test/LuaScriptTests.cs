@@ -982,6 +982,8 @@ return redis.status_reply("OK")
             var db1 = redis1.GetDatabase(0);
             var db2 = redis2.GetDatabase(0);
 
+            _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
+
             var hash = (string)db1.Execute("SCRIPT", "LOAD", "return 2;");
 
             var check1 = (int)db1.Execute("EVALSHA", hash, "0");
@@ -1011,6 +1013,8 @@ return redis.status_reply("OK")
 
             var db1 = redis1.GetDatabase(0);
             var db2 = redis2.GetDatabase(0);
+
+            _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
 
             var script = "return 2;";
             var hashBytes = SHA1.HashData(Encoding.ASCII.GetBytes(script));
