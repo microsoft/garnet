@@ -220,6 +220,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "ERR one or more binary file are not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS => "ERR command info file is not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "ERR unable to load one or more assemblies."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MUST_DEFINE_ASSEMBLY_BINPATH => "To enable client-side assembly loading, you must specify a list of allowed paths from which assemblies can potentially be loaded using the ExtensionBinPath directive."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ACCESSING_ASSEMBLIES => "ERR unable to access one or more assemblies to check if it's digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "ERR one or more assemblies loaded is not digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
