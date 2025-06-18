@@ -253,11 +253,11 @@ namespace Garnet.server
                 var emptyPageCount = (int)((circularBufferSize - adjustedSize) / pageSize);
                 if (isObjStore)
                 {
-                    storeWrapper.objectStore.Log.SetEmptyPageCount(emptyPageCount);
+                    storeWrapper.objectStore.Log.SetEmptyPageCount(emptyPageCount, true);
                 }
                 else
                 {
-                    storeWrapper.store.Log.SetEmptyPageCount(emptyPageCount);
+                    storeWrapper.store.Log.SetEmptyPageCount(emptyPageCount, true);
                 }
             }
         }
