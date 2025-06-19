@@ -543,15 +543,19 @@ namespace Garnet
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [OptionValidation]
+        [Option("enable-module-command", Required = false, Hidden = true, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections")]
+        public ConnectionProtectionOption EnableModuleCommand { get; set; }
+
+        [OptionValidation]
         [Option("protected-mode", Required = false, HelpText = "Enable protected mode.")]
         public CommandLineBooleanOption ProtectedMode { get; set; }
 
         [DirectoryPathsValidation(true, false)]
-        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
+        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "Set directories on server from which custom command binaries can be loaded by admin users from list")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
 
         [ModuleFilePathValidation(true, true, false)]
-        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "List of modules to be loaded")]
+        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "Load modules from list")]
         public IEnumerable<string> LoadModuleCS { get; set; }
 
         [Option("extension-allow-unsigned", Required = false, HelpText = "Allow loading custom commands from digitally unsigned assemblies (not recommended)")]
@@ -886,6 +890,7 @@ namespace Garnet
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
+                EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,

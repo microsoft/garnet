@@ -5238,7 +5238,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception e)
                 {
-                    if (e.Message == "ERR malformed REGISTERCS command.")
+                    if (e.Message == "ERR wrong number of arguments for 'REGISTERCS' command")
                     {
                         return;
                     }
