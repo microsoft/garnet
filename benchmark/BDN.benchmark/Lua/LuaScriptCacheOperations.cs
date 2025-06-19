@@ -51,14 +51,14 @@ namespace BDN.benchmark.Lua
 
             outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1"u8, outerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), "return 1"u8.ToArray()))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), new("return 1"u8.ToArray())))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
             innerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
             sessionScriptCache.GetScriptDigest("return 1 + 1"u8, innerHitDigest);
-            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), "return 1 + 1"u8.ToArray()))
+            if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), new("return 1 + 1"u8.ToArray())))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
@@ -81,7 +81,8 @@ namespace BDN.benchmark.Lua
             sessionScriptCache.Clear();
 
             // Make outer hit available for every iteration
-            if (!sessionScriptCache.TryLoad(session, "return 1"u8, new(outerHitDigest), out _, out _, out _))
+            LuaScriptHandle scriptHandle = null;
+            if (!sessionScriptCache.TryLoad(session, "return 1"u8, new(outerHitDigest), ref scriptHandle, out _, out _))
             {
                 throw new InvalidOperationException("Should have been able to load");
             }
@@ -90,13 +91,13 @@ namespace BDN.benchmark.Lua
         [Benchmark]
         public void LookupHit()
         {
-            _ = sessionScriptCache.TryGetFromDigest(new(outerHitDigest), out _);
+            _ = sessionScriptCache.TryGetFromDigest(new(outerHitDigest), out _, out _);
         }
 
         [Benchmark]
         public void LookupMiss()
         {
-            _ = sessionScriptCache.TryGetFromDigest(new(missDigest), out _);
+            _ = sessionScriptCache.TryGetFromDigest(new(missDigest), out _, out _);
         }
 
         [Benchmark]
@@ -142,11 +143,12 @@ namespace BDN.benchmark.Lua
 
             var digestKey = new ScriptHashKey(digest);
 
-            if (!sessionScriptCache.TryGetFromDigest(digestKey, out var runner))
+            if (!sessionScriptCache.TryGetFromDigest(digestKey, out var runner, out var scriptHandle))
             {
                 if (storeWrapper.storeScriptCache.TryGetValue(digestKey, out var source))
                 {
-                    if (!sessionScriptCache.TryLoad(session, source, digestKey, out runner, out _, out _))
+                    LuaScriptHandle newScriptHandle = null;
+                    if (!sessionScriptCache.TryLoad(session, scriptHandle.ScriptData.Span, digestKey, ref newScriptHandle, out runner, out _))
                     {
                         // TryLoad will have written an error out, it any
 

@@ -102,7 +102,7 @@ namespace Garnet.server
         /// <summary>
         /// Lua script cache
         /// </summary>
-        public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
+        public readonly ConcurrentDictionary<ScriptHashKey, LuaScriptHandle> storeScriptCache;
 
         /// <summary>
         /// Logging frequency
