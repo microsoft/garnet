@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -187,6 +188,14 @@ namespace Garnet.common
             h2 += h1;
 
             return (h1, h2);
+        }
+
+        public static unsafe ulong MurmurHash2x64A(Span<byte> bString, uint seed = 0)
+        {
+            fixed (byte* p = bString)
+            {
+                return MurmurHash2x64A(p, bString.Length, seed);
+            }
         }
 
         /// <summary>

@@ -68,6 +68,11 @@ namespace Garnet.server
         public bool CleanClusterConfig = false;
 
         /// <summary>
+        /// Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.
+        /// </summary>
+        public int ParallelMigrateTasks = 1;
+
+        /// <summary>
         /// Authentication settings
         /// </summary>
         public IAuthenticationSettings AuthSettings = null;
@@ -77,10 +82,14 @@ namespace Garnet.server
         /// </summary>
         public bool EnableAOF = false;
 
-        // Enable Lua scripts on server
+        /// <summary>
+        /// Enable Lua scripts on server
+        /// </summary>
         public bool EnableLua = false;
 
-        // Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        /// <summary>
+        /// Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        /// </summary>
         public bool LuaTransactionMode = false;
 
         /// <summary>

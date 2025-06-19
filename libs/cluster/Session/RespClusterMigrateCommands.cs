@@ -86,9 +86,10 @@ namespace Garnet.cluster
                     var slot = HashSlotUtils.HashSlot(ref key);
                     if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
                     {
+                        logger?.LogError("Key:{key} maps to non-importing slot: {slot}", Encoding.ASCII.GetString(key.AsSpan()), slot);
                         migrateState = 1;
                         i++;
-                        continue;
+                        break;
                     }
 
                     // Set if key replace flag is set or key does not exist
@@ -116,8 +117,10 @@ namespace Garnet.cluster
                     var slot = HashSlotUtils.HashSlot(key);
                     if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
                     {
+                        logger?.LogError("Key:{key} maps to non-importing slot: {slot}", Encoding.ASCII.GetString(key.AsSpan()), slot);
                         migrateState = 1;
-                        continue;
+                        i++;
+                        break;
                     }
 
                     var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
@@ -137,7 +140,7 @@ namespace Garnet.cluster
 
             if (migrateState == 1)
             {
-                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE));
+                logger?.LogError("CLUSTER MIGRATE: {errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE));
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
                     SendAndReset();
             }
