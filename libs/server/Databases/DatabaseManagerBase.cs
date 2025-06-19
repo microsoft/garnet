@@ -119,10 +119,10 @@ namespace Garnet.server
         public abstract IDatabaseManager Clone(bool enableAof);
 
         /// <inheritdoc/>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase?.MainStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
 
         /// <inheritdoc/>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase?.ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
 
         /// <inheritdoc/>
         public TsavoriteLog AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
