@@ -1004,9 +1004,9 @@ return redis.status_reply("OK")
         [Test]
         public void CrossSessionEvalScriptCaching()
         {
-            // Somewhat oddly, if we EVAL a script in one session it should be cached in all sessions
+            // Somewhat oddly, if we EVAL a script in one session it should be runnable by hash in all sessions
             //
-            // This is to match Redis behavior.
+            // This is to match Redis behavior
 
             using var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1023,10 +1023,11 @@ return redis.status_reply("OK")
             var res1 = (int)db1.Execute("EVAL", script, "0");
             ClassicAssert.AreEqual(2, res1);
 
-            var res2 = (int)db1.Execute("EVALSHA", hash, "0");
+            // Should be cached in _different_ session too
+            var res2 = (int)db2.Execute("EVALSHA", hash, "0");
             ClassicAssert.AreEqual(2, res2);
-            
-            var res3 = (int)db2.Execute("EVALSHA", hash, "0");
+
+            var res3 = (int)db1.Execute("EVALSHA", hash, "0");
             ClassicAssert.AreEqual(2, res3);
         }
 
