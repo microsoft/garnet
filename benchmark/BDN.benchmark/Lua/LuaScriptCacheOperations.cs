@@ -143,9 +143,9 @@ namespace BDN.benchmark.Lua
 
             var digestKey = new ScriptHashKey(digest);
 
-            if (!sessionScriptCache.TryGetFromDigest(digestKey, out var runner, out var scriptHandle))
+            if (!sessionScriptCache.TryGetFromDigest(digestKey, out var runner, out _))
             {
-                if (storeWrapper.storeScriptCache.TryGetValue(digestKey, out var source))
+                if (storeWrapper.storeScriptCache.TryGetValue(digestKey, out var scriptHandle))
                 {
                     LuaScriptHandle newScriptHandle = null;
                     if (!sessionScriptCache.TryLoad(session, scriptHandle.ScriptData.Span, digestKey, ref newScriptHandle, out runner, out _))
