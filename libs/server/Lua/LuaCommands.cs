@@ -254,9 +254,9 @@ namespace Garnet.server
             //
             // Disposing each script handle (that we actually remove) along the way
             // to signal to session level caches that the script needs to be discarded
-            foreach(var digest in storeWrapper.storeScriptCache.Keys)
+            foreach (var digest in storeWrapper.storeScriptCache.Keys)
             {
-                if(storeWrapper.storeScriptCache.TryRemove(digest, out var scriptHandle))
+                if (storeWrapper.storeScriptCache.TryRemove(digest, out var scriptHandle))
                 {
                     scriptHandle.Dispose();
                 }
