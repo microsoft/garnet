@@ -139,9 +139,14 @@ namespace Garnet.cluster
 
                 long index_size = -1;
                 long obj_index_size = -1;
-                if (!ValidateMetadata(localEntry, out index_size, out var hlog_size, out obj_index_size, out var obj_hlog_size, out var skipLocalMainStoreCheckpoint, out var skipLocalObjectStoreCheckpoint))
+                var hlog_size = default(LogFileInfo);
+                var obj_hlog_size = default(LogFileInfo);
+                var skipLocalMainStoreCheckpoint = false;
+                var skipLocalObjectStoreCheckpoint = false;
+                while (!ValidateMetadata(localEntry, out index_size, out hlog_size, out obj_index_size, out obj_hlog_size, out skipLocalMainStoreCheckpoint, out skipLocalObjectStoreCheckpoint))
                 {
-                    throw new GarnetException("Failed to validate metadata");
+                    logger?.LogError("Failed to validate metadata. Retrying....");
+                    await Task.Yield();
                 }
 
                 #region sendStoresSnapshotData
