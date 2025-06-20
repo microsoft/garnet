@@ -65,7 +65,7 @@ namespace Garnet.server
 
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
-        internal readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -99,7 +99,7 @@ namespace Garnet.server
             BasicGarnetApi garnetApi,
             LockableGarnetApi lockableGarnetApi,
             StorageSession storageSession,
-            ScratchBufferManager scratchBufferManager,
+            ScratchBufferAllocator scratchBufferAllocator,
             bool clusterEnabled,
             ILogger logger = null,
             int dbId = 0)
@@ -123,7 +123,7 @@ namespace Garnet.server
 
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, lockableContext, objectStoreLockableContext);
-            this.scratchBufferManager = scratchBufferManager;
+            this.scratchBufferAllocator = scratchBufferAllocator;
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
@@ -178,7 +178,7 @@ namespace Garnet.server
         internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
         {
             var running = false;
-            scratchBufferManager.Reset();
+            scratchBufferAllocator.Reset();
             try
             {
                 // If cluster is enabled reset slot verification state cache
@@ -233,7 +233,7 @@ namespace Garnet.server
                 catch { }
 
                 // Reset scratch buffer for next txn invocation
-                scratchBufferManager.Reset();
+                scratchBufferAllocator.Reset();
             }
 
 

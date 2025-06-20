@@ -86,19 +86,19 @@ namespace Garnet.server
             value = default;
 
             var _key = key.SpanByte;
-            var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
+            var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice().SpanByte };
 
             var ret = GET(ref _key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)
             {
                 if (!_output.IsSpanByte)
                 {
-                    value = scratchBufferManager.FormatScratch(0, _output.AsReadOnlySpan());
+                    value = scratchBufferBuilder.FormatScratch(0, _output.AsReadOnlySpan());
                     _output.Memory.Dispose();
                 }
                 else
                 {
-                    value = scratchBufferManager.CreateArgSlice(_output.Length);
+                    value = scratchBufferBuilder.CreateArgSlice(_output.Length);
                 }
             }
             return ret;
@@ -520,7 +520,7 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var _key = key.SpanByte;
-            var valueSB = scratchBufferManager.FormatScratch(sizeof(long), value).SpanByte;
+            var valueSB = scratchBufferBuilder.FormatScratch(sizeof(long), value).SpanByte;
             valueSB.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expiry.Ticks;
             return SET(ref _key, ref valueSB, ref context);
         }
@@ -865,7 +865,7 @@ namespace Garnet.server
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 var _key = key.SpanByte;
-                var _output = new SpanByteAndMemory { SpanByte = scratchBufferManager.ViewRemainingArgSlice().SpanByte };
+                var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice().SpanByte };
                 status = GET(ref _key, ref input, ref _output, ref context);
 
                 if (status == GarnetStatus.OK)
@@ -1037,7 +1037,7 @@ namespace Garnet.server
 
             // Serialize expiry + expiry options to parse state
             var expiryLength = NumUtils.CountDigits(expiry);
-            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySlice = scratchBufferBuilder.CreateArgSlice(expiryLength);
             var expirySpan = expirySlice.Span;
             NumUtils.WriteInt64(expiry, expirySpan);
 
@@ -1083,7 +1083,7 @@ namespace Garnet.server
                 output = objOutput.SpanByteAndMemory;
             }
 
-            scratchBufferManager.RewindScratchBuffer(ref expirySlice);
+            scratchBufferBuilder.RewindScratchBuffer(ref expirySlice);
 
             Debug.Assert(output.IsSpanByte);
             if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;

@@ -42,7 +42,7 @@ namespace Garnet.server
         public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
         public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
 
-        public readonly ScratchBufferManager scratchBufferManager;
+        public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
 
         public TransactionManager txnManager;
@@ -56,7 +56,7 @@ namespace Garnet.server
         public readonly int ObjectScanCountLimit;
 
         public StorageSession(StoreWrapper storeWrapper,
-            ScratchBufferManager scratchBufferManager,
+            ScratchBufferBuilder scratchBufferBuilder,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
@@ -65,7 +65,7 @@ namespace Garnet.server
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
-            this.scratchBufferManager = scratchBufferManager;
+            this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
             parseState.Initialize();

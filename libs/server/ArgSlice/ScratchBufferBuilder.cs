@@ -12,9 +12,20 @@ using Garnet.common;
 namespace Garnet.server
 {
     /// <summary>
-    /// Utils for scratch buffer management - one per session (single threaded access)
+    /// <see cref="ScratchBufferBuilder"/> is responsible for building a single buffer containing data
+    /// supplied by sequential calls to CreateArgSlice.
+    /// Whenever the current buffer runs out of space, a new buffer is allocated and the previous buffer's data is the copied over.
+    /// The previous allocated buffers are then potentially GCed so any <see cref="ArgSlice"/>s returned prior to any calls to
+    /// CreateArgSlice may be pointing to non-allocated space.
+    ///
+    /// The builder is meant to be called from a single-threaded context (i.e. one builder per session).
+    /// Each call to CreateArgSlice will copy the data to the current or new buffer that could contain the data in its entirety,
+    /// so rewinding the <see cref="ArgSlice"/> (i.e. releasing the memory) should be called in reverse order to assignment.
+    /// 
+    /// Note: Use <see cref="ScratchBufferAllocator"/> if you do not need all data to remain in a continuous chunk of memory
+    /// and you do not want previously returned <see cref="ArgSlice"/> structs to potentially point to non-allocated memory.
     /// </summary>
-    internal sealed unsafe class ScratchBufferManager
+    internal sealed unsafe class ScratchBufferBuilder
     {
         /// <summary>
         /// Session-local scratch buffer to hold temporary arguments in transactions and GarnetApi
@@ -34,7 +45,7 @@ namespace Garnet.server
         /// <summary>Current offset in scratch buffer</summary>
         internal int ScratchBufferOffset => scratchBufferOffset;
 
-        public ScratchBufferManager()
+        public ScratchBufferBuilder()
         {
         }
 
@@ -44,7 +55,7 @@ namespace Garnet.server
         public void Reset() => scratchBufferOffset = 0;
 
         /// <summary>
-        /// Return the full buffer managed by this <see cref="ScratchBufferManager"/>.
+        /// Return the full buffer managed by this <see cref="ScratchBufferBuilder"/>.
         /// </summary>
         public Span<byte> FullBuffer()
         => scratchBuffer;
@@ -354,7 +365,7 @@ namespace Garnet.server
         /// Force backing buffer to grow.
         /// 
         /// <paramref name="copyLengthOverride"/> provides a way to force a chunk at the start of the
-        /// previous buffer be copied into the new buffer, even if this <see cref="ScratchBufferManager"/>
+        /// previous buffer be copied into the new buffer, even if this <see cref="ScratchBufferBuilder"/>
         /// doesn't consider that chunk in use.
         /// </summary>
         public void GrowBuffer(int? copyLengthOverride = null)
