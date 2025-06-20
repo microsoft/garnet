@@ -119,6 +119,7 @@ namespace Garnet.test.cluster
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
+        /// <param name="useNativeDeviceLinux"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -154,7 +155,8 @@ namespace Garnet.test.cluster
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             bool useHostname = false,
-            bool luaTransactionMode = false)
+            bool luaTransactionMode = false,
+            bool useNativeDeviceLinux = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -198,7 +200,8 @@ namespace Garnet.test.cluster
                 replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit,
-                luaTransactionMode: luaTransactionMode);
+                luaTransactionMode: luaTransactionMode,
+                useNativeDeviceLinux: useNativeDeviceLinux);
 
             foreach (var node in nodes)
                 node.Start();
@@ -298,7 +301,6 @@ namespace Garnet.test.cluster
             return new GarnetServer(opts, loggerFactory);
         }
 
-
         /// <summary>
         /// Dispose created instances
         /// </summary>
@@ -313,7 +315,7 @@ namespace Garnet.test.cluster
                         logger.LogDebug("\t a. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                         var node = nodes[i];
                         nodes[i] = null;
-                        node.Dispose();
+                        node.Dispose(true);
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }
                 });
