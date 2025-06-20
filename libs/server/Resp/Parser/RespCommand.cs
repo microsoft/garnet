@@ -695,7 +695,6 @@ namespace Garnet.server
                 // Extract total element count from the array header.
                 // NOTE: Subtracting one to account for first token being parsed.
                 count = ptr[1] - '1';
-                Debug.Assert(count is >= 0 and < 9);
 
                 // Extract length of the first string header
                 var length = ptr[5] - '0';
