@@ -36,6 +36,11 @@ namespace Garnet.server
         int activeDbId;
 
         /// <summary>
+        /// Set ReadWriteSession on the cluster session (NOTE: used for rplaying stored procedures only)
+        /// </summary>
+        public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
+
+        /// <summary>
         /// Session for main store
         /// </summary>
         BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
@@ -367,19 +372,8 @@ namespace Garnet.server
                 // input
                 customProcInput.DeserializeFrom(curr);
 
-                try
-                {
-                    // Mark this txn run as a read-write session if we are replaying as a replica
-                    // This is necessary to ensure that the stored procedure can perform write operations if needed
-                    if (replayAsReplica)
-                        respServerSession.clusterSession.SetReadWriteSession();
-                    respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
-                }
-                finally
-                {
-                    if (replayAsReplica)
-                        respServerSession.clusterSession.SetReadOnlySession();
-                }
+                // Run the stored procedure with the reconstructed input
+                respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
             }
         }
 
