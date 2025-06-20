@@ -24,7 +24,7 @@ namespace Garnet.server
         readonly StoreWrapper storeWrapper;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly ILogger logger;
-        readonly Dictionary<ScriptHashKey, LuaRunner> scriptCache = [];
+        readonly Dictionary<ScriptHashKey, (LuaRunner Runner, LuaScriptHandle Handle)> scriptCache = [];
         readonly byte[] hash = new byte[SHA1Len / 2];
 
         readonly LuaMemoryManagementMode memoryManagementMode;
@@ -118,8 +118,30 @@ namespace Garnet.server
         /// <summary>
         /// Try get script runner for given digest
         /// </summary>
-        public bool TryGetFromDigest(ScriptHashKey digest, out LuaRunner scriptRunner)
-        => scriptCache.TryGetValue(digest, out scriptRunner);
+        public bool TryGetFromDigest(ScriptHashKey digest, out LuaRunner scriptRunner, out LuaScriptHandle scriptHandle)
+        {
+            if (!scriptCache.TryGetValue(digest, out var loadedTuple))
+            {
+                scriptRunner = null;
+                scriptHandle = null;
+                return false;
+            }
+
+            (scriptRunner, scriptHandle) = loadedTuple;
+
+            // If the global cache has been invalidated, remove from the session cache
+            if (scriptHandle.IsDisposed)
+            {
+                _ = scriptCache.Remove(digest);
+                scriptRunner.Dispose();
+
+                scriptRunner = null;
+                scriptHandle = null;
+                return false;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Load script into the cache.
@@ -130,21 +152,21 @@ namespace Garnet.server
             RespServerSession session,
             ReadOnlySpan<byte> source,
             ScriptHashKey digest,
+            ref LuaScriptHandle luaScriptHandle,
             out LuaRunner runner,
-            out ScriptHashKey? digestOnHeap,
-            out byte[] compiledSource
+            out ScriptHashKey? digestOnHeap
         )
         {
-            if (scriptCache.TryGetValue(digest, out runner))
+            if (TryGetFromDigest(digest, out runner, out var existingLuaScriptHandle))
             {
+                luaScriptHandle = existingLuaScriptHandle;
                 digestOnHeap = null;
-                compiledSource = null;
                 return true;
             }
 
             try
             {
-                compiledSource = LuaRunner.CompileSource(source);
+                var compiledSource = LuaRunner.CompileSource(source);
 
                 runner = new LuaRunner(memoryManagementMode, memoryLimitBytes, logMode, allowedFunctions, compiledSource, storeWrapper.serverOptions.LuaTransactionMode, processor, scratchBufferNetworkSender, storeWrapper.redisProtocolVersion, logger);
 
@@ -162,7 +184,8 @@ namespace Garnet.server
                     ScriptHashKey storeKeyDigest = new(into);
                     digestOnHeap = storeKeyDigest;
 
-                    _ = scriptCache.TryAdd(storeKeyDigest, runner);
+                    luaScriptHandle ??= new(compiledSource);
+                    scriptCache.Add(storeKeyDigest, (runner, luaScriptHandle));
 
                     // On first script load, register for timeout notifications
                     //
@@ -185,7 +208,7 @@ namespace Garnet.server
                 logger?.LogError(ex, "During Lua script loading, an unexpected exception");
 
                 digestOnHeap = null;
-                compiledSource = null;
+                luaScriptHandle = null;
                 return false;
             }
 
@@ -197,9 +220,12 @@ namespace Garnet.server
         /// </summary>
         internal void Remove(ScriptHashKey key)
         {
-            if (scriptCache.Remove(key, out var runner))
+            if (scriptCache.Remove(key, out var loadedTuple))
             {
-                runner.Dispose();
+                // Intentionally NOT disposing the script handle
+                //
+                // Removing from a session cache does not invalidate the global cache
+                loadedTuple.Runner.Dispose();
             }
         }
 
@@ -211,8 +237,11 @@ namespace Garnet.server
             timeoutRegistration?.Dispose();
             timeoutRegistration = null;
 
-            foreach (var runner in scriptCache.Values)
+            foreach (var (runner, _) in scriptCache.Values)
             {
+                // Intentionally NOT disposing the script handles
+                //
+                // Removing from a session cache does not invalidate the global cache
                 runner.Dispose();
             }
 
