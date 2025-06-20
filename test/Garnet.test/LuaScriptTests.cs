@@ -9,6 +9,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -968,6 +969,66 @@ return redis.status_reply("OK")
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("SCRIPT", "FLUSH", "NOW"));
                 ClassicAssert.AreEqual("ERR SCRIPT FLUSH only support SYNC|ASYNC option", exc.Message);
             }
+        }
+
+        [Test]
+        public void MultiSessionScriptFlush()
+        {
+            // If we flush scripts from one session, they should (eventually) be removed for all sessions
+
+            using var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            var db1 = redis1.GetDatabase(0);
+            var db2 = redis2.GetDatabase(0);
+
+            _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
+
+            var hash = (string)db1.Execute("SCRIPT", "LOAD", "return 2;");
+
+            var check1 = (int)db1.Execute("EVALSHA", hash, "0");
+            var check2 = (int)db2.Execute("EVALSHA", hash, "0");
+
+            ClassicAssert.AreEqual(2, check1);
+            ClassicAssert.AreEqual(2, check2);
+
+            _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db1.Execute("EVALSHA", hash, "0"));
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db2.Execute("EVALSHA", hash, "0"));
+
+            ClassicAssert.True(exc1.Message.StartsWith("NOSCRIPT "));
+            ClassicAssert.True(exc2.Message.StartsWith("NOSCRIPT "));
+        }
+
+        [Test]
+        public void CrossSessionEvalScriptCaching()
+        {
+            // Somewhat oddly, if we EVAL a script in one session it should be runnable by hash in all sessions
+            //
+            // This is to match Redis behavior
+
+            using var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            var db1 = redis1.GetDatabase(0);
+            var db2 = redis2.GetDatabase(0);
+
+            _ = db1.Execute("SCRIPT", "FLUSH", "SYNC");
+
+            var script = "return 2;";
+            var hashBytes = SHA1.HashData(Encoding.ASCII.GetBytes(script));
+            var hash = string.Join("", hashBytes.Select(static x => $"{x:x2}"));
+
+            var res1 = (int)db1.Execute("EVAL", script, "0");
+            ClassicAssert.AreEqual(2, res1);
+
+            // Should be cached in _different_ session too
+            var res2 = (int)db2.Execute("EVALSHA", hash, "0");
+            ClassicAssert.AreEqual(2, res2);
+
+            var res3 = (int)db1.Execute("EVALSHA", hash, "0");
+            ClassicAssert.AreEqual(2, res3);
         }
 
         [Test]

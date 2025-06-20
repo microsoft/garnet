@@ -44,14 +44,15 @@ namespace Garnet.server
             tryAgain:
                 scriptKey = new ScriptHashKey(digest.Span);
 
-                if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner))
+                if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner, out _))
                 {
-                    if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var source))
+                    if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                     {
-                        if (!sessionScriptCache.TryLoad(this, source, scriptKey, out runner, out _, out _))
+                        if (!sessionScriptCache.TryLoad(this, globalScriptHandle.ScriptData.Span, scriptKey, ref globalScriptHandle, out runner, out _))
                         {
                             // TryLoad will have written an error out, it any
-
+                            //
+                            // Note we DON'T dispose the script handle because this is just the session cache
                             _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
                             return true;
                         }
@@ -84,6 +85,7 @@ namespace Garnet.server
 
                 if (!res)
                 {
+                    // Note we DON'T dispose the script handle because this is just the session cache
                     sessionScriptCache.Remove(scriptKey);
                 }
             }
@@ -120,11 +122,40 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
+            LuaScriptHandle newScriptHandle = null;
             var scriptKey = new ScriptHashKey(digest);
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, out var runner, out _, out _))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, ref newScriptHandle, out var runner, out var digestOnHeap))
             {
                 // TryLoad will have written any errors out
                 return true;
+            }
+            else if (newScriptHandle != null)
+            {
+                // Add script to the store dictionary IF we didn't already have it cached for this session
+                //
+                // This may strike you as odd, but it is how Redis behaves
+                if (digestOnHeap == null)
+                {
+                    var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                    digest.CopyTo(newAlloc);
+                    if (!storeWrapper.storeScriptCache.TryAdd(new(newAlloc), newScriptHandle))
+                    {
+                        // Some other session loaded the script, toss our new handle
+                        //
+                        // Next time this script is run, it'll be pulled from the global cache
+                        newScriptHandle.Dispose();
+                    }
+                }
+                else
+                {
+                    if (!storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, newScriptHandle))
+                    {
+                        // Some other session loaded the script, toss our new handle
+                        //
+                        // Next time this script is run, it'll be pulled from the global cache
+                        newScriptHandle.Dispose();
+                    }
+                }
             }
 
             if (runner == null)
@@ -220,10 +251,16 @@ namespace Garnet.server
             }
 
             // Flush store script cache
-            storeWrapper.storeScriptCache.Clear();
-
-            // Flush session script cache
-            sessionScriptCache.Clear();
+            //
+            // Disposing each script handle (that we actually remove) along the way
+            // to signal to session level caches that the script needs to be discarded
+            foreach (var digest in storeWrapper.storeScriptCache.Keys)
+            {
+                if (storeWrapper.storeScriptCache.TryRemove(digest, out var scriptHandle))
+                {
+                    scriptHandle.Dispose();
+                }
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -251,7 +288,8 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
-            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, new(digest), out _, out var digestOnHeap, out var compiledSource))
+            LuaScriptHandle newScriptHandle = null;
+            if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, new(digest), ref newScriptHandle, out _, out var digestOnHeap))
             {
                 // TryLoad will write any errors out
 
@@ -260,11 +298,21 @@ namespace Garnet.server
                 {
                     var newAlloc = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
                     digest.CopyTo(newAlloc);
-                    _ = storeWrapper.storeScriptCache.TryAdd(new(newAlloc), compiledSource);
+                    if (!storeWrapper.storeScriptCache.TryAdd(new(newAlloc), newScriptHandle))
+                    {
+                        // Some other caller added the script already, our new handle is dead
+                        // but we'll load it from the shared cache on next invocation
+                        newScriptHandle.Dispose();
+                    }
                 }
                 else
                 {
-                    _ = storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, compiledSource);
+                    if (!storeWrapper.storeScriptCache.TryAdd(digestOnHeap.Value, newScriptHandle))
+                    {
+                        // Some other caller added the script already, our new handle is dead
+                        // but we'll load it from the shared cache on next invocation
+                        newScriptHandle.Dispose();
+                    }
                 }
 
                 while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
