@@ -1389,6 +1389,8 @@ namespace Garnet.test.cluster
                 tryRecover: false,
                 cleanClusterConfig: false);
             context.nodes[primaryNodeIndex].Start();
+            context.clusterTestUtils.Reconnect([primaryNodeIndex]);
+            primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
 
             offset += keyCount;
             // Populate primary with different history
@@ -1404,6 +1406,9 @@ namespace Garnet.test.cluster
                 tryRecover: true,
                 cleanClusterConfig: false);
             context.nodes[replicaNodeIndex].Start();
+            context.clusterTestUtils.Reconnect([primaryNodeIndex, replicaNodeIndex]);
+            primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
             // Validate that replica has the same keys as primary
             resp = primaryServer.Execute("KEYS", ["*"]);
