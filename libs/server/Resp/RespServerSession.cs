@@ -205,13 +205,25 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        /// <summary>
+        /// Create a new RESP server session
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="networkSender"></param>
+        /// <param name="storeWrapper"></param>
+        /// <param name="subscribeBroker"></param>
+        /// <param name="authenticator"></param>
+        /// <param name="enableScripts"></param>
+        /// <param name="clusterProvider"></param>
+        /// <exception cref="GarnetException"></exception>
         public RespServerSession(
             long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker subscribeBroker,
             IGarnetAuthenticator authenticator,
-            bool enableScripts)
+            bool enableScripts,
+            IClusterProvider clusterProvider = null)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -251,7 +263,8 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            var cp = clusterProvider ?? storeWrapper.clusterProvider;
+            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
