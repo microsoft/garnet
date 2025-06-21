@@ -95,7 +95,7 @@ namespace Garnet.cluster
     {
         ReplicationHistory currentReplicationConfig;
         readonly IDevice replicationConfigDevice;
-        readonly SectorAlignedBufferPool replicationConfigDevicePool;
+        readonly SectorAlignedMemoryPool replicationConfigDevicePool;
 
         private void InitializeReplicationHistory()
         {

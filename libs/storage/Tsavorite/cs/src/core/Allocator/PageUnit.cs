@@ -5,10 +5,10 @@ using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
-    struct PageUnit
+    unsafe struct PageUnit
     {
-        public byte[] value;
-        public long pointer;
+        public byte* Pointer;
+        public int Size;
     }
 
     [StructLayout(LayoutKind.Explicit)]
