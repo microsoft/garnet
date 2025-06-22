@@ -5,8 +5,14 @@ using System;
 using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
+using System.Runtime.CompilerServices;
 using Garnet.common;
+
+#if NET9_0_OR_GREATER
+using ByteSpan = System.ReadOnlySpan<byte>;
+#else
+using ByteSpan = byte[];
+#endif
 
 namespace Garnet.server
 {
@@ -19,13 +25,7 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte
-#if NET9_0_OR_GREATER
-                .AsReadOnlySpan();
-#else
-                .ToByteArray();
-#endif
-
+            var key = GetByteSpanFromInput(ref input, 0);
             if (TryGetValue(key, out var hashValue))
             {
                 writer.WriteBulkString(hashValue);
@@ -46,13 +46,7 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte
-#if NET9_0_OR_GREATER
-                    .AsReadOnlySpan();
-#else
-                    .ToByteArray();
-#endif
-
+                var key = GetByteSpanFromInput(ref input, i);
                 if (TryGetValue(key, out var hashValue))
                 {
                     writer.WriteBulkString(hashValue);
@@ -90,13 +84,7 @@ namespace Garnet.server
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte
-#if NET9_0_OR_GREATER
-                    .AsReadOnlySpan();
-#else
-                    .ToByteArray();
-#endif
-
+                var key = GetByteSpanFromInput(ref input, i);
                 if (Remove(key, out var hashValue))
                 {
                     output.Header.result1++;
@@ -111,23 +99,13 @@ namespace Garnet.server
 
         private void HashStrLength(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte
-#if NET9_0_OR_GREATER
-                .AsReadOnlySpan();
-#else
-                .ToByteArray();
-#endif
+            var key = GetByteSpanFromInput(ref input, 0);
             output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
         private void HashExists(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var field = input.parseState.GetArgSliceByRef(0).SpanByte
-#if NET9_0_OR_GREATER
-                .AsReadOnlySpan();
-#else
-                .ToByteArray();
-#endif
+            var field = GetByteSpanFromInput(ref input, 0);
             output.Header.result1 = ContainsKey(field) ? 1 : 0;
         }
 
@@ -205,12 +183,7 @@ namespace Garnet.server
             var hop = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte
-#if NET9_0_OR_GREATER
-                    .AsReadOnlySpan();
-#else
-                    .ToByteArray();
-#endif
+                var key = GetByteSpanFromInput(ref input, i);
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.AsReadOnlySpan();
 
                 if (!TryGetValue(key, out var hashValue))
@@ -271,6 +244,7 @@ namespace Garnet.server
             }
         }
 
+        [SkipLocalsInit] // avoid zeroing the stackalloc buffer
         private void HashIncrement(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             var op = input.header.HashOp;
@@ -280,12 +254,7 @@ namespace Garnet.server
             // This value is used to indicate partial command execution
             output.Header.result1 = int.MinValue;
 
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte
-#if NET9_0_OR_GREATER
-                .AsReadOnlySpan();
-#else
-                .ToByteArray();
-#endif
+            var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
 
             var valueExists = TryGetValue(key, out var value);
@@ -347,7 +316,7 @@ namespace Garnet.server
                     return;
                 }
 
-                byte[] resultBytes;
+                ReadOnlySpan<byte> resultBytes;
 
                 if (valueExists)
                 {
@@ -359,13 +328,32 @@ namespace Garnet.server
 
                     result += incr;
 
-                    resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                    SetWithoutPersist(key, resultBytes);
+                    var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
+                    var success = result.TryFormat(resultSpan, out int bytesWritten,
+                        provider: CultureInfo.InvariantCulture);
+                    Debug.Assert(success);
+
+                    resultSpan = resultSpan.Slice(0, bytesWritten);
+
+                    if (resultSpan.Length == value.Length)
+                    {
+                        // instead of allocating a new byte array of the same size, we can reuse the existing one
+                        resultSpan.CopyTo(value);
+                        DeleteExpiredItems();
+                        resultBytes = value;
+                    }
+                    else
+                    {
+                        var resultByteArray = resultSpan.ToArray();
+                        SetWithoutPersist(key, resultByteArray);
+                        resultBytes = resultByteArray;
+                    }
                 }
                 else
                 {
-                    resultBytes = incrSlice.SpanByte.ToByteArray();
-                    Add(key, resultBytes);
+                    var resultByteArray = incrSlice.SpanByte.ToByteArray();
+                    Add(key, resultByteArray);
+                    resultBytes = resultByteArray;
                 }
 
                 writer.WriteBulkString(resultBytes);
@@ -462,6 +450,17 @@ namespace Garnet.server
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static ByteSpan GetByteSpanFromInput(ref ObjectInput input, int index)
+        {
+            return input.parseState.GetArgSliceByRef(index).SpanByte
+#if NET9_0_OR_GREATER
+                .AsReadOnlySpan();
+#else
+                .ToByteArray();
+#endif
         }
     }
 }
