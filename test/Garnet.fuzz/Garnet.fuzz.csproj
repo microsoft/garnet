@@ -6,6 +6,7 @@
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
 		<DelaySign>false</DelaySign>
+		<ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
 	<ItemGroup>
@@ -13,8 +14,15 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\..\benchmark\BDN.benchmark\BDN.benchmark.csproj" />
 	  <ProjectReference Include="..\..\main\GarnetServer\GarnetServer.csproj" />
 	</ItemGroup>
-	
+
+	<ItemGroup>
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedRespServer.cs" Link="Embedded\EmbeddedRespServer.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="Embedded\EmbeddedNetworkSender.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\GarnetServerEmbedded.cs" Link="Embedded\GarnetServerEmbedded.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkHandler.cs" Link="Embedded\EmbeddedNetworkHandler.cs" />
+		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\Request.cs" Link="Embedded\Request.cs" />
+	</ItemGroup>
+
 </Project>

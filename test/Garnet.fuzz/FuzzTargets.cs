@@ -9,7 +9,7 @@ namespace Garnet.fuzz
     /// <summary>
     /// Different known fuzz targets.
     /// </summary>
-    internal enum FuzzTargets
+    public enum FuzzTargets
     {
         /// <summary>
         /// Fuzz parsing of requests into <see cref="RespCommand"/>s.
