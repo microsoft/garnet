@@ -1212,8 +1212,6 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst)
         {
-            // TODO: Remove
-            if (enableDisklessSync && attachFirst) return;
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
