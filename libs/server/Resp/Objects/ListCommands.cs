@@ -303,11 +303,9 @@ namespace Garnet.server
                 keysBytes[i] = parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
             }
 
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
+            if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(error);
             }
 
             if (storeWrapper.objectStore == null)
@@ -360,11 +358,9 @@ namespace Garnet.server
             var srcDir = parseState.GetArgSliceByRef(2);
             var dstDir = parseState.GetArgSliceByRef(3);
 
-            if (!parseState.TryGetDouble(4, out var timeout))
+            if (!parseState.TryGetTimeout(4, out var timeout, out var error))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(error);
             }
 
             return ListBlockingMove(srcKey, dstKey, srcDir, dstDir, timeout);
@@ -386,11 +382,9 @@ namespace Garnet.server
             var rightOption = ArgSlice.FromPinnedSpan(CmdStrings.RIGHT);
             var leftOption = ArgSlice.FromPinnedSpan(CmdStrings.LEFT);
 
-            if (!parseState.TryGetDouble(2, out var timeout))
+            if (!parseState.TryGetTimeout(2, out var timeout, out var error))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(error);
             }
 
             return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
@@ -943,9 +937,9 @@ namespace Garnet.server
             var currTokenId = 0;
 
             // Read timeout
-            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            if (!parseState.TryGetTimeout(currTokenId++, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(error);
             }
 
             // Read count of keys

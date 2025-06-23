@@ -757,6 +757,43 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Parse timeout (in seconds) from parse state at specified index.
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="timeout">Timeout</param>
+        /// <param name="error">Error if failed</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetTimeout(this SessionParseState parseState, int idx, out double timeout, out ReadOnlySpan<byte> error)
+        {
+            // .NET APIs do not support an higher value than int.MaxValue milliseconds.
+            const double MAXTIMEOUT = int.MaxValue / 1000D;
+
+            error = default;
+
+            if (!parseState.TryGetDouble(idx, out timeout))
+            {
+                error = CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT;
+                return false;
+            }
+
+            if (timeout < 0)
+            {
+                error = CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE;
+                return false;
+            }
+
+            if (timeout > MAXTIMEOUT)
+            {
+                error = CmdStrings.RESP_ERR_TIMEOUT_IS_OUT_OF_RANGE;
+                return false;
+            }
+
+            return true;
+        }
+
+
+        /// <summary>
         /// Tries to extract keys from the key specifications in the given RespCommandsInfo.
         /// </summary>
         /// <param name="state">The SessionParseState instance.</param>
