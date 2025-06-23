@@ -1343,6 +1343,8 @@ namespace Garnet.test.cluster
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
             // Validate that replica has the same keys as primary
             resp = primaryServer.Execute("KEYS", ["*"]);
             resp2 = replicaServer.Execute("KEYS", ["*"]);
