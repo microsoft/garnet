@@ -1345,7 +1345,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(25)]
+        [Test, Order(26)]
         [Category("REPLICATION")]
         public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
         {
@@ -1409,6 +1409,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.Reconnect([primaryNodeIndex, replicaNodeIndex]);
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
             // Validate that replica has the same keys as primary
             resp = primaryServer.Execute("KEYS", ["*"]);
