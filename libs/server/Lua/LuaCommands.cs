@@ -122,15 +122,12 @@ namespace Garnet.server
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
 
-            var scriptKey = new ScriptHashKey(digest);
-            if (!storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
-            {
-                globalScriptHandle = null;
-            }
+            var onStackScriptKey = new ScriptHashKey(digest);
+            _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptKey, out var globalScriptHandle);
 
             var sessionScriptHandle = globalScriptHandle;
 
-            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
+            if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, onStackScriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
             {
                 // TryLoad will have written any errors out
                 return true;
@@ -178,7 +175,7 @@ namespace Garnet.server
 
                 if (!res)
                 {
-                    sessionScriptCache.Remove(scriptKey);
+                    sessionScriptCache.Remove(onStackScriptKey);
                 }
             }
 
@@ -295,10 +292,7 @@ namespace Garnet.server
             sessionScriptCache.GetScriptDigest(source.Span, digest);
 
             var onStackScriptHashKey = new ScriptHashKey(digest);
-            if (!storeWrapper.storeScriptCache.TryGetValue(onStackScriptHashKey, out var globalScriptHandle))
-            {
-                globalScriptHandle = null;
-            }
+            _ = storeWrapper.storeScriptCache.TryGetValue(onStackScriptHashKey, out var globalScriptHandle);
 
             var sessionScriptHandle = globalScriptHandle;
             if (sessionScriptCache.TryLoad(this, source.ReadOnlySpan, onStackScriptHashKey, ref sessionScriptHandle, out _, out var digestOnHeap))
