@@ -282,7 +282,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        protected static string PrettySize(long value)
+        internal static string PrettySize(long value)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             double v = value;

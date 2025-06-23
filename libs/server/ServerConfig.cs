@@ -230,30 +230,36 @@ namespace Garnet.server
 
         private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool isObjStore = false)
         {
-            var circularBufferSize = 64L * 1024 * 1024 * 1024;
-
-            if (!ServerOptions.TryParseSize(memorySize, out var updatedSize))
+            if (!ServerOptions.TryParseSize(memorySize, out var newMemorySize))
             {
                 sbErrorMsg.AppendLine("ERR incorrect memory format.");
             }
             else
             {
-                var adjustedSize = ServerOptions.PreviousPowerOf2(updatedSize);
+                newMemorySize = ServerOptions.PreviousPowerOf2(newMemorySize);
 
-                if (updatedSize > circularBufferSize)
+                var currMemorySize = ServerOptions.ParseSize(storeWrapper.serverOptions.MemorySize, out _);
+                var adjCurrMemorySize = ServerOptions.PreviousPowerOf2(currMemorySize);
+                if (currMemorySize != adjCurrMemorySize)
+                    currMemorySize = adjCurrMemorySize * 2;
+
+                if (newMemorySize == currMemorySize)
+                    return;
+
+                if (newMemorySize > currMemorySize)
                 {
                     sbErrorMsg.AppendLine(
-                        "ERR Cannot set dynamic memory size greater than configured circular buffer size of 64g");
+                        $"ERR Cannot set dynamic memory size greater than configured circular buffer size of {ServerOptions.PrettySize(currMemorySize)}");
                     return;
                 }
 
                 var pageSize = ServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _);
                 pageSize = ServerOptions.PreviousPowerOf2(pageSize);
 
-                var emptyPageCount = (int)((circularBufferSize - adjustedSize) / pageSize);
+                var emptyPageCount = (int)((currMemorySize - newMemorySize) / pageSize);
                 if (isObjStore)
                 {
-                    storeWrapper.objectStore.Log.SetEmptyPageCount(emptyPageCount, true);
+                    storeWrapper.objectStore.Log.MinEmptyPageCount = 
                 }
                 else
                 {
