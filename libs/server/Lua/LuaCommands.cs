@@ -121,7 +121,7 @@ namespace Garnet.server
             // that this is stack allocated is load bearing - if it moves, things will break
             Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
             sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
-            
+
             var scriptKey = new ScriptHashKey(digest);
             if (!storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
             {
@@ -129,7 +129,7 @@ namespace Garnet.server
             }
 
             var sessionScriptHandle = globalScriptHandle;
-            
+
             if (!sessionScriptCache.TryLoad(this, script.ReadOnlySpan, scriptKey, ref sessionScriptHandle, out var runner, out var digestOnHeap))
             {
                 // TryLoad will have written any errors out
