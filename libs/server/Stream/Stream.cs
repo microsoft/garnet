@@ -257,7 +257,10 @@ namespace Garnet.server
                     totalEntriesAdded++;
                     // write back the decoded ID of the entry added
                     string idString = $"{id.getMS()}-{id.getSeq()}";
-                    writer.WriteSimpleString(idString);
+                    // convert idString to ReadOnlySpan<byte> 
+                    var idSpan = System.Text.Encoding.UTF8.GetBytes(idString);
+                    // write id as bulk string
+                    writer.WriteBulkString(idSpan);
                 }
             }
             finally
