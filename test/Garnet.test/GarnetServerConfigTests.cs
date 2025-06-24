@@ -237,9 +237,9 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            string dir = TestUtils.MethodTestDir;
-            string garnetConfigPath = $"{dir}\\test1.conf";
-            string redisConfigPath = $"redis.conf";
+            var dir = TestUtils.MethodTestDir;
+            var garnetConfigPath = $"{dir}\\test1.conf";
+            var redisConfigPath = $"redis.conf";
 
             // Import from redis.conf file, no command line args
             // Check values from import path override values from default.conf
@@ -249,8 +249,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("127.0.0.1 -::1", options.Address);
             ClassicAssert.AreEqual(CommandLineBooleanOption.No, options.ProtectedMode);
-            ClassicAssert.AreEqual(ConnectionProtectionOption.Yes, options.EnableDebugCommand);
-            ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableModuleCommand);
+            ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
+            ClassicAssert.AreEqual(ConnectionProtectionOption.Yes, options.EnableModuleCommand);
             ClassicAssert.AreEqual(6379, options.Port);
             ClassicAssert.AreEqual("20gb", options.MemorySize);
             ClassicAssert.AreEqual("./garnet-log", options.FileLogger);

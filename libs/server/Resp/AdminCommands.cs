@@ -361,13 +361,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.REGISTERCS));
             }
 
-            if (
-                    (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No)
-                 || (
-                        (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local)
-                      && !networkSender.IsLocalConnection()
-                    )
-               )
+            if ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No) ||
+                ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local) && !networkSender.IsLocalConnection()))
             {
                 return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.REGISTERCS, "enable-module-command");
             }
@@ -536,13 +531,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
             }
 
-            if (
-                    (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No)
-                 || (
-                        (storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local)
-                      && !networkSender.IsLocalConnection()
-                    )
-               )
+            if ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No) ||
+                ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local) && !networkSender.IsLocalConnection()))
             {
                 return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
             }

@@ -543,7 +543,7 @@ namespace Garnet
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [OptionValidation]
-        [Option("enable-module-command", Required = false, Hidden = true, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections")]
+        [Option("enable-module-command", Required = false, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections. Command can only load from paths listed in ExtensionBinPaths")]
         public ConnectionProtectionOption EnableModuleCommand { get; set; }
 
         [OptionValidation]
@@ -551,11 +551,11 @@ namespace Garnet
         public CommandLineBooleanOption ProtectedMode { get; set; }
 
         [DirectoryPathsValidation(true, false)]
-        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "Set directories on server from which custom command binaries can be loaded by admin users from list")]
+        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users. MODULE command also requires enable-module-command to be set")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
 
         [ModuleFilePathValidation(true, true, false)]
-        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "Load modules from list")]
+        [Option("loadmodulecs", Separator = ',', Required = false, HelpText = "List of modules to be loaded")]
         public IEnumerable<string> LoadModuleCS { get; set; }
 
         [Option("extension-allow-unsigned", Required = false, HelpText = "Allow loading custom commands from digitally unsigned assemblies (not recommended)")]
