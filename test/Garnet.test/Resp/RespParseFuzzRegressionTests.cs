@@ -101,5 +101,32 @@ namespace Garnet.test.Resp
 
             GC.KeepAlive(copy);
         }
+
+        [Test]
+        public void FastParseArrayCommandArrayCountAssertFailure()
+        {
+            ReadOnlySpan<byte> example = [0x2A, 0x41, 0x0D, 0x0A, 0x24, 0x35, 0x0D, 0x0A, 0x78, 0x78, 0x78, 0x78, 0x78, 0x7C, 0x78];
+
+            // Memory must be pinned
+            var copy = GC.AllocateUninitializedArray<byte>(example.Length, pinned: true);
+
+            var session = new RespServerSession();
+            // All values must correctly be rejected after the assert was removed
+            for (var val = 0; val <= byte.MaxValue; val++)
+            {
+                if (val is >= '1' and <= '9')
+                {
+                    // Numbers are valid, and should be ignored
+                    continue;
+                }
+
+                example.CopyTo(copy);
+                copy[1] = (byte)val;
+
+                _ = ClassicAssert.Throws<RespParsingException>(() => session.FuzzParseCommandBuffer(copy, out _));
+            }
+
+            GC.KeepAlive(copy);
+        }
     }
 }
