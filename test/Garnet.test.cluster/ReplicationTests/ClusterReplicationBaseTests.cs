@@ -1217,6 +1217,7 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + (primary_count * replica_count);
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
+            var expectedKeys = new[] { "X", "Y" };
             ClassicAssert.IsTrue(primary_count > 0);
 
             context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableDisklessSync: enableDisklessSync);
@@ -1254,20 +1255,19 @@ namespace Garnet.test.cluster
 
             // Validate primary keys
             var resp = primaryServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(new string[] { "X", "Y" }, (string[])resp);
-
+            ClassicAssert.AreEqual(expectedKeys, (string[])resp);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
             resp = replicaServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(new string[] { "X", "Y" }, (string[])resp);
+            ClassicAssert.AreEqual(expectedKeys, (string[])resp);
 
             void ExecuteRateLimit()
             {
                 primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
-                var resp = primaryServer.Execute("RATELIMIT", ["X", "1000000000", "1000000000"]);
+                var resp = primaryServer.Execute("RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
-                resp = primaryServer.Execute("RATELIMIT", ["Y", "1000000000", "1000000000"]);
+                resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
             }
         }

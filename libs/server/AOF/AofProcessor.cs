@@ -36,7 +36,7 @@ namespace Garnet.server
         int activeDbId;
 
         /// <summary>
-        /// Set ReadWriteSession on the cluster session (NOTE: used for rplaying stored procedures only)
+        /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
         /// </summary>
         public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
 
