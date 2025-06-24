@@ -331,7 +331,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo();
+            var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo(clusterProvider.clusterManager.clusterConnectionStore);
             while (!RespWriteUtils.TryWriteAsciiDirect(shardsInfo, ref dcurr, dend))
                 SendAndReset();
 
