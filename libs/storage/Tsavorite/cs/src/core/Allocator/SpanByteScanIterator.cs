@@ -35,11 +35,10 @@ namespace Tsavorite.core
         /// <param name="includeSealedRecords"></param>
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
-        /// <param name="returnTombstoned"></param>
         /// <param name="logger"></param>
         internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, bool returnTombstoned = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, returnTombstoned: returnTombstoned, logger: logger)
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -171,7 +170,8 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 recordInfo = hlog._wrapper.GetInfo(physicalAddress);
-                bool skipOnScan = returnTombstoned ? false : (includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan);
+
+                var skipOnScan = false;// includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
                 if (skipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();

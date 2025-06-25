@@ -470,14 +470,13 @@ namespace Tsavorite.core
         /// <param name="validateCursor">Cursor to scan from</param>
         /// <param name="maxAddress">Max address to search for keys when conditionally pushing</param>
         /// <param name="resetCursor">Whether to reset cursor at the end of the iteration</param>
-        /// <param name="returnTombstoned">Whether to return tombstoned records</param>
         /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, bool validateCursor = false, long maxAddress = long.MaxValue, bool resetCursor = true, bool returnTombstoned = false)
+        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, bool validateCursor = false, long maxAddress = long.MaxValue, bool resetCursor = true)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
         {
             if (untilAddress == -1)
                 untilAddress = store.Log.TailAddress;
-            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: resetCursor, returnTombstoned: returnTombstoned);
+            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: resetCursor);
         }
 
         /// <summary>
@@ -496,13 +495,13 @@ namespace Tsavorite.core
         /// <param name="validateCursor">If true, validate that the cursor is on a valid address boundary, and snap it to the highest lower address if it is not.</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
         /// <param name="resetCursor">Whether to set cursor to zero at the end of iteration.</param>
-        /// <param name="returnTombstoned">Whether to return tombstoned records</param>
+
         /// <returns>True if Scan completed and pushed <paramref name="count"/> records and there may be more records; false if Scan ended early due to finding less than <paramref name="count"/> records
         /// or one of the TScanIterator reader functions returning false, or if we determined that there are no records remaining. In other words, if this returns true,
         /// there may be more records satisfying the iteration criteria beyond <paramref name="count"/>.</returns>
-        public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false, long maxAddress = long.MaxValue, bool resetCursor = true, bool returnTombstoned = false)
+        public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false, long maxAddress = long.MaxValue, bool resetCursor = true)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress, resetCursor: resetCursor, returnTombstoned: returnTombstoned);
+            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress, resetCursor: resetCursor);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.

@@ -186,7 +186,7 @@ namespace Tsavorite.core
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and do GetRequiredRecordSize/RetrievedFullRecord as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
-        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool returnTombstoned = false)
+        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
         private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
@@ -210,10 +210,11 @@ namespace Tsavorite.core
 
             scanCursorState.Initialize(scanFunctions);
 
+            var includeTombstones = maxAddress < long.MaxValue;
             long numPending = 0;
             while (iter.GetNext(out var recordInfo))
             {
-                if (!recordInfo.Tombstone)
+                if (!recordInfo.Tombstone || includeTombstones)
                 {
                     ref var key = ref iter.GetKey();
                     ref var value = ref iter.GetValue();
