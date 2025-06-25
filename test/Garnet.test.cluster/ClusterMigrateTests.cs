@@ -10,6 +10,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+#if DEBUG
+using Garnet.server;
+#endif
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -2014,6 +2017,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(sourceNodeIndex, sourceNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -2024,6 +2028,7 @@ namespace Garnet.test.cluster
             var values = context.GenerateIncreasingSizeValues(4, 5);
 
             var sourceServer = context.clusterTestUtils.GetServer(sourceNodeIndex);
+            var targetServer = context.clusterTestUtils.GetServer(targetNodeIndex);
 
             foreach (var value in values)
             {
@@ -2056,11 +2061,82 @@ namespace Garnet.test.cluster
 
                 // Re-enable to signal migration to continue
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
+
+                // Wait for migration to complete
+                context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
             }
             finally
             {
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
             }
+
+            foreach (var value in values)
+            {
+                var result = (string)targetServer.Execute("get", key);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
+            }
+        }
+
+        [Test, Order(23), CancelAfter(testTimeout)]
+        public void ClusterMigrateCustomProcDelRMW(CancellationToken cancellationToken)
+        {
+            var sourceNodeIndex = 0;
+            var targetNodeIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: true);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(sourceNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(sourceNodeIndex, sourceNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            _ = context.nodes[sourceNodeIndex].Register.NewTransactionProc("DELRMW", () => new ClusterDelRmw(), new RespCommandsInfo { Arity = 3 });
+
+            var sourceServer = context.clusterTestUtils.GetServer(sourceNodeIndex);
+            var targetServer = context.clusterTestUtils.GetServer(targetNodeIndex);
+
+            var key = "abc";
+            var value = "12345";
+            var value2 = "67890";
+            var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            var resp = sourceServer.Execute("set", key, value);
+            ClassicAssert.AreEqual("OK", (string)resp);
+            resp = sourceServer.Execute("get", key);
+            ClassicAssert.AreEqual(value, (string)resp);
+
+            try
+            {
+                // Set wait condition
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
+
+                context.clusterTestUtils.MigrateSlotsIndex(sourceNodeIndex, targetNodeIndex, [slot], logger: context.logger);
+                // Wait for migration to reach the point where the end scan address is acquired
+                while (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition))
+                {
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for exception reset signal");
+                }
+
+                // At this point we should have switched to MIGRATING state but not yet started migration, hence we can still operate on the key
+                _ = sourceServer.Execute("DELRMW", [key, value2]);
+
+                // Re-enable to signal migration to continue
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
+
+                // Wait for migration to complete
+                context.clusterTestUtils.WaitForMigrationCleanup(sourceNodeIndex, logger: context.logger);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
+            }
+
+            resp = targetServer.Execute("get", key);
+            ClassicAssert.AreEqual(value2, (string)resp);
         }
 #endif
     }
