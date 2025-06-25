@@ -80,9 +80,8 @@ namespace Tsavorite.core
         /// <param name="epoch"></param>
         /// <param name="logPageSizeBits"></param>
         /// <param name="initForReads"></param>
-        /// <param name="returnTombstoned"></param>
         /// <param name="logger"></param>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, bool returnTombstoned = false, ILogger logger = null)
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
         {
             this.logger = logger;
             // If we are protected when creating the iterator, we do not need per-GetNext protection
@@ -94,7 +93,6 @@ namespace Tsavorite.core
             this.logPageSizeBits = logPageSizeBits;
 
             this.includeSealedRecords = includeSealedRecords;
-            this.returnTombstoned = returnTombstoned;
             currentAddress = -1;
             nextAddress = beginAddress;
 
