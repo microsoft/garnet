@@ -237,7 +237,7 @@ namespace Garnet.server
                     bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
                     if (!enqueueInLog)
                     {
-                        writer.WriteError("ERR StreamAdd failed");
+                        writer.WriteNull();
                         return;
                     }
 
@@ -247,7 +247,7 @@ namespace Garnet.server
 
                     if (!added)
                     {
-                        writer.WriteError("ERR StreamAdd failed");
+                        writer.WriteNull();
                         return;
                     }
                     // copy encoded ms and seq
@@ -257,10 +257,8 @@ namespace Garnet.server
                     totalEntriesAdded++;
                     // write back the decoded ID of the entry added
                     string idString = $"{id.getMS()}-{id.getSeq()}";
-                    // convert idString to ReadOnlySpan<byte> 
-                    var idSpan = System.Text.Encoding.UTF8.GetBytes(idString);
                     // write id as bulk string
-                    writer.WriteBulkString(idSpan);
+                    writer.WriteAsciiBulkString(idString);
                 }
             }
             finally
