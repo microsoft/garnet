@@ -96,6 +96,20 @@ namespace Garnet.server.BTreeIndex
             }
         }
 
+        public static void Deallocate(ref BTreeNode* node)
+        {
+            // Free the memory handle
+            if (node->memoryHandle != null)
+            {
+                NativeMemory.Free(node->memoryHandle);
+                node->info = null;
+                node->keys = null;
+                node->data.values = null;
+                node->data.children = null;
+                node->memoryHandle = null;
+            }
+        }
+
         /// <summary>
         /// Deallocates the memory allocated for the B+Tree
         /// </summary>

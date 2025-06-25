@@ -131,5 +131,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual(tree.ValidCount, N - delCount);
             tree.Deallocate();
         }
+
+        [Test]
+        [Category("Trim")]
+        public void TrimByLength()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            for (ulong i = 0; i < N; i++)
+            {
+                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+            }
+
+            ulong trimLength = 5000; // trim the tree to half its size
+            tree.TrimByLength(trimLength, out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+            ClassicAssert.GreaterOrEqual(N - trimLength, validKeysRemoved);
+
+            tree.Deallocate();
+        }
     }
 }

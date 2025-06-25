@@ -164,6 +164,7 @@ namespace Garnet.server.BTreeIndex
                 return;
             }
 
+            nodesTraversed[depth] = current;
             while (depth > 0)
             {
                 if (current->info->type == BTreeNodeType.Internal)
@@ -173,7 +174,7 @@ namespace Garnet.server.BTreeIndex
                         var child = current->GetChild(i);
                         if (currentValidCount + child->info->validCount >= length)
                         {
-                            nodesTraversed[depth] = child;
+                            nodesTraversed[depth - 1] = child;
                             internalSlots[depth] = i;
                             current = child;
                             break;
@@ -197,6 +198,7 @@ namespace Garnet.server.BTreeIndex
             {
                 var count = leaf->info->count;
                 var validCount = leaf->info->validCount;
+
                 if (nodesToTraverseInSubtree >= 0)
                 {
                     deletedValidCount += validCount;
@@ -241,6 +243,7 @@ namespace Garnet.server.BTreeIndex
                 }
                 var prevCount = inner->info->count;
                 inner->info->count -= slotOfKey;
+                // inner->info->validCount -= deletedValidCount;
                 nodesTraversed[i]->info->validCount -= deletedValidCount;
 
                 if (prevCount > BTreeNode.INTERNAL_CAPACITY / 2 && inner->info->count < BTreeNode.INTERNAL_CAPACITY / 2)
@@ -258,7 +261,7 @@ namespace Garnet.server.BTreeIndex
                         deletedValidCount += inner->info->validCount;
                         nodesToTraverseInSubtree--;
                     }
-                    FreeNode(ref inner);
+                    Deallocate(ref inner);
                     stats.numInternalNodes--;
                     inner = temp;
                 }
@@ -278,7 +281,7 @@ namespace Garnet.server.BTreeIndex
                             while (curr != null)
                             {
                                 var pre = curr->info->previous;
-                                FreeNode(ref curr);
+                                Deallocate(ref curr);
                                 stats.numInternalNodes--;
                                 curr = pre;
                             }
