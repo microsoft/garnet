@@ -2001,8 +2001,8 @@ namespace Garnet.test.cluster
         }
 
 #if DEBUG
-        //[Test, Order(22), CancelAfter(testTimeout)]
-        public void ClusterMigrateSetDelete(CancellationToken cancellationToken)
+        [Test, Order(22), CancelAfter(testTimeout)]
+        public void ClusterMigrateSetCopyUpdate(CancellationToken cancellationToken)
         {
             var sourceNodeIndex = 0;
             var targetNodeIndex = 1;
@@ -2056,8 +2056,6 @@ namespace Garnet.test.cluster
 
                 // Re-enable to signal migration to continue
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
-
-                while (true) { }
             }
             finally
             {
