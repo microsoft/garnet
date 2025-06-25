@@ -228,43 +228,96 @@ namespace Garnet.server
             return true;
         }
 
+        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool isObjStore = false)
+        {
+            if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
+            {
+                sbErrorMsg.AppendLine("ERR incorrect index size format.");
+                return;
+            }
+
+            var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
+            if (adjNewIndexSize != newIndexSize)
+            {
+                sbErrorMsg.AppendLine($"ERR index size must be a power of 2.");
+                return;
+            }
+
+            if (isObjStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
+            {
+                sbErrorMsg.AppendLine($"ERR cannot adjust object store index size when auto-grow task is running.");
+                return;
+            }
+
+            if (!isObjStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0)
+            {
+                sbErrorMsg.AppendLine($"ERR cannot adjust main store index size when auto-grow task is running.");
+                return;
+            }
+
+            var currIndexSize = isObjStore ? storeWrapper.objectStore.IndexSize : storeWrapper.store.IndexSize;
+
+            if (currIndexSize == adjNewIndexSize)
+                return;
+
+            if (currIndexSize > adjNewIndexSize)
+            {
+                sbErrorMsg.AppendLine($"ERR Cannot set dynamic index size smaller than current index size of {ServerOptions.PrettySize(currIndexSize)}");
+                return;
+            }
+
+            while (currIndexSize < adjNewIndexSize)
+            {
+                var isSuccessful = isObjStore
+                    ? storeWrapper.objectStore.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult()
+                    : storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                
+                if (!isSuccessful)
+                {
+                    sbErrorMsg.AppendLine($"ERR failed to grow index size beyond current size of {ServerOptions.PrettySize(currIndexSize)}.");
+                    return;
+                }
+
+                currIndexSize *= 2;
+            }
+        }
+
         private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool isObjStore = false)
         {
             if (!ServerOptions.TryParseSize(memorySize, out var newMemorySize))
             {
-                sbErrorMsg.AppendLine("ERR incorrect memory format.");
+                sbErrorMsg.AppendLine("ERR incorrect memory size format.");
+                return;
+            }
+
+            newMemorySize = ServerOptions.PreviousPowerOf2(newMemorySize);
+
+            var confMemorySize = ServerOptions.ParseSize(storeWrapper.serverOptions.MemorySize, out _);
+            var adjConfMemorySize = ServerOptions.PreviousPowerOf2(confMemorySize);
+            if (confMemorySize != adjConfMemorySize)
+                confMemorySize = adjConfMemorySize * 2;
+
+            if (newMemorySize == confMemorySize)
+                return;
+
+            if (newMemorySize > confMemorySize)
+            {
+                sbErrorMsg.AppendLine(
+                    $"ERR Cannot set dynamic memory size greater than configured circular buffer size of {ServerOptions.PrettySize(confMemorySize)}");
+                return;
+            }
+
+            var pageSize = ServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _);
+            pageSize = ServerOptions.PreviousPowerOf2(pageSize);
+
+            var emptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
+            if (isObjStore)
+            {
+                storeWrapper.objectStore.Log.MinEmptyPageCount = 
             }
             else
             {
-                newMemorySize = ServerOptions.PreviousPowerOf2(newMemorySize);
-
-                var currMemorySize = ServerOptions.ParseSize(storeWrapper.serverOptions.MemorySize, out _);
-                var adjCurrMemorySize = ServerOptions.PreviousPowerOf2(currMemorySize);
-                if (currMemorySize != adjCurrMemorySize)
-                    currMemorySize = adjCurrMemorySize * 2;
-
-                if (newMemorySize == currMemorySize)
-                    return;
-
-                if (newMemorySize > currMemorySize)
-                {
-                    sbErrorMsg.AppendLine(
-                        $"ERR Cannot set dynamic memory size greater than configured circular buffer size of {ServerOptions.PrettySize(currMemorySize)}");
-                    return;
-                }
-
-                var pageSize = ServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _);
-                pageSize = ServerOptions.PreviousPowerOf2(pageSize);
-
-                var emptyPageCount = (int)((currMemorySize - newMemorySize) / pageSize);
-                if (isObjStore)
-                {
-                    storeWrapper.objectStore.Log.MinEmptyPageCount = 
-                }
-                else
-                {
-                    storeWrapper.store.Log.SetEmptyPageCount(emptyPageCount, true);
-                }
+                storeWrapper.store.Log.SetEmptyPageCount(emptyPageCount, true);
             }
         }
     }
