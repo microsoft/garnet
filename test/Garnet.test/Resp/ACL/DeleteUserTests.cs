@@ -175,7 +175,7 @@ namespace Garnet.test.Resp.ACL
             }
             catch (Exception e)
             {
-                ClassicAssert.AreEqual("ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", e.Message);
+                ClassicAssert.AreEqual("ERR wrong number of arguments for 'acl|deluser' command", e.Message);
             }
 
             // Ensure both users still exist

@@ -94,7 +94,7 @@ namespace Garnet
                 this.initLogger = (MemoryLogger)memLogProvider.CreateLogger("ArgParser");
             }
 
-            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out var exitGracefully, logger: this.initLogger))
+            if (!ServerSettingsManager.TryParseCommandLineArguments(commandLineArgs, out var serverSettings, out _, out _, out var exitGracefully, logger: this.initLogger))
             {
                 if (exitGracefully)
                     Environment.Exit(0);
@@ -277,6 +277,12 @@ namespace Garnet
             var maxDatabases = opts.EnableCluster ? 1 : opts.MaxDatabases;
             logger?.LogInformation("Max number of logical databases allowed on server: {maxDatabases}", maxDatabases);
 
+            if (opts.ExtensionBinPaths?.Length > 0)
+            {
+                logger?.LogTrace("Allowed binary paths for extension loading: {binPaths}", string.Join(",", opts.ExtensionBinPaths));
+                logger?.LogTrace("Unsigned extension libraries {unsignedAllowed}allowed.", opts.ExtensionAllowUnsignedAssemblies ? string.Empty : "not ");
+            }
+
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, subscribeBroker);
 
@@ -342,7 +348,7 @@ namespace Garnet
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
-                new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
@@ -367,7 +373,7 @@ namespace Garnet
 
             objKvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: false, logger) :
-                new DeviceLogCommitCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             var objStore = new TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator>(
                 objKvSettings,

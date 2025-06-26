@@ -409,7 +409,7 @@ namespace Garnet.server
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
-            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
+            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
 
             long replicationOffset = 0;
             try
@@ -517,6 +517,21 @@ namespace Garnet.server
             {
                 var dbId = activeDbIdsMapSnapshot[i];
                 ExecuteObjectCollection(databasesMapSnapshot[dbId], Logger);
+            }
+        }
+
+        /// <inheritdoc/>
+        public override void ExpiredKeyDeletionScan()
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                ExpiredKeyDeletionScan(databasesMapSnapshot[dbId]);
             }
         }
 
@@ -1038,6 +1053,21 @@ namespace Garnet.server
 
             databasesContentLock.CloseLock();
             activeDbIds.mapLock.CloseLock();
+        }
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
+        {
+            var (k1, t1) = MainStoreExpiredKeyDeletionScan(GetDbById(dbId));
+            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(GetDbById(dbId));
+            return (k1 + k2, t1 + t2);
+        }
+
+        private GarnetDatabase GetDbById(int dbId)
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databasesMapSnapshot = databases.Map;
+            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
+            return databasesMapSnapshot[dbId];
         }
     }
 }

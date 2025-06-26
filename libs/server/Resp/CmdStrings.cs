@@ -219,6 +219,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "ERR one or more binary file are not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS => "ERR command info file is not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "ERR unable to load one or more assemblies."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ACCESSING_ASSEMBLIES => "ERR unable to access one or more assemblies to check if it's digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "ERR one or more assemblies loaded is not digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS => "ERR unable to register one or more unsupported classes."u8;
@@ -253,11 +254,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_RADIUS_IS_NEGATIVE => "ERR radius cannot be negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_NEGATIVE => "ERR timeout is negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_OUT_OF_RANGE => "ERR timeout is out of range"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
         public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_NOT_POSITIVE => "ERR COUNT must be > 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_OUT_OF_RANGE_N1 => "ERR count should be greater than or equal to -1."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_LOADED_TYPES => "ERR Unable to load types from module. Ensure that the module is compatible with the current runtime."u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_NO_INTERFACE => "ERR Module does not implement the required interface"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_MULTIPLE_INTERFACES => "ERR Multiple modules present"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
@@ -289,6 +293,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
+
         public static ReadOnlySpan<byte> RESP_ERR_STREAMS_DISABLED => "ERR STREAMS is disabled, enable it with --streams option."u8;
         public static ReadOnlySpan<byte> RESP_ERR_XADD_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xadd' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_XADD_INVALID_STREAM_ID => "ERR Invalid stream ID specified as stream command argument"u8;
@@ -304,6 +310,7 @@ namespace Garnet.server
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
+        public const string GenericErrUnsupportedOption = "ERR Unsupported option {0}";
         public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
         public const string GenericErrUnknownSubCommandNoHelp = "ERR unknown subcommand '{0}'.";
         public const string GenericErrWrongNumArgsTxn =
@@ -507,5 +514,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_NOT => "NOT"u8;
         public static ReadOnlySpan<byte> LUA_KEYS => "KEYS"u8;
         public static ReadOnlySpan<byte> LUA_ARGV => "ARGV"u8;
+        public static ReadOnlySpan<byte> EXPDELSCAN => "EXPDELSCAN"u8;
     }
 }

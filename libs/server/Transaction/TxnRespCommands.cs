@@ -79,8 +79,7 @@ namespace Garnet.server
                 else
                 {
                     endReadHead = _origReadHead;
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                 }
 
                 return true;
@@ -197,9 +196,7 @@ namespace Garnet.server
         {
             if (txnManager.state == TxnState.None)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -218,10 +215,7 @@ namespace Garnet.server
             // Have to provide at least one key
             if (count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.GenericErrWrongNumArgs);
             }
 
             List<ArgSlice> keys = [];
@@ -289,9 +283,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetInt(0, out var txId))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             CustomTransactionProcedure proc;

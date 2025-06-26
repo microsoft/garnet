@@ -16,6 +16,7 @@ namespace Garnet.cluster
         {
             logger?.Log(logLevel, "\n" +
                 "[{msg}]\n" +
+                "readers:{readers}\n" +
                 "storeVersion: {storeVersion}\n" +
                 "storeHlogToken: {storeHlogToken}\n" +
                 "storeIndexToken: {storeIndexToken}\n" +
@@ -27,6 +28,7 @@ namespace Garnet.cluster
                 "objectCheckpointCoveredAofAddress:{objectCheckpointCoveredAofAddress}\n" +
                 "------------------------------------------------------------------------\n",
                 msg,
+                entry._lock,
                 entry.metadata.storeVersion,
                 entry.metadata.storeHlogToken,
                 entry.metadata.storeIndexToken,
@@ -48,6 +50,7 @@ namespace Garnet.cluster
         {
             metadata = new();
             next = null;
+            _lock = new();
         }
 
         public long GetMinAofCoveredAddress()

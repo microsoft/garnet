@@ -31,13 +31,15 @@ namespace Garnet
         /// <param name="args">Command line arguments</param>
         /// <param name="options">Options object containing parsed configuration settings</param>
         /// <param name="invalidOptions">List of Options properties that did not pass validation</param>
+        /// <param name="optionsJson">Serialized JSON containing all non-default configuration options</param>
         /// <param name="exitGracefully">True if should exit gracefully when parse is unsuccessful</param>
         /// <param name="silentMode">If true, help text will not be printed to console when parse is unsuccessful</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if parsing succeeded</returns>
-        internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, out bool exitGracefully, bool silentMode = false, ILogger logger = null)
+        internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, out string optionsJson, out bool exitGracefully, bool silentMode = false, ILogger logger = null)
         {
             options = null;
+            optionsJson = null;
             invalidOptions = [];
 
             args ??= [];
@@ -92,6 +94,9 @@ Please check the syntax of your command. For detailed usage information run with
             if (!importSuccessful)
                 return false;
 
+            // Create a copy of the default options before populating the object
+            var defaultOptions = (Options)initOptions.Clone();
+
             // If config import file present - import options from file
             if (cmdLineOptions.ConfigImportPath != null)
             {
@@ -113,10 +118,32 @@ Please check the syntax of your command. For detailed usage information run with
                 logger?.LogInformation("Configuration file path not specified. Using default values with command-line switches.");
             }
 
+            // Create a copy of the options before reparsing the command line arguments
+            var initOptionsCopy = (Options)initOptions.Clone();
+
             // Re-parse command line arguments after initializing Options object with initialization function
             // In order to override options specified in the command line arguments
             if (!parser.TryParseArguments(consolidatedArgs, argNameToDefaultValue, out options, out exitGracefully, () => initOptions, silentMode))
                 return false;
+
+            // Since IEnumerable<T> options could have been overridden by the last operation,
+            // it is necessary to copy them from the previous copy of the options, if they weren't explicitly overridden
+            foreach (var prop in typeof(Options).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                var optionAttr = (OptionAttribute)prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
+                if (optionAttr == null)
+                    continue;
+
+                var type = prop.PropertyType;
+                if (type.IsGenericType &&
+                    type.GetGenericTypeDefinition() == typeof(IEnumerable<>) &&
+                    !consolidatedArgs.Contains($"-{optionAttr.ShortName}", StringComparer.InvariantCultureIgnoreCase) &&
+                    !consolidatedArgs.Contains($"--{optionAttr.LongName}", StringComparer.InvariantCultureIgnoreCase))
+                {
+                    var value = prop.GetValue(initOptionsCopy);
+                    prop.SetValue(options, value);
+                }
+            }
 
             // Validate options
             if (!options.IsValid(out invalidOptions, logger))
@@ -125,6 +152,24 @@ Please check the syntax of your command. For detailed usage information run with
                 options = null;
                 exitGracefully = false;
                 return false;
+            }
+
+            // Serialize non-default config options
+            var configProvider = ConfigProviderFactory.GetConfigProvider(ConfigFileType.GarnetConf, defaultOptions);
+            var isSerialized = configProvider.TrySerializeOptions(options, true, logger, out optionsJson);
+            if (!isSerialized)
+            {
+                logger?.LogError("Encountered an error while serializing options.");
+                return false;
+            }
+
+            // Dump non-default config options to log
+            var serializedOptions = optionsJson.Split(Environment.NewLine).Skip(1).SkipLast(1)
+                .Select(o => o.Trim()).ToArray();
+            logger?.LogInformation("Found {count} non-default configuration options:", serializedOptions.Length);
+            foreach (var serializedOption in serializedOptions)
+            {
+                logger?.LogInformation("{option}", serializedOption);
             }
 
             // Export the settings to file, if ConfigExportPath is specified

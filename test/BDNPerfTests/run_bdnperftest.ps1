@@ -1,3 +1,5 @@
+#Requires -Version 7
+
 <#$f
 .SYNOPSIS
     This script is designed for to run BDN Benchmarking and use the results as a gate in the GitHub CIs to ensure performance isn't declining. 

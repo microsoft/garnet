@@ -29,6 +29,12 @@ namespace Garnet.server
         /// </summary>
         IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
 
+
+        /// <summary>
+        /// Are we allowed to incur AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
+        /// </summary>
+        bool AllowDataLoss { get; }
+
         /// <summary>
         /// Flush config
         /// </summary>
@@ -142,5 +148,11 @@ namespace Garnet.server
         /// Get checkpoint info
         /// </summary>
         MetricsItem[] GetCheckpointInfo();
+
+        /// <summary>
+        /// RunID to identify checkpoint history
+        /// </summary>
+        /// <returns></returns>
+        string GetRunId();
     }
 }

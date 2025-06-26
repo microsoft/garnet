@@ -82,12 +82,12 @@ namespace Garnet.cluster
         public RecoveryStatus currentRecoveryStatus;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReplicationLogCheckpointManager GetCkptManager(StoreType storeType)
+        public GarnetClusterCheckpointManager GetCkptManager(StoreType storeType)
         {
             return storeType switch
             {
-                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
+                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }
@@ -118,7 +118,7 @@ namespace Garnet.cluster
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             ValidateNetworkBufferSettings();
 
-            aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
+            aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, clusterProvider: clusterProvider, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
@@ -360,7 +360,8 @@ namespace Garnet.cluster
             }
 
             // First recover and then load latest checkpoint info in-memory
-            InitializeCheckpointStore();
+            if (!InitializeCheckpointStore())
+                logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(PrimaryRecover));
         }
 
         /// <summary>

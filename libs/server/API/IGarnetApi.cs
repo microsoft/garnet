@@ -728,9 +728,9 @@ namespace Garnet.server
 
         /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
-        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// If the provided count argument is positive, return an array of distinct elements.
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
-        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times.
         /// In this case, the number of returned elements is the absolute value of the specified count.
         /// </summary>
         /// <param name="key"></param>
@@ -1430,17 +1430,17 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetDifference(ArgSlice[] keys, out Dictionary<byte[], double> pairs);
+        GarnetStatus SortedSetDifference(ArgSlice[] keys, out SortedSet<(double, byte[])> pairs);
 
         /// <summary>
         /// Performs a union of multiple sorted sets and stores the result in a dictionary.
         /// </summary>
         /// <param name="keys">A read-only span of ArgSlice representing the keys of the sorted sets to union.</param>
-        /// <param name="pairs">An output dictionary where the result of the union will be stored, with byte arrays as keys and doubles as values.</param>
+        /// <param name="pairs">An output sorted set where the result of the union will be stored.</param>
         /// <param name="weights">An optional array of doubles representing the weights to apply to each sorted set during the union.</param>
         /// <param name="aggregateType">The type of aggregation to use when combining scores from the sorted sets. Defaults to <see cref="SortedSetAggregateType.Sum"/>.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
-        GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
+        GarnetStatus SortedSetUnion(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double Element, byte[] Score)> pairs);
 
         /// <summary>
         /// Iterates members of SortedSet key and their associated scores using a cursor,
@@ -1462,13 +1462,13 @@ namespace Garnet.server
         /// <param name="aggregateType">The type of aggregation to perform.</param>
         /// <param name="pairs">The resulting dictionary of intersected elements and their scores.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
-        GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs);
+        GarnetStatus SortedSetIntersect(ReadOnlySpan<ArgSlice> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs);
 
         /// <summary>
         /// Computes the intersection of multiple sorted sets and counts the elements.
         /// </summary>
         /// <param name="keys">Input sorted set keys</param>
-        /// <param name="limit">Optional max count limit</param> 
+        /// <param name="limit">Optional max count limit</param>
         /// <param name="count">The count of elements in the intersection</param>
         /// <returns>Operation status</returns>
         GarnetStatus SortedSetIntersectLength(ReadOnlySpan<ArgSlice> keys, int? limit, out int count);

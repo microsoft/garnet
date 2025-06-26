@@ -83,6 +83,16 @@
     ]
   },
   {
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
+    "Arity": -1,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet"
+  },
+  {
     "Command": "APPEND",
     "Name": "APPEND",
     "Arity": 3,

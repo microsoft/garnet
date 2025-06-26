@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -30,11 +31,11 @@ namespace Garnet
     /// In order to add a new configurable setting:
     /// 1. Add a new property and decorate it with an OptionAttribute.
     /// 2. If needed, decorate with a new or existing ValidationAttribute from OptionsValidators.cs
-    /// 3. Add a default value for the new property in defaults.conf
+    /// 3. Add a default value for the new property in defaults.conf (do NOT use the OptionAttribute.Default property, it can cause unexpected behavior)
     /// 4. If needed, add a matching property in Garnet.server/Servers/GarnetServerOptions.cs and initialize it in Options.GetServerOptions()
     /// 5. If new setting has a matching setting in redis.conf, add the matching setting to RedisOptions.cs
     /// </summary>
-    internal sealed class Options
+    internal sealed class Options : ICloneable
     {
         [IntRangeValidation(0, 65535)]
         [Option("port", Required = false, HelpText = "Port to run server on")]
@@ -180,15 +181,17 @@ namespace Garnet
         [Option("clean-cluster-config", Required = false, HelpText = "Start with clean cluster config.")]
         public bool? CleanClusterConfig { get; set; }
 
-        [Option("auth", Required = false, Default = GarnetAuthenticationMode.ACL, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
+        [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
 
+        [HiddenOption]
         [Option("password", Required = false, HelpText = "Authentication string for password authentication.")]
         public string Password { get; set; }
 
         [Option("cluster-username", Required = false, HelpText = "Username to authenticate intra-cluster communication with.")]
         public string ClusterUsername { get; set; }
 
+        [HiddenOption]
         [Option("cluster-password", Required = false, HelpText = "Password to authenticate intra-cluster communication with.")]
         public string ClusterPassword { get; set; }
 
@@ -301,6 +304,7 @@ namespace Garnet
         [Option("cert-file-name", Required = false, HelpText = "TLS certificate file name (example: testcert.pfx).")]
         public string CertFileName { get; set; }
 
+        [HiddenOption]
         [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder).")]
         public string CertPassword { get; set; }
 
@@ -345,7 +349,7 @@ namespace Garnet
         public LogLevel LogLevel { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("logger-freq", Required = false, Default = 5, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
+        [Option("logger-freq", Required = false, HelpText = "Frequency (in seconds) of logging (used for tracking progress of long running operations e.g. migration)")]
         public int LoggingFrequency { get; set; }
 
         [OptionValidation]
@@ -373,7 +377,7 @@ namespace Garnet
         public int ThreadPoolMaxIOCompletionThreads { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
-        [Option("network-connection-limit", Required = false, Default = -1, HelpText = "Maximum number of simultaneously active network connections.")]
+        [Option("network-connection-limit", Required = false, HelpText = "Maximum number of simultaneously active network connections.")]
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
@@ -387,6 +391,7 @@ namespace Garnet
         [Option("storage-managed-identity", Required = false, HelpText = "The managed identity to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageManagedIdentity { get; set; }
 
+        [HiddenOption]
         [Option("storage-string", Required = false, HelpText = "The connection string to use when establishing connection to Azure Blobs Storage.")]
         public string AzureStorageConnectionString { get; set; }
 
@@ -435,8 +440,12 @@ namespace Garnet
         public bool? ReplicaDisklessSync { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("repl-diskless-sync-delay", Required = false, Default = 5, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
+        [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
+
+        [MemorySizeValidation(false)]
+        [Option("repl-diskless-sync-full-sync-aof-threshold", Required = false, HelpText = "AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.")]
+        public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
 
         [OptionValidation]
         [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
@@ -557,11 +566,11 @@ namespace Garnet
         public int IndexResizeThreshold { get; set; }
 
         [OptionValidation]
-        [Option("fail-on-recovery-error", Default = false, Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
+        [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
         public bool? FailOnRecoveryError { get; set; }
 
         [OptionValidation]
-        [Option("skip-rdb-restore-checksum-validation", Default = false, Required = false, HelpText = "Skip RDB restore checksum validation")]
+        [Option("skip-rdb-restore-checksum-validation", Required = false, HelpText = "Skip RDB restore checksum validation")]
         public bool? SkipRDBRestoreChecksumValidation { get; set; }
 
         [OptionValidation]
@@ -570,11 +579,11 @@ namespace Garnet
 
         [MemorySizeValidation(false)]
         [ForbiddenWithOption(nameof(LuaMemoryManagementMode), nameof(LuaMemoryManagementMode.Native))]
-        [Option("lua-script-memory-limit", Default = null, HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
+        [Option("lua-script-memory-limit", HelpText = "Memory limit for a Lua instances while running a script, lua-memory-management-mode must be set to something other than Native to use this flag")]
         public string LuaScriptMemoryLimit { get; set; }
 
         [IntRangeValidation(10, int.MaxValue, isRequired: false)]
-        [Option("lua-script-timeout", Default = null, Required = false, HelpText = "Timeout for a Lua instance while running a script, specified in positive milliseconds (0 = disabled)")]
+        [Option("lua-script-timeout", Required = false, HelpText = "Timeout for a Lua instance while running a script, specified in positive milliseconds (0 = disabled)")]
         public int LuaScriptTimeoutMs { get; set; }
 
         [OptionValidation]
@@ -614,6 +623,10 @@ namespace Garnet
         [IntRangeValidation(1, 256, isRequired: true)]
         [Option("max-databases", Required = false, HelpText = "Max number of logical databases allowed in a single Garnet server instance")]
         public int MaxDatabases { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("expired-key-deletion-scan-freq", Required = false, HelpText = "Frequency of background scan for expired key deletion, in seconds")]
+        public int ExpiredKeyDeletionScanFrequencySecs { get; set; }
 
         [OptionValidation]
         [Option("streams", Required = false, HelpText = "Enable streams on server.")]
@@ -862,6 +875,7 @@ namespace Garnet
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
+                ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
@@ -876,7 +890,7 @@ namespace Garnet
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
-                ExtensionBinPaths = ExtensionBinPaths?.ToArray(),
+                ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
@@ -887,6 +901,7 @@ namespace Garnet
                 UnixSocketPath = UnixSocketPath,
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
+                ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 EnableStreams = EnableStreams.GetValueOrDefault(),
             };
         }
@@ -921,6 +936,54 @@ namespace Garnet
             }
             return FastAofTruncate.GetValueOrDefault();
         }
+
+        /// <summary>
+        /// Creates a clone of the current Options object
+        /// This method creates a shallow copy of the values of properties decorated with the OptionAttribute
+        /// For IEnumerable types it creates a list containing a shallow copy of all the values in the original IEnumerable
+        /// </summary>
+        /// <returns>The cloned object</returns>
+        public object Clone()
+        {
+            var clone = new Options();
+            foreach (var prop in typeof(Options).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+            {
+                if (!prop.CanRead || !prop.CanWrite)
+                    continue;
+
+                var optionAttr = (OptionAttribute)prop.GetCustomAttributes(typeof(OptionAttribute)).FirstOrDefault();
+                if (optionAttr == null)
+                    continue;
+
+                var value = prop.GetValue(this);
+
+                if (value == null)
+                {
+                    prop.SetValue(clone, null);
+                    continue;
+                }
+
+                var type = prop.PropertyType;
+                if (type.IsGenericType &&
+                    type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                {
+                    var elementType = type.GetGenericArguments()[0];
+                    var listType = typeof(List<>).MakeGenericType(elementType);
+                    var list = (IList)Activator.CreateInstance(listType)!;
+
+                    foreach (var item in (IEnumerable)value)
+                        list.Add(item);
+
+                    prop.SetValue(clone, list);
+                }
+                else
+                {
+                    prop.SetValue(clone, value);
+                }
+            }
+
+            return clone;
+        }
     }
 
     /// <summary>
@@ -937,5 +1000,15 @@ namespace Garnet
     public sealed class InvalidAzureConfiguration : Exception
     {
         public InvalidAzureConfiguration(string message) : base(message) { }
+    }
+
+    /// <summary>
+    /// This attribute ensures that a decorated configuration option is not dumped into the log
+    /// when the DumpConfig flag is set.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Property)]
+    public class HiddenOptionAttribute : Attribute
+    {
+
     }
 }

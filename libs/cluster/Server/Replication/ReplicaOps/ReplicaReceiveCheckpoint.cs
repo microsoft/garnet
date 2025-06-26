@@ -187,7 +187,7 @@ namespace Garnet.cluster
             {
                 case CheckpointFileType.STORE_SNAPSHOT:
                 case CheckpointFileType.OBJ_STORE_SNAPSHOT:
-                    ckptManager.CommiLogCheckpointWithCookie(fileToken, checkpointMetadata);
+                    ckptManager.CommitLogCheckpointSendFromPrimary(fileToken, checkpointMetadata);
                     break;
                 case CheckpointFileType.STORE_INDEX:
                 case CheckpointFileType.OBJ_STORE_INDEX:
@@ -335,11 +335,16 @@ namespace Garnet.cluster
 
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 logger?.LogInformation("Initializing CheckpointStore");
-                InitializeCheckpointStore();
+                if (!InitializeCheckpointStore())
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(BeginReplicaRecover));
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primaryReplicationId);
+
+                // Mark this txn run as a read-write session if we are replaying as a replica
+                // This is necessary to ensure that the stored procedure can perform write operations if needed
+                clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
 
                 return ReplicationOffset;
             }

@@ -288,6 +288,7 @@ namespace Tsavorite.core
                                 ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
                     }
 
+                    ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
                     if (ok && sessionFunctions.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo))
                     {
                         // Success
@@ -295,11 +296,13 @@ namespace Tsavorite.core
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        stats.inChainSuccesses++;
                         return true;
                     }
 
                     // Did not revivify; restore the tombstone and leave the deleted record there.
                     srcRecordInfo.SetTombstone();
+                    stats.inChainFailures++;
                 }
             }
             finally

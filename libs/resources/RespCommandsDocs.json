@@ -113,6 +113,21 @@
     ]
   },
   {
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
+    "Summary": "Scans mutable records to delete expired ones.",
+    "Group": "Generic",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration. N is the number of records in memory.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer"
+      }
+    ]
+  },
+  {
     "Command": "APPEND",
     "Name": "APPEND",
     "Summary": "Appends a string to the value of a key. Creates the key if it doesn\u0027t exist.",
@@ -1891,6 +1906,22 @@
         "DisplayText": "key",
         "Type": "Key",
         "ArgumentFlags": "Multiple",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "DELIFEXPIM",
+    "Name": "DELIFEXPIM",
+    "Summary": "Deletes a key if it is in memory and expired.",
+    "Group": "Generic",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
         "KeySpecIndex": 0
       }
     ]

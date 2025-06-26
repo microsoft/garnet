@@ -504,8 +504,16 @@ namespace Garnet.server
                                 SendAndReset();
                             while (!RespWriteUtils.TryWriteBulkString(member.ReadOnlySpan, ref dcurr, dend))
                                 SendAndReset();
-                            while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
-                                SendAndReset();
+
+                            if (respProtocolVersion >= 3)
+                            {
+                                WriteDoubleNumeric(double.Parse(score.ReadOnlySpan));
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
+                                    SendAndReset();
+                            }
                         }
                     }
                     break;
@@ -974,9 +982,9 @@ namespace Garnet.server
 
                         if (result != null)
                         {
-                            foreach (var (element, score) in result)
+                            foreach (var (score, element) in result)
                             {
-                                if (respProtocolVersion == 3 && includeWithScores)
+                                if (respProtocolVersion >= 3 && includeWithScores)
                                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                                         SendAndReset();
 
@@ -1139,18 +1147,26 @@ namespace Garnet.server
                     }
 
                     // write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                    var arrayLength = result.Count;
+                    if (includeWithScores && respProtocolVersion == 2)
+                        arrayLength *= 2;
+                    while (!RespWriteUtils.TryWriteArrayLength(arrayLength, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var (element, score) in result)
+                    foreach (var (score, element) in result)
                     {
+                        if (includeWithScores && respProtocolVersion >= 3)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
 
                         if (includeWithScores)
                         {
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDoubleNumeric(score);
                         }
                     }
                     break;
@@ -1420,18 +1436,26 @@ namespace Garnet.server
                     }
 
                     // write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                    var arrayLength = result.Count;
+                    if (includeWithScores && respProtocolVersion == 2)
+                        arrayLength *= 2;
+                    while (!RespWriteUtils.TryWriteArrayLength(arrayLength, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var (element, score) in result)
+                    foreach (var (score, element) in result)
                     {
+                        if (includeWithScores && respProtocolVersion >= 3)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
 
                         if (includeWithScores)
                         {
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDoubleNumeric(score);
                         }
                     }
                     break;
@@ -1457,9 +1481,7 @@ namespace Garnet.server
             // Number of keys
             if (!parseState.TryGetInt(1, out var nKeys))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             if (nKeys < 1)
@@ -1551,9 +1573,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout) || (timeout < 0))
+            if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(error);
             }
 
             var keysBytes = new byte[parseState.Count - 1][];
@@ -1616,14 +1638,9 @@ namespace Garnet.server
             var currTokenId = 0;
 
             // Read timeout
-            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            if (!parseState.TryGetTimeout(currTokenId++, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
-            }
-
-            if (timeout < 0)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+                return AbortWithErrorMessage(error);
             }
 
             // Read count of keys
@@ -1718,8 +1735,7 @@ namespace Garnet.server
                     SendAndReset();
                 while (!RespWriteUtils.TryWriteBulkString(result.Items[i], ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
-                    SendAndReset();
+                WriteDoubleNumeric(result.Scores[i]);
             }
 
             return true;
