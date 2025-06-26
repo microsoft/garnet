@@ -18,6 +18,12 @@ namespace Garnet.server
         NONE
     }
 
+    public enum XADDOpts
+    {
+        NOMKSTREAM,
+        NONE
+    }
+
     public enum ParsedStreamEntryID
     {
         VALID,

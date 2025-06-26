@@ -21,17 +21,27 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_XADD_WRONG_NUM_ARGS);
             }
 
+            int argsParsed = 0;
+
             // Parse the stream key.
             var key = parseState.GetArgSliceByRef(0);
+            argsParsed++;
+
+            bool noMkStream = false;
+            if (argsParsed < parseState.Count && parseState.GetArgSliceByRef(argsParsed).ToString().ToUpper().Equals("NOMKSTREAM"))
+            {
+                noMkStream = true;
+                argsParsed++;
+            }
 
             // Parse the id. We parse as string for easy pattern matching.
-            var idGiven = parseState.GetArgSliceByRef(1);
+            var idGiven = parseState.GetArgSliceByRef(argsParsed);
 
             // get the number of the remaining key-value pairs
-            var numPairs = parseState.Count - 2;
+            var numPairs = parseState.Count - argsParsed;
 
             // grab the rest of the input that will mainly be k-v pairs as entry to the stream.
-            byte* vPtr = parseState.GetArgSliceByRef(2).ptr - sizeof(int);
+            byte* vPtr = parseState.GetArgSliceByRef(argsParsed).ptr - sizeof(int);
             int vsize = (int)(recvBufferPtr + endReadHead - vPtr);
             var streamDataSpan = new ReadOnlySpan<byte>(vPtr, vsize);
             SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
@@ -51,9 +61,12 @@ namespace Garnet.server
             }
             else
             {
-                streamManager.StreamAdd(key, idGiven, streamDataSpan, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
+                streamManager.StreamAdd(key, idGiven, noMkStream, streamDataSpan, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
                 // since we added to a new stream that was not in the cache, try adding it to the cache
-                sessionStreamCache.TryAddStreamToCache(lastStreamKey, lastStream);
+                if (lastStream != null)
+                {
+                    sessionStreamCache.TryAddStreamToCache(lastStreamKey, lastStream);
+                }
             }
             ProcessOutput(_output);
             return true;

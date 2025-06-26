@@ -30,6 +30,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keySlice">key/name of the stream</param>
         /// <param name="idSlice">id of the stream entry</param>
+        /// <param name="noMkStream">if true, do not create a new stream if it does not exist</param>
         /// <param name="value">payload to the stream</param>
         /// <param name="valueLength">length of payload to the stream</param>
         /// <param name="numPairs"># k-v pairs in the payload</param>
@@ -37,7 +38,7 @@ namespace Garnet.server
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
+        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, bool noMkStream, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
         {
             // copy key store this key in the dictionary
             byte[] key = new byte[keySlice.Length];
@@ -73,7 +74,7 @@ namespace Garnet.server
             {
                 // retry to validate if some other thread has created the stream
                 foundStream = streams.TryGetValue(key, out stream);
-                if (!foundStream)
+                if (!foundStream && !noMkStream)
                 {
                     // stream was not found with this key so create a new one 
                     StreamObject newStream = new StreamObject(null, defPageSize, defMemorySize, safeTailRefreshFreqMs);
@@ -81,6 +82,13 @@ namespace Garnet.server
                     streams.TryAdd(key, newStream);
                     streamKey = key;
                     lastStream = newStream;
+                }
+                else if (!foundStream && noMkStream)
+                {
+                    // stream was not found and noMkStream is set so return an error
+                    using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+                    writer.WriteNull();
+                    return;
                 }
                 else
                 {
