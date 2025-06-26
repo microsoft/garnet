@@ -21,10 +21,6 @@ namespace Garnet.server.BTreeIndex
             // find index for key in leaf node - this returns the index of first key >= given key
             var index = leaf->LowerBound(key);
             headValidKey = new ReadOnlySpan<byte>(leaf->GetKey(index), BTreeNode.KEY_SIZE);
-            // headValidValue = leaf->GetValue(index);
-            // headValidKey = new byte[BTreeNode.KEY_SIZE];
-            // var headValidKeyPtr = leaf->GetKey(index);
-            // Buffer.MemoryCopy(headValidKeyPtr, Unsafe.AsPointer(ref headValidKey[0]), BTreeNode.KEY_SIZE, BTreeNode.KEY_SIZE);
             headValidValue = leaf->GetValue(index);
 
             // insert tombstones until index to mark as deleted 
@@ -252,7 +248,6 @@ namespace Garnet.server.BTreeIndex
                 }
                 var prevCount = inner->info->count;
                 inner->info->count -= slotOfKey;
-                // inner->info->validCount -= deletedValidCount;
                 nodesTraversed[i]->info->validCount -= deletedValidCount;
 
                 if (prevCount > BTreeNode.INTERNAL_CAPACITY / 2 && inner->info->count < BTreeNode.INTERNAL_CAPACITY / 2)
