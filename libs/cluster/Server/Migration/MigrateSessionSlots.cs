@@ -45,28 +45,28 @@ namespace Garnet.cluster
             void CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
-                var migrateTasks = new Task[clusterProvider.serverOptions.ParallelMigrateTasks];
+                var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTasks];
                 var i = 0;
-                while (i < migrateTasks.Length)
+                while (i < migrateOperationRunners.Length)
                 {
                     var idx = i;
-                    migrateTasks[idx] = Task.Run(() => ScanStoreTask(idx, storeType, beginAddress, tailAddress, pageSize));
+                    migrateOperationRunners[idx] = Task.Run(() => ScanStoreTask(idx, storeType, beginAddress, tailAddress, pageSize));
                     i++;
                 }
 
-                Task.WaitAll(migrateTasks, _cts.Token);
+                Task.WaitAll(migrateOperationRunners, _cts.Token);
             }
 
             Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
-                var migrateTask = migrateTasks[taskId];
+                var migrateOperation = this.migrateOperation[taskId];
                 var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTasks;
                 var workerStartAddress = beginAddress + (taskId * range);
                 var workerEndAddress = beginAddress + ((taskId + 1) * range);
 
                 workerStartAddress = workerStartAddress - (2 * pageSize) > 0 ? workerStartAddress - (2 * pageSize) : 0;
                 workerEndAddress = workerEndAddress + (2 * pageSize) < storeTailAddress ? workerEndAddress + (2 * pageSize) : storeTailAddress;
-                if (!migrateTask.Initialize())
+                if (!migrateOperation.Initialize())
                     return Task.FromResult(false);
 
                 var cursor = workerStartAddress;
@@ -74,31 +74,31 @@ namespace Garnet.cluster
                 {
                     var current = cursor;
                     // Build Sketch
-                    migrateTask.sketch.SetStatus(SketchStatus.INITIALIZING);
-                    migrateTask.Scan(storeType, ref current, workerEndAddress);
+                    migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
+                    migrateOperation.Scan(storeType, ref current, workerEndAddress);
 
                     // Stop if no keys have been found
-                    if (migrateTask.sketch.argSliceVector.IsEmpty) break;
+                    if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
 
                     var currentEnd = current;
                     logger?.LogTrace("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys",
-                        taskId, cursor, current, migrateTask.sketch.argSliceVector.Count);
+                        taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
 
                     // Transition EPSM to MIGRATING
-                    migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
+                    migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
                     WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateTask.TrasmitSlots(storeType);
+                    migrateOperation.TrasmitSlots(storeType);
 
                     // Transition EPSM to DELETING
-                    migrateTask.sketch.SetStatus(SketchStatus.DELETING);
+                    migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
                     WaitForConfigPropagation();
 
                     // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
-                    migrateTask.DeleteKeys();
+                    migrateOperation.DeleteKeys();
 
-                    migrateTask.sketch.Clear();
+                    migrateOperation.sketch.Clear();
                     cursor = current;
                 }
 

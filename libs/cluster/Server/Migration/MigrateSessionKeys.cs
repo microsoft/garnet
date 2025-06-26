@@ -25,7 +25,7 @@ namespace Garnet.cluster
             var bufPtr = buffer.GetValidPointer();
             var bufPtrEnd = bufPtr + bufferSize;
             var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
-            var migrateTask = migrateTasks[0];
+            var migrateTask = migrateOperation[0];
 
             try
             {
@@ -49,7 +49,7 @@ namespace Garnet.cluster
                     o.Memory.Dispose();
                 buffer.Dispose();
 
-                migrateTasks[0].sketch.SetStatus(SketchStatus.INITIALIZING);
+                migrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
             return true;
         }
@@ -61,7 +61,7 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromObjectStore()
         {
-            var migrateTask = migrateTasks[0];
+            var migrateTask = migrateOperation[0];
             // NOTE: Any keys not found in main store are automatically set to INITIALIZING before this method is called
             // Transition all INITIALIZING to TRANSMITTING state
             migrateTask.sketch.SetStatus(SketchStatus.TRANSMITTING);
@@ -84,7 +84,7 @@ namespace Garnet.cluster
         /// </summary>
         private void DeleteKeys()
         {
-            var migrateTask = migrateTasks[0];
+            var migrateTask = migrateOperation[0];
             // Transition to deleting to block read requests                
             migrateTask.sketch.SetStatus(SketchStatus.DELETING);
             WaitForConfigPropagation();
@@ -106,7 +106,7 @@ namespace Garnet.cluster
         {
             try
             {
-                var migrateTask = migrateTasks[0];
+                var migrateTask = migrateOperation[0];
                 if (!migrateTask.Initialize())
                     return false;
 

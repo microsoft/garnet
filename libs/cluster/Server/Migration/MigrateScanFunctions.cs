@@ -13,9 +13,9 @@ namespace Garnet.cluster
         #region mainStoreScan
         internal sealed unsafe class MainStoreScan : IScanIteratorFunctions<SpanByte, SpanByte>
         {
-            readonly MigrateSession.MigrateTask mss;
+            readonly MigrateSession.MigrateOperation mss;
 
-            internal MainStoreScan(MigrateSession.MigrateTask mss)
+            internal MainStoreScan(MigrateSession.MigrateOperation mss)
             {
                 this.mss = mss;
             }
@@ -50,9 +50,9 @@ namespace Garnet.cluster
         #region objectStoreScan
         internal sealed unsafe class ObjectStoreScan : IScanIteratorFunctions<byte[], IGarnetObject>
         {
-            readonly MigrateSession.MigrateTask mss;
+            readonly MigrateSession.MigrateOperation mss;
 
-            internal ObjectStoreScan(MigrateSession.MigrateTask mss)
+            internal ObjectStoreScan(MigrateSession.MigrateOperation mss)
             {
                 this.mss = mss;
             }

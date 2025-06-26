@@ -94,7 +94,7 @@ namespace Garnet.cluster
         /// <summary>
         /// MigrateTask for background slot migrate tasks
         /// </summary>
-        readonly MigrateTask[] migrateTasks;
+        readonly MigrateOperation[] migrateOperation;
 
         /// <summary>
         /// MigrateSession Constructor
@@ -149,14 +149,14 @@ namespace Garnet.cluster
 
             if (transferOption == TransferOption.SLOTS)
             {
-                migrateTasks = new MigrateTask[clusterProvider.serverOptions.ParallelMigrateTasks];
-                for (var i = 0; i < migrateTasks.Length; i++)
-                    migrateTasks[i] = new MigrateTask(this);
+                migrateOperation = new MigrateOperation[clusterProvider.serverOptions.ParallelMigrateTasks];
+                for (var i = 0; i < migrateOperation.Length; i++)
+                    migrateOperation[i] = new MigrateOperation(this);
             }
             else
             {
-                migrateTasks = new MigrateTask[1];
-                migrateTasks[0] = new MigrateTask(this, sketch: sketch);
+                migrateOperation = new MigrateOperation[1];
+                migrateOperation[0] = new MigrateOperation(this, sketch: sketch);
             }
         }
 
@@ -182,8 +182,8 @@ namespace Garnet.cluster
             _cts?.Cancel();
             _cts?.Dispose();
 
-            for (var i = 0; i < migrateTasks.Length; i++)
-                migrateTasks[i].Dispose();
+            for (var i = 0; i < migrateOperation.Length; i++)
+                migrateOperation[i].Dispose();
         }
 
         private bool CheckConnection(GarnetClientSession client)
@@ -254,7 +254,7 @@ namespace Garnet.cluster
         public bool TrySetSlotRanges(string nodeid, MigrateState state)
         {
             var status = false;
-            var client = migrateTasks[0].Client;
+            var client = migrateOperation[0].Client;
             try
             {
                 if (!CheckConnection(client))
