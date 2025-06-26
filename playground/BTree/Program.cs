@@ -112,13 +112,13 @@ class Program
         if (verbose)
             Console.WriteLine("Range query check passed ");
 
-        // tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
-        // Console.WriteLine("Trimmed by ID: validKeysRemoved = " + validKeysRemoved);
-        // Console.WriteLine("num leaves deleted = " + numLeavesDeleted);
+        tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+        Console.WriteLine("Trimmed by ID: validKeysRemoved = " + validKeysRemoved);
+        Console.WriteLine("num leaves deleted = " + numLeavesDeleted);
 
-        tree.TrimByLength(2000, out ulong validKeysRemoved2, out Value headValue2, out byte[] headValidKey2, out uint numLeavesDeleted2);
-        Console.WriteLine("Trimmed by length: validKeysRemoved = " + validKeysRemoved2);
-        Console.WriteLine("num leaves deleted = " + numLeavesDeleted2);
+        // tree.TrimByLength(2000, out ulong validKeysRemoved2, out Value headValue2, out byte[] headValidKey2, out uint numLeavesDeleted2);
+        // Console.WriteLine("Trimmed by length: validKeysRemoved = " + validKeysRemoved2);
+        // Console.WriteLine("num leaves deleted = " + numLeavesDeleted2);
 
         // now let's delete some keys 
         // sw.Reset();

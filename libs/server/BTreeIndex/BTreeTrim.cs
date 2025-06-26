@@ -33,6 +33,7 @@ namespace Garnet.server.BTreeIndex
             {
                 leaf->SetValueValid(i, false);
                 leaf->info->validCount--;
+                validKeysRemoved++;
             }
 
             if (leaf == head)
@@ -44,7 +45,7 @@ namespace Garnet.server.BTreeIndex
             // traverse the leaf level to delete preceding leaf nodes
             var node = leaf->info->previous;
             var nodesToTraverseInSubtree = internalSlots[1] - 1;
-            uint deletedValidCount = 0;
+            uint deletedValidCount = (uint)(leaf->info->count - leaf->info->validCount);
             while (node != null)
             {
                 var validCount = node->info->validCount;
@@ -67,7 +68,7 @@ namespace Garnet.server.BTreeIndex
                 validKeysRemoved += validCount;
 
                 // deallocate the node
-                FreeNode(ref node);
+                Deallocate(ref node);
                 numLeavesDeleted++;
 
                 // continue iteration
@@ -77,6 +78,7 @@ namespace Garnet.server.BTreeIndex
             leaf->info->previous = null;
             head = leaf;
 
+            bool rootReassigned = false;
             // traverse internal nodes except root and delete preceding internal nodes
             for (int i = 1; i < stats.depth - 1; i++)
             {
@@ -96,24 +98,24 @@ namespace Garnet.server.BTreeIndex
                 }
                 var prevCount = node->info->count;
                 node->info->count -= slotOfKey;
-                nodesTraversed[i]->info->validCount -= deletedValidCount;
+                node->info->validCount -= deletedValidCount;
 
                 if (prevCount > BTreeNode.INTERNAL_CAPACITY / 2 && node->info->count < BTreeNode.INTERNAL_CAPACITY / 2)
                 {
                     underflowingNodes++;
                 }
 
-                deletedValidCount = 0;
                 node = nodesTraversed[i]->info->previous;
+                // deletedValidCount = 0;
                 while (node != null)
                 {
                     var temp = node->info->previous;
                     if (nodesToTraverseInSubtree >= 0)
                     {
-                        deletedValidCount += node->info->validCount;
+                        // deletedValidCount += node->info->validCount;
                         nodesToTraverseInSubtree--;
                     }
-                    FreeNode(ref node);
+                    Deallocate(ref node);
                     stats.numInternalNodes--;
                     node = temp;
                 }
@@ -133,16 +135,21 @@ namespace Garnet.server.BTreeIndex
                             while (curr != null)
                             {
                                 var pre = curr->info->previous;
-                                FreeNode(ref curr);
+                                Deallocate(ref curr);
                                 stats.numInternalNodes--;
                                 curr = pre;
                             }
                             stats.depth--;
                         }
                         root = newRoot;
+                        rootReassigned = true;
                         break;
                     }
                 }
+            }
+            if (!rootReassigned && stats.depth > 1 && nodesTraversed[stats.depth - 1] != null)
+            {
+                nodesTraversed[stats.depth - 1]->info->validCount -= deletedValidCount;
             }
         }
 
@@ -215,7 +222,7 @@ namespace Garnet.server.BTreeIndex
                 validKeysRemoved += validCount;
 
                 // deallocate the node
-                FreeNode(ref leaf);
+                Deallocate(ref leaf);
                 numLeavesDeleted++;
                 leaf = prev;
             }

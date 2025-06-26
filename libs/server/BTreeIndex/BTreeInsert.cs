@@ -194,6 +194,7 @@ namespace Garnet.server.BTreeIndex
                 }
 
                 // split internal node
+                node->info->validCount += newValidCount;
                 var newNode = SplitInternalNode(ref node, ref nodesTraversed, ref key, ref child, splitPos, index, i);
                 if (rootToTailLeaf[i] == node && tail != head && BTreeNode.Compare(key, tailMinKey) <= 0)
                 {
