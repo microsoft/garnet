@@ -143,7 +143,7 @@ namespace Garnet.test
             }
 
             var trimLength = 5000; // trim the tree to half its size
-            tree.TrimByLength((ulong)trimLength, out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+            tree.TrimByLength((ulong)trimLength, out var validKeysRemoved, out var headValue, out var headValidKey, out var numLeavesDeleted);
             var validKeysRemaining = tree.RootValidCount + tree.TailValidCount;
             ClassicAssert.GreaterOrEqual(validKeysRemaining, trimLength);
 
@@ -161,7 +161,7 @@ namespace Garnet.test
             }
 
             var streamIDToTrim = streamIDs[N - 1000];
-            tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDToTrim.idBytes[0]), out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+            tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDToTrim.idBytes[0]), out var validKeysRemoved, out var headValue, out var headValidKey, out var numLeavesDeleted);
             var validKeysRemaining = tree.RootValidCount + tree.TailValidCount;
             ClassicAssert.GreaterOrEqual((ulong)validKeysRemaining, N - validKeysRemoved);
 
