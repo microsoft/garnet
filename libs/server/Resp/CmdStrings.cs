@@ -254,6 +254,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_RADIUS_IS_NEGATIVE => "ERR radius cannot be negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_NEGATIVE => "ERR timeout is negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_OUT_OF_RANGE => "ERR timeout is out of range"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
@@ -293,6 +294,15 @@ namespace Garnet.server
             @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
+
+        public static ReadOnlySpan<byte> RESP_ERR_STREAMS_DISABLED => "ERR STREAMS is disabled, enable it with --streams option."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xadd' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_INVALID_STREAM_ID => "ERR Invalid stream ID specified as stream command argument"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XADD_ID_NOT_GREATER => "ERR The ID specified in XADD is equal or smaller than the target stream top item"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XLEN_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xlen' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XRANGE_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xrange' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XDEL_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xdel' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XTRIM_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xtrim' command"u8;
 
         /// <summary>
         /// Response string templates

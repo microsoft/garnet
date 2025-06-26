@@ -1573,9 +1573,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout) || (timeout < 0))
+            if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(error);
             }
 
             var keysBytes = new byte[parseState.Count - 1][];
@@ -1638,14 +1638,9 @@ namespace Garnet.server
             var currTokenId = 0;
 
             // Read timeout
-            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            if (!parseState.TryGetTimeout(currTokenId++, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
-            }
-
-            if (timeout < 0)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+                return AbortWithErrorMessage(error);
             }
 
             // Read count of keys

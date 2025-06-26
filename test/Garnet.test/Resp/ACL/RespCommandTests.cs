@@ -32,7 +32,7 @@ namespace Garnet.test.Resp.ACL
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true, enableLua: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true, enableLua: true, enableStreams: true);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
@@ -6431,6 +6431,86 @@ namespace Garnet.test.Resp.ACL
             static async Task DoGeoSearchStoreAsync(GarnetClient client)
             {
                 var val = await client.ExecuteForLongResultAsync("GEOSEARCHSTORE", ["bar", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M", "STOREDIST"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task XADDACLsAsync()
+        {
+            int count = 0;
+            await CheckCommandsAsync(
+                "XADD",
+                [DoXAddAsync]
+            );
+
+            async Task DoXAddAsync(GarnetClient client)
+            {
+                string val = await client.ExecuteForStringResultAsync("XADD", ["foo", "*", $"bar--{count}", "fizz"]);
+                ClassicAssert.IsNotNull(val);
+            }
+        }
+
+        [Test]
+        public async Task XLENACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XLEN",
+                [DoXLenAsync]
+            );
+
+            async Task DoXLenAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XLEN", ["foo"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task XRangeACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XRANGE",
+                [DoXRangeAsync]
+            );
+
+            async Task DoXRangeAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringArrayResultAsync("XRANGE", ["foo", "-", "+"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task XDELACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XDEL",
+                [DoXDelAsync]
+            );
+
+            async Task DoXDelAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XDEL", ["foo", "1"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        public async Task XTRIMACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XTRIM",
+                [DoXTrimMinIDAsync, DoXTrimMaxLenAsync]
+            );
+            async Task DoXTrimMinIDAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XTRIM", ["foo", "MINID", "0-0"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            async Task DoXTrimMaxLenAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XTRIM", ["foo", "MAXLEN", "0"]);
                 ClassicAssert.AreEqual(0, val);
             }
         }

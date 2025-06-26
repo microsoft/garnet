@@ -118,7 +118,7 @@ namespace Garnet.cluster
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
             ValidateNetworkBufferSettings();
 
-            aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, logger: logger);
+            aofProcessor = new AofProcessor(storeWrapper, recordToAof: false, clusterProvider: clusterProvider, logger: logger);
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
