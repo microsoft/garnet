@@ -259,7 +259,8 @@ namespace Garnet.test
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
             TextWriter logTo = null,
-            bool enableCluster = false)
+            bool enableCluster = false,
+            bool enableStreams = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -344,6 +345,7 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
+                EnableStreams = enableStreams,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))

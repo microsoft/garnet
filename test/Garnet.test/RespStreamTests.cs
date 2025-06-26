@@ -22,7 +22,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableStreams: true);
             server.Start();
             random = new Random();
 
@@ -195,6 +195,27 @@ namespace Garnet.test
 
             var delCount = db.StreamDelete(streamKey, eIds);
             ClassicAssert.AreEqual(delCount, indices.Count);
+        }
+
+        [Test]
+        [Category("Trim")]
+        public void StreamTrimMaxLenTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var streamKey = "trimByMaxLen";
+            long count = 500;
+            for (long i = 0; i < count; i++)
+            {
+                var entryKey = GenerateRandomString(4); // generate random ascii string of length 4
+                var entryValue = GenerateRandomString(4); // generate random ascii string of length 4
+                var retId = db.StreamAdd(streamKey, entryKey, entryValue, $"{i + 1}-0");
+            }
+            var maxLen = 100;
+            var trimCount = db.StreamTrim(streamKey, maxLen);
+            ClassicAssert.GreaterOrEqual(trimCount, 1);
+            ClassicAssert.GreaterOrEqual(count - trimCount, maxLen);
         }
 
 

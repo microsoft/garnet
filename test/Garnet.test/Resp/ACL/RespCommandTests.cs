@@ -6482,6 +6482,25 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
+        public async Task XTRIMACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "XTRIM",
+                [DoXTrimMinIDAsync, DoXTrimMaxLenAsync]
+            );
+            async Task DoXTrimMinIDAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XTRIM", ["foo", "MINID", "0-0"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+
+            async Task DoXTrimMaxLenAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("XTRIM", ["foo", "MAXLEN", "0"]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
         [Test]
         public async Task ZAddACLsAsync()
         {
