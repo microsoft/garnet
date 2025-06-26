@@ -397,18 +397,18 @@ namespace Garnet.server
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue)
+        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => storageSession.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress);
+            => storageSession.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
             => storageSession.IterateMainStore();
 
         /// <inheritdoc />
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue)
+        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => storageSession.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress);
+            => storageSession.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()

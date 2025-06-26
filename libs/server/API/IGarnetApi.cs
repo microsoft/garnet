@@ -1952,8 +1952,9 @@ namespace Garnet.server
         /// <param name="untilAddress"></param>
         /// <param name="maxAddress"></param>
         /// <param name="cursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue)
+        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>;
 
         /// <summary>
@@ -1970,8 +1971,9 @@ namespace Garnet.server
         /// <param name="untilAddress"></param>
         /// <param name="maxAddress"></param>
         /// <param name="cursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue)
+        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>;
 
         /// <summary>
