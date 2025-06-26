@@ -9,6 +9,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -1175,6 +1176,99 @@ namespace Garnet.test.cluster
             {
                 var resp = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(pair.Key), out _, out _, out var state, logger: context.logger);
                 ClassicAssert.IsNull(resp);
+            }
+        }
+
+        [Test, Order(24)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationLua([Values] bool luaTransactionMode)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableLua: true, luaTransactionMode: luaTransactionMode);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "foo", "bar");
+            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "fizz", "buzz");
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+            var res1 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "foo");
+            var res2 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "fizz");
+
+            ClassicAssert.AreEqual("bar", res1);
+            ClassicAssert.AreEqual("buzz", res2);
+        }
+
+        [Test, Order(23)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+            var expectedKeys = new[] { "X", "Y" };
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableDisklessSync: enableDisklessSync);
+            context.CreateConnection(useTLS: useTLS);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+
+            // Register custom procedure
+            context.nodes[primaryNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+            context.nodes[replicaNodeIndex].Register.NewTransactionProc("RATELIMIT", () => new RateLimiterTxn(), new RespCommandsInfo { Arity = 4 });
+
+            // Setup cluster
+            context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+
+            if (attachFirst)
+            {
+                // Issue replicate
+                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            }
+
+            // Execute custom proc before replicat attach
+            ExecuteRateLimit();
+
+            if (!attachFirst)
+            {
+                // Issue replicate
+                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            }
+
+            // Validate primary keys
+            var resp = primaryServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(expectedKeys, (string[])resp);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+            resp = replicaServer.Execute("KEYS", ["*"]);
+            ClassicAssert.AreEqual(expectedKeys, (string[])resp);
+
+            void ExecuteRateLimit()
+            {
+                primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+                var resp = primaryServer.Execute("RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
+                ClassicAssert.AreEqual("ALLOWED", (string)resp);
+                resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
+                ClassicAssert.AreEqual("ALLOWED", (string)resp);
             }
         }
     }
