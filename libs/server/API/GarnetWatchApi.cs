@@ -611,18 +611,18 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue)
+        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => garnetApi.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress);
+            => garnetApi.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
             => garnetApi.IterateMainStore();
 
         /// <inheritdoc />
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue)
+        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => garnetApi.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress);
+            => garnetApi.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()

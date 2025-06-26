@@ -144,11 +144,11 @@ namespace Garnet.server
         /// <param name="cursor"></param>
         /// <param name="maxAddress"></param>
         /// <param name="validateCursor"></param>
-        /// <param name="returnTombstoned"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool returnTombstoned = false)
+        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false);
+            => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -165,10 +165,11 @@ namespace Garnet.server
         /// <param name="cursor"></param>
         /// <param name="maxAddress"></param>
         /// <param name="validateCursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false)
+        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
            where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false);
+            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)

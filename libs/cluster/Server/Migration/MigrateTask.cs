@@ -60,9 +60,9 @@ namespace Garnet.cluster
             public void Scan(StoreType storeType, ref long currentAddress, long endAddress)
             {
                 if (storeType == StoreType.Main)
-                    _ = localServerSession.BasicGarnetApi.IterateMainStore(ref mss, ref currentAddress, endAddress, endAddress);
+                    _ = localServerSession.BasicGarnetApi.IterateMainStore(ref mss, ref currentAddress, endAddress, endAddress, includeTombstones: true);
                 else if (storeType == StoreType.Object)
-                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref oss, ref currentAddress, endAddress, endAddress);
+                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref oss, ref currentAddress, endAddress, endAddress, includeTombstones: true);
             }
 
             /// <summary>
