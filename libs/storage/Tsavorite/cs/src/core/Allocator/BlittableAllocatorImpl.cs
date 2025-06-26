@@ -260,8 +260,8 @@ namespace Tsavorite.core
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
         public override ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, BlittableAllocator<TKey, TValue, TStoreFunctions>> store,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new BlittableScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeClosedRecords)
+            => new BlittableScanIterator<TKey, TValue, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeClosedRecords, epoch, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
