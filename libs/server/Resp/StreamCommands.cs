@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -10,9 +11,9 @@ namespace Garnet.server
     {
         readonly StreamManager streamManager;
         /// <summary>
-        /// STREAMADD
+        /// Adds a new entry to the stream.
         /// </summary>
-        /// <returns></returns> 
+        /// <returns>true if stream was added successfully; error otherwise</returns> 
         private unsafe bool StreamAdd(byte respProtocolVersion)
         {
             if (parseState.Count < 4)
@@ -31,8 +32,8 @@ namespace Garnet.server
 
             // grab the rest of the input that will mainly be k-v pairs as entry to the stream.
             byte* vPtr = parseState.GetArgSliceByRef(2).ptr - sizeof(int);
-            //int vsize = (int)(recvBufferPtr + bytesRead - vPtr);
             int vsize = (int)(recvBufferPtr + endReadHead - vPtr);
+            var streamDataSpan = new ReadOnlySpan<byte>(vPtr, vsize);
             SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
             var disabledStreams = streamManager == null;
@@ -46,23 +47,22 @@ namespace Garnet.server
 
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                cachedStream.AddEntry(vPtr, vsize, idGiven, numPairs, ref _output, respProtocolVersion);
+                cachedStream.AddEntry(streamDataSpan, vsize, idGiven, numPairs, ref _output, respProtocolVersion);
             }
             else
             {
-                streamManager.StreamAdd(key, idGiven, vPtr, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
+                streamManager.StreamAdd(key, idGiven, streamDataSpan, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
                 // since we added to a new stream that was not in the cache, try adding it to the cache
                 sessionStreamCache.TryAddStreamToCache(lastStreamKey, lastStream);
             }
-            // _ = ProcessOutputWithHeader(_output);
             ProcessOutput(_output);
             return true;
         }
 
         /// <summary>
-        /// STREAMLENGTH
+        /// Retrieves the length of the stream.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>true if stream length was retrieved successfully; error otherwise</returns>
         private bool StreamLength()
         {
             if (parseState.Count != 1)
@@ -98,9 +98,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        ///  STREAMRANGE
+        ///  Retrieves a range of stream entries.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>true if range of stream entries were retrieved successfully; error otherwise</returns>
         public unsafe bool StreamRange(byte respProtocolVersion)
         {
             // command is of format: XRANGE key start end [COUNT count]
@@ -166,6 +166,10 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Deletes stream entry(s).
+        /// </summary>
+        /// <returns>true if stream entry(s) was deleted successfully; error otherwise</returns>
         public bool StreamDelete()
         {
             // command is of format: XDEL key id [id ...]
@@ -219,6 +223,10 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Trims the stream to the specified length or ID.
+        /// </summary>
+        /// <returns>returns true if stream was trimmed successfully; error otherwise</returns>
         public bool StreamTrim()
         {
             if (parseState.Count < 3)

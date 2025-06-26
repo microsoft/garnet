@@ -222,7 +222,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value">byte array of the entry to store in the stream</param>
         /// <returns>True if entry is added successfully</returns>
-        public unsafe void AddEntry(byte* value, int valueLength, ArgSlice idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public unsafe void AddEntry(ReadOnlySpan<byte> value, int valueLength, ArgSlice idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             byte* tmpPtr = null;
             StreamID id = default;
@@ -458,7 +458,7 @@ namespace Garnet.server
                             // we can already write back the ID that we read 
                             writer.WriteArrayLength(2);
 
-                            writer.WriteSimpleString(idString);
+                            writer.WriteAsciiBulkString(idString);
 
                             // print array length for the number of key-value pairs in the entry
                             writer.WriteArrayLength(numPairs);

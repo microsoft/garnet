@@ -844,7 +844,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        public unsafe bool TryEnqueueStreamEntry(byte* id, int idLength, int numPairs, byte* entry, int entryLength, out long logicalAddress)
+        public unsafe bool TryEnqueueStreamEntry(byte* id, int idLength, int numPairs, ReadOnlySpan<byte> entry, int entryLength, out long logicalAddress)
         {
             logicalAddress = 0;
             var length = idLength + sizeof(int) + entryLength;
@@ -865,15 +865,14 @@ namespace Tsavorite.core
 
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
             // start writing 
-            // first we copy the id
+            // copy the id
             *(long*)(headerSize + physicalAddress) = *(long*)id;
             *(long*)(headerSize + physicalAddress + 8) = *(long*)(id + sizeof(long));
-            // Buffer.MemoryCopy(id, (void*)(headerSize + physicalAddress), idLength, idLength);
-            // then we copy the number of pairs
-            // Buffer.MemoryCopy(numPairsBytes, (void*)(headerSize + physicalAddress + idLength), numPairsBytesLength, numPairsBytesLength);
+            // copy the number of pairs
             *(int*)(headerSize + physicalAddress + idLength) = numPairs;
-            // then we copy the entry
-            Buffer.MemoryCopy(entry, (void*)(headerSize + physicalAddress + idLength + sizeof(int)), entryLength, entryLength);
+            // copy the entry
+            fixed (byte* bp = &entry.GetPinnableReference())
+                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress + idLength + sizeof(int)), entryLength, entryLength);
 
             SetHeader(length, (byte*)physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();

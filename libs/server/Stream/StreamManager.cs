@@ -37,7 +37,7 @@ namespace Garnet.server
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, byte* value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
+        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
         {
             // copy key store this key in the dictionary
             byte[] key = new byte[keySlice.Length];
