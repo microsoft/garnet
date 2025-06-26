@@ -14,7 +14,7 @@ namespace Garnet.server
     /// <summary>
     /// Utils for scratch buffer management - one per session (single threaded access)
     /// </summary>
-    internal sealed unsafe class ScratchBufferManager
+    public sealed unsafe class ScratchBufferManager
     {
         /// <summary>
         /// Session-local scratch buffer to hold temporary arguments in transactions and GarnetApi
