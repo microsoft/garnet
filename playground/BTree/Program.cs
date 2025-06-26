@@ -112,53 +112,53 @@ class Program
         if (verbose)
             Console.WriteLine("Range query check passed ");
 
-        tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
-        Console.WriteLine("Trimmed by ID: validKeysRemoved = " + validKeysRemoved);
-        Console.WriteLine("num leaves deleted = " + numLeavesDeleted);
+        // tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+        // Console.WriteLine("Trimmed by ID: validKeysRemoved = " + validKeysRemoved);
+        // Console.WriteLine("num leaves deleted = " + numLeavesDeleted);
 
         // tree.TrimByLength(2000, out ulong validKeysRemoved2, out Value headValue2, out byte[] headValidKey2, out uint numLeavesDeleted2);
         // Console.WriteLine("Trimmed by length: validKeysRemoved = " + validKeysRemoved2);
         // Console.WriteLine("num leaves deleted = " + numLeavesDeleted2);
 
         // now let's delete some keys 
-        // sw.Reset();
-        // int num_deletes = 100;
-        // int num_successfully_deleted = 0;
-        // for (int i = 0; i < num_deletes; i++)
-        // {
-        //     // generate a random index to delete
-        //     int idx = new Random().Next(0, (int)N);
-        //     sw.Start();
-        //     bool val = false;
-        //     // bool val = tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[idx].idBytes[0]));
-        //     sw.Stop();
-        //     if (val)
-        //     {
-        //         num_successfully_deleted++;
-        //     }
-        // }
-        // long deleteTime = (long)(sw.ElapsedTicks * nanosecondsPerTick);
-        // if (verbose)
-        // {
-        //     Console.WriteLine("Number of keys deleted = " + num_successfully_deleted);
-        //     Console.WriteLine("Time for deletion = " + deleteTime + " ns");
-        // }
+        sw.Reset();
+        int num_deletes = 100;
+        int num_successfully_deleted = 0;
+        for (int i = 0; i < num_deletes; i++)
+        {
+            // generate a random index to delete
+            int idx = new Random().Next(0, (int)N);
+            sw.Start();
+            bool val = false;
+            // bool val = tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[idx].idBytes[0]));
+            sw.Stop();
+            if (val)
+            {
+                num_successfully_deleted++;
+            }
+        }
+        long deleteTime = (long)(sw.ElapsedTicks * nanosecondsPerTick);
+        if (verbose)
+        {
+            Console.WriteLine("Number of keys deleted = " + num_successfully_deleted);
+            Console.WriteLine("Time for deletion = " + deleteTime + " ns");
+        }
 
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 400].idBytes[0]));
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 300].idBytes[0]));
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 200].idBytes[0]));
-        // tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 100].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 400].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 300].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 200].idBytes[0]));
+        tree.Delete((byte*)Unsafe.AsPointer(ref streamIDs[N - 100].idBytes[0]));
 
-        // // do a range query to check again 
-        // tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), out Value startVal1, out Value endVal1, out List<Value> tombstones);
-        // Debug.Assert(tombstones.Count == 4);
-        // Console.WriteLine("Delete check passed ");
+        // do a range query to check again 
+        tree.Get((byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]), (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), out Value startVal1, out Value endVal1, out List<Value> tombstones);
+        Debug.Assert(tombstones.Count == 4);
+        Console.WriteLine("Delete check passed ");
 
-        // // print all times collected in a csv format 
-        // Console.WriteLine(insertion_time + ", " + query_time + ", " + range_query_times[0] + ", " + range_query_times[1] + ", " + range_query_times[2] + ", " + deleteTime);
-        // tree.Deallocate();
-        // Console.WriteLine("Num allocates = " + tree.stats.numAllocates);
-        // Console.WriteLine("Num deallocates = " + tree.stats.numDeallocates);
-        // Console.WriteLine("All checks passed");
+        // print all times collected in a csv format 
+        Console.WriteLine(insertion_time + ", " + query_time + ", " + range_query_times[0] + ", " + range_query_times[1] + ", " + range_query_times[2] + ", " + deleteTime);
+        tree.Deallocate();
+        Console.WriteLine("Num allocates = " + tree.stats.numAllocates);
+        Console.WriteLine("Num deallocates = " + tree.stats.numDeallocates);
+        Console.WriteLine("All checks passed");
     }
 }

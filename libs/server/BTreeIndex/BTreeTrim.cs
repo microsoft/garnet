@@ -46,6 +46,7 @@ namespace Garnet.server.BTreeIndex
             var node = leaf->info->previous;
             var nodesToTraverseInSubtree = internalSlots[1] - 1;
             uint deletedValidCount = (uint)(leaf->info->count - leaf->info->validCount);
+            var totalDeletedValidCount = deletedValidCount;
             while (node != null)
             {
                 var validCount = node->info->validCount;
@@ -55,6 +56,7 @@ namespace Garnet.server.BTreeIndex
                     deletedValidCount += validCount;
                     nodesToTraverseInSubtree--;
                 }
+                totalDeletedValidCount += validCount;
 
                 var prev = node->info->previous;
                 if (prev == null)
@@ -106,13 +108,13 @@ namespace Garnet.server.BTreeIndex
                 }
 
                 node = nodesTraversed[i]->info->previous;
-                // deletedValidCount = 0;
+                deletedValidCount = 0;
                 while (node != null)
                 {
                     var temp = node->info->previous;
                     if (nodesToTraverseInSubtree >= 0)
                     {
-                        // deletedValidCount += node->info->validCount;
+                        deletedValidCount += node->info->validCount;
                         nodesToTraverseInSubtree--;
                     }
                     Deallocate(ref node);
@@ -125,7 +127,7 @@ namespace Garnet.server.BTreeIndex
                 if (i + 1 < stats.depth)
                 {
                     var nextSlot = internalSlots[i + 1];
-                    if (nextSlot == nodesTraversed[i]->info->count)
+                    if (nextSlot == nodesTraversed[i + 1]->info->count)
                     {
                         var newRoot = nodesTraversed[i];
                         var originalDepth = stats.depth;
@@ -149,7 +151,7 @@ namespace Garnet.server.BTreeIndex
             }
             if (!rootReassigned && stats.depth > 1 && nodesTraversed[stats.depth - 1] != null)
             {
-                nodesTraversed[stats.depth - 1]->info->validCount -= deletedValidCount;
+                nodesTraversed[stats.depth - 1]->info->validCount -= totalDeletedValidCount;
             }
         }
 

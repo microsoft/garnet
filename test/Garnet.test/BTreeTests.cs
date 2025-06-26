@@ -142,9 +142,28 @@ namespace Garnet.test
                 tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
             }
 
-            ulong trimLength = 5000; // trim the tree to half its size
-            tree.TrimByLength(trimLength, out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
-            ClassicAssert.GreaterOrEqual(N - trimLength, validKeysRemoved);
+            var trimLength = 5000; // trim the tree to half its size
+            tree.TrimByLength((ulong)trimLength, out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+            var validKeysRemaining = tree.RootValidCount + tree.TailValidCount;
+            ClassicAssert.GreaterOrEqual(validKeysRemaining, trimLength);
+
+            tree.Deallocate();
+        }
+
+        [Test]
+        [Category("TrimByID")]
+        public void TrimByID()
+        {
+            var tree = new BTree((uint)BTreeNode.PAGE_SIZE);
+            for (ulong i = 0; i < N; i++)
+            {
+                tree.Insert((byte*)Unsafe.AsPointer(ref streamIDs[i].idBytes[0]), new Value(streamIDs[i].ms));
+            }
+
+            var streamIDToTrim = streamIDs[N - 1000];
+            tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDToTrim.idBytes[0]), out ulong validKeysRemoved, out Value headValue, out byte[] headValidKey, out uint numLeavesDeleted);
+            var validKeysRemaining = tree.RootValidCount + tree.TailValidCount;
+            ClassicAssert.GreaterOrEqual((ulong)validKeysRemaining, N - validKeysRemoved);
 
             tree.Deallocate();
         }
