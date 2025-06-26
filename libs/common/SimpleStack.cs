@@ -6,7 +6,7 @@ using System;
 namespace Garnet.common
 {
     /// <summary>
-    /// Simple stack implementation supporting data peak by reference
+    /// Simple stack implementation supporting data peek by reference
     /// Note: this implementation is not thread-safe
     /// </summary>
     public class SimpleStack<T> where T : struct
