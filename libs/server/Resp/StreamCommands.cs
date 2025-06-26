@@ -251,7 +251,7 @@ namespace Garnet.server
             var trimType = parseState.GetArgSliceByRef(1).ToString().ToUpper();
             var trimArg = parseState.GetArgSliceByRef(2);
 
-            ulong validKeysRemoved = 0;
+            ulong entriesTrimmed = 0;
             StreamTrimOpts optType = StreamTrimOpts.NONE;
             switch (trimType)
             {
@@ -274,17 +274,17 @@ namespace Garnet.server
             bool result;
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                result = cachedStream.Trim(trimArg, optType, out validKeysRemoved);
+                result = cachedStream.Trim(trimArg, optType, out entriesTrimmed);
             }
             else
             {
-                result = streamManager.StreamTrim(key, trimArg, optType, out validKeysRemoved);
+                result = streamManager.StreamTrim(key, trimArg, optType, out entriesTrimmed);
             }
             if (!result)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
-            while (!RespWriteUtils.TryWriteInt64((long)validKeysRemoved, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteInt64((long)entriesTrimmed, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

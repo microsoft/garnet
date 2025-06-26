@@ -515,7 +515,14 @@ namespace Garnet.server
             }
         }
 
-        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong validKeysRemoved)
+        /// <summary>
+        /// Trims the stream based on the specified options.
+        /// </summary>
+        /// <param name="trimArg">length or ID specifying the threshold</param>
+        /// <param name="optType">MAXLEN or MINID</param>
+        /// <param name="entriesTrimmed">number of keys trimmed</param>
+        /// <returns></returns>
+        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong entriesTrimmed)
         {
             uint numLeavesDeleted = 0;
             Value headValue = default;
@@ -527,21 +534,21 @@ namespace Garnet.server
                     case StreamTrimOpts.MAXLEN:
                         if (!RespReadUtils.ReadUlong(out ulong maxLen, ref trimArg.ptr, trimArg.ptr + trimArg.length))
                         {
-                            validKeysRemoved = 0;
+                            entriesTrimmed = 0;
                             return false;
                         }
-                        index.TrimByLength(maxLen, out validKeysRemoved, out headValue, out var headValidKey, out numLeavesDeleted);
+                        index.TrimByLength(maxLen, out entriesTrimmed, out headValue, out var headValidKey, out numLeavesDeleted);
                         break;
                     case StreamTrimOpts.MINID:
                         if (!parseCompleteID(trimArg, out StreamID minID))
                         {
-                            validKeysRemoved = 0;
+                            entriesTrimmed = 0;
                             return false;
                         }
-                        index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]), out validKeysRemoved, out headValue, out headValidKey, out numLeavesDeleted);
+                        index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]), out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
                         break;
                     default:
-                        validKeysRemoved = 0;
+                        entriesTrimmed = 0;
                         break;
                 }
 

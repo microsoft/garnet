@@ -8,10 +8,10 @@ namespace Garnet.server.BTreeIndex
 {
     public unsafe partial class BTree
     {
-        public void TrimByID(byte* key, out int underflowingNodes, out ulong validKeysRemoved, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByID(byte* key, out int underflowingNodes, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
         {
             underflowingNodes = 0;
-            validKeysRemoved = 0;
+            entriesTrimmed = 0;
             numLeavesDeleted = 0;
 
             var nodesTraversed = new BTreeNode*[MAX_TREE_DEPTH];
@@ -28,7 +28,7 @@ namespace Garnet.server.BTreeIndex
             {
                 leaf->SetValueValid(i, false);
                 leaf->info->validCount--;
-                validKeysRemoved++;
+                entriesTrimmed++;
             }
 
             if (leaf == head)
@@ -62,7 +62,7 @@ namespace Garnet.server.BTreeIndex
                 stats.numLeafNodes--;
                 stats.numKeys -= count;
                 stats.numValidKeys -= validCount;
-                validKeysRemoved += validCount;
+                entriesTrimmed += validCount;
 
                 // deallocate the node
                 Deallocate(ref node);
@@ -150,14 +150,14 @@ namespace Garnet.server.BTreeIndex
             }
         }
 
-        public void TrimByLength(ref BTreeNode* node, ulong length, out ulong validKeysRemoved, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByLength(ref BTreeNode* node, ulong length, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
         {
             var depth = stats.depth - 1;
             ulong currentValidCount = 0;
             var current = node;
             int[] internalSlots = new int[MAX_TREE_DEPTH];
             int underflowingNodes = 0;
-            validKeysRemoved = 0;
+            entriesTrimmed = 0;
             numLeavesDeleted = 0;
             headValidKey = default;
             BTreeNode*[] nodesTraversed = new BTreeNode*[MAX_TREE_DEPTH];
@@ -217,7 +217,7 @@ namespace Garnet.server.BTreeIndex
                 stats.numLeafNodes--;
                 stats.numKeys -= count;
                 stats.numValidKeys -= validCount;
-                validKeysRemoved += validCount;
+                entriesTrimmed += validCount;
 
                 // deallocate the node
                 Deallocate(ref leaf);
@@ -297,16 +297,16 @@ namespace Garnet.server.BTreeIndex
                 }
             }
         }
-        public void TrimByID(byte* key, out ulong validKeysRemoved, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByID(byte* key, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
         {
             int underflowingNodes;
-            TrimByID(key, out underflowingNodes, out validKeysRemoved, out headValue, out headValidKey, out numLeavesDeleted);
+            TrimByID(key, out underflowingNodes, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
         }
 
-        public void TrimByLength(ulong length, out ulong validKeysRemoved, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByLength(ulong length, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
         {
 
-            TrimByLength(ref root, length, out validKeysRemoved, out headValue, out headValidKey, out numLeavesDeleted);
+            TrimByLength(ref root, length, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
         }
     }
 }
