@@ -97,6 +97,11 @@ namespace Garnet.server
                 RespCommand.HINCRBY => HashObjectKeys((byte)HashOperation.HINCRBY),
                 RespCommand.HINCRBYFLOAT => HashObjectKeys((byte)HashOperation.HINCRBYFLOAT),
                 RespCommand.HKEYS => HashObjectKeys((byte)HashOperation.HKEYS),
+                RespCommand.HPEXPIRE => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.HPEXPIREAT => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.HPEXPIRETIME => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.HPERSIST => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.HPTTL => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.HLEN => HashObjectKeys((byte)HashOperation.HLEN),
                 RespCommand.HMGET => HashObjectKeys((byte)HashOperation.HMGET),
                 RespCommand.HMSET => HashObjectKeys((byte)HashOperation.HMSET),
@@ -105,6 +110,7 @@ namespace Garnet.server
                 RespCommand.HSET => HashObjectKeys((byte)HashOperation.HSET),
                 RespCommand.HSETNX => HashObjectKeys((byte)HashOperation.HSETNX),
                 RespCommand.HSTRLEN => HashObjectKeys((byte)HashOperation.HSTRLEN),
+                RespCommand.HTTL => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.HVALS => HashObjectKeys((byte)HashOperation.HVALS),
                 RespCommand.INCR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBY => SingleKey(1, false, LockType.Exclusive),
@@ -158,14 +164,24 @@ namespace Garnet.server
                 RespCommand.SSCAN => SetObjectKeys(SetOperation.SSCAN, inputCount),
                 RespCommand.SUNION => SetObjectKeys(SetOperation.SUNION, inputCount),
                 RespCommand.SUNIONSTORE => SetObjectKeys(SetOperation.SUNIONSTORE, inputCount),
+                RespCommand.TTL => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.UNLINK => ListKeys(inputCount, StoreType.All, LockType.Exclusive),
                 RespCommand.ZADD => SortedSetObjectKeys(SortedSetOperation.ZADD, inputCount),
                 RespCommand.ZCARD => SortedSetObjectKeys(SortedSetOperation.ZCARD, inputCount),
                 RespCommand.ZCOUNT => SortedSetObjectKeys(SortedSetOperation.ZCOUNT, inputCount),
                 RespCommand.ZDIFF => SortedSetObjectKeys(SortedSetOperation.ZDIFF, inputCount),
+                RespCommand.ZDIFFSTORE => ZSTOREKeys(inputCount, true),
                 RespCommand.ZINCRBY => SortedSetObjectKeys(SortedSetOperation.ZINCRBY, inputCount),
+                RespCommand.ZINTER => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
+                RespCommand.ZINTERSTORE => ZSTOREKeys(inputCount, true),
                 RespCommand.ZLEXCOUNT => SortedSetObjectKeys(SortedSetOperation.ZLEXCOUNT, inputCount),
+                RespCommand.ZMPOP => ListKeys(true, LockType.Exclusive),
                 RespCommand.ZMSCORE => SortedSetObjectKeys(SortedSetOperation.ZMSCORE, inputCount),
+                RespCommand.ZPEXPIRE => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.ZPEXPIREAT => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.ZPEXPIRETIME => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.ZPERSIST => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.ZPTTL => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.ZPOPMAX => SortedSetObjectKeys(SortedSetOperation.ZPOPMAX, inputCount),
                 RespCommand.ZPOPMIN => SortedSetObjectKeys(SortedSetOperation.ZPOPMIN, inputCount),
                 RespCommand.ZRANDMEMBER => SortedSetObjectKeys(SortedSetOperation.ZRANDMEMBER, inputCount),
@@ -181,7 +197,11 @@ namespace Garnet.server
                 RespCommand.ZREVRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
                 RespCommand.ZREVRANK => SortedSetObjectKeys(SortedSetOperation.ZREVRANK, inputCount),
+                RespCommand.ZSCAN => SortedSetObjectKeys(SortedSetOperation.ZSCAN, inputCount),
                 RespCommand.ZSCORE => SortedSetObjectKeys(SortedSetOperation.ZSCORE, inputCount),
+                RespCommand.ZTTL => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.ZUNION => ListKeys(true, LockType.Shared),
+                RespCommand.ZUNIONSTORE => ZSTOREKeys(inputCount, true),
                 _ => AdminCommands(command)
             };
         }
@@ -190,15 +210,16 @@ namespace Garnet.server
         {
             return command switch
             {
-                RespCommand.ECHO => 1,
-                RespCommand.REPLICAOF => 1,
-                RespCommand.SECONDARYOF => 1,
                 RespCommand.CONFIG => 1,
                 RespCommand.CLIENT => 1,
+                RespCommand.ECHO => 1,
                 RespCommand.PING => 1,
                 RespCommand.PUBLISH => 1,
-                RespCommand.SPUBLISH => 1,
+                RespCommand.REPLICAOF => 1,
+                RespCommand.ROLE => 1,
+                RespCommand.SECONDARYOF => 1,
                 RespCommand.SELECT => 1,
+                RespCommand.SPUBLISH => 1,
                 RespCommand.SWAPDB => 1,
                 _ => -1
             };
@@ -266,7 +287,7 @@ namespace Garnet.server
                 SortedSetOperation.ZADD => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZCARD => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.ZCOUNT => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.ZDIFF => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
+                SortedSetOperation.ZDIFF => ListKeys(true, LockType.Shared),
                 SortedSetOperation.ZINCRBY => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZLEXCOUNT => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZMSCORE => SingleKey(1, true, LockType.Shared),
@@ -280,6 +301,7 @@ namespace Garnet.server
                 SortedSetOperation.ZREMRANGEBYSCORE => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZREVRANK => SingleKey(1, true, LockType.Exclusive),
                 SortedSetOperation.ZREM => SingleKey(1, true, LockType.Exclusive),
+                SortedSetOperation.ZSCAN => SingleKey(1, true, LockType.Shared),
                 SortedSetOperation.ZSCORE => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
@@ -292,14 +314,18 @@ namespace Garnet.server
                 (byte)ListOperation.LINDEX => SingleKey(1, true, LockType.Shared),
                 (byte)ListOperation.LINSERT => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LLEN => SingleKey(1, true, LockType.Shared),
+                (byte)ListOperation.LMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
                 (byte)ListOperation.LPOP => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LPUSH => SingleKey(1, true, LockType.Exclusive),
+                (byte)ListOperation.LPUSHX => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LRANGE => SingleKey(1, true, LockType.Shared),
                 (byte)ListOperation.LREM => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LSET => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LTRIM => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.RPOP => SingleKey(1, true, LockType.Exclusive),
+                (byte)ListOperation.RPOPLPUSH => ListKeys(2, StoreType.Object, LockType.Exclusive),
                 (byte)ListOperation.RPUSH => SingleKey(1, true, LockType.Exclusive),
+                (byte)ListOperation.RPUSHX => SingleKey(1, true, LockType.Exclusive),
                 _ => -1
             };
         }
@@ -319,6 +345,7 @@ namespace Garnet.server
                 (byte)HashOperation.HMGET => SingleKey(1, true, LockType.Shared),
                 (byte)HashOperation.HMSET => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HRANDFIELD => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HSCAN => SingleKey(1, true, LockType.Shared),
                 (byte)HashOperation.HSET => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HSETNX => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HSTRLEN => SingleKey(1, true, LockType.Shared),
@@ -344,6 +371,7 @@ namespace Garnet.server
                 SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
                 SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
+                SetOperation.SSCAN => SingleKey(1, true, LockType.Shared),
                 SetOperation.SUNION => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
                 _ => -1
@@ -426,6 +454,32 @@ namespace Garnet.server
             }
 
             for (var i = 1; i < inputCount; i++)
+            {
+                var key = respSession.parseState.GetArgSliceByRef(i);
+                SaveKeyEntryToLock(key, isObject, LockType.Shared);
+                SaveKeyArgSlice(key);
+            }
+
+            return inputCount;
+        }
+
+        /// <summary>
+        /// Returns a list of keys for complex *STORE commands (e.g. ZUNIONSTORE, ZINTERSTORE etc.)
+        /// Where the first key's value is written to and the rest of the keys' values are read from.
+        /// </summary>
+        private int ZSTOREKeys(int inputCount, bool isObject)
+        {
+            if (inputCount > 0)
+            {
+                var key = respSession.parseState.GetArgSliceByRef(0);
+                SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
+                SaveKeyArgSlice(key);
+            }
+
+            if ((inputCount < 2) || !respSession.parseState.TryGetInt(1, out var numKeysArg))
+                return -2;
+
+            for (var i = 2; i < inputCount && i < numKeysArg + 2; i++)
             {
                 var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, LockType.Shared);
