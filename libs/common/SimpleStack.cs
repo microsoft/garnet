@@ -47,7 +47,8 @@ namespace Garnet.common
         /// <returns>Reference to top item in stack</returns>
         public ref T Peek()
         {
-            if (count == 0) throw new InvalidOperationException("Stack contains no elements.");
+            if (count == 0) 
+                throw new InvalidOperationException("Stack contains no elements.");
 
             return ref buffer[count - 1];
         }
@@ -58,7 +59,8 @@ namespace Garnet.common
         /// <returns>Top item in stack</returns>
         public T Pop()
         {
-            if (count == 0) throw new InvalidOperationException("Stack contains no elements.");
+            if (count == 0) 
+                throw new InvalidOperationException("Stack contains no elements.");
 
             return buffer[--count];
         }
