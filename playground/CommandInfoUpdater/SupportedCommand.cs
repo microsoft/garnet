@@ -313,6 +313,7 @@ namespace CommandInfoUpdater
             new("XDEL", RespCommand.XDEL),
             new("XLEN", RespCommand.XLEN),
             new("XRANGE", RespCommand.XRANGE),
+            new("XTRIM", RespCommand.XTRIM),
             new("ZADD", RespCommand.ZADD),
             new("ZCARD", RespCommand.ZCARD),
             new("ZCOUNT", RespCommand.ZCOUNT),

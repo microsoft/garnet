@@ -11,6 +11,13 @@ using System.Buffers.Binary;
 
 namespace Garnet.server
 {
+    public enum StreamTrimOpts
+    {
+        MAXLEN,
+        MINID,
+        NONE
+    }
+
     public class StreamObject : IDisposable
     {
         readonly IDevice device;
@@ -489,6 +496,52 @@ namespace Garnet.server
             {
                 _lock.ReadUnlock();
             }
+        }
+
+        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong validKeysRemoved)
+        {
+            uint numLeavesDeleted = 0;
+            Value headValue = default;
+            _lock.WriteLock();
+            try
+            {
+                switch (optType)
+                {
+                    case StreamTrimOpts.MAXLEN:
+                        if (!RespReadUtils.ReadUlong(out ulong maxLen, ref trimArg.ptr, trimArg.ptr + trimArg.length))
+                        {
+                            validKeysRemoved = 0;
+                            return false;
+                        }
+                        index.TrimByLength(maxLen, out validKeysRemoved, out headValue, out var headValidKey, out numLeavesDeleted);
+                        break;
+                    case StreamTrimOpts.MINID:
+                        if (!parseCompleteID(trimArg, out StreamID minID))
+                        {
+                            validKeysRemoved = 0;
+                            return false;
+                        }
+                        index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]), out validKeysRemoved, out headValue, out headValidKey, out numLeavesDeleted);
+                        break;
+                    default:
+                        validKeysRemoved = 0;
+                        break;
+                }
+
+                if (numLeavesDeleted == 0)
+                {
+                    // didn't delete any leaf nodes so done here 
+                    return true;
+                }
+                // truncate log to new head 
+                var newHeadAddress = (long)headValue.address;
+                log.TruncateUntil(newHeadAddress);
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+            return true;
         }
 
 

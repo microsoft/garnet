@@ -187,5 +187,46 @@ namespace Garnet.server
             return true;
         }
 
+        public bool StreamTrim()
+        {
+            if (parseState.Count < 3)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_XTRIM_WRONG_NUM_ARGS);
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+            var trimType = parseState.GetArgSliceByRef(1).ToString().ToUpper();
+            var trimArg = parseState.GetArgSliceByRef(2);
+
+            ulong validKeysRemoved = 0;
+            StreamTrimOpts optType = StreamTrimOpts.NONE;
+            switch (trimType)
+            {
+                case "MAXLEN":
+                    optType = StreamTrimOpts.MAXLEN;
+                    break;
+                case "MINID":
+                    optType = StreamTrimOpts.MINID;
+                    break;
+            }
+
+            bool result;
+            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
+            {
+                result = cachedStream.Trim(trimArg, optType, out validKeysRemoved);
+            }
+            else
+            {
+                result = streamManager.StreamTrim(key, trimArg, optType, out validKeysRemoved);
+            }
+            if (!result)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+            while (!RespWriteUtils.TryWriteInt64((long)validKeysRemoved, ref dcurr, dend))
+                SendAndReset();
+            return true;
+        }
+
     }
 }

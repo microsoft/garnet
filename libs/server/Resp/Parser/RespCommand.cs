@@ -198,6 +198,7 @@ namespace Garnet.server
         XLEN,
         XRANGE,
         XDEL,
+        XTRIM,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -1141,6 +1142,12 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
                                         {
                                             return RespCommand.WATCH;
+                                        }
+                                        break;
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXTRIM\r\n"u8))
+                                        {
+                                            return RespCommand.XTRIM;
                                         }
                                         break;
 

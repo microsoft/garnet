@@ -292,6 +292,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_XLEN_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xlen' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_XRANGE_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xrange' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_XDEL_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xdel' command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_XTRIM_WRONG_NUM_ARGS => "ERR wrong number of arguments for 'xtrim' command"u8;
 
         /// <summary>
         /// Response string templates

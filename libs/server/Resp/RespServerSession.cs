@@ -909,6 +909,7 @@ namespace Garnet.server
                 RespCommand.XLEN => StreamLength(),
                 RespCommand.XDEL => StreamDelete(),
                 RespCommand.XRANGE => StreamRange(respProtocolVersion),
+                RespCommand.XTRIM => StreamTrim(),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;

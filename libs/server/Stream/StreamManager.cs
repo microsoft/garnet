@@ -170,6 +170,24 @@ namespace Garnet.server
             return false;
         }
 
+        public bool StreamTrim(ArgSlice keySlice, ArgSlice trimArg, StreamTrimOpts optType, out ulong validKeysRemoved)
+        {
+            bool foundStream;
+            var key = keySlice.ToArray();
+            StreamObject stream;
+            validKeysRemoved = 0;
+            if (streams != null)
+            {
+                foundStream = streams.TryGetValue(key, out stream);
+
+                if (foundStream)
+                {
+                    return stream.Trim(trimArg, optType, out validKeysRemoved);
+                }
+            }
+            return true; // no keys removed so return true
+        }
+
         /// <inheritdoc/>
         public void Dispose()
         {
