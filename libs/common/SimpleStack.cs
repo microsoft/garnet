@@ -6,10 +6,10 @@ using System;
 namespace Garnet.common
 {
     /// <summary>
-    /// Stack implementation supporting data access by reference
+    /// Simple stack implementation supporting data peak by reference
     /// Note: this implementation is not thread-safe
     /// </summary>
-    public class RefStack<T> where T : struct
+    public class SimpleStack<T> where T : struct
     {
         // Default initial capacity of stack buffer
         const int DefaultInitialCapacity = 64;
@@ -22,7 +22,7 @@ namespace Garnet.common
         /// Creates an empty stack with initial capacity
         /// </summary>
         /// <param name="initialCapacity">Initial capacity of the underlying stack buffer</param>
-        public RefStack(int initialCapacity = DefaultInitialCapacity)
+        public SimpleStack(int initialCapacity = DefaultInitialCapacity)
         {
             this.initialCapacity = initialCapacity;
             buffer = [];

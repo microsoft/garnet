@@ -72,7 +72,7 @@ namespace Garnet.server
 
         ScratchBuffer currScratchBuffer;
 
-        readonly RefStack<ScratchBuffer> previousScratchBuffers = new();
+        readonly SimpleStack<ScratchBuffer> previousScratchBuffers = new();
 
         // Max size of previously allocated unused buffer that we can reuse upon reset
         readonly int maxInitialCapacity;
