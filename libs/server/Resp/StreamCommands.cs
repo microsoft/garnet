@@ -35,6 +35,14 @@ namespace Garnet.server
             int vsize = (int)(recvBufferPtr + endReadHead - vPtr);
             SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
+            var disabledStreams = streamManager == null;
+            if (disabledStreams)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
 
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
@@ -65,6 +73,14 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             ulong streamLength;
+
+            var disabledStreams = streamManager == null;
+            if (disabledStreams)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             // check if the stream exists in cache 
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
@@ -114,6 +130,14 @@ namespace Garnet.server
 
             SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
+            var disabledStreams = streamManager == null;
+            if (disabledStreams)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
             bool success = false;
 
             // check if the stream exists in cache
@@ -154,6 +178,14 @@ namespace Garnet.server
             // parse the stream key
             var key = parseState.GetArgSliceByRef(0);
             int deletedCount = 0;
+
+            var disabledStreams = streamManager == null;
+            if (disabledStreams)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             // for every id, parse and delete the stream entry
             for (int i = 1; i < parseState.Count; i++)
@@ -208,6 +240,14 @@ namespace Garnet.server
                 case "MINID":
                     optType = StreamTrimOpts.MINID;
                     break;
+            }
+
+            var disabledStreams = streamManager == null;
+            if (disabledStreams)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
             bool result;
