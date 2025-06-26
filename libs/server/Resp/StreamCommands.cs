@@ -39,7 +39,7 @@ namespace Garnet.server
             var disabledStreams = streamManager == null;
             if (disabledStreams)
             {
-                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -77,7 +77,7 @@ namespace Garnet.server
             var disabledStreams = streamManager == null;
             if (disabledStreams)
             {
-                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -133,7 +133,7 @@ namespace Garnet.server
             var disabledStreams = streamManager == null;
             if (disabledStreams)
             {
-                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -186,7 +186,7 @@ namespace Garnet.server
             var disabledStreams = streamManager == null;
             if (disabledStreams)
             {
-                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -253,7 +253,7 @@ namespace Garnet.server
             var disabledStreams = streamManager == null;
             if (disabledStreams)
             {
-                while (!RespWriteUtils.TryWriteError("ERR STREAMS is disabled, enable it with --streams option."u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

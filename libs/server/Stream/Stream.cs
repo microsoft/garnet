@@ -18,6 +18,13 @@ namespace Garnet.server
         NONE
     }
 
+    public enum ParsedStreamEntryID
+    {
+        VALID,
+        INVALID,
+        NOT_GREATER,
+    }
+
     public class StreamObject : IDisposable
     {
         readonly IDevice device;
@@ -95,14 +102,13 @@ namespace Garnet.server
             IncrementID(ref id);
         }
 
-        // TODO: implement this using parseState functions without operating with RespReadUtils
-        unsafe bool parseIDString(ArgSlice idSlice, ref StreamID id)
+        unsafe ParsedStreamEntryID parseIDString(ArgSlice idSlice, ref StreamID id)
         {
             // if we have to auto-generate the whole ID
             if (*idSlice.ptr == '*' && idSlice.length == 1)
             {
                 GenerateNextID(ref id);
-                return true;
+                return ParsedStreamEntryID.VALID;
             }
 
             var lastIdDecodedTs = lastId.getMS();
@@ -119,7 +125,7 @@ namespace Garnet.server
                 // has to be of format ts-*,  check if '-' is the preceding character
                 if (*(idSlice.ptr + idSlice.length - 2) != '-')
                 {
-                    return false;
+                    return ParsedStreamEntryID.INVALID;
                 }
                 // parse the timestamp
                 // slice the id to remove the last two characters
@@ -127,13 +133,13 @@ namespace Garnet.server
                 var idEnd = idSlice.ptr + idSlice.length - 2;
                 if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idEnd))
                 {
-                    return false;
+                    return ParsedStreamEntryID.INVALID;
                 }
 
                 // check if timestamp is greater than last added entry's decoded ts
                 if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                 {
-                    return false;
+                    return ParsedStreamEntryID.NOT_GREATER;
                 }
                 else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                 {
@@ -162,12 +168,12 @@ namespace Garnet.server
                 {
                     if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + idSlice.length))
                     {
-                        return false;
+                        return ParsedStreamEntryID.INVALID;
                     }
                     // check if timestamp is greater than last added entry
                     if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                     {
-                        return false;
+                        return ParsedStreamEntryID.NOT_GREATER;
                     }
                     else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                     {
@@ -187,24 +193,24 @@ namespace Garnet.server
                     var slicedSeq = new ArgSlice(idSlice.ptr + index + 1, idSlice.length - index - 1);
                     if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + index))
                     {
-                        return false;
+                        return ParsedStreamEntryID.INVALID;
                     }
                     var seqBegin = idSlice.ptr + index + 1;
                     var seqEnd = idSlice.ptr + idSlice.length;
                     if (!RespReadUtils.ReadUlong(out ulong seq, ref seqBegin, seqEnd))
                     {
-                        return false;
+                        return ParsedStreamEntryID.INVALID;
                     }
 
                     if (totalEntriesAdded != 0 && timestamp < lastIdDecodedTs)
                     {
-                        return false;
+                        return ParsedStreamEntryID.NOT_GREATER;
                     }
                     else if (totalEntriesAdded != 0 && timestamp == lastIdDecodedTs)
                     {
                         if (seq <= lastId.seq)
                         {
-                            return false;
+                            return ParsedStreamEntryID.INVALID;
                         }
                     }
                     // use ID and seq given by user 
@@ -214,7 +220,7 @@ namespace Garnet.server
                 }
             }
 
-            return true;
+            return ParsedStreamEntryID.VALID;
         }
 
         /// <summary>
@@ -232,10 +238,15 @@ namespace Garnet.server
 
             try
             {
-                bool canParseID = parseIDString(idSlice, ref id);
-                if (!canParseID)
+                var parsedIDStatus = parseIDString(idSlice, ref id);
+                if (parsedIDStatus == ParsedStreamEntryID.INVALID)
                 {
-                    writer.WriteError("ERR Syntax");
+                    writer.WriteError(CmdStrings.RESP_ERR_XADD_INVALID_STREAM_ID);
+                    return;
+                }
+                else if (parsedIDStatus == ParsedStreamEntryID.NOT_GREATER)
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_XADD_ID_NOT_GREATER);
                     return;
                 }
 
