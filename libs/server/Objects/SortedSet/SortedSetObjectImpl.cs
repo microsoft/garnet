@@ -135,6 +135,7 @@ namespace Garnet.server
                         // Don't add new member if XX flag is set
                         if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
 
+                        incrResult = score;
                         sortedSetDict.Add(member, score);
                         if (sortedSet.Add((score, member)))
                             addedOrChanged++;
@@ -162,7 +163,15 @@ namespace Garnet.server
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
                         if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
                             ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
-                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score)) continue;
+                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
+                        {
+                            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                            {
+                                writer.WriteNull();
+                                return;
+                            }
+                            continue;
+                        }
 
                         sortedSetDict[member] = score;
                         var success = sortedSet.Remove((scoreStored, member));
@@ -623,8 +632,12 @@ namespace Garnet.server
             {
                 writer.WriteArrayLength(arrayLength);
             }
+            var indexCount = Math.Abs(count);
 
-            var indexes = RandomUtils.PickKRandomIndexes(sortedSetCount, Math.Abs(count), seed, count > 0);
+            var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+            RandomUtils.PickKRandomIndexes(sortedSetCount, indexes, seed, count > 0);
 
             foreach (var item in indexes)
             {

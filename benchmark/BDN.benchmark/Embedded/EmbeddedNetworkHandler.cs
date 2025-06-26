@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#nullable disable
+
 using System.Diagnostics;
 using Garnet.common;
 using Garnet.networking;

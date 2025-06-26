@@ -261,7 +261,7 @@ namespace Garnet.common
         /// Write integer from bytes to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteIntegerFromBytes(byte[] resultBytes)
+        public void WriteIntegerFromBytes(scoped ReadOnlySpan<byte> resultBytes)
         {
             while (!RespWriteUtils.TryWriteIntegerFromBytes(resultBytes, ref curr, end))
                 ReallocateOutput();
