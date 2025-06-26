@@ -113,8 +113,7 @@ namespace Tsavorite.core
 
             this.logAccessor = logAccessor;
             logSize = new ConcurrentCounter();
-            lowTargetSize = targetSize - delta;
-            highTargetSize = targetSize + delta;
+            this.UpdateTargetSize(targetSize, delta);
             this.LogSizeCalculator = logSizeCalculator;
             this.logger = logger;
             Stopped = false;
@@ -129,6 +128,20 @@ namespace Tsavorite.core
         {
             Debug.Assert(Stopped == false);
             Task.Run(() => ResizerTask(token));
+        }
+
+        /// <summary>
+        /// Update target size for the hybrid log memory utilization
+        /// </summary>
+        /// <param name="targetSize">The target size</param>
+        /// <param name="delta">Delta from the target size</param>
+        public void UpdateTargetSize(long targetSize, long delta)
+        {
+            Debug.Assert(delta >= 0);
+            Debug.Assert(targetSize > delta);
+            lowTargetSize = targetSize - delta;
+            highTargetSize = targetSize + delta;
+            logger.LogInformation("Target size updated to {targetSize} with delta {delta}", targetSize, delta);
         }
 
         public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;

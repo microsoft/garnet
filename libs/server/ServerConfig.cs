@@ -212,6 +212,15 @@ namespace Garnet.server
 
                 if (objLogMemory != null)
                     HandleMemorySizeChange(objLogMemory, sbErrorMsg, isObjStore: true);
+
+                if (index != null)
+                    HandleIndexSizeChange(index, sbErrorMsg);
+
+                if (objIndex != null)
+                    HandleIndexSizeChange(objIndex, sbErrorMsg, isObjStore: true);
+
+                if (objHeapMemory != null)
+                    HandleObjHeapMemorySizeChange(objHeapMemory, sbErrorMsg);
             }
 
             if (sbErrorMsg.Length == 0)
@@ -221,11 +230,28 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString(), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString().Trim(), ref dcurr, dend))
                     SendAndReset();
             }
 
             return true;
+        }
+
+        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
+        {
+            if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
+            {
+                sbErrorMsg.AppendLine("ERR incorrect object heap memory size format.");
+                return;
+            }
+
+            if (storeWrapper.objectStoreSizeTracker == null)
+            {
+                sbErrorMsg.AppendLine("ERR cannot adjust object store heap memory size when size tracker is not running.");
+                return;
+            }
+
+            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
         }
 
         private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool isObjStore = false)
@@ -239,19 +265,19 @@ namespace Garnet.server
             var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
             if (adjNewIndexSize != newIndexSize)
             {
-                sbErrorMsg.AppendLine($"ERR index size must be a power of 2.");
+                sbErrorMsg.AppendLine("ERR index size must be a power of 2.");
                 return;
             }
 
             if (isObjStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
-                sbErrorMsg.AppendLine($"ERR cannot adjust object store index size when auto-grow task is running.");
+                sbErrorMsg.AppendLine("ERR cannot adjust object store index size when auto-grow task is running.");
                 return;
             }
 
             if (!isObjStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0)
             {
-                sbErrorMsg.AppendLine($"ERR cannot adjust main store index size when auto-grow task is running.");
+                sbErrorMsg.AppendLine("ERR cannot adjust main store index size when auto-grow task is running.");
                 return;
             }
 
@@ -262,7 +288,7 @@ namespace Garnet.server
 
             if (currIndexSize > adjNewIndexSize)
             {
-                sbErrorMsg.AppendLine($"ERR Cannot set dynamic index size smaller than current index size of {ServerOptions.PrettySize(currIndexSize)}");
+                sbErrorMsg.AppendLine("ERR Cannot set dynamic index size smaller than current index size.");
                 return;
             }
 
@@ -274,7 +300,7 @@ namespace Garnet.server
                 
                 if (!isSuccessful)
                 {
-                    sbErrorMsg.AppendLine($"ERR failed to grow index size beyond current size of {ServerOptions.PrettySize(currIndexSize)}.");
+                    sbErrorMsg.AppendLine("ERR failed to grow index size beyond current size.");
                     return;
                 }
 
@@ -302,8 +328,7 @@ namespace Garnet.server
 
             if (newMemorySize > confMemorySize)
             {
-                sbErrorMsg.AppendLine(
-                    $"ERR Cannot set dynamic memory size greater than configured circular buffer size of {ServerOptions.PrettySize(confMemorySize)}");
+                sbErrorMsg.AppendLine("ERR Cannot set dynamic memory size greater than configured circular buffer size.");
                 return;
             }
 
@@ -313,11 +338,11 @@ namespace Garnet.server
             var emptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
             if (isObjStore)
             {
-                storeWrapper.objectStore.Log.MinEmptyPageCount = 
+                storeWrapper.objectStore.Log.MinEmptyPageCount = emptyPageCount;
             }
             else
             {
-                storeWrapper.store.Log.SetEmptyPageCount(emptyPageCount, true);
+                storeWrapper.store.Log.MinEmptyPageCount = emptyPageCount;
             }
         }
     }

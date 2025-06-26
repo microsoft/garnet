@@ -18,7 +18,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
         }
 
@@ -41,13 +41,32 @@ namespace Garnet.test
             ClassicAssert.IsTrue(long.TryParse(epc.Value, out var emptyPageCount));
             ClassicAssert.AreEqual(0, emptyPageCount);
 
-            var result = db.Execute("CONFIG", "SET", "memory", "32g");
+            var result = db.Execute("CONFIG", "SET", "memory", "16g");
+            ClassicAssert.AreEqual("OK", result.ToString());
+
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "memory", "32g"),
+                "ERR Cannot set dynamic memory size greater than configured circular buffer size.");
 
             metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.STORE);
             epc = metrics.FirstOrDefault(mi => mi.Name == "Log.EmptyPageCount");
             ClassicAssert.IsNotNull(epc);
             ClassicAssert.IsTrue(long.TryParse(epc.Value, out emptyPageCount));
             ClassicAssert.AreEqual(0, emptyPageCount);
+
+            try
+            {
+                db.Execute("CONFIG", "SET", "index", "129m");
+            }
+            catch (RedisServerException e)
+            {
+                ClassicAssert.AreEqual("ERR index size must be a power of 2.", e.Message);
+            }
+
+            Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "index", "129m"),
+                "ERR index size must be a power of 2.");
+
+            //result = db.Execute("CONFIG", "SET", "index", "512g");
+            //ClassicAssert.AreEqual("OK", result.ToString());
         }
     }
 }
