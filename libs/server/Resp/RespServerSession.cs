@@ -204,9 +204,6 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
-        /// <summary>
-        /// Stream cache for the session
-        /// </summary>
         internal readonly SessionStreamCache sessionStreamCache;
 
         public RespServerSession(
