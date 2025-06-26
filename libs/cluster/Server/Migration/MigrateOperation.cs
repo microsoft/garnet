@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        internal sealed partial class MigrateTask
+        internal sealed partial class MigrateOperation
         {
             public readonly Sketch sketch;
             public readonly List<byte[]> keysToDelete;
@@ -26,7 +26,7 @@ namespace Garnet.cluster
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
-            public MigrateTask(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
+            public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
                 gcs = session.GetGarnetClient();
