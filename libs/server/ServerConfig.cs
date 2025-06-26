@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Garnet.server
 {
@@ -176,7 +177,7 @@ namespace Garnet.server
 
             if (unknownOption)
             {
-                sbErrorMsg.AppendLine(string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey));
+                AppendError(sbErrorMsg, string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey));
             }
             else
             {
@@ -188,7 +189,7 @@ namespace Garnet.server
                         storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
                     else
                     {
-                        sbErrorMsg.AppendLine("ERR Cluster is disabled.");
+                        AppendError(sbErrorMsg, "ERR Cluster is disabled.");
                     }
                 }
 
@@ -198,7 +199,7 @@ namespace Garnet.server
                     {
                         if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
                         {
-                            sbErrorMsg.AppendLine($"ERR {certErrorMessage}");
+                            AppendError(sbErrorMsg, certErrorMessage);
                         }
                     }
                     else
@@ -230,89 +231,20 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString().Trim(), ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
 
             return true;
         }
 
-        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
-        {
-            if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
-            {
-                sbErrorMsg.AppendLine("ERR incorrect object heap memory size format.");
-                return;
-            }
-
-            if (storeWrapper.objectStoreSizeTracker == null)
-            {
-                sbErrorMsg.AppendLine("ERR cannot adjust object store heap memory size when size tracker is not running.");
-                return;
-            }
-
-            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
-        }
-
-        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool isObjStore = false)
-        {
-            if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
-            {
-                sbErrorMsg.AppendLine("ERR incorrect index size format.");
-                return;
-            }
-
-            var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
-            if (adjNewIndexSize != newIndexSize)
-            {
-                sbErrorMsg.AppendLine("ERR index size must be a power of 2.");
-                return;
-            }
-
-            if (isObjStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
-            {
-                sbErrorMsg.AppendLine("ERR cannot adjust object store index size when auto-grow task is running.");
-                return;
-            }
-
-            if (!isObjStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0)
-            {
-                sbErrorMsg.AppendLine("ERR cannot adjust main store index size when auto-grow task is running.");
-                return;
-            }
-
-            var currIndexSize = isObjStore ? storeWrapper.objectStore.IndexSize : storeWrapper.store.IndexSize;
-
-            if (currIndexSize == adjNewIndexSize)
-                return;
-
-            if (currIndexSize > adjNewIndexSize)
-            {
-                sbErrorMsg.AppendLine("ERR Cannot set dynamic index size smaller than current index size.");
-                return;
-            }
-
-            while (currIndexSize < adjNewIndexSize)
-            {
-                var isSuccessful = isObjStore
-                    ? storeWrapper.objectStore.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult()
-                    : storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-                
-                if (!isSuccessful)
-                {
-                    sbErrorMsg.AppendLine("ERR failed to grow index size beyond current size.");
-                    return;
-                }
-
-                currIndexSize *= 2;
-            }
-        }
-
         private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool isObjStore = false)
         {
+            var option = isObjStore ? CmdStrings.ObjLogMemory : CmdStrings.Memory;
+
             if (!ServerOptions.TryParseSize(memorySize, out var newMemorySize))
             {
-                sbErrorMsg.AppendLine("ERR incorrect memory size format.");
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
                 return;
             }
 
@@ -328,7 +260,7 @@ namespace Garnet.server
 
             if (newMemorySize > confMemorySize)
             {
-                sbErrorMsg.AppendLine("ERR Cannot set dynamic memory size greater than configured circular buffer size.");
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrMemorySizeGreaterThanBuffer, option);
                 return;
             }
 
@@ -344,6 +276,85 @@ namespace Garnet.server
             {
                 storeWrapper.store.Log.MinEmptyPageCount = emptyPageCount;
             }
+        }
+
+        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
+        {
+            if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.ObjHeapMemory);
+                return;
+            }
+
+            if (storeWrapper.objectStoreSizeTracker == null)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.ObjHeapMemory);
+                return;
+            }
+
+            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
+        }
+
+        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool isObjStore = false)
+        {
+            var option = isObjStore ? CmdStrings.ObjIndex : CmdStrings.Index;
+
+            if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
+                return;
+            }
+
+            var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
+            if (adjNewIndexSize != newIndexSize)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizePowerOfTwo, option);
+                return;
+            }
+
+            if ((isObjStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0) ||
+                (!isObjStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeAutoGrow, option);
+                return;
+            }
+
+            var currIndexSize = isObjStore ? storeWrapper.objectStore.IndexSize : storeWrapper.store.IndexSize;
+
+            if (currIndexSize == adjNewIndexSize)
+                return;
+
+            if (currIndexSize > adjNewIndexSize)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, option);
+                return;
+            }
+
+            while (currIndexSize < adjNewIndexSize)
+            {
+                var isSuccessful = isObjStore
+                    ? storeWrapper.objectStore.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult()
+                    : storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+
+                if (!isSuccessful)
+                {
+                    AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, option);
+                    return;
+                }
+
+                currIndexSize *= 2;
+            }
+        }
+
+        private static void AppendError(StringBuilder sbErrorMsg, string error)
+        {
+            sbErrorMsg.Append($"{(sbErrorMsg.Length == 0 ? error : $"; {error.Skip(4)}")}");
+        }
+
+        private static void AppendErrorWithTemplate(StringBuilder sbErrorMsg, string template, ReadOnlySpan<byte> option)
+        {
+            var error = string.Format(template, Encoding.ASCII.GetString(option));
+            AppendError(sbErrorMsg, error);
         }
     }
 }
