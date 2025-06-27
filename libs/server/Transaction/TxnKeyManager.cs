@@ -1,4 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -64,142 +65,200 @@ namespace Garnet.server
             error = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
             return command switch
             {
-                RespCommand.SADD => SetObjectKeys(SetOperation.SADD, inputCount),
-                RespCommand.SREM => SetObjectKeys(SetOperation.SREM, inputCount),
-                RespCommand.SPOP => SetObjectKeys(SetOperation.SPOP, inputCount),
-                RespCommand.SMEMBERS => SetObjectKeys(SetOperation.SMEMBERS, inputCount),
-                RespCommand.SCARD => SetObjectKeys(SetOperation.SCARD, inputCount),
-                RespCommand.SINTER => SetObjectKeys(SetOperation.SINTER, inputCount),
-                RespCommand.SINTERSTORE => SetObjectKeys(SetOperation.SINTERSTORE, inputCount),
-                RespCommand.SSCAN => SetObjectKeys(SetOperation.SSCAN, inputCount),
-                RespCommand.SMOVE => SetObjectKeys(SetOperation.SMOVE, inputCount),
-                RespCommand.SRANDMEMBER => SetObjectKeys(SetOperation.SRANDMEMBER, inputCount),
-                RespCommand.SISMEMBER => SetObjectKeys(SetOperation.SISMEMBER, inputCount),
-                RespCommand.SMISMEMBER => SetObjectKeys(SetOperation.SMISMEMBER, inputCount),
-                RespCommand.SUNION => SetObjectKeys(SetOperation.SUNION, inputCount),
-                RespCommand.SUNIONSTORE => SetObjectKeys(SetOperation.SUNIONSTORE, inputCount),
-                RespCommand.SDIFF => SetObjectKeys(SetOperation.SDIFF, inputCount),
-                RespCommand.SDIFFSTORE => SetObjectKeys(SetOperation.SDIFFSTORE, inputCount),
-                RespCommand.ZADD => SortedSetObjectKeys(SortedSetOperation.ZADD, inputCount),
-                RespCommand.ZREM => SortedSetObjectKeys(SortedSetOperation.ZREM, inputCount),
-                RespCommand.ZCARD => SortedSetObjectKeys(SortedSetOperation.ZCARD, inputCount),
-                RespCommand.ZPOPMAX => SortedSetObjectKeys(SortedSetOperation.ZPOPMAX, inputCount),
-                RespCommand.ZSCORE => SortedSetObjectKeys(SortedSetOperation.ZSCORE, inputCount),
-                RespCommand.ZMSCORE => SortedSetObjectKeys(SortedSetOperation.ZMSCORE, inputCount),
-                RespCommand.ZCOUNT => SortedSetObjectKeys(SortedSetOperation.ZCOUNT, inputCount),
-                RespCommand.ZINCRBY => SortedSetObjectKeys(SortedSetOperation.ZINCRBY, inputCount),
-                RespCommand.ZRANK => SortedSetObjectKeys(SortedSetOperation.ZRANK, inputCount),
-                RespCommand.ZRANGE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
-                RespCommand.ZRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
-                RespCommand.ZRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
-                RespCommand.ZREVRANK => SortedSetObjectKeys(SortedSetOperation.ZREVRANK, inputCount),
-                RespCommand.ZREMRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZREMRANGEBYLEX, inputCount),
-                RespCommand.ZREMRANGEBYRANK => SortedSetObjectKeys(SortedSetOperation.ZREMRANGEBYRANK, inputCount),
-                RespCommand.ZREMRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZREMRANGEBYSCORE, inputCount),
-                RespCommand.ZLEXCOUNT => SortedSetObjectKeys(SortedSetOperation.ZLEXCOUNT, inputCount),
-                RespCommand.ZPOPMIN => SortedSetObjectKeys(SortedSetOperation.ZPOPMIN, inputCount),
-                RespCommand.ZRANDMEMBER => SortedSetObjectKeys(SortedSetOperation.ZRANDMEMBER, inputCount),
-                RespCommand.ZDIFF => SortedSetObjectKeys(SortedSetOperation.ZDIFF, inputCount),
-                RespCommand.GEOADD => SortedSetObjectKeys(SortedSetOperation.GEOADD, inputCount),
-                RespCommand.GEOHASH => SortedSetObjectKeys(SortedSetOperation.GEOHASH, inputCount),
-                RespCommand.GEODIST => SortedSetObjectKeys(SortedSetOperation.GEODIST, inputCount),
-                RespCommand.GEOPOS => SortedSetObjectKeys(SortedSetOperation.GEOPOS, inputCount),
-                RespCommand.GEORADIUS => GeoCommands(RespCommand.GEORADIUS, inputCount),
-                RespCommand.GEORADIUS_RO => GeoCommands(RespCommand.GEORADIUS_RO, inputCount),
-                RespCommand.GEORADIUSBYMEMBER => GeoCommands(RespCommand.GEORADIUSBYMEMBER, inputCount),
-                RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, inputCount),
-                RespCommand.GEOSEARCH => GeoCommands(RespCommand.GEOSEARCH, inputCount),
-                RespCommand.GEOSEARCHSTORE => GeoCommands(RespCommand.GEOSEARCHSTORE, inputCount),
-                RespCommand.ZREVRANGE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
-                RespCommand.ZREVRANGEBYLEX => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
-                RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(SortedSetOperation.ZRANGE, inputCount),
-                RespCommand.LINDEX => ListObjectKeys((byte)ListOperation.LINDEX),
-                RespCommand.LINSERT => ListObjectKeys((byte)ListOperation.LINSERT),
-                RespCommand.LLEN => ListObjectKeys((byte)ListOperation.LLEN),
-                RespCommand.LMOVE => ListObjectKeys((byte)ListOperation.LMOVE),
-                RespCommand.LMPOP => ListKeys(true, LockType.Exclusive),
-                RespCommand.LPOP => ListObjectKeys((byte)ListOperation.LPOP),
-                RespCommand.LPUSH => ListObjectKeys((byte)ListOperation.LPUSH),
-                RespCommand.LPUSHX => ListObjectKeys((byte)ListOperation.LPUSHX),
-                RespCommand.LRANGE => ListObjectKeys((byte)ListOperation.LRANGE),
-                RespCommand.LREM => ListObjectKeys((byte)ListOperation.LREM),
-                RespCommand.LSET => ListObjectKeys((byte)ListOperation.LSET),
-                RespCommand.LTRIM => ListObjectKeys((byte)ListOperation.LTRIM),
-                RespCommand.RPOP => ListObjectKeys((byte)ListOperation.RPOP),
-                RespCommand.RPUSH => ListObjectKeys((byte)ListOperation.RPUSH),
-                RespCommand.RPOPLPUSH => ListObjectKeys((byte)ListOperation.RPOPLPUSH),
-                RespCommand.RPUSHX => ListObjectKeys((byte)ListOperation.RPUSHX),
-                RespCommand.HDEL => HashObjectKeys((byte)HashOperation.HDEL),
-                RespCommand.HEXISTS => HashObjectKeys((byte)HashOperation.HEXISTS),
-                RespCommand.HGET => HashObjectKeys((byte)HashOperation.HGET),
-                RespCommand.HGETALL => HashObjectKeys((byte)HashOperation.HGETALL),
-                RespCommand.HINCRBY => HashObjectKeys((byte)HashOperation.HINCRBY),
-                RespCommand.HINCRBYFLOAT => HashObjectKeys((byte)HashOperation.HINCRBYFLOAT),
-                RespCommand.HKEYS => HashObjectKeys((byte)HashOperation.HKEYS),
-                RespCommand.HLEN => HashObjectKeys((byte)HashOperation.HLEN),
-                RespCommand.HMGET => HashObjectKeys((byte)HashOperation.HMGET),
-                RespCommand.HMSET => HashObjectKeys((byte)HashOperation.HMSET),
-                RespCommand.HRANDFIELD => HashObjectKeys((byte)HashOperation.HRANDFIELD),
-                RespCommand.HSCAN => HashObjectKeys((byte)HashOperation.HSCAN),
-                RespCommand.HSET => HashObjectKeys((byte)HashOperation.HSET),
-                RespCommand.HSETNX => HashObjectKeys((byte)HashOperation.HSETNX),
-                RespCommand.HSTRLEN => HashObjectKeys((byte)HashOperation.HSTRLEN),
-                RespCommand.HVALS => HashObjectKeys((byte)HashOperation.HVALS),
-                RespCommand.GET => SingleKey(1, false, LockType.Shared),
-                RespCommand.GETIFNOTMATCH => SingleKey(1, false, LockType.Shared),
-                RespCommand.GETWITHETAG => SingleKey(1, false, LockType.Shared),
-                RespCommand.SET => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.SETIFMATCH => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.SETIFGREATER => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
-                RespCommand.SETRANGE => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.PFCOUNT => ListKeys(inputCount, StoreType.Main, LockType.Shared),
-                RespCommand.PFMERGE => ListKeys(inputCount, StoreType.Main, LockType.Exclusive),
-                RespCommand.SETEX => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.SETEXNX => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.SETEXXX => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.APPEND => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.BITCOUNT => SingleKey(1, false, LockType.Shared),
+                RespCommand.BITFIELD => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.BITFIELD_RO => SingleKey(1, false, LockType.Shared),
+                RespCommand.BITPOS => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.BITOP => SSTOREKeys(inputCount, false),
+                RespCommand.DECR => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.DECRBY => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DEL => ListKeys(inputCount, StoreType.All, LockType.Exclusive),
                 RespCommand.DELIFGREATER => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.EXISTS => SingleKey(1, false, LockType.Shared),
-                RespCommand.RENAME => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.EXISTS => ListKeys(inputCount, StoreType.All, LockType.Shared),
+                RespCommand.EXPIRE => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.EXPIREAT => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.EXPIRETIME => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.GEOADD => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.GEODIST => SingleKey(1, true, LockType.Shared),
+                RespCommand.GEOHASH => SingleKey(1, true, LockType.Shared),
+                RespCommand.GEOPOS => SingleKey(1, true, LockType.Shared),
+                RespCommand.GEORADIUSBYMEMBER => GeoCommands(RespCommand.GEORADIUSBYMEMBER, inputCount),
+                RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, inputCount),
+                RespCommand.GEORADIUS => GeoCommands(RespCommand.GEORADIUS, inputCount),
+                RespCommand.GEORADIUS_RO => GeoCommands(RespCommand.GEORADIUS_RO, inputCount),
+                RespCommand.GEOSEARCH => GeoCommands(RespCommand.GEOSEARCH, inputCount),
+                RespCommand.GEOSEARCHSTORE => GeoCommands(RespCommand.GEOSEARCHSTORE, inputCount),
+                RespCommand.GET => SingleKey(1, false, LockType.Shared),
+                RespCommand.GETBIT => SingleKey(1, false, LockType.Shared),
+                RespCommand.GETDEL => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.GETEX => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.GETIFNOTMATCH => SingleKey(1, false, LockType.Shared),
+                RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
+                RespCommand.GETSET => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.GETWITHETAG => SingleKey(1, false, LockType.Shared),
+                RespCommand.HDEL => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HEXISTS => SingleKey(1, true, LockType.Shared),
+                RespCommand.HEXPIRETIME => SingleKey(1, true, LockType.Shared),
+                RespCommand.HGET => SingleKey(1, true, LockType.Shared),
+                RespCommand.HGETALL => SingleKey(1, true, LockType.Shared),
+                RespCommand.HINCRBY => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HINCRBYFLOAT => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HKEYS => SingleKey(1, true, LockType.Shared),
+                RespCommand.HPEXPIRE => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HPEXPIREAT => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HPEXPIRETIME => SingleKey(1, true, LockType.Shared),
+                RespCommand.HPERSIST => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HPTTL => SingleKey(1, true, LockType.Shared),
+                RespCommand.HLEN => SingleKey(1, true, LockType.Shared),
+                RespCommand.HMGET => SingleKey(1, true, LockType.Shared),
+                RespCommand.HMSET => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HRANDFIELD => SingleKey(1, true, LockType.Shared),
+                RespCommand.HSCAN => SingleKey(1, true, LockType.Shared),
+                RespCommand.HSET => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HSETNX => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.HSTRLEN => SingleKey(1, true, LockType.Shared),
+                RespCommand.HTTL => SingleKey(1, true, LockType.Shared),
+                RespCommand.HVALS => SingleKey(1, true, LockType.Shared),
                 RespCommand.INCR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBY => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBYFLOAT => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.DECR => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.DECRBY => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.SETBIT => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.GETBIT => SingleKey(1, false, LockType.Shared),
-                RespCommand.BITCOUNT => SingleKey(1, false, LockType.Shared),
-                RespCommand.BITPOS => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.BITFIELD => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.EXPIRE => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.PEXPIRE => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.PERSIST => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.LCS => ListKeys(2, StoreType.Main, LockType.Shared),
+                RespCommand.LINDEX => SingleKey(1, true, LockType.Shared),
+                RespCommand.LINSERT => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.LLEN => SingleKey(1, true, LockType.Shared),
+                RespCommand.LMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
+                RespCommand.LMPOP => ListKeys(true, LockType.Exclusive),
+                RespCommand.LPOP => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.LPOS => SingleKey(1, true, LockType.Shared),
+                RespCommand.LPUSH => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.LPUSHX => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.LRANGE => SingleKey(1, true, LockType.Shared),
+                RespCommand.LREM => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.LSET => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.LTRIM => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.MGET => ListKeys(inputCount, StoreType.Main, LockType.Shared),
                 RespCommand.MSET => MSETKeys(inputCount, false, LockType.Exclusive),
                 RespCommand.MSETNX => MSETKeys(inputCount, false, LockType.Exclusive),
+                RespCommand.PERSIST => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.PEXPIRE => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.PEXPIRETIME => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.PFADD => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.PFCOUNT => ListKeys(inputCount, StoreType.Main, LockType.Shared),
+                RespCommand.PFMERGE => ListKeys(inputCount, StoreType.Main, LockType.Exclusive),
+                RespCommand.PTTL => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.RENAME => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.RENAMENX => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.RPOP => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.RPOPLPUSH => ListKeys(2, StoreType.Object, LockType.Exclusive),
+                RespCommand.RPUSH => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.RPUSHX => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.SADD => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.SCARD => SingleKey(1, true, LockType.Shared),
+                RespCommand.SDIFF => ListKeys(inputCount, StoreType.Object, LockType.Shared),
+                RespCommand.SDIFFSTORE => SSTOREKeys(inputCount, true),
+                RespCommand.SET => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETBIT => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETEXNX => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETEX => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETEXXX => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETIFGREATER => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETIFMATCH => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SETRANGE => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.SINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
+                RespCommand.SINTERSTORE => SSTOREKeys(inputCount, true),
+                RespCommand.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                RespCommand.SMEMBERS => SingleKey(1, true, LockType.Shared),
+                RespCommand.SMISMEMBER => SingleKey(1, true, LockType.Shared),
+                RespCommand.SMOVE => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
+                RespCommand.SPOP => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
+                RespCommand.SREM => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.STRLEN => SingleKey(1, false, LockType.Shared),
+                RespCommand.SSCAN => SingleKey(1, true, LockType.Shared),
+                RespCommand.SUBSTR => SingleKey(1, false, LockType.Shared),
+                RespCommand.SUNION => ListKeys(inputCount, StoreType.Object, LockType.Shared),
+                RespCommand.SUNIONSTORE => SSTOREKeys(inputCount, true),
+                RespCommand.TTL => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.TYPE => ListKeys(1, StoreType.All, LockType.Shared),
                 RespCommand.UNLINK => ListKeys(inputCount, StoreType.All, LockType.Exclusive),
-                RespCommand.GETDEL => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.APPEND => SingleKey(1, false, LockType.Exclusive),
-                _ => AdminCommands(command)
+                RespCommand.ZADD => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZCARD => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZCOUNT => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZDIFF => ListKeys(true, LockType.Shared),
+                RespCommand.ZDIFFSTORE => ZSTOREKeys(inputCount, true),
+                RespCommand.ZEXPIRETIME => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZINCRBY => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZINTER => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
+                RespCommand.ZINTERSTORE => ZSTOREKeys(inputCount, true),
+                RespCommand.ZLEXCOUNT => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZMPOP => ListKeys(true, LockType.Exclusive),
+                RespCommand.ZMSCORE => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZPEXPIRE => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZPEXPIREAT => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZPEXPIRETIME => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZPERSIST => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZPTTL => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZPOPMAX => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZPOPMIN => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZRANDMEMBER => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZRANGE => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZRANGEBYLEX => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZRANK => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZREM => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZREMRANGEBYLEX => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZREMRANGEBYRANK => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZREMRANGEBYSCORE => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZREVRANGE => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZREVRANGEBYLEX => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZREVRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZREVRANK => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZSCAN => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZSCORE => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZTTL => SingleKey(1, true, LockType.Shared),
+                RespCommand.ZUNION => ListKeys(true, LockType.Shared),
+                RespCommand.ZUNIONSTORE => ZSTOREKeys(inputCount, true),
+                _ => OtherCommands(command, out error)
             };
         }
 
-        private static int AdminCommands(RespCommand command)
+        private int OtherCommands(RespCommand command, out ReadOnlySpan<byte> error)
         {
+            error = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
+            if (command == RespCommand.DEBUG)
+            {
+                if (respSession.CanRunDebug())
+                    return 1;
+
+                error = CmdStrings.RESP_ERR_DEUBG_DISALLOWED;
+                return -1;
+            }
+
             return command switch
             {
-                RespCommand.ECHO => 1,
-                RespCommand.REPLICAOF => 1,
-                RespCommand.SECONDARYOF => 1,
                 RespCommand.CONFIG => 1,
+                RespCommand.COMMAND => 1,
                 RespCommand.CLIENT => 1,
+                RespCommand.DBSIZE => 1,
+                RespCommand.ECHO => 1,
+                RespCommand.FLUSHALL => 1,
+                RespCommand.FLUSHDB => 1,
+                RespCommand.HELLO => 1,
+                RespCommand.INFO => 1,
+                RespCommand.KEYS => 1,
+                RespCommand.LATENCY => 1,
+                RespCommand.MEMORY => 1,
                 RespCommand.PING => 1,
                 RespCommand.PUBLISH => 1,
-                RespCommand.SPUBLISH => 1,
+                RespCommand.REPLICAOF => 1,
+                RespCommand.ROLE => 1,
+                RespCommand.SCAN => 1,
+                RespCommand.SECONDARYOF => 1,
                 RespCommand.SELECT => 1,
+                RespCommand.SPUBLISH => 1,
                 RespCommand.SWAPDB => 1,
+                RespCommand.TIME => 1,
                 _ => -1
             };
         }
@@ -252,102 +311,6 @@ namespace Garnet.server
                     // Should never reach here.
                     throw new NotSupportedException();
             }
-        }
-
-        private int SortedSetObjectKeys(SortedSetOperation command, int inputCount, int sortedSetType = 0)
-        {
-            return command switch
-            {
-                SortedSetOperation.ZADD => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZREM => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZCARD => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.ZPOPMAX => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZSCORE => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.ZMSCORE => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.ZCOUNT => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.ZINCRBY => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZRANK => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZRANGE => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.ZREVRANK => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZREMRANGEBYLEX => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZREMRANGEBYRANK => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZREMRANGEBYSCORE => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZLEXCOUNT => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZPOPMIN => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZRANDMEMBER => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.ZDIFF => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
-                SortedSetOperation.GEOADD => SingleKey(1, true, LockType.Exclusive),
-                SortedSetOperation.GEOHASH => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.GEODIST => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.GEOPOS => SingleKey(1, true, LockType.Shared),
-                SortedSetOperation.GEOSEARCH => SingleKey(1, true, LockType.Shared),
-                _ => -1
-            };
-        }
-
-        private int ListObjectKeys(byte subCommand)
-        {
-            return subCommand switch
-            {
-                (byte)ListOperation.LPUSH => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.LPOP => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.RPUSH => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.RPOP => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.LLEN => SingleKey(1, true, LockType.Shared),
-                (byte)ListOperation.LTRIM => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.LRANGE => SingleKey(1, true, LockType.Shared),
-                (byte)ListOperation.LINDEX => SingleKey(1, true, LockType.Shared),
-                (byte)ListOperation.LINSERT => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.LREM => SingleKey(1, true, LockType.Exclusive),
-                (byte)ListOperation.LSET => SingleKey(1, true, LockType.Exclusive),
-                _ => -1
-            };
-        }
-
-        private int HashObjectKeys(byte subCommand)
-        {
-            return subCommand switch
-            {
-                (byte)HashOperation.HSET => SingleKey(1, true, LockType.Exclusive),
-                (byte)HashOperation.HMSET => SingleKey(1, true, LockType.Exclusive),
-                (byte)HashOperation.HGET => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HMGET => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HGETALL => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HDEL => SingleKey(1, true, LockType.Exclusive),
-                (byte)HashOperation.HLEN => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HEXISTS => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HKEYS => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HVALS => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HINCRBY => SingleKey(1, true, LockType.Exclusive),
-                (byte)HashOperation.HINCRBYFLOAT => SingleKey(1, true, LockType.Exclusive),
-                (byte)HashOperation.HSETNX => SingleKey(1, true, LockType.Exclusive),
-                (byte)HashOperation.HRANDFIELD => SingleKey(1, true, LockType.Shared),
-                (byte)HashOperation.HSTRLEN => SingleKey(1, true, LockType.Shared),
-                _ => -1
-            };
-        }
-
-        private int SetObjectKeys(SetOperation subCommand, int inputCount)
-        {
-            return subCommand switch
-            {
-                SetOperation.SADD => SingleKey(1, true, LockType.Exclusive),
-                SetOperation.SMEMBERS => SingleKey(1, true, LockType.Shared),
-                SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
-                SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
-                SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
-                SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
-                SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
-                SetOperation.SMISMEMBER => SingleKey(1, true, LockType.Shared),
-                SetOperation.SUNION => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
-                SetOperation.SDIFF => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
-                SetOperation.SMOVE => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
-                SetOperation.SINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                SetOperation.SINTERSTORE => XSTOREKeys(inputCount, true),
-                _ => -1
-            };
         }
 
         /// <summary>
@@ -413,10 +376,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns a list of keys for *STORE commands (e.g. SUNIONSTORE, ZINTERSTORE etc.)
+        /// Returns a list of keys for set *STORE commands (e.g. SUNIONSTORE, SINTERSTORE etc.)
         /// Where the first key's value is written to and the rest of the keys' values are read from.
         /// </summary>
-        private int XSTOREKeys(int inputCount, bool isObject)
+        private int SSTOREKeys(int inputCount, bool isObject)
         {
             if (inputCount > 0)
             {
@@ -426,6 +389,32 @@ namespace Garnet.server
             }
 
             for (var i = 1; i < inputCount; i++)
+            {
+                var key = respSession.parseState.GetArgSliceByRef(i);
+                SaveKeyEntryToLock(key, isObject, LockType.Shared);
+                SaveKeyArgSlice(key);
+            }
+
+            return inputCount;
+        }
+
+        /// <summary>
+        /// Returns a list of keys for complex *STORE commands (e.g. ZUNIONSTORE, ZINTERSTORE etc.)
+        /// Where the first key's value is written to and the rest of the keys' values are read from.
+        /// </summary>
+        private int ZSTOREKeys(int inputCount, bool isObject)
+        {
+            if (inputCount > 0)
+            {
+                var key = respSession.parseState.GetArgSliceByRef(0);
+                SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
+                SaveKeyArgSlice(key);
+            }
+
+            if ((inputCount < 2) || !respSession.parseState.TryGetInt(1, out var numKeysArg))
+                return -2;
+
+            for (var i = 2; i < inputCount && i < numKeysArg + 2; i++)
             {
                 var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, LockType.Shared);
