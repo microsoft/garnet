@@ -30,13 +30,15 @@ The REGISTERCS command takes assemblies that exist on the server and contain imp
 The REGISTERCS command supports registering multiple commands and / or transactions from multiple files and / or directories containing C# binary files (*.dll / *.exe).<br/>
 
 ### Enabling Client-Side Command Registration
-To enable registering client-side custom commands, you must specify a list of allowed paths from which assemblies can potentially be loaded. This is done by setting the configuration parameter `ExtensionBinPaths`.
+To enable registering client-side custom commands, you must specify a list of allowed paths from which assemblies can potentially be loaded, and enable module commands.
+This is done by setting the configuration parameters `EnableModuleCommand` and `ExtensionBinPaths`.
 Example (in garnet.config): 
 ```
+"EnableModuleCommand": "local",
 "ExtensionBinPaths": ".\first\path\,..\..\second\path\"
 ```
 **Note #1**: Assemblies can be loaded from any directory level under these specified paths<br/>
-**Note #2**: By default, Garnet only allows loading of digitally signed assemblies. To remove that requirement (not recommended), set the configuration parameter `ExtensionAllowOnlySignedAssemblies` to `false`.
+**Note #2**: By default, Garnet only allows loading of digitally signed assemblies. To remove that requirement (not recommended), set the configuration parameter `ExtensionAllowOnlySignedAssemblies` to `false`.<br />
 
 ### REGISTERCS Command
 To run the REGISTERCS command, run the REGISTERCS keyword followed by one or more new command subcommands, followed by the optional INFO keyword which is followed by a path pointing to a JSON file containing a serialized array of `RespCommandsInfo` objects, containing command metadata (\*.json), followed by the SRC keyword, which is followed by one or more paths to C# binary files or directories containing C# binary files (\*.dll / \*.exe).<br/>

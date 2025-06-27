@@ -26,6 +26,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Aborts the execution of the current object store command and outputs
+        /// an error message to indicate an unknown subcommand or wrong number of arguments for the given command.
+        /// </summary>
+        /// <param name="subCommand">Name of the subcommand that caused the error message.</param>
+        /// <param name="cmdName">Name of the command that caused the error message.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(string subCommand, string cmdName)
+        {
+            var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrUnknownSubCommandOrWrongNumberOfArguments, subCommand, cmdName));
+
+            return AbortWithErrorMessage(errorMessage);
+        }
+
+        /// <summary>
         /// Aborts the execution of the current object store command and outputs a given error message
         /// </summary>
         /// <param name="errorMessage">Error message to print to result stream</param>

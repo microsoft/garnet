@@ -543,11 +543,15 @@ namespace Garnet
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [OptionValidation]
+        [Option("enable-module-command", Required = false, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections. Command can only load from paths listed in ExtensionBinPaths")]
+        public ConnectionProtectionOption EnableModuleCommand { get; set; }
+
+        [OptionValidation]
         [Option("protected-mode", Required = false, HelpText = "Enable protected mode.")]
         public CommandLineBooleanOption ProtectedMode { get; set; }
 
         [DirectoryPathsValidation(true, false)]
-        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users")]
+        [Option("extension-bin-paths", Separator = ',', Required = false, HelpText = "List of directories on server from which custom command binaries can be loaded by admin users. MODULE command also requires enable-module-command to be set")]
         public IEnumerable<string> ExtensionBinPaths { get; set; }
 
         [ModuleFilePathValidation(true, true, false)]
@@ -886,6 +890,7 @@ namespace Garnet
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
+                EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
