@@ -97,7 +97,7 @@ namespace Garnet.server
             // Start from payload start and skip the value type byte
             var val = value.ReadOnlySpan.Slice(payloadStart + 1, length);
 
-            var valArgSlice = scratchBufferManager.CreateArgSlice(val);
+            var valArgSlice = scratchBufferBuilder.CreateArgSlice(val);
 
             var sbKey = key.SpanByte;
 

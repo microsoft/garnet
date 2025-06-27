@@ -220,7 +220,7 @@ namespace Garnet.server
             var sliceBytes = 1 + startLength + endLength;
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(sliceBytes);
             var paramsSpan = paramsSlice.Span;
             var paramsSpanOffset = 0;
 
@@ -249,7 +249,7 @@ namespace Garnet.server
 
             var input = new RawStringInput(RespCommand.BITCOUNT, ref parseState);
 
-            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
             var keySp = key.SpanByte;
 
@@ -300,7 +300,7 @@ namespace Garnet.server
                                  overflowType.Length;
 
                 // Get buffer from scratch buffer manager
-                var paramsSlice = scratchBufferManager.CreateArgSlice(sliceBytes);
+                var paramsSlice = scratchBufferBuilder.CreateArgSlice(sliceBytes);
                 var paramsSpan = paramsSlice.Span;
                 var paramsSpanOffset = 0;
 
@@ -358,7 +358,7 @@ namespace Garnet.server
                     Read_MainStore(ref keySp, ref input, ref output, ref context) :
                     RMW_MainStore(ref keySp, ref input, ref output, ref context);
 
-                scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+                scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
                 if (status == GarnetStatus.NOTFOUND && commandArguments[i].secondaryCommand == RespCommand.GET)
                 {

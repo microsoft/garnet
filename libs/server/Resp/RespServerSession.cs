@@ -62,7 +62,8 @@ namespace Garnet.server
         public void ResetAllLatencyMetrics() => LatencyMetrics?.ResetAll();
 
         readonly StoreWrapper storeWrapper;
-        internal readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
@@ -237,7 +238,10 @@ namespace Garnet.server
             logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferManager = new ScratchBufferManager();
+            this.scratchBufferBuilder = new ScratchBufferBuilder();
+
+            // Initialize session-local scratch allocation of size 64 bytes, used for constructing arguments in GarnetApi
+            this.scratchBufferAllocator = new ScratchBufferAllocator();
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -474,7 +478,8 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-                scratchBufferManager.Reset();
+                scratchBufferBuilder.Reset();
+                scratchBufferAllocator.Reset();
             }
 
             if (txnManager.IsSkippingOperations())
@@ -1000,7 +1005,7 @@ namespace Garnet.server
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
                         .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
-                            scratchBufferManager, out _));
+                            scratchBufferAllocator, out _));
                 currentCustomTransaction = null;
                 return true;
             }
@@ -1493,12 +1498,12 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger, dbId);
+                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
             dbStorageSession.txnManager = transactionManager;
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
