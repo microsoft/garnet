@@ -9,7 +9,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
-using Garnet.server.Auth.Settings;
 using Garnet.server.Custom;
 using Microsoft.Extensions.Logging;
 
@@ -361,8 +360,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.REGISTERCS));
             }
 
-            if ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No) ||
-                ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local) && !networkSender.IsLocalConnection()))
+            if (!CanRunModule())
             {
                 return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.REGISTERCS, "enable-module-command");
             }
@@ -531,8 +529,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
             }
 
-            if ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.No) ||
-                ((storeWrapper.serverOptions.EnableModuleCommand == ConnectionProtectionOption.Local) && !networkSender.IsLocalConnection()))
+            if (!CanRunModule())
             {
                 return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
             }
@@ -716,13 +713,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEBUG));
             }
 
-            if (
-                    (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.No)
-                 || (
-                        (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Local)
-                      && !networkSender.IsLocalConnection()
-                    )
-               )
+            if (!CanRunDebug())
             {
                 return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.DEBUG, "enable-debug-command");
             }
@@ -737,7 +728,8 @@ namespace Garnet.server
             {
                 if (parseState.Count != 2)
                 {
-                    return AbortWithWrongNumberOfArguments("error");
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
                 }
 
                 WriteError(parseState.GetString(1));
@@ -748,7 +740,8 @@ namespace Garnet.server
             {
                 if (parseState.Count != 2)
                 {
-                    return AbortWithWrongNumberOfArguments("log");
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
                 }
 
                 logger?.LogInformation("DEBUG LOG: {LOG}", parseState.GetString(1));

@@ -304,6 +304,7 @@ namespace Garnet.server
         public const string GenericErrUnsupportedOption = "ERR Unsupported option {0}";
         public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
         public const string GenericErrUnknownSubCommandNoHelp = "ERR unknown subcommand '{0}'.";
+        public const string GenericErrUnknownSubCommandOrWrongNumberOfArguments = "ERR unknown subcommand or wrong number of arguments for '{0}'. Try {1} HELP";
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
