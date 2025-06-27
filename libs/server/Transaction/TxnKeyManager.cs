@@ -218,15 +218,27 @@ namespace Garnet.server
                 RespCommand.ZTTL => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZUNION => ListKeys(true, LockType.Shared),
                 RespCommand.ZUNIONSTORE => ZSTOREKeys(inputCount, true),
-                _ => OtherCommands(command)
+                _ => OtherCommands(command, out error)
             };
         }
 
-        private static int OtherCommands(RespCommand command)
+        private int OtherCommands(RespCommand command, out ReadOnlySpan<byte> error)
         {
+            error = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
+            if (command == RespCommand.DEBUG)
+            {
+                if (respSession.CanRunDebug())
+                    return 1;
+
+                error = System.Text.Encoding.ASCII.GetBytes(string.Format(
+                    CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.DEBUG, "enable-debug-command"));
+                return -1;
+            }
+
             return command switch
             {
                 RespCommand.CONFIG => 1,
+                RespCommand.COMMAND => 1,
                 RespCommand.CLIENT => 1,
                 RespCommand.DBSIZE => 1,
                 RespCommand.ECHO => 1,
@@ -235,6 +247,8 @@ namespace Garnet.server
                 RespCommand.HELLO => 1,
                 RespCommand.INFO => 1,
                 RespCommand.KEYS => 1,
+                RespCommand.LATENCY => 1,
+                RespCommand.MEMORY => 1,
                 RespCommand.PING => 1,
                 RespCommand.PUBLISH => 1,
                 RespCommand.REPLICAOF => 1,
@@ -244,6 +258,7 @@ namespace Garnet.server
                 RespCommand.SELECT => 1,
                 RespCommand.SPUBLISH => 1,
                 RespCommand.SWAPDB => 1,
+                RespCommand.TIME => 1,
                 _ => -1
             };
         }
@@ -386,6 +401,7 @@ namespace Garnet.server
         /// <summary>
         /// Returns a list of keys for complex *STORE commands (e.g. ZUNIONSTORE, ZINTERSTORE etc.)
         /// Where the first key's value is written to and the rest of the keys' values are read from.
+        /// We can get number of read keys by checking the second argument.
         /// </summary>
         private int ZSTOREKeys(int inputCount, bool isObject)
         {
