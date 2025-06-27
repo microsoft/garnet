@@ -5,6 +5,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -138,9 +139,14 @@ namespace Garnet.cluster
 
                 long index_size = -1;
                 long obj_index_size = -1;
-                if (!ValidateMetadata(localEntry, out index_size, out var hlog_size, out obj_index_size, out var obj_hlog_size, out var skipLocalMainStoreCheckpoint, out var skipLocalObjectStoreCheckpoint))
+                var hlog_size = default(LogFileInfo);
+                var obj_hlog_size = default(LogFileInfo);
+                var skipLocalMainStoreCheckpoint = false;
+                var skipLocalObjectStoreCheckpoint = false;
+                while (!ValidateMetadata(localEntry, out index_size, out hlog_size, out obj_index_size, out obj_hlog_size, out skipLocalMainStoreCheckpoint, out skipLocalObjectStoreCheckpoint))
                 {
-                    throw new GarnetException("Failed to validate metadata");
+                    logger?.LogError("Failed to validate metadata. Retrying....");
+                    await Task.Yield();
                 }
 
                 #region sendStoresSnapshotData
@@ -578,11 +584,26 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                var errorMessage = new Win32Exception((int)errorCode).Message;
-                logger.LogError("[Primary] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                string errorMessage;
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    errorMessage = new Win32Exception((int)errorCode).Message;
+                }
+                else
+                {
+                    // Use strerror for Unix-based systems
+                    IntPtr messagePtr = strerror((int)errorCode);
+                    errorMessage = Marshal.PtrToStringAnsi(messagePtr);
+                }
+
+                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 
     internal static unsafe class SectorAlignedMemoryExtensions
