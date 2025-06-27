@@ -149,7 +149,7 @@ namespace Garnet.cluster
 
             if (transferOption == TransferOption.SLOTS)
             {
-                migrateOperation = new MigrateOperation[clusterProvider.serverOptions.ParallelMigrateTasks];
+                migrateOperation = new MigrateOperation[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 for (var i = 0; i < migrateOperation.Length; i++)
                     migrateOperation[i] = new MigrateOperation(this);
             }

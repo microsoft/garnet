@@ -45,7 +45,7 @@ namespace Garnet.cluster
             void CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
-                var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTasks];
+                var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
                 var i = 0;
                 while (i < migrateOperationRunners.Length)
                 {
@@ -60,7 +60,7 @@ namespace Garnet.cluster
             Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 var migrateOperation = this.migrateOperation[taskId];
-                var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTasks;
+                var range = (tailAddress - beginAddress) / clusterProvider.storeWrapper.serverOptions.ParallelMigrateTaskCount;
                 var workerStartAddress = beginAddress + (taskId * range);
                 var workerEndAddress = beginAddress + ((taskId + 1) * range);
 
