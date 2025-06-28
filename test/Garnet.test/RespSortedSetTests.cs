@@ -4883,6 +4883,7 @@ namespace Garnet.test
         [TestCase(2, "ZINTER 2 zset1 zset2", Description = "Basic intersection")]
         [TestCase(3, "ZINTER 3 zset1 zset2 zset3", Description = "Three-way intersection")]
         [TestCase(2, "ZINTER 2 zset1 zset2 WITHSCORES", Description = "With scores")]
+        [TestCase(3, "ZINTER 3 zset1 zset2 nx WITHSCORES", Description = "With nonexisting key")]
         public void CanDoZInter(int numKeys, string command)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -4898,6 +4899,11 @@ namespace Garnet.test
                 if (numKeys == 2)
                 {
                     var expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
+                    TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                }
+                else if (numKeys == 3)
+                {
+                    var expectedResponse = "*0\r\n";
                     TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
                 }
             }
@@ -4939,6 +4945,7 @@ namespace Garnet.test
         [TestCase("ZINTERSTORE dest 2 zset1 zset2 WEIGHTS 2 3", 2, Description = "With weights")]
         [TestCase("ZINTERSTORE dest 2 zset1 zset2 AGGREGATE MAX", 2, Description = "With MAX aggregation")]
         [TestCase("ZINTERSTORE dest 2 zset1 zset2 AGGREGATE MIN", 2, Description = "With MIN aggregation")]
+        [TestCase("ZINTERSTORE dest 3 zset1 zset2 nx", 0, Description = "With nonexisting key")]
         public void CanDoZInterStore(string command, int expectedCount)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -4964,6 +4971,10 @@ namespace Garnet.test
             else if (command.Contains("MIN"))
             {
                 expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n";
+            }
+            else if (command.Contains("nx"))
+            {
+                expectedResponse = "*0\r\n";
             }
             else
             {
