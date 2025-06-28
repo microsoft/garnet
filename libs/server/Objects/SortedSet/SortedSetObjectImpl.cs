@@ -982,7 +982,8 @@ namespace Garnet.server
                 (maxValueExclusive, minValueExclusive) = (minValueExclusive, maxValueExclusive);
             }
 
-            if (minValueInfinity == SpecialRanges.InfiniteMax || maxValueInfinity == SpecialRanges.InfiniteMin)
+            if (minValueInfinity == SpecialRanges.InfiniteMax || maxValueInfinity == SpecialRanges.InfiniteMin ||
+                new ReadOnlySpan<byte>(sortedSet.Max.Element).SequenceCompareTo(minValueChars) < 0)
             {
                 errorCode = 0;
                 return elementsInLex;

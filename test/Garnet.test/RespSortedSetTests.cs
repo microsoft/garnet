@@ -3649,17 +3649,17 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 0 f");
             lightClientRequest.SendCommand("ZADD board 0 g");
 
-            // get a range by lex order
+            // Test range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX", 3);
             var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            //by lex with different range
+            // By lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [aaa (g BYLEX", 6);
             expectedResponse = "*5\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$1\r\nf\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            //by lex with different range
+            // By lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board - [c BYLEX", 4);
             expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
@@ -3669,9 +3669,14 @@ namespace Garnet.test
             //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            // By lex when the mininum is over the maximum value in zset
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX board [x [z");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             // Test infinites
             response = lightClientRequest.SendCommand("ZRANGE board - - BYLEX");
-            expectedResponse = "*0\r\n";
+            //expectedResponse = "*0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board - (+ BYLEX");
