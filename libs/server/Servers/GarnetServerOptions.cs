@@ -446,6 +446,8 @@ namespace Garnet.server
 
         public LuaOptions LuaOptions;
 
+        public int IntraNodeShards = 0;
+
         /// <summary>
         /// Unix socket address path to bind server to
         /// </summary>

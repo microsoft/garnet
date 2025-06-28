@@ -3,6 +3,7 @@
 
 #nullable disable
 
+using System;
 using System.Runtime.CompilerServices;
 using Garnet.networking;
 
@@ -33,6 +34,8 @@ namespace Embedded.server
         /// </summary>
         byte* bufferPtr;
 
+        int currOffset;
+
         /// <summary>
         /// Create a new dummy network sender with a simple in-memory buffer
         /// </summary>
@@ -40,8 +43,15 @@ namespace Embedded.server
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            buffer = System.GC.AllocateArray<byte>(serverBufferSize, true);
+            buffer = GC.AllocateArray<byte>(serverBufferSize, true);
             bufferPtr = (byte*)Unsafe.AsPointer(ref buffer[0]);
+        }
+
+        public ReadOnlySpan<byte> GetResponse()
+        {
+            var _offset = currOffset;
+            currOffset = 0;
+            return new ReadOnlySpan<byte>(buffer, 0, _offset);
         }
 
         public MaxSizeSettings GetMaxSizeSettings => maxSizeSettings;
@@ -73,7 +83,7 @@ namespace Embedded.server
         /// <inheritdoc />
         public void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
-            head = bufferPtr;
+            head = bufferPtr + currOffset;
             tail = bufferPtr + buffer.Length;
         }
 
@@ -93,7 +103,7 @@ namespace Embedded.server
         /// <inheritdoc />
         public unsafe byte* GetResponseObjectHead()
         {
-            return bufferPtr;
+            return bufferPtr + currOffset;
         }
 
         /// <inheritdoc />
@@ -115,12 +125,14 @@ namespace Embedded.server
         /// <inheritdoc />
         public bool SendResponse(int offset, int size)
         {
+            currOffset += size;
             return true;
         }
 
         /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)
         {
+            currOffset += count;
         }
 
         /// <inheritdoc />

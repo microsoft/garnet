@@ -254,6 +254,10 @@ namespace Garnet
         [Option("expired-object-collection-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.")]
         public int ExpiredObjectCollectionFrequencySecs { get; set; }
 
+        [IntRangeValidation(0, 128)]
+        [Option("intra-node-shards", Required = false, HelpText = "Number of intra-node shards of Garnet (0=disabled).")]
+        public int IntraNodeShards { get; set; }
+
         [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
 
@@ -898,6 +902,7 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
+                IntraNodeShards = IntraNodeShards,
             };
         }
 

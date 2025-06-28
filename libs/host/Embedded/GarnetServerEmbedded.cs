@@ -3,8 +3,10 @@
 
 #nullable disable
 
+using System;
 using System.Net;
 using System.Net.Security;
+using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -12,13 +14,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Embedded.server
 {
-    internal class GarnetServerEmbedded : GarnetServerBase, IServerHook
+    public class GarnetServerEmbedded : GarnetServerBase, IServerHook
     {
         public GarnetServerEmbedded() : base(new IPEndPoint(IPAddress.Loopback, 0), 1 << 10)
         {
         }
 
-        public EmbeddedNetworkHandler CreateNetworkHandler(SslClientAuthenticationOptions tlsOptions = null, string remoteEndpointName = null)
+        internal EmbeddedNetworkHandler CreateNetworkHandler(SslClientAuthenticationOptions tlsOptions = null, string remoteEndpointName = null)
         {
             var networkSender = new EmbeddedNetworkSender();
             var networkSettings = new NetworkBufferSettings();
