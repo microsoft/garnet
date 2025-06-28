@@ -198,6 +198,7 @@ namespace Tsavorite.test
 
                 _ = store.Recover(token);
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
+                bContext = session.BasicContext;
 
                 using (var iterator = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
                 {

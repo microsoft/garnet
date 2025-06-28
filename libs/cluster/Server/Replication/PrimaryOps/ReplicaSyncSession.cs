@@ -34,7 +34,7 @@ namespace Garnet.cluster
         readonly TimeSpan timeout = timeout;
         readonly CancellationToken token = token;
         readonly CancellationTokenSource cts = new();
-        SectorAlignedBufferPool bufferPool = null;
+        SectorAlignedMemoryPool bufferPool = null;
         readonly SemaphoreSlim semaphore = new(0);
 
         public readonly string replicaNodeId = replicaNodeId;
@@ -55,7 +55,7 @@ namespace Garnet.cluster
             cts.Cancel();
             cts.Dispose();
             semaphore?.Dispose();
-            bufferPool?.Free();
+            bufferPool?.Dispose();
         }
 
         public bool ValidateMetadata(
@@ -471,7 +471,7 @@ namespace Garnet.cluster
                         (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes);
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.AsSpan().Slice(0, readBytes)).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -520,7 +520,7 @@ namespace Garnet.cluster
                         var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
                         var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes, segment);
 
-                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).ConfigureAwait(false);
+                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.AsSpan().Slice(0, readBytes), segment).ConfigureAwait(false);
                         if (!resp.Equals("OK"))
                         {
                             logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -560,16 +560,16 @@ namespace Garnet.cluster
         /// <param name="segmentId"></param>
         private unsafe (SectorAlignedMemory, int) ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
         {
-            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            bufferPool ??= new SectorAlignedMemoryPool(1, (int)device.SectorSize);
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
             if (segmentId == -1)
-                device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(address, (IntPtr)pbuffer.Pointer, (uint)numBytesToRead, IOCallback, null);
             else
-                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.Pointer, (uint)numBytesToRead, IOCallback, null);
             semaphore.Wait();
             return (pbuffer, (int)numBytesToRead);
         }
@@ -582,14 +582,6 @@ namespace Garnet.cluster
                 logger.LogError("[Primary] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
-        }
-    }
-
-    internal static unsafe class SectorAlignedMemoryExtensions
-    {
-        public static Span<byte> GetSlice(this SectorAlignedMemory pbuffer, int length)
-        {
-            return new Span<byte>(pbuffer.aligned_pointer, length);
         }
     }
 }

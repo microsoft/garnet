@@ -24,7 +24,7 @@ namespace Bitmap
 
         private static byte* alloc_aligned(int numRecords, int sectorSize)
         {
-            alignedMemoryPool.AddFirst(new SectorAlignedMemory(numRecords, sectorSize));
+            alignedMemoryPool.AddFirst(SectorAlignedMemory.Allocate(numRecords, (uint)sectorSize));
             return alignedMemoryPool.First.Value.GetValidPointer();
         }
 
@@ -55,7 +55,7 @@ namespace Bitmap
             for (int i = 0; i < batchSize; i++)
             {
                 r.NextBytes(buffer);
-                sectorAlignedMemoryBuffers.Add(new SectorAlignedMemory(bitmapLen, alignment));
+                sectorAlignedMemoryBuffers.Add(SectorAlignedMemory.Allocate(bitmapLen, (uint)alignment));
 
                 fixed (byte* b = buffer)
                 {

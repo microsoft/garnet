@@ -74,10 +74,10 @@ namespace BenchmarkDotNetTests
         [GlobalCleanup]
         public void TearDown()
         {
-            store?.Dispose();
-            store = null;
             logDevice?.Dispose();
             logDevice = null;
+            store?.Dispose();
+            store = null;
             try
             {
                 Directory.Delete(logDirectory);
