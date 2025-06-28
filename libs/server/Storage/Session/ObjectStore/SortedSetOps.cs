@@ -1241,9 +1241,9 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
+            pairs = SortedSetObject.CopyDiff(firstSortedSet, null);
             if (keys.Length == 1)
             {
-                pairs = firstSortedSet.Dictionary;
                 return GarnetStatus.OK;
             }
 
@@ -1262,10 +1262,7 @@ namespace Garnet.server
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                if (pairs == default)
-                    pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
-                else
-                    SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
+                SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
             }
 
             return GarnetStatus.OK;

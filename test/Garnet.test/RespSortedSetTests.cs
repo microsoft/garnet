@@ -1144,6 +1144,7 @@ namespace Garnet.test
 
             var key1 = new RedisKey("key1");
             var key2 = new RedisKey("key2");
+            var nxKey = new RedisKey("nx");
             var key1Values = new[] { new SortedSetEntry("A", 2), new SortedSetEntry("B", 3), new SortedSetEntry("C", 3), new SortedSetEntry("D", 5), new SortedSetEntry("!", 8) };
             var key2Values = new[] { new SortedSetEntry("B", 5), new SortedSetEntry("D", 1), new SortedSetEntry("M", 7) };
             var expectedValue = new[] { new SortedSetEntry("A", 2), new SortedSetEntry("C", 3), new SortedSetEntry("!", 8) };
@@ -1167,7 +1168,29 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedValue[2].Score, diffWithScore[2].Score);
 
             // With only one key, it should return the same elements
+            diff = db.SortedSetCombine(SetOperation.Difference, [key1]);
+            ClassicAssert.AreEqual(5, diff.Length);
+            ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diff[0].ToString());
+            ClassicAssert.AreEqual(key1Values[1].Element.ToString(), diff[1].ToString());
+            ClassicAssert.AreEqual(key1Values[2].Element.ToString(), diff[2].ToString());
+            ClassicAssert.AreEqual(key1Values[3].Element.ToString(), diff[3].ToString());
+            ClassicAssert.AreEqual(key1Values[4].Element.ToString(), diff[4].ToString());
+
             diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1]);
+            ClassicAssert.AreEqual(5, diffWithScore.Length);
+            ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diffWithScore[0].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[0].Score, diffWithScore[0].Score);
+            ClassicAssert.AreEqual(key1Values[1].Element.ToString(), diffWithScore[1].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[1].Score, diffWithScore[1].Score);
+            ClassicAssert.AreEqual(key1Values[2].Element.ToString(), diffWithScore[2].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[2].Score, diffWithScore[2].Score);
+            ClassicAssert.AreEqual(key1Values[3].Element.ToString(), diffWithScore[3].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[3].Score, diffWithScore[3].Score);
+            ClassicAssert.AreEqual(key1Values[4].Element.ToString(), diffWithScore[4].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[4].Score, diffWithScore[4].Score);
+
+            // With one key and nonexisting key, it should return the same elements
+            diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1, nxKey]);
             ClassicAssert.AreEqual(5, diffWithScore.Length);
             ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diffWithScore[0].Element.ToString());
             ClassicAssert.AreEqual(key1Values[0].Score, diffWithScore[0].Score);
@@ -3046,6 +3069,8 @@ namespace Garnet.test
             response = await c.ExecuteAsync("ZRANGE", "z", "0", "-1", "WITHSCORES");
             ClassicAssert.AreEqual(expectedResponse, response);
             response = await c.ExecuteAsync("ZUNION", "2", "z", "nx", "WITHSCORES");
+            ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("ZDIFF", "2", "z", "nx", "WITHSCORES");
             ClassicAssert.AreEqual(expectedResponse, response);
 
             response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
