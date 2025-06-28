@@ -1431,9 +1431,12 @@ namespace Garnet.server
                 if (status == GarnetStatus.OK)
                 {
                     pairs = new(SortedSetComparer.Instance);
-                    foreach (var pair in result)
+                    if (result != null)
                     {
-                        pairs.Add((pair.Value, pair.Key));
+                        foreach (var pair in result)
+                        {
+                            pairs.Add((pair.Value, pair.Key));
+                        }
                     }
                 }
 
@@ -1507,7 +1510,7 @@ namespace Garnet.server
                 if (statusOp != GarnetStatus.OK)
                 {
                     pairs = default;
-                    return statusOp;
+                    return GarnetStatus.OK;
                 }
 
                 if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
