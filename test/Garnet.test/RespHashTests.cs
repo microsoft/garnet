@@ -1299,7 +1299,7 @@ namespace Garnet.test
             }
         }
 
-        #endregion 
+        #endregion
 
         #region LightClientTests
 
@@ -1619,7 +1619,7 @@ namespace Garnet.test
         [TestCase(3, Description = "RESP3 output")]
         public async Task HRespOutput(byte respVersion)
         {
-            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true);
             c.Connect();
 
             var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
