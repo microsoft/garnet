@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.client
 {
     /// <summary>
-    /// Mono-threaded remote client session for Garnet (a session makes a single network connection, and 
+    /// Mono-threaded remote client session for Garnet (a session makes a single network connection, and
     /// expects mono-threaded client access, i.e., no concurrent invocations of API by client)
     /// </summary>
     public sealed partial class GarnetClientSession : IServerHook, IMessageConsumer
@@ -44,7 +44,7 @@ namespace Garnet.client
         Socket socket;
         int disposed;
 
-        // Send        
+        // Send
         unsafe byte* offset, end;
 
         // Num outstanding commands
@@ -67,6 +67,11 @@ namespace Garnet.client
         /// Get raw results from tcs completion
         /// </summary>
         public bool RawResult = false;
+
+        /// <summary>
+        /// Send raw string to server
+        /// </summary>
+        public bool RawSend = false;
 
         /// <summary>
         /// Username to authenticate the session on the server.
@@ -103,6 +108,8 @@ namespace Garnet.client
         /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="rawResult">Recieve result as raw string</param>
+        /// <param name="rawSend">Send command as raw string</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -113,6 +120,7 @@ namespace Garnet.client
             string authPassword = null,
             int networkSendThrottleMax = 8,
             bool rawResult = false,
+            bool rawSend = false,
             ILogger logger = null)
         {
             EndPoint = endpoint;
@@ -129,6 +137,7 @@ namespace Garnet.client
             this.authUsername = authUsername;
             this.authPassword = authPassword;
             this.RawResult = rawResult;
+            this.RawSend = rawSend;
         }
 
         /// <summary>
@@ -431,21 +440,37 @@ namespace Garnet.client
         private unsafe void InternalExecute(params string[] command)
         {
             byte* curr = offset;
-            while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
 
-            foreach (var cmd in command)
+            if (!RawSend)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(cmd, ref curr, end))
+                while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
                 {
                     Flush();
                     curr = offset;
                 }
                 offset = curr;
+
+                foreach (var cmd in command)
+                {
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(cmd, ref curr, end))
+                    {
+                        Flush();
+                        curr = offset;
+                    }
+                    offset = curr;
+                }
+            }
+            else
+            {
+                foreach (var cmd in command)
+                {
+                    while (!RespWriteUtils.TryWriteDirect(Encoding.ASCII.GetBytes(cmd), ref curr, end))
+                    {
+                        Flush();
+                        curr = offset;
+                    }
+                    offset = curr;
+                }
             }
 
             Interlocked.Increment(ref numCommands);
