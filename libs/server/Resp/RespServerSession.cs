@@ -88,6 +88,11 @@ namespace Garnet.server
         /// </summary>
         int endReadHead;
 
+        /// <summary>
+        /// No redis command (including the terminator) is smaller than this length.
+        /// </summary>
+        private const int MINIMUMPROCESSLENGTH = 4;
+
         internal byte* dcurr, dend;
         bool toDispose;
 
@@ -568,7 +573,7 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
-            while (bytesRead - readHead >= 4)
+            while (bytesRead - readHead >= MINIMUMPROCESSLENGTH)
             {
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command

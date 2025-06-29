@@ -289,7 +289,7 @@ namespace Garnet.test
 
             var expectedValue = new byte[]
             {
-                 0x00, // value type 
+                 0x00, // value type
                  0x03, // length of payload
                  0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
                  0x0B, 0x00, // RDB version
@@ -2346,7 +2346,7 @@ namespace Garnet.test
             response = lightClientRequest.Execute("GET mykey", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
 
-            // DECR            
+            // DECR
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute("SET mykeydecr 1", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
@@ -3864,11 +3864,64 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task InlineCommandTest()
+        {
+            var clientName = "name1 name2";
+
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true, rawSend: true);
+            c.Connect();
+
+            // Test inline command without arguments
+            var response = await c.ExecuteAsync("HELLO\r\n");
+            ClassicAssert.AreEqual('*', response[0]);
+            // Test lowercase
+            response = await c.ExecuteAsync("hello 3\r\n");
+            ClassicAssert.AreEqual('%', response[0]);
+            // Test extranous whitespace
+            response = await c.ExecuteAsync("HELLO  2\t \r\n");
+            ClassicAssert.AreEqual('*', response[0]);
+            // References accept this too
+            response = await c.ExecuteAsync("HElLO 3 SETNAME a SETNAME b\r\n");
+            ClassicAssert.AreEqual('%', response[0]);
+            // Test setting client name inline, alongside quoting
+            response = await c.ExecuteAsync($"HELLO 2 SETNAME '{clientName}'\r\n");
+            ClassicAssert.AreEqual('*', response[0]);
+
+            c.RawResult = false;
+            // Test client name was actually set
+            response = await c.ExecuteAsync("CLIENT GETNAME\r\n");
+            ClassicAssert.AreEqual(clientName, response);
+            c.RawResult = true;
+
+            // Test inline ping
+            response = await c.ExecuteAsync("PING\r\n");
+            ClassicAssert.AreEqual("+PONG\r\n", response);
+
+            // Test quoting failure
+            response = await c.ExecuteAsync("PING 'unfinished quote\r\n");
+            ClassicAssert.AreEqual('-', response[0]);
+
+            // Test quoted argument
+            response = await c.ExecuteAsync("ping \"hello world\"\r\n");
+            ClassicAssert.AreEqual("$11\r\nhello world\r\n", response);
+
+            // References can even accept commands formed like this
+            response = await c.ExecuteAsync("\"PING\"\tword \r\n");
+            ClassicAssert.AreEqual("$4\r\nword\r\n", response);
+            response = await c.ExecuteAsync("'pING'\t'word '\r\n");
+            ClassicAssert.AreEqual("$5\r\nword \r\n", response);
+
+            // Test quit
+            response = await c.ExecuteAsync("QUIT\r\n");
+            ClassicAssert.AreEqual("+OK\r\n", response);
+        }
+
+        [Test]
         [TestCase([2, "$-1\r\n", "$1\r\n", "*4", '*'], Description = "RESP2 output")]
         [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
         public async Task RespOutputTests(byte respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
         {
-            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true);
             c.Connect();
 
             var response = await c.ExecuteAsync("HELLO", respVersion.ToString());

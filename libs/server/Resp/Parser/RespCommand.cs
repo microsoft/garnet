@@ -641,38 +641,52 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        private static readonly ushort crlf = MemoryMarshal.Read<ushort>("\r\n"u8);
+
         /// <summary>
         /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
         /// and advances read head.
         /// </summary>
-        /// <param name="count">Outputs the number of arguments stored with the command.</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseInlineCommand(out int count)
+        private RespCommand FastParseInlineCommand()
         {
-            byte* ptr = recvBufferPtr + readHead;
-            count = 0;
-
-            if (bytesRead - readHead >= 6)
+            bool PeekAhead(int length)
             {
-                if ((*(ushort*)(ptr + 4) == MemoryMarshal.Read<ushort>("\r\n"u8)))
+                // Optimistically advance read head to the end of the command name
+                readHead += length;
+
+                if (bytesRead - readHead >= 2)
                 {
-                    // Optimistically increase read head
-                    readHead += 6;
+                    var ptr = recvBufferPtr + readHead;
 
-                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
-                    {
-                        return RespCommand.PING;
-                    }
+                    // Can be enabled if the fast path is taught to read command arguments.
+                    //if (AsciiUtils.IsWhiteSpace(*ptr))
+                        //return true;
 
-                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
-                    {
-                        return RespCommand.QUIT;
-                    }
-
-                    // Decrease read head, if no match was found
-                    readHead -= 6;
+                    if (*(ushort*)ptr == crlf)
+                        return true;
                 }
+
+                // Reset optimistically changed state, if no matching command was found
+                readHead -= length;
+                return false;
+            }
+
+            if (bytesRead - readHead < 6)
+                return RespCommand.NONE;
+
+            var ptr = recvBufferPtr + readHead;
+            
+            if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
+            {
+                if (PeekAhead(4))
+                    return RespCommand.PING;
+            }
+            else if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
+            {
+                if (PeekAhead(4))
+                    return RespCommand.QUIT;
             }
 
             return RespCommand.NONE;
@@ -792,7 +806,12 @@ namespace Garnet.server
             }
             else
             {
-                return FastParseInlineCommand(out count);
+                var cmd = FastParseInlineCommand();
+                if (cmd != RespCommand.NONE)
+                {
+                    count = 0;
+                    return cmd;
+                }
             }
 
             // Couldn't find a matching command in this pass
@@ -1445,47 +1464,47 @@ namespace Garnet.server
                                 }
                                 break;
                             case 8:
-                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.ZREVRANK;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.SMEMBERS;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.BITFIELD;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.EXPIREAT;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.HPEXPIRE;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.HPERSIST;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.ZPEXPIRE;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.ZPERSIST;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.BZPOPMAX;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.BZPOPMIN;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == crlf)
                                 {
                                     return RespCommand.SPUBLISH;
                                 }
@@ -1692,22 +1711,22 @@ namespace Garnet.server
                                 break;
 
                             case 14:
-                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == crlf)
                                 {
                                     return RespCommand.ZREMRANGEBYLEX;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == crlf)
                                 {
                                     return RespCommand.GEOSEARCHSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == crlf)
                                 {
                                     return RespCommand.ZREVRANGEBYLEX;
                                 }
                                 break;
 
                             case 15:
-                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == crlf)
                                 {
                                     return RespCommand.ZREMRANGEBYRANK;
                                 }
@@ -1769,19 +1788,19 @@ namespace Garnet.server
         /// <summary>
         /// Parses the receive buffer, starting from the current read head, for all command names that are
         /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
-        /// 
+        ///
         /// NOTE: Assumes the input command names have already been converted to upper-case.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
         /// <param name="specificErrorMsg">If the command could not be parsed, will be non-empty if a specific error message should be returned.</param>
-        /// <param name="success">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
+        /// <param name="commandReceived">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
+        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived)
         {
             // Try to extract the current string from the front of the read head
-            var command = GetCommand(out success);
+            var command = GetCommand(out commandReceived);
 
-            if (!success)
+            if (!commandReceived)
             {
                 return RespCommand.INVALID;
             }
@@ -1795,13 +1814,27 @@ namespace Garnet.server
             }
             else
             {
-                return SlowParseCommand(command, ref count, ref specificErrorMsg, out success);
+                return SlowParseCommand(command, ref count, ref specificErrorMsg, out commandReceived);
             }
         }
 
-        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
+        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count, 
+                                             ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived,
+                                             ArgSlice inlineSubCommand = default)
         {
-            success = true;
+            ReadOnlySpan<byte> GetSubCommand(out bool gotSubCommand)
+            {
+                if (inlineSubCommand.length == 0)
+                {
+                    return GetUpperCaseCommand(out gotSubCommand);
+                }
+
+                gotSubCommand = true;
+                AsciiUtils.ToUpperInPlace(inlineSubCommand.Span);
+                return inlineSubCommand.ReadOnlySpan;
+            }
+
+            commandReceived = true;
             if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
@@ -1826,7 +1859,7 @@ namespace Garnet.server
                 var subCommand = GetUpperCaseCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -1890,10 +1923,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -1927,10 +1960,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -1994,10 +2027,10 @@ namespace Garnet.server
                     return RespCommand.COMMAND;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2051,10 +2084,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2256,10 +2289,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2293,10 +2326,10 @@ namespace Garnet.server
                 }
                 else if (count >= 1)
                 {
-                    var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                    var subCommand = GetSubCommand(out var gotSubCommand);
                     if (!gotSubCommand)
                     {
-                        success = false;
+                        commandReceived = false;
                         return RespCommand.NONE;
                     }
 
@@ -2381,10 +2414,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2414,10 +2447,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2487,10 +2520,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2516,10 +2549,10 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
-                    success = false;
+                    commandReceived = false;
                     return RespCommand.NONE;
                 }
 
@@ -2583,31 +2616,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Attempts to skip to the end of the line ("\r\n") under the current read head.
-        /// </summary>
-        /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
-        private bool AttemptSkipLine()
-        {
-            // We might have received an inline command package.Try to find the end of the line.
-            logger?.LogWarning("Received malformed input message. Trying to skip line.");
-
-            for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
-            {
-                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
-                {
-                    // Skip to the end of the string
-                    readHead = endReadHead = stringEnd + 2;
-                    return true;
-                }
-            }
-
-            // We received an incomplete string and require more input.
-            return false;
-        }
-
-        /// <summary>
         /// Try to parse a command out of a provided buffer.
-        /// 
+        ///
         /// Useful for when we have a command to validate somewhere, but aren't actually running it.
         /// </summary>
         internal RespCommand ParseRespCommandBuffer(ReadOnlySpan<byte> buffer)
@@ -2637,9 +2647,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Version of <see cref="ParseRespCommandBuffer(ReadOnlySpan{byte})"/> for fuzzing.
-        /// 
+        ///
         /// Expects (and allows) partial commands.
-        /// 
+        ///
         /// Returns true if a command was succesfully parsed
         /// </summary>
         internal bool FuzzParseCommandBuffer(ReadOnlySpan<byte> buffer, out RespCommand cmd)
@@ -2699,16 +2709,17 @@ namespace Garnet.server
         /// Parses the command from the given input buffer.
         /// </summary>
         /// <param name="writeErrorOnFailure">If true, when a parsing error occurs an error response will written.</param>
-        /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
+        /// <param name="commandReceived">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
+        private RespCommand ParseCommand(bool writeErrorOnFailure, out bool commandReceived)
         {
-            RespCommand cmd = RespCommand.INVALID;
+            var cmd = RespCommand.INVALID;
+            bool inline = false;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
-            int count = -1;
-            success = true;
+            var count = -1;
+            commandReceived = true;
             endReadHead = readHead;
 
             // Attempt parsing using fast parse pass for most common operations
@@ -2717,19 +2728,24 @@ namespace Garnet.server
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
-                cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
-                if (!success) return cmd;
+                cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref commandReceived, out inline);
+                if (!commandReceived) return cmd;
             }
 
-            // Set up parse state
-            parseState.Initialize(count);
             var ptr = recvBufferPtr + readHead;
-            for (int i = 0; i < count; i++)
+            var end = recvBufferPtr + bytesRead;
+
+            if (!inline)
             {
-                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
+                // Set up parse state
+                parseState.Initialize(count);
+                for (var i = 0; i < count; i++)
                 {
-                    success = false;
-                    return RespCommand.INVALID;
+                    if (!parseState.Read(i, ref ptr, end))
+                    {
+                        commandReceived = false;
+                        return RespCommand.INVALID;
+                    }
                 }
             }
             endReadHead = (int)(ptr - recvBufferPtr);
@@ -2738,6 +2754,93 @@ namespace Garnet.server
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        private bool TryParseInlineCommandArguments(bool writeErrorOnFailure, out bool commandReceived,
+                                                    out ArgSlice[] result, ref byte* ptr, byte* end)
+        {
+            result = default;
+            commandReceived = false;
+
+            var slices = new System.Collections.Generic.List<ArgSlice>();
+            var slicePtr = ptr;
+            var anyContents = false;
+            var errorAtEnd = false;
+            byte quoteChar = 0;
+
+            while (ptr + 1 <= end)
+            {
+                if (*(ushort*)ptr == crlf)
+                {
+                    commandReceived = true;
+                    if (anyContents)
+                    {
+                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
+                    }
+
+                    // Advance past newline
+                    ptr += 2;
+                    // Move readHead to end of line in input package
+                    readHead = (int)(ptr - recvBufferPtr);
+
+                    if ((quoteChar != 0) || errorAtEnd)
+                    {
+                        logger?.LogWarning("Received malformed input message. Line is skipped.");
+
+                        if (writeErrorOnFailure)
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UNBALANCED_QUOTES, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        return false;
+                    }
+
+                    result = [.. slices];
+                    return true;
+                }
+
+                if (*ptr == '"' || *ptr == '\'')
+                {
+                    if (quoteChar == 0)
+                    {
+                        quoteChar = *ptr;
+
+                        if (anyContents)
+                            // If we didn't use pointers but instead copied the output,
+                            // we could ignore the quote character like the references (mostly) do in this case.
+                            // Since we don't do that currently, we'll output an error later as to not confuse the user.
+                            errorAtEnd = true;
+                        else
+                            slicePtr = ptr + 1;
+                        // We do not ignore consecutive quotes.
+                        anyContents = true;
+                    }
+                    else if (quoteChar == *ptr)
+                    {
+                        quoteChar = 0;
+                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
+                        anyContents = false;
+                    }
+                }
+                else if ((quoteChar == 0) && AsciiUtils.IsWhiteSpace(*ptr))
+                {
+                    if (anyContents)
+                    {
+                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
+                        anyContents = false;
+                    }
+
+                    slicePtr = ptr + 1;
+                }
+                else
+                {
+                    anyContents = true;
+                }
+
+                ++ptr;
+            }
+
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2751,7 +2854,7 @@ namespace Garnet.server
             if (txnManager.state == TxnState.Started)
                 return;
 
-            /* 
+            /*
                 If a previous command marked AOF for blocking we should not change AOF blocking flag.
                 If no previous command marked AOF for blocking, then we only change AOF flag to block
                 if the current command is AOF dependent.
@@ -2760,10 +2863,12 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success)
+        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool commandReceived, out bool inline)
         {
             RespCommand cmd = RespCommand.INVALID;
             ReadOnlySpan<byte> specificErrorMessage = default;
+
+            inline = false;
             endReadHead = readHead;
             var ptr = recvBufferPtr + readHead;
 
@@ -2778,33 +2883,80 @@ namespace Garnet.server
             }
 
             // Ensure we are attempting to read a RESP array header
-            if (recvBufferPtr[readHead] != '*')
+            if (recvBufferPtr[readHead] == '*')
             {
-                // We might have received an inline command package. Skip until the end of the line in the input package.
-                success = AttemptSkipLine();
-                return RespCommand.INVALID;
+                // Read the array length
+                if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+                {
+                    commandReceived = false;
+                    return RespCommand.INVALID;
+                }
+
+                // Move readHead to start of command payload
+                readHead = (int)(ptr - recvBufferPtr);
+
+                // Try parsing the most important variable-length commands
+                cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
+
+                if (cmd == RespCommand.NONE)
+                {
+                    cmd = SlowParseCommand(ref count, ref specificErrorMessage, out commandReceived);
+                }
             }
-
-            // Read the array length
-            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            else
             {
-                success = false;
-                return RespCommand.INVALID;
-            }
+                inline = true;
 
-            // Move readHead to start of command payload
-            readHead = (int)(ptr - recvBufferPtr);
+                // Minimum processing length is 4. But a user can send shorter lines (e.g. in telnet),
+                // and these get appended to next lines.
+                // We priorize the normal processing, it's better to let inline parsing hack around it.
+                // We can exploit the fact that any such short command would be invalid to skip it.
+                var tptr = ptr;
+                for (var i = 0; i < MINIMUMPROCESSLENGTH - 1; ++i)
+                {
+                    if (*(ushort *)tptr++ == crlf)
+                    {
+                        ptr = tptr + 1;
+                        break;
+                    }
+                }
 
-            // Try parsing the most important variable-length commands
-            cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
+                // We might have received an inline command package. Try parsing it.
+                if (!TryParseInlineCommandArguments(writeErrorOnFailure, out commandReceived, out var result,
+                                                    ref ptr, recvBufferPtr + bytesRead) || (result.Length == 0))
+                {
+                    // The second condition indicates line is CRLF.
+                    return RespCommand.INVALID;
+                }
 
-            if (cmd == RespCommand.NONE)
-            {
-                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
+                count = result.Length - 1;
+                var origCount = count;
+                var command = result[0].ReadOnlySpan;
+                
+                ArgSlice subCommand = default;
+                if (result.Length > 1)
+                {
+                    subCommand = result[1];
+                }
+
+                if (!TryParseCustomCommand(command, out cmd))
+                {
+                    cmd = SlowParseCommand(command, ref count, ref specificErrorMessage, out commandReceived, subCommand);
+                }
+
+                if (cmd != RespCommand.INVALID)
+                {
+                    // result[result.Length..] works and creates an empty parseState.
+                    parseState.InitializeWithArguments(result[(origCount - count + 1)..]);
+                }
+                else
+                {
+                    logger?.LogWarning("Received malformed input message. Line is skipped.");
+                }
             }
 
             // Parsing for command name was successful, but the command is unknown
-            if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
+            if (writeErrorOnFailure && commandReceived && cmd == RespCommand.INVALID)
             {
                 if (!specificErrorMessage.IsEmpty)
                 {

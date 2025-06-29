@@ -1751,8 +1751,8 @@ namespace Garnet.server
         bool ParseGETAndKey(ref SpanByte key)
         {
             var oldEndReadHead = readHead = endReadHead;
-            var cmd = ParseCommand(writeErrorOnFailure: true, out var success);
-            if (!success || cmd != RespCommand.GET)
+            var cmd = ParseCommand(writeErrorOnFailure: true, out var commandReceived);
+            if (!commandReceived || cmd != RespCommand.GET)
             {
                 // If we either find no command or a different command, we back off
                 endReadHead = readHead = oldEndReadHead;
