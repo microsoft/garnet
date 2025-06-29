@@ -46,7 +46,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETUSER](acl.md#acl-getuser) | ➕ |  |
 |  | [LIST](acl.md#acl-list) | ➕ |  |
 |  | [LOAD](acl.md#acl-load) | ➕ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | LOG | ➖ |  |
 |  | [SAVE](acl.md#acl-save) | ➕ |  |
 |  | [SETUSER](acl.md#acl-setuser) | ➕ |  |

@@ -65,6 +65,7 @@ namespace Garnet.server
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
                 RespCommand.ACL_GENPASS => NetworkAclGenPass(),
                 RespCommand.ACL_GETUSER => NetworkAclGetUser(),
+                RespCommand.ACL_HELP => NetworkAclHelp(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
