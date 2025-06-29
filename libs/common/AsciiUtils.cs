@@ -30,6 +30,14 @@ public static class AsciiUtils
         return (uint)(c - minInclusive) <= (uint)(maxInclusive - minInclusive);
     }
 
+    /// <summary>Indicates whether character is ASCII whitespace.</summary>
+    /// <param name="c">The character to evaluate.</param>
+    /// <returns>true if <paramref name="c"/> is an ASCII whitespace character; otherwise, false.</returns>
+    public static bool IsWhiteSpace(byte c)
+    {
+        return (c == ' ') || (c == '\t') || (c == '\xA0');
+    }
+
     public static byte ToLower(byte c)
     {
         if (IsBetween(c, 'A', 'Z'))
