@@ -86,6 +86,13 @@
         "Arity": -2,
         "Flags": "Loading, NoScript, Stale",
         "AclCategories": "Slow"
+      },
+      {
+        "Command": "ACL_HELP",
+        "Name": "ACL|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       }
     ]
   },

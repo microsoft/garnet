@@ -443,6 +443,7 @@ namespace Garnet.test
                 RespCommand.ACL_DELUSER,
                 RespCommand.ACL_GENPASS,
                 RespCommand.ACL_GETUSER,
+                RespCommand.ACL_HELP,
                 RespCommand.ACL_LIST,
                 RespCommand.ACL_LOAD,
                 RespCommand.ACL_SAVE,

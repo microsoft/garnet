@@ -302,6 +302,7 @@ namespace Garnet.server
         ACL_DELUSER,
         ACL_GENPASS,
         ACL_GETUSER,
+        ACL_HELP,
         ACL_LIST,
         ACL_LOAD,
         ACL_SAVE,
@@ -423,6 +424,7 @@ namespace Garnet.server
             RespCommand.ACL_DELUSER,
             RespCommand.ACL_GENPASS,
             RespCommand.ACL_GETUSER,
+            RespCommand.ACL_HELP,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
             RespCommand.ACL_SAVE,
@@ -2440,6 +2442,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
                 {
                     return RespCommand.ACL_GETUSER;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.ACL_HELP;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.LIST))
                 {

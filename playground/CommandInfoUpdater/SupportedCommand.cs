@@ -18,6 +18,7 @@ namespace CommandInfoUpdater
                 new("ACL|DELUSER", RespCommand.ACL_DELUSER),
                 new("ACL|GENPASS", RespCommand.ACL_GENPASS),
                 new("ACL|GETUSER", RespCommand.ACL_GETUSER),
+                new("ACL|HELP", RespCommand.ACL_HELP),
                 new("ACL|LIST", RespCommand.ACL_LIST),
                 new("ACL|LOAD", RespCommand.ACL_LOAD),
                 new("ACL|SAVE", RespCommand.ACL_SAVE),
