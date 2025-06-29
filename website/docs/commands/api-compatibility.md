@@ -203,7 +203,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | MOVE | ➖ |  |
 | <span id="latency">**LATENCY**</span> | DOCTOR | ➖ |  |
 |  | GRAPH | ➖ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | [HISTOGRAM](server.md#latency-histogram) | ➕ |  |
 |  | HISTORY | ➖ |  |
 |  | LATEST | ➖ |  |

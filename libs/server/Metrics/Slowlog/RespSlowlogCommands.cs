@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -23,15 +22,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.SLOWLOG_HELP));
             }
 
-            List<string> slowLogCommands = RespSlowLogHelp.GetSlowLogCommands();
-            while (!RespWriteUtils.TryWriteArrayLength(slowLogCommands.Count, ref dcurr, dend))
-                SendAndReset();
-
-            foreach (string command in slowLogCommands)
-            {
-                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
-                    SendAndReset();
-            }
+            var slowLogCommands = RespSlowLogHelp.GetSlowLogCommands();
+            WriteHelp(slowLogCommands);
 
             return true;
         }

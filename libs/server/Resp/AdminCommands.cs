@@ -776,8 +776,7 @@ namespace Garnet.server
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
-                var help = new string[]
-                {
+                WriteHelp(
                     "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                     "ERROR <string>",
                     "\tReturn a Redis protocol error with <string> as message. Useful for clients",
@@ -788,13 +787,7 @@ namespace Garnet.server
                     "\tCrash the server simulating a panic.",
                     "HELP",
                     "\tPrints this help"
-                };
-
-                WriteArrayLength(help.Length);
-                foreach (var line in help)
-                {
-                    WriteSimpleString(line);
-                }
+                );
                 return true;
             }
 
