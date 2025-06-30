@@ -3,16 +3,14 @@
 
 #nullable disable
 
-using Garnet;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
 
-namespace Embedded.server
+namespace Garnet.server
 {
     /// <summary>
     /// Implements an embedded Garnet RESP server
     /// </summary>
-    public sealed class EmbeddedRespServer : GarnetServer
+    public sealed class EmbeddedRespServer : GarnetServerCore
     {
         readonly GarnetServerEmbedded garnetServerEmbedded;
         readonly SubscribeBroker subscribeBroker;
@@ -47,12 +45,12 @@ namespace Embedded.server
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
-            return new RespServerSession(0, new Embedded.server.EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
+            return new RespServerSession(0, new EmbeddedNetworkSender(), storeWrapper, subscribeBroker: subscribeBroker, null, true);
         }
 
-        internal RespServerSession GetRespSession(out Embedded.server.EmbeddedNetworkSender embeddedNetworkSender)
+        internal RespServerSession GetRespSession(out EmbeddedNetworkSender embeddedNetworkSender)
         {
-            embeddedNetworkSender = new Embedded.server.EmbeddedNetworkSender();
+            embeddedNetworkSender = new EmbeddedNetworkSender();
             return new RespServerSession(0, embeddedNetworkSender, storeWrapper, subscribeBroker: subscribeBroker, null, true);
         }
 

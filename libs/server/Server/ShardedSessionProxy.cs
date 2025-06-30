@@ -2,24 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Embedded.server;
-using Garnet.networking;
-using Garnet.server;
 using Tsavorite.core;
 
-namespace Garnet.host
+namespace Garnet.server
 {
-    class SessionPacket
-    {
-        public byte[] request;
-        public byte[] response;
-        public SemaphoreSlim completed;
-        public INetworkSender responseSender;
-    }
-
     /// <summary>
     /// Sharded RESP server session host
     /// </summary>
@@ -78,42 +66,6 @@ namespace Garnet.host
         public void Forward(int destination, SessionPacket packet)
         {
             shardInputs[destination].Enqueue(packet);
-        }
-    }
-
-    class ProxyClient
-    {
-        readonly ShardedSessionProxy proxy;
-        readonly INetworkSender source;
-        readonly List<SessionPacket> ongoingPackets;
-
-        public ProxyClient(ShardedSessionProxy proxy, INetworkSender source)
-        {
-            this.proxy = proxy;
-            this.source = source;
-            ongoingPackets = [];
-        }
-
-        public void Send(int destination, byte[] request)
-        {
-            var packet = new SessionPacket
-            {
-                request = request,
-                completed = new SemaphoreSlim(0)
-            };
-            ongoingPackets.Add(packet);
-            proxy.Forward(destination, packet);
-        }
-
-        public void Complete()
-        {
-            foreach (var packet in ongoingPackets)
-            {
-                packet.completed.Wait();
-                source.SendResponse(packet.response, 0, packet.response.Length, null);
-                packet.completed.Dispose();
-            }
-            ongoingPackets.Clear();
         }
     }
 }
