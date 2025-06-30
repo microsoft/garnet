@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -697,13 +698,12 @@ namespace Garnet.server
         /// and advances the read head to the position after the parsed command.
         /// </summary>
         /// <param name="count">Outputs the number of arguments stored with the command</param>
+        /// <param name="ptr">The current read head to continue reading from</param>
+        /// <param name="remainingBytes">Bytes remaining in the read buffer</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseCommand(out int count)
+        private RespCommand FastParseCommand(out int count, byte* ptr, int remainingBytes)
         {
-            var ptr = recvBufferPtr + readHead;
-            var remainingBytes = bytesRead - readHead;
-
             // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
             // i.e. an array with a single-digit length and single-digit first string length.
             if ((remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8))
@@ -825,15 +825,13 @@ namespace Garnet.server
         /// the parsed command/subcommand name.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
+        /// <param name="ptr">The current read head to continue reading from</param>
+        /// <param name="remainingBytes">Bytes remaining in the read buffer</param>
+        /// <param name="specificErrorMessage"></param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand FastParseArrayCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage)
+        private RespCommand FastParseArrayCommand(ref int count, byte* ptr, int remainingBytes,
+                                                  ref ReadOnlySpan<byte> specificErrorMessage)
         {
-            // Bytes remaining in the read buffer
-            int remainingBytes = bytesRead - readHead;
-
-            // The current read head to continue reading from
-            byte* ptr = recvBufferPtr + readHead;
-
             //
             // Fast-path parsing by (1) command string length, (2) First character of command name (optional) and (3) priority (manual order)
             //
@@ -1795,14 +1793,22 @@ namespace Garnet.server
         /// <param name="specificErrorMsg">If the command could not be parsed, will be non-empty if a specific error message should be returned.</param>
         /// <param name="commandReceived">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived)
+        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived,
+                                             ReadOnlySpan<byte> command = default, ArgSlice subCommand = default)
         {
-            // Try to extract the current string from the front of the read head
-            var command = GetCommand(out commandReceived);
-
-            if (!commandReceived)
+            if (command.IsEmpty)
             {
-                return RespCommand.INVALID;
+                // Try to extract the current string from the front of the read head
+                command = GetCommand(out commandReceived);
+
+                if (!commandReceived)
+                {
+                    return RespCommand.INVALID;
+                }
+            }
+            else
+            {
+                commandReceived = true;
             }
 
             // Account for the command name being taken off the read head
@@ -1814,7 +1820,7 @@ namespace Garnet.server
             }
             else
             {
-                return SlowParseCommand(command, ref count, ref specificErrorMsg, out commandReceived);
+                return SlowParseCommand(command, ref count, ref specificErrorMsg, out commandReceived, subCommand);
             }
         }
 
@@ -1856,7 +1862,7 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
 
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                var subCommand = GetSubCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     commandReceived = false;
@@ -2616,6 +2622,29 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Attempts to skip to the end of the line ("\r\n") under the current read head.
+        /// </summary>
+        /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
+        private bool AttemptSkipLine()
+        {
+            // We might have received an inline command package.Try to find the end of the line.
+            logger?.LogWarning("Received malformed input message. Trying to skip line.");
+
+            for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
+            {
+                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
+                {
+                    // Skip to the end of the string
+                    readHead = endReadHead = stringEnd + 2;
+                    return true;
+                }
+            }
+
+            // We received an incomplete string and require more input.
+            return false;
+        }
+
+        /// <summary>
         /// Try to parse a command out of a provided buffer.
         ///
         /// Useful for when we have a command to validate somewhere, but aren't actually running it.
@@ -2723,7 +2752,7 @@ namespace Garnet.server
             endReadHead = readHead;
 
             // Attempt parsing using fast parse pass for most common operations
-            cmd = FastParseCommand(out count);
+            cmd = FastParseCommand(out count, recvBufferPtr + readHead, bytesRead - readHead);
 
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
@@ -2749,11 +2778,82 @@ namespace Garnet.server
                 }
             }
             endReadHead = (int)(ptr - recvBufferPtr);
+            if (readHead < endReadHead)
+                readHead = endReadHead;
 
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        private bool ParseInlineCommandline(ref SpanByteAndMemory spam,
+                                            bool writeErrorOnFailure, byte* ptr, out bool commandReceived,
+                                            out int nbytes, out int postArrayPosition, out ArgSlice[] result)
+        {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            nbytes = 0;
+            postArrayPosition = 0;
+
+            // Minimum processing length is 4. But a user can send shorter lines (e.g. in telnet),
+            // and these get appended to next lines.
+            // We priorize the normal processing, it's better to let inline parsing hack around it.
+            // We can exploit the fact that any such short command would be invalid to skip it.
+            var tptr = ptr;
+            for (var i = 0; i < MINIMUMPROCESSLENGTH - 1; ++i)
+            {
+                if (*(ushort*)tptr++ == crlf)
+                {
+                    ptr = tptr + 1;
+                    break;
+                }
+            }
+
+            // We might have received an inline command package. Try parsing it.
+            if (!TryParseInlineCommandArguments(writeErrorOnFailure, out commandReceived, out result,
+                                                ref ptr, recvBufferPtr + bytesRead) || (result.Length == 0))
+            {
+                // Move readHead to end of line in input package if we can
+                if (commandReceived)
+                {
+                    logger?.LogWarning("Received malformed input message. Line is skipped.");
+                    readHead = (int)(ptr - recvBufferPtr);
+                }
+                else
+                {
+                    logger?.LogWarning("Received malformed input message.");
+                }
+
+                // The second condition indicates line is CRLF.
+                return false;
+            }
+
+            // Move readHead to end of line in input package
+            // Note there's no situation where we're here and commandReceived is false.
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // command matching only needs the first two elements.
+            var command = result[0];
+            var subCommand = result.Length > 1 ? result[1] : default;
+
+            // We'll parse the result by creating a RESP string to parse and then calling the regular code.
+
+            // Minumum estinate is both lengths + minimum header sizes + crlf.
+            nbytes = command.Length + subCommand.Length + 4 + 4 + 4 + 2;
+
+            writer.Realloc(nbytes);
+            // We use the actual length because it may be read back later.
+            writer.WriteArrayLength(result.Length);
+            postArrayPosition = writer.GetPosition();
+
+            // The resp string is technically invalid since the length doesn't match the actual items.
+            writer.WriteBulkString(command.ReadOnlySpan);
+            if (result.Length > 1)
+                writer.WriteBulkString(subCommand.ReadOnlySpan);
+
+            nbytes = writer.GetPosition();
+            return true;
         }
 
         private bool TryParseInlineCommandArguments(bool writeErrorOnFailure, out bool commandReceived,
@@ -2780,13 +2880,9 @@ namespace Garnet.server
 
                     // Advance past newline
                     ptr += 2;
-                    // Move readHead to end of line in input package
-                    readHead = (int)(ptr - recvBufferPtr);
 
                     if ((quoteChar != 0) || errorAtEnd)
                     {
-                        logger?.LogWarning("Received malformed input message. Line is skipped.");
-
                         if (writeErrorOnFailure)
                         {
                             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UNBALANCED_QUOTES, ref dcurr, dend))
@@ -2799,7 +2895,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (*ptr == '"' || *ptr == '\'')
+                if (AsciiUtils.IsQuoteChar(*ptr))
                 {
                     if (quoteChar == 0)
                     {
@@ -2875,7 +2971,7 @@ namespace Garnet.server
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
             if (MakeUpperCase(ptr))
             {
-                cmd = FastParseCommand(out count);
+                cmd = FastParseCommand(out count, ptr, bytesRead - readHead);
                 if (cmd != RespCommand.NONE)
                 {
                     return cmd;
@@ -2883,7 +2979,7 @@ namespace Garnet.server
             }
 
             // Ensure we are attempting to read a RESP array header
-            if (recvBufferPtr[readHead] == '*')
+            if (*ptr == '*')
             {
                 // Read the array length
                 if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
@@ -2896,62 +2992,69 @@ namespace Garnet.server
                 readHead = (int)(ptr - recvBufferPtr);
 
                 // Try parsing the most important variable-length commands
-                cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
+                cmd = FastParseArrayCommand(ref count, recvBufferPtr + readHead,
+                                            bytesRead - readHead, ref specificErrorMessage);
 
                 if (cmd == RespCommand.NONE)
                 {
                     cmd = SlowParseCommand(ref count, ref specificErrorMessage, out commandReceived);
                 }
             }
+            // Very likely an attempt to send a RESP command in parts. Or junk.
+            // Try to skip it.
+            else if (*ptr == '$')
+            {
+                commandReceived = AttemptSkipLine();
+                return RespCommand.INVALID;
+            }
             else
             {
                 inline = true;
 
-                // Minimum processing length is 4. But a user can send shorter lines (e.g. in telnet),
-                // and these get appended to next lines.
-                // We priorize the normal processing, it's better to let inline parsing hack around it.
-                // We can exploit the fact that any such short command would be invalid to skip it.
-                var tptr = ptr;
-                for (var i = 0; i < MINIMUMPROCESSLENGTH - 1; ++i)
+                SpanByteAndMemory spam = new(null);
+                if (!ParseInlineCommandline(ref spam, writeErrorOnFailure, ptr, out commandReceived, out var nbytes, out var postArrayPosition, out var result))
                 {
-                    if (*(ushort *)tptr++ == crlf)
-                    {
-                        ptr = tptr + 1;
-                        break;
-                    }
-                }
-
-                // We might have received an inline command package. Try parsing it.
-                if (!TryParseInlineCommandArguments(writeErrorOnFailure, out commandReceived, out var result,
-                                                    ref ptr, recvBufferPtr + bytesRead) || (result.Length == 0))
-                {
-                    // The second condition indicates line is CRLF.
                     return RespCommand.INVALID;
                 }
 
-                count = result.Length - 1;
-                var origCount = count;
-                var command = result[0].ReadOnlySpan;
-                
-                ArgSlice subCommand = default;
-                if (result.Length > 1)
+                fixed (byte* nptr = spam.Memory.Memory.Span)
                 {
-                    subCommand = result[1];
-                }
+                    var oldReadHead = readHead;
 
-                if (!TryParseCustomCommand(command, out cmd))
-                {
-                    cmd = SlowParseCommand(command, ref count, ref specificErrorMessage, out commandReceived, subCommand);
-                }
+                    // These functions are usually called in a different path with commandReceived == false.
+                    // To emulate how they're called, we typically need to reset count beforehand, and we need to
+                    // reset readHead afterwards because we're not operating on the 'real' buffer this time.
+                    cmd = FastParseCommand(out count, nptr, nbytes);
+                    readHead = oldReadHead;
 
-                if (cmd != RespCommand.INVALID)
-                {
-                    // result[result.Length..] works and creates an empty parseState.
-                    parseState.InitializeWithArguments(result[(origCount - count + 1)..]);
-                }
-                else
-                {
-                    logger?.LogWarning("Received malformed input message. Line is skipped.");
+                    if (cmd == RespCommand.NONE)
+                    {
+                        // We can avoid the read array length step since we already know the length and position.
+                        count = result.Length;
+                        cmd = FastParseArrayCommand(ref count, nptr + postArrayPosition, nbytes, ref specificErrorMessage);
+                        readHead = oldReadHead;
+
+                        if (cmd == RespCommand.NONE)
+                        {
+                            var command = result[0].ReadOnlySpan;
+                            var subCommand = result.Length > 1 ? result[1] : default;
+
+                            // We use a slightly different method here where we just give the functions
+                            // the data they need instead of using the RESP string.
+                            count = result.Length;
+                            cmd = SlowParseCommand(ref count, ref specificErrorMessage, out commandReceived, command, subCommand);
+                        }
+                    }
+
+                    if ((cmd != RespCommand.NONE) && (cmd != RespCommand.INVALID))
+                    {
+                        // result[result.Length..] works and creates an empty parseState.
+                        parseState.InitializeWithArguments(result[(result.Length - count)..]);
+                    }
+                    else
+                    {
+                        logger?.LogWarning("Received malformed input message. Line is skipped.");
+                    }
                 }
             }
 
