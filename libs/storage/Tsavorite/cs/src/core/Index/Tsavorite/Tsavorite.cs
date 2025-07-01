@@ -75,6 +75,18 @@ namespace Tsavorite.core
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
         /// <summary>
+        /// Pause Revivification
+        /// </summary>
+        public void PauseRevivification()
+            => RevivificationManager.PauseRevivification();
+
+        /// <summary>
+        /// Resume Revivification
+        /// </summary>
+        public void ResumeRevivification()
+            => RevivificationManager.ResumeRevivification();
+
+        /// <summary>
         /// Create TsavoriteKV instance
         /// </summary>
         /// <param name="kvSettings">Config settings</param>
