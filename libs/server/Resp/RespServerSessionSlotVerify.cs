@@ -63,13 +63,80 @@ namespace Garnet.server
                 return -1;
 
             csvi.keyNumOffset = -1;
-            storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
+            ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
 
             ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(ref key);
             return slot % storeWrapper.proxy.NumShards;
+        }
+
+        void ExtractKeySpecs(RespCommandsInfo commandInfo, RespCommand cmd, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
+        {
+            var specs = commandInfo.KeySpecifications;
+            switch (specs.Length)
+            {
+                case 1:
+                    var searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
+                    csvi.readOnly = specs[0].Flags.HasFlag(KeySpecificationFlags.RO);
+                    switch (specs[0].FindKeys)
+                    {
+                        case FindKeysRange:
+                            var findRange = (FindKeysRange)specs[0].FindKeys;
+                            csvi.firstKey = searchIndex.Index - 1;
+                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey - searchIndex.Index + 1;
+                            csvi.step = findRange.KeyStep;
+                            csvi.readOnly = !specs[0].Flags.HasFlag(KeySpecificationFlags.RW);
+                            break;
+                        case FindKeysKeyNum:
+                            var findKeysKeyNum = (FindKeysKeyNum)specs[0].FindKeys;
+                            csvi.firstKey = searchIndex.Index + findKeysKeyNum.FirstKey - 1;
+                            csvi.lastKey = csvi.firstKey + parseState.GetInt(searchIndex.Index + findKeysKeyNum.KeyNumIdx - 1);
+                            csvi.step = findKeysKeyNum.KeyStep;
+                            break;
+                        case FindKeysUnknown:
+                        default:
+                            throw new Exception("FindKeys spec not known");
+                    }
+
+                    break;
+                case 2:
+                    searchIndex = (BeginSearchIndex)specs[0].BeginSearch;
+                    switch (specs[0].FindKeys)
+                    {
+                        case FindKeysRange:
+                            csvi.firstKey = RespCommand.BITOP == cmd ? searchIndex.Index - 2 : searchIndex.Index - 1;
+                            break;
+                        case FindKeysKeyNum:
+                        case FindKeysUnknown:
+                        default:
+                            throw new Exception("FindKeys spec not known");
+                    }
+
+                    var searchIndex1 = (BeginSearchIndex)specs[1].BeginSearch;
+                    switch (specs[1].FindKeys)
+                    {
+                        case FindKeysRange:
+                            var findRange = (FindKeysRange)specs[1].FindKeys;
+                            csvi.lastKey = findRange.LastKey < 0 ? findRange.LastKey + parseState.Count + 1 : findRange.LastKey + searchIndex1.Index - searchIndex.Index + 1;
+                            csvi.step = findRange.KeyStep;
+                            break;
+                        case FindKeysKeyNum:
+                            var findKeysKeyNum = (FindKeysKeyNum)specs[1].FindKeys;
+                            csvi.keyNumOffset = searchIndex1.Index + findKeysKeyNum.KeyNumIdx - 1;
+                            csvi.lastKey = searchIndex1.Index + parseState.GetInt(csvi.keyNumOffset);
+                            csvi.step = findKeysKeyNum.KeyStep;
+                            break;
+                        case FindKeysUnknown:
+                        default:
+                            throw new Exception("FindKeys spec not known");
+                    }
+
+                    break;
+                default:
+                    throw new Exception("KeySpecification not supported count");
+            }
         }
     }
 }
