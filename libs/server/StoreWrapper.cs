@@ -33,6 +33,7 @@ namespace Garnet.server
         internal readonly string redisProtocolVersion;
         readonly IGarnetServer[] servers;
         internal readonly long startupTime;
+        internal readonly ShardedSessionProxy proxy;
 
         /// <summary>
         /// Default database (DB 0)
@@ -270,6 +271,9 @@ namespace Garnet.server
                     ObjectStoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
+
+            if (serverOptions.IntraNodeShards > 0)
+                proxy = new ShardedSessionProxy(serverOptions);
         }
 
         /// <summary>

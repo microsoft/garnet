@@ -16,16 +16,22 @@ namespace Garnet.server
         readonly EmbeddedRespServer[] servers;
         readonly AsyncQueue<SessionPacket>[] shardInputs;
 
-        public ShardedSessionProxy(GarnetServerOptions opts, int numShards)
+        public int NumShards => servers.Length;
+
+        public ShardedSessionProxy(GarnetServerOptions opts)
         {
+            int numShards = opts.IntraNodeShards;
             servers = new EmbeddedRespServer[numShards];
             shardInputs = new AsyncQueue<SessionPacket>[numShards];
+            opts.IntraNodeShards = 0;
             for (var i = 0; i < numShards; i++)
             {
+                var _i = i;
                 shardInputs[i] = new AsyncQueue<SessionPacket>();
                 servers[i] = new EmbeddedRespServer(opts, null, new GarnetServerEmbedded());
-                _ = Task.Run(async () => await ShardRunner(i, CancellationToken.None));
+                _ = Task.Run(async () => await ShardRunner(_i, CancellationToken.None));
             }
+            opts.IntraNodeShards = numShards;
         }
 
         async Task ShardRunner(int shardId, CancellationToken token = default)
@@ -52,13 +58,10 @@ namespace Garnet.server
 
                 unsafe
                 {
-                    fixed (byte* requestPtr = nextInput.request)
-                    {
-                        // Process the request
-                        _ = session.TryConsumeMessages(requestPtr, nextInput.request.Length);
-                        nextInput.response = embeddedNetworkSender.GetResponse().ToArray();
-                        nextInput.completed.Release();
-                    }
+                    // Process the request
+                    nextInput.readHead = session.TryConsumeMessages(nextInput.request.ptr, nextInput.request.length);
+                    nextInput.response = embeddedNetworkSender.GetResponse().ToArray();
+                    nextInput.completed.Release();
                 }
             }
         }

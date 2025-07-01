@@ -8,7 +8,8 @@ namespace Garnet.server
 {
     class SessionPacket
     {
-        public byte[] request;
+        public ArgSlice request;
+        public int readHead;
         public byte[] response;
         public SemaphoreSlim completed;
         public INetworkSender responseSender;

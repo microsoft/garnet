@@ -45,5 +45,31 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
+
+        int TargetShard(RespCommand cmd)
+        {
+            // Verify slot for command if it falls into data command category
+            if (!cmd.IsDataCommand())
+                return -1;
+
+            cmd = cmd.NormalizeForACLs();
+            if (!RespCommandsInfo.TryFastGetRespCommandInfo(cmd, out var commandInfo))
+                // This only happens if we failed to parse the json file
+                return -1;
+
+            // The provided command is not a data command
+            // so we can serve without any slot restrictions
+            if (commandInfo == null)
+                return -1;
+
+            csvi.keyNumOffset = -1;
+            storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
+            csvi.readOnly = cmd.IsReadOnly();
+            csvi.sessionAsking = SessionAsking;
+
+            ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
+            var slot = ArgSliceUtils.HashSlot(ref key);
+            return slot % storeWrapper.proxy.NumShards;
+        }
     }
 }

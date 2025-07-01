@@ -206,6 +206,7 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        ProxyClient proxyClient;
         /// <summary>
         /// Create a new RESP server session
         /// </summary>
@@ -285,6 +286,9 @@ namespace Garnet.server
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
             }
+
+            if (this.networkSender is not EmbeddedNetworkSender)
+                proxyClient = new ProxyClient(storeWrapper.proxy, networkSender);
         }
 
         /// <summary>
@@ -420,7 +424,15 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                ProcessMessages();
+                if (proxyClient != null && storeWrapper.proxy.NumShards == 1)
+                {
+                    proxyClient.Send(0, new ArgSlice(reqBuffer, bytesReceived));
+                    readHead = proxyClient.Complete(ref dcurr, ref dend);
+                    if (dcurr > networkSender.GetResponseObjectHead())
+                        Send(networkSender.GetResponseObjectHead());
+                }
+                else
+                    ProcessMessages();
                 recvBufferPtr = null;
             }
             catch (RespParsingException ex)
@@ -572,7 +584,17 @@ namespace Garnet.server
                         else
                         {
                             if (clusterSession == null || CanServeSlot(cmd))
-                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                            {
+                                if (proxyClient != null)
+                                {
+                                    int targetShard = TargetShard(cmd);
+                                    proxyClient.Send(targetShard, new ArgSlice(recvBufferPtr + _origReadHead, endReadHead - _origReadHead));
+                                }
+                                else
+                                {
+                                    _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                                }
+                            }
                         }
                     }
                     else
@@ -609,6 +631,11 @@ namespace Garnet.server
                 }
                 if (SessionAsking != 0)
                     SessionAsking = (byte)(SessionAsking - 1);
+            }
+
+            if (proxyClient != null)
+            {
+                _ = proxyClient.Complete(ref dcurr, ref dend);
             }
 
             if (dcurr > networkSender.GetResponseObjectHead())
