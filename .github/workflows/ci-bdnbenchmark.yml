@@ -64,7 +64,14 @@ jobs:
         run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }} ${{ matrix.framework }}
         shell: pwsh
         continue-on-error: false
-   
+  
+      - name: Random pause between tasks so multiple inserts don't run at the same time
+        run: |
+          $delay = Get-Random -Minimum 1 -Maximum 120
+          Write-Host "Sleeping for $delay seconds..."
+          Start-Sleep -Seconds $delay
+        shell: pwsh
+
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
