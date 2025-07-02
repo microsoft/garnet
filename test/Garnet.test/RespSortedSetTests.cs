@@ -3641,13 +3641,7 @@ namespace Garnet.test
         {
             //ZRANGE key min max BYLEX [WITHSCORES]
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 0 a");
-            lightClientRequest.SendCommand("ZADD board 0 b");
-            lightClientRequest.SendCommand("ZADD board 0 c");
-            lightClientRequest.SendCommand("ZADD board 0 d");
-            lightClientRequest.SendCommand("ZADD board 0 e");
-            lightClientRequest.SendCommand("ZADD board 0 f");
-            lightClientRequest.SendCommand("ZADD board 0 g");
+            var response = lightClientRequest.SendCommand("ZADD board 0 a 0 b 0 c 0 d 0 e 0 f 0 g");
 
             // Test range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX", 3);
