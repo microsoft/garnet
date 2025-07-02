@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Garnet.common;
 using Garnet.networking;
 
 namespace Garnet.server
@@ -13,6 +14,7 @@ namespace Garnet.server
         readonly ShardedSessionProxy proxy;
         readonly INetworkSender source;
         readonly List<SessionPacket> ongoingPackets;
+        readonly SimpleObjectPool<SessionPacket> sessionPacketPool;
         readonly Random random;
         public ProxyClient(ShardedSessionProxy proxy, INetworkSender source)
         {
@@ -20,16 +22,16 @@ namespace Garnet.server
             this.source = source;
             ongoingPackets = [];
             random = new Random();
+            sessionPacketPool = new SimpleObjectPool<SessionPacket>(() => new SessionPacket { completed = new SemaphoreSlim(0) });
         }
 
         public void Send(int destination, ArgSlice request)
         {
-            var packet = new SessionPacket
-            {
-                request = request,
-                completed = new SemaphoreSlim(0)
-            };
+            var packet = sessionPacketPool.Checkout();
+
+            packet.request = request;
             ongoingPackets.Add(packet);
+
             if (destination == -1)
             {
                 // Randomly select a shard if no specific destination is provided
@@ -45,10 +47,12 @@ namespace Garnet.server
             {
                 packet.completed.Wait();
                 WriteDirectLarge(new ReadOnlySpan<byte>(packet.response.bufferPtr, packet.response.currOffset), ref dcurr, ref dend);
-                packet.response.currOffset = 0;
-                packet.responsePool.Return(packet.response);
+                packet.CompleteResponse();
                 readHead += packet.readHead;
-                packet.completed.Dispose();
+
+                packet.request = default;
+                packet.readHead = 0;
+                sessionPacketPool.Return(packet);
             }
             ongoingPackets.Clear();
             return readHead;
