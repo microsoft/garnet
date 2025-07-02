@@ -182,6 +182,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task AclGenPassACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GENPASS",
+                [DoAclGenPassAsync]
+            );
+
+            static async Task DoAclGenPassAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringResultAsync("ACL", ["GENPASS"]);
+                ClassicAssert.AreEqual(64, result.Length);
+            }
+        }
+
+        [Test]
         public async Task AclGetUserACLsAsync()
         {
             await CheckCommandsAsync(

@@ -39,6 +39,21 @@
         ]
       },
       {
+        "Command": "ACL_GENPASS",
+        "Name": "ACL|GENPASS",
+        "Summary": "Generate a pseudorandom secure password to use for ACL users",
+        "Group": "Server",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BITS",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
         "Command": "ACL_GETUSER",
         "Name": "ACL|GETUSER",
         "Summary": "Lists the ACL rules of a user.",
