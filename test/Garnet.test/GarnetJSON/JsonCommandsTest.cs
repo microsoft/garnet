@@ -27,7 +27,10 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, extensionAllowUnsignedAssemblies: true, extensionBinPaths: [binPath]);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
+                                                    enableModuleCommand: true,
+                                                    extensionAllowUnsignedAssemblies: true,
+                                                    extensionBinPaths: [binPath]);
             server.Start();
         }
 

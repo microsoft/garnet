@@ -13,6 +13,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using HdrHistogram;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -403,6 +404,26 @@ namespace Garnet.server
             }
 
             return _authenticator.CanAuthenticate ? success : false;
+        }
+
+        internal bool CanRunDebug()
+        {
+            var enableDebugCommand = storeWrapper.serverOptions.EnableDebugCommand;
+
+            return
+                (enableDebugCommand == ConnectionProtectionOption.Yes) ||
+                ((enableDebugCommand == ConnectionProtectionOption.Local) &&
+                    !networkSender.IsLocalConnection());
+        }
+
+        internal bool CanRunModule()
+        {
+            var enableModuleCommand = storeWrapper.serverOptions.EnableModuleCommand;
+
+            return
+                (enableModuleCommand == ConnectionProtectionOption.Yes) ||
+                ((enableModuleCommand == ConnectionProtectionOption.Local) &&
+                    !networkSender.IsLocalConnection());
         }
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)

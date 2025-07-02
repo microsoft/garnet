@@ -33,6 +33,9 @@ Specify your subject name via the cert-subject-name command line argument, if ap
         [RedisOption("enable-debug-command", nameof(Options.EnableDebugCommand))]
         public Option<RedisConnectionProtectionOption> EnableDebugCommand { get; set; }
 
+        [RedisOption("enable-module-command", nameof(Options.EnableModuleCommand))]
+        public Option<RedisConnectionProtectionOption> EnableModuleCommand { get; set; }
+
         [RedisOption("port", nameof(Options.Port))]
         public Option<int> Port { get; set; }
 

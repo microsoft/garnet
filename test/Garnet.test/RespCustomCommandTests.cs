@@ -238,6 +238,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
+                enableModuleCommand: true,
                 extensionBinPaths: [_extTestDir1, _extTestDir2],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
@@ -1043,7 +1044,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, "REGISTERCS")), rse.Message);
             }
             ClassicAssert.IsNull(resp);
 
