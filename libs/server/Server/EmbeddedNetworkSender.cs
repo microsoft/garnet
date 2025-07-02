@@ -5,10 +5,29 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using Garnet.common;
 using Garnet.networking;
 
 namespace Garnet.server
 {
+    unsafe class NetworkBuffer : IDisposable
+    {
+        public readonly byte[] buffer;
+        public readonly byte* bufferPtr;
+        public int currOffset;
+
+        public NetworkBuffer(int size)
+        {
+            buffer = GC.AllocateArray<byte>(size, true);
+            bufferPtr = (byte*)Unsafe.AsPointer(ref buffer[0]);
+            currOffset = 0;
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
     /// <summary>
     /// Dummy network sender that reads from a fixed in-memory buffer
     /// </summary>
@@ -24,17 +43,9 @@ namespace Garnet.server
         /// </summary>
         readonly int serverBufferSize;
 
-        /// <summary>
-        /// The in-memory sender buffer
-        /// </summary>
-        byte[] buffer;
+        public readonly SimpleObjectPool<NetworkBuffer> networkBufferPool;
 
-        /// <summary>
-        /// Pointer to the head of the sender buffer
-        /// </summary>
-        byte* bufferPtr;
-
-        int currOffset;
+        public NetworkBuffer buffer;
 
         /// <summary>
         /// Create a new dummy network sender with a simple in-memory buffer
@@ -43,15 +54,16 @@ namespace Garnet.server
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            buffer = GC.AllocateArray<byte>(serverBufferSize, true);
-            bufferPtr = (byte*)Unsafe.AsPointer(ref buffer[0]);
+            networkBufferPool = new SimpleObjectPool<NetworkBuffer>(() => new NetworkBuffer(serverBufferSize));
         }
 
-        public ReadOnlySpan<byte> GetResponse()
+        public ArgSlice GetResponse()
+            => new ArgSlice(buffer.bufferPtr, buffer.currOffset);
+
+        public void CompleteResponseProcessing()
         {
-            var _offset = currOffset;
-            currOffset = 0;
-            return new ReadOnlySpan<byte>(buffer, 0, _offset);
+            buffer.currOffset = 0;
+            networkBufferPool.Return(buffer);
         }
 
         public MaxSizeSettings GetMaxSizeSettings => maxSizeSettings;
@@ -83,8 +95,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
-            head = bufferPtr + currOffset;
-            tail = bufferPtr + buffer.Length;
+            buffer = networkBufferPool.Checkout();
+            head = buffer.bufferPtr + buffer.currOffset;
+            tail = buffer.bufferPtr + buffer.buffer.Length;
         }
 
         /// <inheritdoc />
@@ -103,13 +116,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe byte* GetResponseObjectHead()
         {
-            return bufferPtr + currOffset;
+            return buffer.bufferPtr + buffer.currOffset;
         }
 
         /// <inheritdoc />
         public unsafe byte* GetResponseObjectTail()
         {
-            return bufferPtr + buffer.Length;
+            return buffer.bufferPtr + buffer.buffer.Length;
         }
 
         /// <inheritdoc />
@@ -125,14 +138,18 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SendResponse(int offset, int size)
         {
-            currOffset += size;
+            buffer.currOffset += size;
+            if (buffer.currOffset > buffer.buffer.Length)
+            {
+                throw new InvalidOperationException("Buffer overflow in EmbeddedNetworkSender");
+            }
             return true;
         }
 
         /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)
         {
-            currOffset += count;
+            throw new InvalidOperationException("not expected");
         }
 
         /// <inheritdoc />

@@ -60,7 +60,8 @@ namespace Garnet.server
                 {
                     // Process the request
                     nextInput.readHead = session.TryConsumeMessages(nextInput.request.ptr, nextInput.request.length);
-                    nextInput.response = embeddedNetworkSender.GetResponse().ToArray();
+                    nextInput.responsePool = embeddedNetworkSender.networkBufferPool;
+                    nextInput.response = embeddedNetworkSender.buffer;
                     nextInput.completed.Release();
                 }
             }

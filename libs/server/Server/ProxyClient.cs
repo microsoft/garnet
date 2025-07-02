@@ -44,7 +44,9 @@ namespace Garnet.server
             foreach (var packet in ongoingPackets)
             {
                 packet.completed.Wait();
-                WriteDirectLarge(new ReadOnlySpan<byte>(packet.response), ref dcurr, ref dend);
+                WriteDirectLarge(new ReadOnlySpan<byte>(packet.response.bufferPtr, packet.response.currOffset), ref dcurr, ref dend);
+                packet.response.currOffset = 0;
+                packet.responsePool.Return(packet.response);
                 readHead += packet.readHead;
                 packet.completed.Dispose();
             }
