@@ -55,8 +55,8 @@ namespace TstRunner
             try
             {
                 Console.WriteLine($"\tStarted {name} on {DateTime.Now}");
-                cTestGroup.Setup();
                 cTestGroup.LogTextWriter = Console.Out;
+                cTestGroup.Setup();
                 testCase();
             }
             finally

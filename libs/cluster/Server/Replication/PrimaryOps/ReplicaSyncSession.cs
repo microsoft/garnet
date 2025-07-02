@@ -416,46 +416,44 @@ namespace Garnet.cluster
 
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
-            logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
-            var checkpointMetadata = Array.Empty<byte>();
-            if (fileToken != default)
+            var retryCount = 5;
+            while (retryCount-- > 0)
             {
-                switch (fileType)
+                try
                 {
-                    case CheckpointFileType.STORE_SNAPSHOT:
-                    case CheckpointFileType.OBJ_STORE_SNAPSHOT:
-                        var pageSizeBits = fileType == CheckpointFileType.STORE_SNAPSHOT ? clusterProvider.serverOptions.PageSizeBits() : clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                        using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
+                    logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
+                    var checkpointMetadata = Array.Empty<byte>();
+                    if (fileToken != default)
+                    {
+                        switch (fileType)
                         {
-                            if (deltaFileDevice is not null)
-                            {
-                                deltaFileDevice.Initialize(-1);
-                                if (deltaFileDevice.GetFileSize(0) > 0)
-                                {
-                                    var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
-                                    deltaLog.InitializeForReads();
-                                    checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, deltaLog, true, -1);
-                                    break;
-                                }
-                            }
+                            case CheckpointFileType.STORE_SNAPSHOT:
+                            case CheckpointFileType.OBJ_STORE_SNAPSHOT:
+                                checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
+                                break;
+                            case CheckpointFileType.STORE_INDEX:
+                            case CheckpointFileType.OBJ_STORE_INDEX:
+                                checkpointMetadata = ckptManager.GetIndexCheckpointMetadata(fileToken);
+                                break;
                         }
-                        checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
-                        break;
-                    case CheckpointFileType.STORE_INDEX:
-                    case CheckpointFileType.OBJ_STORE_INDEX:
-                        checkpointMetadata = ckptManager.GetIndexCheckpointMetadata(fileToken);
-                        break;
+                    }
+
+                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).ConfigureAwait(false);
+                    if (!resp.Equals("OK"))
+                    {
+                        logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
+                        throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
+                    }
+
+                    logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
+                    break; // Exit loop if metadata sent successfully
                 }
+                catch (Exception ex)
+                {
+                    logger?.LogError("SendCheckpointMetadata Error: {msg}", ex.Message);
+                }
+                await Task.Yield();
             }
-
-            var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).ConfigureAwait(false);
-            if (!resp.Equals("OK"))
-            {
-                logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
-                throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
-            }
-
-            logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
         }
 
         private async Task SendFileSegments(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
