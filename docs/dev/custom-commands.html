@@ -10,8 +10,8 @@
 
 
 <script>!function(t,e,n,c,a,r,s){t[n]=t[n]||function(){(t[n].q=t[n].q||[]).push(arguments)},(r=e.createElement(c)).async=1,r.src="https://www.clarity.ms/tag/loh6v65ww5",(s=e.getElementsByTagName(c)[0]).parentNode.insertBefore(r,s)}(window,document,"clarity","script")</script><link rel="stylesheet" href="/garnet/assets/css/styles.b16fc56b.css">
-<script src="/garnet/assets/js/runtime~main.cbcea53f.js" defer="defer"></script>
-<script src="/garnet/assets/js/main.305fd35f.js" defer="defer"></script>
+<script src="/garnet/assets/js/runtime~main.b3dac22c.js" defer="defer"></script>
+<script src="/garnet/assets/js/main.6083fc24.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg xmlns="http://www.w3.org/2000/svg" style="display: none;"><defs>
@@ -40,11 +40,12 @@
 The REGISTERCS command takes assemblies that exist on the server and contain implementations for either of the supported custom command classes, and registers the custom commands on the server according to parameters given by the client <br>
 The REGISTERCS command supports registering multiple commands and / or transactions from multiple files and / or directories containing C# binary files (*.dll / *.exe).<br></p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="enabling-client-side-command-registration">Enabling Client-Side Command Registration<a href="#enabling-client-side-command-registration" class="hash-link" aria-label="Direct link to Enabling Client-Side Command Registration" title="Direct link to Enabling Client-Side Command Registration">​</a></h3>
-<p>To enable registering client-side custom commands, you must specify a list of allowed paths from which assemblies can potentially be loaded. This is done by setting the configuration parameter <code>ExtensionBinPaths</code>.
+<p>To enable registering client-side custom commands, you must specify a list of allowed paths from which assemblies can potentially be loaded, and enable module commands.
+This is done by setting the configuration parameters <code>EnableModuleCommand</code> and <code>ExtensionBinPaths</code>.
 Example (in garnet.config):</p>
-<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">&quot;ExtensionBinPaths&quot;: &quot;.\first\path\,..\..\second\path\&quot;</span><br></span></code></pre></div></div>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">&quot;EnableModuleCommand&quot;: &quot;local&quot;,</span><br></span><span class="token-line" style="color:#393A34"><span class="token plain">&quot;ExtensionBinPaths&quot;: &quot;.\first\path\,..\..\second\path\&quot;</span><br></span></code></pre></div></div>
 <p><strong>Note #1</strong>: Assemblies can be loaded from any directory level under these specified paths<br>
-<strong>Note #2</strong>: By default, Garnet only allows loading of digitally signed assemblies. To remove that requirement (not recommended), set the configuration parameter <code>ExtensionAllowOnlySignedAssemblies</code> to <code>false</code>.</p>
+<strong>Note #2</strong>: By default, Garnet only allows loading of digitally signed assemblies. To remove that requirement (not recommended), set the configuration parameter <code>ExtensionAllowOnlySignedAssemblies</code> to <code>false</code>.<br></p>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="registercs-command">REGISTERCS Command<a href="#registercs-command" class="hash-link" aria-label="Direct link to REGISTERCS Command" title="Direct link to REGISTERCS Command">​</a></h3>
 <p>To run the REGISTERCS command, run the REGISTERCS keyword followed by one or more new command subcommands, followed by the optional INFO keyword which is followed by a path pointing to a JSON file containing a serialized array of <code>RespCommandsInfo</code> objects, containing command metadata (*.json), followed by the SRC keyword, which is followed by one or more paths to C# binary files or directories containing C# binary files (*.dll / *.exe).<br></p>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="full-command-syntax">Full command syntax:<a href="#full-command-syntax" class="hash-link" aria-label="Direct link to Full command syntax:" title="Direct link to Full command syntax:">​</a></h4>
