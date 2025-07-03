@@ -132,6 +132,8 @@ namespace Garnet.cluster
                 entry.metadata.objectStoreIndexToken = lastEntry.metadata.objectStoreIndexToken;
             }
 
+            _ = ValidateCheckpointEntry(entry);
+
             if (tail == null)
                 head = tail = entry;
             else
@@ -146,6 +148,25 @@ namespace Garnet.cluster
 
             if (safelyRemoveOutdated)
                 DeleteOutdatedCheckpoints();
+
+            bool ValidateCheckpointEntry(CheckpointEntry entry)
+            {
+                try
+                {
+                    if (!clusterProvider.replicationManager.TryAcquireSettledMetadataForMainStore(entry, out _, out _))
+                        throw new GarnetException("Failed to validate main store metadata at insertion");
+
+                    if (!clusterProvider.serverOptions.DisableObjects && !clusterProvider.replicationManager.TryAcquireSettledMetadataForObjectStore(entry, out _, out _))
+                        throw new GarnetException("Failed to validate object store metadata at insertion");
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogCheckpointEntry(LogLevel.Error, ex.Message, entry);
+                    return false;
+                }
+            }
         }
 
         /// <summary>
@@ -186,6 +207,8 @@ namespace Garnet.cluster
                         break;
                     clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).DeleteIndexCheckpoint(curr.metadata.objectStoreIndexToken);
                 }
+
+                logger?.LogCheckpointEntry(LogLevel.Warning, "Deleting outdated checkpoint", curr);
 
                 // At least one token can always be deleted thus invalidating the in-memory entry
                 var next = curr.next;

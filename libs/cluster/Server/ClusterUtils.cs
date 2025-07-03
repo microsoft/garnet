@@ -3,6 +3,7 @@
 
 using System;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -95,10 +96,25 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                var errorMessage = new Win32Exception((int)errorCode).Message;
-                logger.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                string errorMessage;
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    errorMessage = new Win32Exception((int)errorCode).Message;
+                }
+                else
+                {
+                    // Use strerror for Unix-based systems
+                    IntPtr messagePtr = strerror((int)errorCode);
+                    errorMessage = Marshal.PtrToStringAnsi(messagePtr);
+                }
+
+                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             ((SemaphoreSlim)context).Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 }

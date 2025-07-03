@@ -85,7 +85,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Best effort read of checkpoint metadata failed");
+                logger?.LogError(ex, "Best effort read of checkpoint metadata failed");
                 success = false;
             }
 
@@ -109,7 +109,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(ex, "Old format checkpoint metadata failed");
+                    logger?.LogError(ex, "Old format checkpoint metadata failed");
                     throw ex.InnerException;
                 }
 

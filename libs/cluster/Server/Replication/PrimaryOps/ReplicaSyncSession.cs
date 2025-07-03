@@ -5,6 +5,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -138,9 +139,14 @@ namespace Garnet.cluster
 
                 long index_size = -1;
                 long obj_index_size = -1;
-                if (!ValidateMetadata(localEntry, out index_size, out var hlog_size, out obj_index_size, out var obj_hlog_size, out var skipLocalMainStoreCheckpoint, out var skipLocalObjectStoreCheckpoint))
+                var hlog_size = default(LogFileInfo);
+                var obj_hlog_size = default(LogFileInfo);
+                var skipLocalMainStoreCheckpoint = false;
+                var skipLocalObjectStoreCheckpoint = false;
+                while (!ValidateMetadata(localEntry, out index_size, out hlog_size, out obj_index_size, out obj_hlog_size, out skipLocalMainStoreCheckpoint, out skipLocalObjectStoreCheckpoint))
                 {
-                    throw new GarnetException("Failed to validate metadata");
+                    logger?.LogError("Failed to validate metadata. Retrying....");
+                    await Task.Yield();
                 }
 
                 #region sendStoresSnapshotData
@@ -410,46 +416,44 @@ namespace Garnet.cluster
 
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
-            logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
-            var checkpointMetadata = Array.Empty<byte>();
-            if (fileToken != default)
+            var retryCount = 5;
+            while (retryCount++ > 0)
             {
-                switch (fileType)
+                try
                 {
-                    case CheckpointFileType.STORE_SNAPSHOT:
-                    case CheckpointFileType.OBJ_STORE_SNAPSHOT:
-                        var pageSizeBits = fileType == CheckpointFileType.STORE_SNAPSHOT ? clusterProvider.serverOptions.PageSizeBits() : clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                        using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))
+                    logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
+                    var checkpointMetadata = Array.Empty<byte>();
+                    if (fileToken != default)
+                    {
+                        switch (fileType)
                         {
-                            if (deltaFileDevice is not null)
-                            {
-                                deltaFileDevice.Initialize(-1);
-                                if (deltaFileDevice.GetFileSize(0) > 0)
-                                {
-                                    var deltaLog = new DeltaLog(deltaFileDevice, pageSizeBits, -1);
-                                    deltaLog.InitializeForReads();
-                                    checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, deltaLog, true, -1);
-                                    break;
-                                }
-                            }
+                            case CheckpointFileType.STORE_SNAPSHOT:
+                            case CheckpointFileType.OBJ_STORE_SNAPSHOT:
+                                checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
+                                break;
+                            case CheckpointFileType.STORE_INDEX:
+                            case CheckpointFileType.OBJ_STORE_INDEX:
+                                checkpointMetadata = ckptManager.GetIndexCheckpointMetadata(fileToken);
+                                break;
                         }
-                        checkpointMetadata = ckptManager.GetLogCheckpointMetadata(fileToken, null, true, -1);
-                        break;
-                    case CheckpointFileType.STORE_INDEX:
-                    case CheckpointFileType.OBJ_STORE_INDEX:
-                        checkpointMetadata = ckptManager.GetIndexCheckpointMetadata(fileToken);
-                        break;
+                    }
+
+                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).ConfigureAwait(false);
+                    if (!resp.Equals("OK"))
+                    {
+                        logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
+                        throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
+                    }
+
+                    logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
+                    break; // Exit loop if metadata sent successfully
                 }
+                catch (Exception ex)
+                {
+                    logger?.LogError("SendCheckpointMetadata Error: {msg}", ex.Message);
+                }
+                await Task.Yield();
             }
-
-            var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).ConfigureAwait(false);
-            if (!resp.Equals("OK"))
-            {
-                logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
-                throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
-            }
-
-            logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
         }
 
         private async Task SendFileSegments(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
@@ -578,11 +582,26 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                var errorMessage = new Win32Exception((int)errorCode).Message;
-                logger.LogError("[Primary] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                string errorMessage;
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    errorMessage = new Win32Exception((int)errorCode).Message;
+                }
+                else
+                {
+                    // Use strerror for Unix-based systems
+                    IntPtr messagePtr = strerror((int)errorCode);
+                    errorMessage = Marshal.PtrToStringAnsi(messagePtr);
+                }
+
+                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 
     internal static unsafe class SectorAlignedMemoryExtensions
