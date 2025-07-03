@@ -10,7 +10,7 @@ public:
     //typedef FASTER::environment::QueueIoHandler handler_t;
     typedef FASTER::environment::ThreadPoolIoHandler handler_t;
 #else
-    typedef FASTER::environment::QueueIoHandler handler_t;
+    typedef FASTER::environment::UringIoHandler handler_t;
 #endif
     typedef FASTER::device::FileSystemSegmentedFile<handler_t, 1073741824L> log_file_t;
 

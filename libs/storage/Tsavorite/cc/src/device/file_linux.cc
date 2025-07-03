@@ -269,6 +269,7 @@ bool UringIoHandler::TryComplete() {
 }
 
 int UringIoHandler::QueueRun(int timeout_secs) {
+    UringIoHandler::TryComplete();
     return 0; // not implemented
 }
 

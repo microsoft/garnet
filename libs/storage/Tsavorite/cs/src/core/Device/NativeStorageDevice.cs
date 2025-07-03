@@ -128,7 +128,7 @@ namespace Tsavorite.core
         public NativeStorageDevice(string filename,
                                       bool deleteOnClose = false,
                                       bool disableFileBuffering = true,
-                                      long capacity = Devices.CAPACITY_UNSPECIFIED, int numCompletionThreads = 1, ILogger logger = null)
+                                      long capacity = Devices.CAPACITY_UNSPECIFIED, int numCompletionThreads = 2, ILogger logger = null)
                 : base(filename, GetSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
@@ -154,6 +154,7 @@ namespace Tsavorite.core
             // If Queue IO is enabled, we spin up completion threads
             if (NativeDevice_QueueRun(nativeDevice, 0) >= 0)
             {
+		logger?.LogInformation("Starting {num} completion threads", numCompletionThreads);
                 this.numCompletionThreads = numCompletionThreads;
                 completionThreadToken = new();
                 completionThreadSemaphore = new(0);
@@ -249,10 +250,11 @@ namespace Tsavorite.core
             result.context = context;
             result.callback = callback;
 
-            try
+	    try
             {
                 if (Interlocked.Increment(ref numPending) <= 0)
                     throw new Exception("Cannot operate on disposed device");
+
                 int _result = NativeDevice_WriteAsync(nativeDevice, sourceAddress, ((ulong)segmentId << nativeSegmentSizeBits) | destinationAddress, numBytesToWrite, _callbackDelegate, (IntPtr)offset);
 
                 if (_result != 0)

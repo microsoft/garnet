@@ -95,7 +95,7 @@ namespace Tsavorite.core
                 }
                 else if (totalSize > uint.MaxValue)
                 {
-                    numChunks = (int)Math.Ceiling((double)totalSize / (long)uint.MaxValue);
+                    numChunks = (int)Math.Ceiling((double)totalSize / (long)(uint.MaxValue/2));
                     numChunks = (int)Math.Pow(2, Math.Ceiling(Math.Log(numChunks, 2)));
                 }
 
@@ -114,6 +114,7 @@ namespace Tsavorite.core
                     result.chunkIndex = index;
                     if (!useReadCache)
                     {
+			//logger?.LogInformation("{chunkStartBucket}, {numBytesWritten}, {chunkSize}", chunkStartBucket, numBytesWritten, chunkSize);
                         device.WriteAsync(chunkStartBucket, numBytesWritten, chunkSize, AsyncPageFlushCallback, result);
                     }
                     else

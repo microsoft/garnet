@@ -301,13 +301,17 @@ class UringIoHandler {
  public:
   UringIoHandler() {
     ring_ = new struct io_uring();
-    int ret = io_uring_queue_init(kMaxEvents, ring_, 0);
+    struct io_uring_params params;
+    memset(&params, 0, sizeof(params));
+    int ret = io_uring_queue_init_params(kMaxEvents, ring_, &params);
     assert(ret == 0);
   }
 
   UringIoHandler(size_t max_threads) {
     ring_ = new struct io_uring();
-    int ret = io_uring_queue_init(kMaxEvents, ring_, 0);
+    struct io_uring_params params;
+    memset(&params, 0, sizeof(params));
+    int ret = io_uring_queue_init_params(kMaxEvents, ring_, &params);
     assert(ret == 0);
   }
 
