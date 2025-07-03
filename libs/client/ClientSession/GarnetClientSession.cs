@@ -69,7 +69,7 @@ namespace Garnet.client
         public bool RawResult = false;
 
         /// <summary>
-        /// Send raw string to server
+        /// Send raw string + crlf to server
         /// </summary>
         public bool RawSend = false;
 
@@ -109,7 +109,7 @@ namespace Garnet.client
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="rawResult">Recieve result as raw string</param>
-        /// <param name="rawSend">Send command as raw string</param>
+        /// <param name="rawSend">Send command as raw string + crlf</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -465,6 +465,13 @@ namespace Garnet.client
                 foreach (var cmd in command)
                 {
                     while (!RespWriteUtils.TryWriteDirect(Encoding.ASCII.GetBytes(cmd), ref curr, end))
+                    {
+                        Flush();
+                        curr = offset;
+                    }
+                    offset = curr;
+
+                    while (!RespWriteUtils.TryWriteNewLine(ref curr, end))
                     {
                         Flush();
                         curr = offset;
