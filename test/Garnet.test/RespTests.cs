@@ -3864,9 +3864,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task InlineCommandTest()
+        public async Task InlineCommandParseTest()
         {
-            var clientName = "name1 name2";
+            var clientName = "name";
             var key = "key";
             var value = "1";
 
@@ -3874,74 +3874,130 @@ namespace Garnet.test
             c.Connect();
 
             // Test inline command without arguments
-            var response = await c.ExecuteAsync("HELLO\r\n");
+            var response = await c.ExecuteAsync("HELLO");
             ClassicAssert.AreEqual('*', response[0]);
             // Test lowercase
-            response = await c.ExecuteAsync("hello 3\r\n");
+            response = await c.ExecuteAsync("hello 3");
             ClassicAssert.AreEqual('%', response[0]);
             // Test extranous whitespace
-            response = await c.ExecuteAsync("HELLO  2\t \r\n");
+            response = await c.ExecuteAsync("HELLO  2\t ");
             ClassicAssert.AreEqual('*', response[0]);
             // References accept this too
-            response = await c.ExecuteAsync("HElLO 3 SETNAME a SETNAME b\r\n");
+            response = await c.ExecuteAsync("HElLO 3 SETNAME a SETNAME b");
             ClassicAssert.AreEqual('%', response[0]);
-            // Test setting client name inline, alongside quoting
-            response = await c.ExecuteAsync($"HELLO 2 SETNAME '{clientName}'\r\n");
+            // Test setting client name inline
+            response = await c.ExecuteAsync($"HELLO 2 SETNAME {clientName}");
             ClassicAssert.AreEqual('*', response[0]);
 
             // Should fail due to missing argument. We test such failures to ensure
             // readhead is not messed up and commands can be placed afterwards.
-            response = await c.ExecuteAsync("CLIENT\r\n");
+            response = await c.ExecuteAsync("CLIENT");
             ClassicAssert.AreEqual('-', response[0]);
             c.RawResult = false;
             // Test client name was actually set
-            response = await c.ExecuteAsync("CLIENT GETNAME\r\n");
+            response = await c.ExecuteAsync("CLIENT GETNAME");
             ClassicAssert.AreEqual(clientName, response);
             c.RawResult = true;
 
             // Test inline ping
-            response = await c.ExecuteAsync("PING\r\n");
+            response = await c.ExecuteAsync("PING");
             ClassicAssert.AreEqual("+PONG\r\n", response);
+
+            // Test command failure
+            response = await c.ExecuteAsync("PIN");
+            ClassicAssert.AreEqual('-', response[0]);
+
+            // Test ordinary commands
+            response = await c.ExecuteAsync($"SET {key} {value}");
+            ClassicAssert.AreEqual("+OK\r\n", response);
+            response = await c.ExecuteAsync($"GET {key}");
+            ClassicAssert.AreEqual($"${value.Length}\r\n{value}\r\n", response);
+            response = await c.ExecuteAsync($"EXISTS {key}");
+            ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync($"DEL {key}");
+            ClassicAssert.AreEqual(":1\r\n", response);
+
+            // Test command failure in normal RESP doesn't interfere
+            response = await c.ExecuteAsync("*1\r\n$3\r\nPIN");
+            ClassicAssert.AreEqual('-', response[0]);
+
+            // Test quit
+            response = await c.ExecuteAsync("QUIT");
+            ClassicAssert.AreEqual("+OK\r\n", response);
+        }
+
+        [Test]
+        public async Task InlineCommandEscapeTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true, rawSend: true);
+            c.Connect();
+
+            var response = await c.ExecuteAsync("PING \\t");
+            ClassicAssert.AreEqual("$2\r\n\\t\r\n", response);
+            // With ' quoting most escapes aren't recognized
+            response = await c.ExecuteAsync("PING '\\t'");
+            ClassicAssert.AreEqual("$2\r\n\\t\r\n", response);
+            // Except this one form of escaping
+            response = await c.ExecuteAsync("PING '\'\\t\''");
+            ClassicAssert.AreEqual("$4\r\n'\\t'\r\n", response);
+
+            // Test escape
+            response = await c.ExecuteAsync("PING \"\\t\"");
+            ClassicAssert.AreEqual("$1\r\n\t\r\n", response);
+
+            // This should lead to quoting failure
+            response = await c.ExecuteAsync("PING \"\\\\\\\"");
+            ClassicAssert.AreEqual('-', response[0]);
+            // This should work
+            response = await c.ExecuteAsync("PING \"\\\\\\\\\"");
+            ClassicAssert.AreEqual("$2\r\n\\\\\r\n", response);
+
+            // Incomplete hex escape 1
+            response = await c.ExecuteAsync("PING \"\\x\"");
+            ClassicAssert.AreEqual("$1\r\nx\r\n", response);
+            // Incomplete hex escape 2
+            response = await c.ExecuteAsync("PING \"\\x0\"");
+            ClassicAssert.AreEqual("$2\r\nx0\r\n", response);
+            // Invalid hex escape
+            response = await c.ExecuteAsync("PING \"\\xGG\"");
+            ClassicAssert.AreEqual("$3\r\nxGG\r\n", response);
+            // Complete hex escape
+            response = await c.ExecuteAsync("PING \"\\x0A\"");
+            ClassicAssert.AreEqual("$1\r\n\n\r\n", response);
+        }
+
+        [Test]
+        public async Task InlineCommandQuoteTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true, rawSend: true);
+            c.Connect();
+
+            // Test quoted argument
+            var response = await c.ExecuteAsync("ping \"hello world\"");
+            ClassicAssert.AreEqual("$11\r\nhello world\r\n", response);
 
             // Test quoting failure
             // We need to test failures too to be sure readHead is reset right,
             // and that there are no leftovers that would interfere with future commands.
-            response = await c.ExecuteAsync("PING 'unfinished quote\r\n");
+            response = await c.ExecuteAsync("PING 'unfinished quote");
             ClassicAssert.AreEqual('-', response[0]);
 
-            // Test quoted argument
-            response = await c.ExecuteAsync("ping \"hello world\"\r\n");
-            ClassicAssert.AreEqual("$11\r\nhello world\r\n", response);
+            // Test empty and short strings
+            response = await c.ExecuteAsync("ECHO ''");
+            ClassicAssert.AreEqual("$0\r\n\r\n", response);
 
-            // Test command failure
-            response = await c.ExecuteAsync("PIN\r\n");
-            ClassicAssert.AreEqual('-', response[0]);
+            response = await c.ExecuteAsync("ECHO 'a'");
+            ClassicAssert.AreEqual("$1\r\na\r\n", response);
 
-            // References can even accept commands formed like this
-            response = await c.ExecuteAsync("\"PING\"\tword \r\n");
+            // We can even accept commands formed like this
+            response = await c.ExecuteAsync("\"PING\"\tword ");
             ClassicAssert.AreEqual("$4\r\nword\r\n", response);
-            response = await c.ExecuteAsync("pIN'G'\t'word '\r\n");
-            ClassicAssert.AreEqual("$5\r\nword \r\n", response);
-            response = await c.ExecuteAsync("PING'' \"hello 'world'!\"\r\n");
+            response = await c.ExecuteAsync("PINg \"hello 'world'!\"");
             ClassicAssert.AreEqual("$14\r\nhello 'world'!\r\n", response);
-
-            // Test ordinary commands
-            response = await c.ExecuteAsync($"SET {key} {value}\r\n");
-            ClassicAssert.AreEqual("+OK\r\n", response);
-            response = await c.ExecuteAsync($"GET {key}\r\n");
-            ClassicAssert.AreEqual($"${value.Length}\r\n{value}\r\n", response);
-            response = await c.ExecuteAsync($"EXISTS {key}\r\n");
-            ClassicAssert.AreEqual(":1\r\n", response);
-            response = await c.ExecuteAsync($"DEL {key}\r\n");
-            ClassicAssert.AreEqual(":1\r\n", response);
-
-            // Test command failure in normal RESP
-            response = await c.ExecuteAsync("*1\r\n$3\r\nPIN\r\n");
-            ClassicAssert.AreEqual('-', response[0]);
-
-            // Test quit
-            response = await c.ExecuteAsync("QUIT\r\n");
-            ClassicAssert.AreEqual("+OK\r\n", response);
+            response = await c.ExecuteAsync("PING '\"'\"''");
+            ClassicAssert.AreEqual("$4\r\n\"'\"'\r\n", response);
+            response = await c.ExecuteAsync("P'ING' ab");
+            ClassicAssert.AreEqual("$2\r\nab\r\n", response);
         }
 
         [Test]
