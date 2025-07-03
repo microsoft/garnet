@@ -3868,6 +3868,7 @@ namespace Garnet.test
         {
             var clientName = "name1 name2";
             var key = "key";
+            var value = "1";
 
             using var c = TestUtils.GetGarnetClientSession(rawResult: true, rawSend: true);
             c.Connect();
@@ -3903,6 +3904,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual("+PONG\r\n", response);
 
             // Test quoting failure
+            // We need to test failures too to be sure readHead is reset right,
+            // and that there are no leftovers that would interfere with future commands.
             response = await c.ExecuteAsync("PING 'unfinished quote\r\n");
             ClassicAssert.AreEqual('-', response[0]);
 
@@ -3913,23 +3916,28 @@ namespace Garnet.test
             // Test command failure
             response = await c.ExecuteAsync("PIN\r\n");
             ClassicAssert.AreEqual('-', response[0]);
-            // Test command failure in normal RESP
-            response = await c.ExecuteAsync("*1\r\n$3\r\nPIN\r\n");
-            ClassicAssert.AreEqual('-', response[0]);
 
             // References can even accept commands formed like this
             response = await c.ExecuteAsync("\"PING\"\tword \r\n");
             ClassicAssert.AreEqual("$4\r\nword\r\n", response);
-            response = await c.ExecuteAsync("'pING'\t'word '\r\n");
+            response = await c.ExecuteAsync("pIN'G'\t'word '\r\n");
             ClassicAssert.AreEqual("$5\r\nword \r\n", response);
+            response = await c.ExecuteAsync("PING'' \"hello 'world'!\"\r\n");
+            ClassicAssert.AreEqual("$14\r\nhello 'world'!\r\n", response);
 
             // Test ordinary commands
-            response = await c.ExecuteAsync($"SET {key} 1\r\n");
+            response = await c.ExecuteAsync($"SET {key} {value}\r\n");
             ClassicAssert.AreEqual("+OK\r\n", response);
             response = await c.ExecuteAsync($"GET {key}\r\n");
-            ClassicAssert.AreEqual("$1\r\n1\r\n", response);
+            ClassicAssert.AreEqual($"${value.Length}\r\n{value}\r\n", response);
             response = await c.ExecuteAsync($"EXISTS {key}\r\n");
             ClassicAssert.AreEqual(":1\r\n", response);
+            response = await c.ExecuteAsync($"DEL {key}\r\n");
+            ClassicAssert.AreEqual(":1\r\n", response);
+
+            // Test command failure in normal RESP
+            response = await c.ExecuteAsync("*1\r\n$3\r\nPIN\r\n");
+            ClassicAssert.AreEqual('-', response[0]);
 
             // Test quit
             response = await c.ExecuteAsync("QUIT\r\n");

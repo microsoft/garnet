@@ -2838,13 +2838,117 @@ namespace Garnet.server
         private bool TryParseInlineCommandArguments(bool writeErrorOnFailure, out bool commandReceived,
                                                     out ArgSlice[] result, ref byte* ptr, byte* end)
         {
+            // The inline format is defined beyond
+            // "space-separated arguments in a telnet session" and
+            // "no command starts with * (the identifying byte of RESP Arrays)".
+            // This implementation tries to match what go on in practice.
+
+            // Takes a string verified to be 'balanced' and removes unnecessary quotes.
+            static ArgSlice[] Unquote(System.Collections.Generic.List<ArgSlice> input)
+            {
+                var output = new ArgSlice[input.Count];
+
+                var i = 0;
+                foreach (var slice in input)
+                {
+                    // How this works:
+                    // Every quote reduces endpos.
+                    // When we're in a quoting zone, we place the first non-quote character and set in its position a sentinel.
+                    // Eventually, all the sentinels are shunted to the end, and the string is 0-endpos.
+                    //
+                    // start, startPos is an additional optimization to allow skipping over starting quotes.
+                    byte quoteChar = 0;
+                    var start = true;
+                    var startPos = 0;
+                    var endPos = slice.Span.Length;
+
+                    for (var j = 0; j < slice.Span.Length; ++j)
+                    {
+                        var c = slice.Span[j];
+
+                        if (quoteChar == 0)
+                        {
+                            if (!AsciiUtils.IsQuoteChar(c))
+                            {
+                                start = false;
+                                continue;
+                            }
+
+                            // The string is known to be balanced, we know there's another quote to match.
+                            endPos -= 2;
+                            quoteChar = c;
+                            if (start)
+                            {
+                                startPos++;
+                                continue;
+                            }
+                        }
+                        else if (quoteChar == c)
+                        {
+                            quoteChar = 0;
+
+                            if (start)
+                            {
+                                if (startPos == j)
+                                {
+                                    // Without this condition we would accept strings like
+                                    // """"""""PING.
+                                    if (j < slice.Span.Length - 1)
+                                        return default;
+
+                                    startPos++;
+                                    continue;
+                                }
+
+                                start = false;
+                            }
+                        }
+
+                        if (start)
+                            continue;
+
+                        int k;
+                        for (k = j + 1; k < slice.Span.Length; ++k)
+                        {
+                            var d = slice.Span[k];
+
+                            if (d == 0)
+                                // Enabling this would enable strings like PI""""""NG to be accepted.
+                                //continue;
+                                return default;
+
+                            if (((quoteChar != 0) && (d != quoteChar)) ||
+                                ((quoteChar == 0) && !AsciiUtils.IsQuoteChar(d)))
+                            {
+                                slice.Span[j] = d;
+                                slice.Span[k] = 0;
+                                break;
+                            }
+                        }
+
+                        // If we got here the entire string was shuffeled to the start.
+                        // We would only need to adjust endpos, which could be done by simply
+                        // letting the loop run to the end.
+                        // Commenting this block out would allow accepting PING"""".
+                        if ((k == slice.Span.Length) && (endPos + startPos > j))
+                        {
+                            return default;
+                        }
+                    }
+
+                    output[i++] = new ArgSlice(slice.ptr + startPos, endPos);
+                }
+
+                return output;
+            }
+
             result = default;
             commandReceived = false;
 
             var slices = new System.Collections.Generic.List<ArgSlice>();
             var slicePtr = ptr;
             var anyContents = false;
-            var errorAtEnd = false;
+            var anyQuote = false;
             byte quoteChar = 0;
 
             while (ptr + 1 <= end)
@@ -2860,7 +2964,7 @@ namespace Garnet.server
                     // Advance past newline
                     ptr += 2;
 
-                    if ((quoteChar != 0) || errorAtEnd)
+                    if (quoteChar != 0)
                     {
                         if (writeErrorOnFailure)
                         {
@@ -2870,31 +2974,33 @@ namespace Garnet.server
                         return false;
                     }
 
-                    result = [.. slices];
+                    if (anyQuote)
+                        result = Unquote(slices);
+                    else
+                        result = [.. slices];
+                    if (result == default)
+                    {
+                        if (writeErrorOnFailure)
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_UNBALANCED_QUOTES, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        return false;
+                    }
                     return true;
                 }
 
                 if (AsciiUtils.IsQuoteChar(*ptr))
                 {
+                    anyQuote = true;
                     if (quoteChar == 0)
                     {
                         quoteChar = *ptr;
-
-                        if (anyContents)
-                            // If we didn't use pointers but instead copied the output,
-                            // we could ignore the quote character like the references (mostly) do in this case.
-                            // Since we don't do that currently, we'll output an error later as to not confuse the user.
-                            errorAtEnd = true;
-                        else
-                            slicePtr = ptr + 1;
-                        // We do not ignore consecutive quotes.
                         anyContents = true;
                     }
                     else if (quoteChar == *ptr)
                     {
                         quoteChar = 0;
-                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
-                        anyContents = false;
                     }
                 }
                 else if ((quoteChar == 0) && AsciiUtils.IsWhiteSpace(*ptr))
