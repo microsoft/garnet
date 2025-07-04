@@ -3948,10 +3948,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual("$1\r\n\t\r\n", response);
 
             // This should lead to quoting failure
-            response = await c.ExecuteAsync("PING \"\\\\\\\"");
+            response = await c.ExecuteAsync(@"PING ""\\\""");
             ClassicAssert.AreEqual('-', response[0]);
             // This should work
-            response = await c.ExecuteAsync("PING \"\\\\\\\\\"");
+            response = await c.ExecuteAsync(@"PING ""\\\\""");
             ClassicAssert.AreEqual("$2\r\n\\\\\r\n", response);
 
             // Incomplete hex escape 1
@@ -3967,6 +3967,11 @@ namespace Garnet.test
             response = await c.ExecuteAsync("PING \"\\x0A\"");
             ClassicAssert.AreEqual("$1\r\n\n\r\n", response);
 
+            // Test escapes in command position
+            response = await c.ExecuteAsync(@"""\x50\x49\x4E\x47""");
+            ClassicAssert.AreEqual("+PONG\r\n", response);
+
+            // Test value being passed
             response = await c.ExecuteAsync($"SET {key} \"a\\x0Ab\"");
             ClassicAssert.AreEqual("+OK\r\n", response);
             response = await c.ExecuteAsync($"GET {key}");
@@ -4001,10 +4006,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual("$4\r\nword\r\n", response);
             response = await c.ExecuteAsync("PINg \"hello 'world'!\"");
             ClassicAssert.AreEqual("$14\r\nhello 'world'!\r\n", response);
-            response = await c.ExecuteAsync("PING '\"'\"''");
-            ClassicAssert.AreEqual("$4\r\n\"'\"'\r\n", response);
             response = await c.ExecuteAsync("P'ING' ab");
             ClassicAssert.AreEqual("$2\r\nab\r\n", response);
+
+            // Extension
+            response = await c.ExecuteAsync("PING '\"'\"''");
+            ClassicAssert.AreEqual("$4\r\n\"'\"'\r\n", response);
         }
 
         [Test]

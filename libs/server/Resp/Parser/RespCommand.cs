@@ -2911,10 +2911,9 @@ namespace Garnet.server
                     {
                         result = new ArgSlice[slices.Count];
 
-                        var i = 0;
-                        foreach (var slice in slices)
+                        for (var i = 0; i < slices.Count; ++i)
                         {
-                            result[i++] = ArgSliceUtils.Unescape(slice);
+                            result[i] = ArgSliceUtils.Unescape(slices[i], i == 0);
                         }
                     }
                     // If there are no quotes, we can be faster
