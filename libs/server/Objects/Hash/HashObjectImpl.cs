@@ -6,6 +6,7 @@ using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
 
 #if NET9_0_OR_GREATER
@@ -184,27 +185,58 @@ namespace Garnet.server
 
         private void HashSet(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var hop = input.header.HashOp;
+            var hashOp = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
                 var key = GetByteSpanFromInput(ref input, i);
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.AsReadOnlySpan();
 
-                if (!TryGetValue(key, out var hashValue))
+                // Avoid multiple hash calculations by acquiring ref to the dictionary value
+                ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+                var isExpired = IsExpired(key);
+
+                if (isExpired || !exists)
                 {
-                    Add(key, value.ToArray());
+                    DeleteExpiredItems();
+
+                    hashValueRef = value.ToArray();
+                    UpdateSize(key, value);
+
                     output.Header.result1++;
                 }
-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
+                else if ((hashOp is HashOperation.HSET or HashOperation.HMSET) && hashValueRef != default)
                 {
-                    if (hashValue.Length == value.Length)
+                    DeleteExpiredItems();
+
+                    if (hashValueRef.Length == value.Length)
                     {
-                        value.CopyTo(hashValue);
-                        Set(key, hashValue);
-                    }
+                        value.CopyTo(hashValueRef);
+                    } 
                     else
                     {
-                        Set(key, value.ToArray());
+                        hashValueRef = value.ToArray();
+
+                        // TODO: Update size? Following existing logic was a nop, right..?
+                        // Skip overhead as existing item is getting replaced.
+                        // this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+                        //              Utility.RoundUp(value.Length, IntPtr.Size);
+                    }   
+
+                    // To persist the key, if it has an expiration
+                    if (HasExpirableItems &&
+#if NET9_0_OR_GREATER
+                        expirationTimeSpanLookup.Remove(key))
+#else
+                        expirationTimes.Remove(key))
+#endif
+                    {
+                        this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        CleanupExpirationStructures();
                     }
                 }
             }
