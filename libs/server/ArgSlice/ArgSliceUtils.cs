@@ -22,9 +22,10 @@ namespace Garnet.server
         /// Takes a quoted string from given ArgSlice and unescapes it. Destructive: Writes over the input memory.
         /// </summary>
         /// <param name="slice"></param>
+        /// <param name="acceptUppercaseEscapes"></param>
         /// <remarks>See TryParseInlineCommandArguments() for the quoting/escaping rules</remarks>
         /// <returns></returns>
-        public static unsafe ArgSlice Unescape(ArgSlice slice)
+        public static unsafe ArgSlice Unescape(ArgSlice slice, bool acceptUppercaseEscapes = false)
         {
             // Too short for quoting.
             if (slice.Length <= 1)
@@ -96,7 +97,9 @@ namespace Garnet.server
 
                 // Process escapes
                 shift++;
-                var c = (char)slice.Span[j + shift];
+                var c = acceptUppercaseEscapes ?
+                            (char)AsciiUtils.ToLower(slice.Span[j + shift]) :
+                            (char)slice.Span[j + shift];
 
                 switch (c)
                 {
