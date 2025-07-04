@@ -66,7 +66,7 @@ namespace Garnet.server
 
             writer.WriteMapLength(Count());
 
-            var isExpirable = HasExpirableItems();
+            var isExpirable = HasExpirableItems;
 
             foreach (var item in hash)
             {
@@ -226,7 +226,7 @@ namespace Garnet.server
 
             writer.WriteArrayLength(count);
 
-            var isExpirable = HasExpirableItems();
+            var isExpirable = HasExpirableItems;
 
             foreach (var item in hash)
             {
