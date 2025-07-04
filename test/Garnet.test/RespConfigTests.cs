@@ -24,7 +24,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, 
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 memorySize: memorySize,
                 indexSize: indexSize,
                 objectStoreLogMemorySize: objectStoreLogMemorySize,
@@ -53,7 +53,7 @@ namespace Garnet.test
             var option = mainStore ? "memory" : "obj-log-memory";
             var metricType = mainStore ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
             var initMemorySize = mainStore ? memorySize : objectStoreLogMemorySize;
-            
+
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var bufferSize = ServerOptions.PreviousPowerOf2(currMemorySize);
             if (bufferSize != currMemorySize)

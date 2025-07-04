@@ -247,6 +247,7 @@ namespace Garnet.server
                 return;
             }
 
+            // Parse the configured memory size
             var confMemorySize = ServerOptions.ParseSize(
                     mainStore ? storeWrapper.serverOptions.MemorySize
                         : storeWrapper.serverOptions.ObjectStoreLogMemorySize, out _);
@@ -255,49 +256,34 @@ namespace Garnet.server
             if (newMemorySize == confMemorySize)
                 return;
 
-            // Calculate current the buffer size
+            // Calculate the buffer size based on the configured memory size
             var adjConfMemorySize = ServerOptions.PreviousPowerOf2(confMemorySize);
             if (confMemorySize != adjConfMemorySize)
                 confMemorySize = adjConfMemorySize * 2;
 
+            // If the new memory size is greater than the configured memory size, return an error
             if (newMemorySize > confMemorySize)
             {
                 AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrMemorySizeGreaterThanBuffer, option);
                 return;
             }
 
+            // Parse & adjust the configured page size
             var pageSize = ServerOptions.ParseSize(
                     mainStore ? storeWrapper.serverOptions.PageSize : storeWrapper.serverOptions.ObjectStorePageSize,
                     out _);
-
             pageSize = ServerOptions.PreviousPowerOf2(pageSize);
 
-            var emptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
+            // Compute the new minimum empty page count and update the store's log accessor
+            var newMinEmptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
             if (mainStore)
             {
-                storeWrapper.store.Log.MinEmptyPageCount = emptyPageCount;
+                storeWrapper.store.Log.MinEmptyPageCount = newMinEmptyPageCount;
             }
             else
             {
-                storeWrapper.objectStore.Log.MinEmptyPageCount = emptyPageCount;
+                storeWrapper.objectStore.Log.MinEmptyPageCount = newMinEmptyPageCount;
             }
-        }
-
-        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
-        {
-            if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
-            {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.ObjHeapMemory);
-                return;
-            }
-
-            if (storeWrapper.objectStoreSizeTracker == null)
-            {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.ObjHeapMemory);
-                return;
-            }
-
-            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
         }
 
         private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool mainStore = true)
@@ -310,6 +296,7 @@ namespace Garnet.server
                 return;
             }
 
+            // Check if the new index size is a power of two. If not - return an error.
             var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
             if (adjNewIndexSize != newIndexSize)
             {
@@ -317,6 +304,7 @@ namespace Garnet.server
                 return;
             }
 
+            // Check if the index auto-grow task is running. If so - return an error.
             if ((mainStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0) ||
                 (!mainStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0))
             {
@@ -326,18 +314,21 @@ namespace Garnet.server
 
             var currIndexSize = mainStore ? storeWrapper.store.IndexSize : storeWrapper.objectStore.IndexSize;
 
-            // Convert to cache lines
+            // Convert new index size to cache lines
             adjNewIndexSize /= 64;
 
+            // If the current index size is the same as the new index size, nothing to do
             if (currIndexSize == adjNewIndexSize)
                 return;
 
+            // If the new index size is smaller than the current index size, return an error
             if (currIndexSize > adjNewIndexSize)
             {
                 AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, option);
                 return;
             }
 
+            // Try to grow the index size by doubling it until it reaches the new size
             while (currIndexSize < adjNewIndexSize)
             {
                 var isSuccessful = mainStore
@@ -352,6 +343,25 @@ namespace Garnet.server
 
                 currIndexSize *= 2;
             }
+        }
+
+        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
+        {
+            if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.ObjHeapMemory);
+                return;
+            }
+
+            // If the object store size tracker is not running, return an error
+            if (storeWrapper.objectStoreSizeTracker == null)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.ObjHeapMemory);
+                return;
+            }
+
+            // Set the new target size for the object store size tracker
+            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
         }
 
         private static void AppendError(StringBuilder sbErrorMsg, string error)
