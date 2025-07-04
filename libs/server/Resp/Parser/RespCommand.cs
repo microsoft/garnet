@@ -1766,7 +1766,7 @@ namespace Garnet.server
             }
         }
 
-        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count, 
+        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count,
                                              ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived,
                                              ArgSlice inlineSubCommand = default)
         {
@@ -2681,10 +2681,9 @@ namespace Garnet.server
                 cmd = FastParseCommand(out count, ptr, bytesRead - readHead);
             }
 
-            // If we have not found a command, continue parsing on slow path
-            if ((cmd == RespCommand.NONE) &&
-                // Ensure we are attempting to read a RESP array header
-                (*ptr == '*'))
+            // If we have not found a command, continue parsing on slow path.
+            // But first ensure we are attempting to read a RESP array header.
+            if ((cmd == RespCommand.NONE) && (*ptr == '*'))
             {
                 cmd = ArrayParseCommand(writeErrorOnFailure, ptr, end, out count, out commandReceived);
                 if (!commandReceived) return cmd;
