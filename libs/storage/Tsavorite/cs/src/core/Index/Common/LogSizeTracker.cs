@@ -98,6 +98,9 @@ namespace Tsavorite.core
         /// <summary>Size of log heap memory</summary>
         public long LogHeapSizeBytes => logSize.Total;
 
+        /// <summary>Target size for the hybrid log memory utilization</summary>
+        public long TargetSize => (highTargetSize + lowTargetSize) / 2;
+
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
         /// <param name="logSizeCalculator">Size calculator</param>
@@ -141,7 +144,7 @@ namespace Tsavorite.core
             Debug.Assert(targetSize > delta);
             lowTargetSize = targetSize - delta;
             highTargetSize = targetSize + delta;
-            logger.LogInformation("Target size updated to {targetSize} with delta {delta}", targetSize, delta);
+            logger?.LogInformation("Target size updated to {targetSize} with delta {delta}", targetSize, delta);
         }
 
         public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;

@@ -224,8 +224,9 @@ namespace Garnet.test
             bool disablePubSub = false,
             bool tryRecover = false,
             bool lowMemory = false,
-            string MemorySize = default,
-            string PageSize = default,
+            string memorySize = default,
+            string objectStoreLogMemorySize = default,
+            string pageSize = default,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -355,6 +356,15 @@ namespace Garnet.test
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
             };
 
+            if (!string.IsNullOrEmpty(memorySize))
+                opts.MemorySize = memorySize;
+
+            if (!string.IsNullOrEmpty(objectStoreLogMemorySize))
+                opts.ObjectStoreLogMemorySize = objectStoreLogMemorySize;
+
+            if (!string.IsNullOrEmpty(pageSize))
+                opts.PageSize = pageSize;
+
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
 
@@ -369,8 +379,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
-                opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
+                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
                 if (enableReadCache)
                 {
                     opts.ReadCacheMemorySize = opts.MemorySize;
