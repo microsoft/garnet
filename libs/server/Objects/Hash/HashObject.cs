@@ -83,12 +83,12 @@ namespace Garnet.server
         public HashObject(BinaryReader reader)
             : base(reader, MemoryUtils.DictionaryOverhead)
         {
-            hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
+            var count = reader.ReadInt32();
+            hash = new Dictionary<byte[], byte[]>(count, ByteArrayComparer.Instance);
 #if NET9_0_OR_GREATER
             hashSpanLookup = hash.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
-            int count = reader.ReadInt32();
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
                 var keyLength = reader.ReadInt32();
                 var hasExpiration = (keyLength & ExpirationBitMask) != 0;
