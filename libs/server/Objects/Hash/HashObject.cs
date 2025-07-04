@@ -511,31 +511,6 @@ namespace Garnet.server
             UpdateSize(key, value);
         }
 
-        private void Set(ByteSpan key, byte[] value)
-        {
-            DeleteExpiredItems();
-#if NET9_0_OR_GREATER
-            hashSpanLookup[key] = value;
-#else
-            hash[key] = value;
-#endif
-            // Skip overhead as existing item is getting replaced.
-            this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                         Utility.RoundUp(value.Length, IntPtr.Size);
-
-            // To persist the key, if it has an expiration
-            if (HasExpirableItems &&
-#if NET9_0_OR_GREATER
-                expirationTimeSpanLookup.Remove(key))
-#else
-                expirationTimes.Remove(key))
-#endif
-            {
-                this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
-                CleanupExpirationStructures();
-            }
-        }
-
         private void SetWithoutPersist(ByteSpan key, byte[] value)
         {
             DeleteExpiredItems();
