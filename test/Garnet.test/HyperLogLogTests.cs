@@ -571,13 +571,13 @@ namespace Garnet.test
             if (seqSize < 128)
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    MemorySize: "1024",
-                    PageSize: "512");
+                    memorySize: "1024",
+                    pageSize: "512");
             else
                 server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                     lowMemory: true,
-                    MemorySize: "32k",
-                    PageSize: "16k");
+                    memorySize: "32k",
+                    pageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -689,8 +689,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: "1024",
-                PageSize: "512");
+                memorySize: "1024",
+                pageSize: "512");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -798,8 +798,8 @@ namespace Garnet.test
         {
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                MemorySize: "32k",
-                PageSize: "16k");
+                memorySize: "32k",
+                pageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -908,8 +908,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: "32k",
-                PageSize: "16k");
+                memorySize: "32k",
+                pageSize: "16k");
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
