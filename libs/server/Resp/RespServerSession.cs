@@ -662,7 +662,7 @@ namespace Garnet.server
         }
 
         // Make first command in string as uppercase
-        private bool MakeUpperCase(byte* ptr)
+        private bool MakeUpperCase(byte* ptr, int len)
         {
             // Assume most commands are already upper case.
             // Assume most commands are 2-8 bytes long.
@@ -677,7 +677,6 @@ namespace Garnet.server
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
-            var len = bytesRead - readHead;
             if (len >= 12)
             {
                 var cmdLen = (uint)(*(ptr + 5) - '2');

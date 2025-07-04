@@ -3929,6 +3929,8 @@ namespace Garnet.test
         [Test]
         public async Task InlineCommandEscapeTest()
         {
+            var key = "key";
+
             using var c = TestUtils.GetGarnetClientSession(rawResult: true, rawSend: true);
             c.Connect();
 
@@ -3964,6 +3966,11 @@ namespace Garnet.test
             // Complete hex escape
             response = await c.ExecuteAsync("PING \"\\x0A\"");
             ClassicAssert.AreEqual("$1\r\n\n\r\n", response);
+
+            response = await c.ExecuteAsync($"SET {key} \"a\\x0Ab\"");
+            ClassicAssert.AreEqual("+OK\r\n", response);
+            response = await c.ExecuteAsync($"GET {key}");
+            ClassicAssert.AreEqual("$3\r\na\nb\r\n", response);
         }
 
         [Test]

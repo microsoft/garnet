@@ -2676,7 +2676,7 @@ namespace Garnet.server
             cmd = FastParseCommand(out count, ptr, bytesRead - readHead);
 
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
-            if ((cmd == RespCommand.NONE) && MakeUpperCase(ptr))
+            if ((cmd == RespCommand.NONE) && MakeUpperCase(ptr, bytesRead - readHead))
             {
                 cmd = FastParseCommand(out count, ptr, bytesRead - readHead);
             }
