@@ -2701,7 +2701,7 @@ namespace Garnet.server
                     }
                 }
 
-                readHead = (int)(ptr - recvBufferPtr);
+                endReadHead = (int)(ptr - recvBufferPtr);
             }
             else
             {
@@ -2739,9 +2739,9 @@ namespace Garnet.server
 
                 // Note that arguments are initialized from the actual command string, and not our made-up RESP string.
                 parseState.InitializeWithArguments(result[(result.Length - count)..]);
+                endReadHead = readHead;
             }
 
-            endReadHead = readHead;
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
