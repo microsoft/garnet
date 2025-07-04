@@ -1144,6 +1144,7 @@ namespace Garnet.test
 
             var key1 = new RedisKey("key1");
             var key2 = new RedisKey("key2");
+            var nxKey = new RedisKey("nx");
             var key1Values = new[] { new SortedSetEntry("A", 2), new SortedSetEntry("B", 3), new SortedSetEntry("C", 3), new SortedSetEntry("D", 5), new SortedSetEntry("!", 8) };
             var key2Values = new[] { new SortedSetEntry("B", 5), new SortedSetEntry("D", 1), new SortedSetEntry("M", 7) };
             var expectedValue = new[] { new SortedSetEntry("A", 2), new SortedSetEntry("C", 3), new SortedSetEntry("!", 8) };
@@ -1167,7 +1168,29 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedValue[2].Score, diffWithScore[2].Score);
 
             // With only one key, it should return the same elements
+            diff = db.SortedSetCombine(SetOperation.Difference, [key1]);
+            ClassicAssert.AreEqual(5, diff.Length);
+            ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diff[0].ToString());
+            ClassicAssert.AreEqual(key1Values[1].Element.ToString(), diff[1].ToString());
+            ClassicAssert.AreEqual(key1Values[2].Element.ToString(), diff[2].ToString());
+            ClassicAssert.AreEqual(key1Values[3].Element.ToString(), diff[3].ToString());
+            ClassicAssert.AreEqual(key1Values[4].Element.ToString(), diff[4].ToString());
+
             diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1]);
+            ClassicAssert.AreEqual(5, diffWithScore.Length);
+            ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diffWithScore[0].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[0].Score, diffWithScore[0].Score);
+            ClassicAssert.AreEqual(key1Values[1].Element.ToString(), diffWithScore[1].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[1].Score, diffWithScore[1].Score);
+            ClassicAssert.AreEqual(key1Values[2].Element.ToString(), diffWithScore[2].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[2].Score, diffWithScore[2].Score);
+            ClassicAssert.AreEqual(key1Values[3].Element.ToString(), diffWithScore[3].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[3].Score, diffWithScore[3].Score);
+            ClassicAssert.AreEqual(key1Values[4].Element.ToString(), diffWithScore[4].Element.ToString());
+            ClassicAssert.AreEqual(key1Values[4].Score, diffWithScore[4].Score);
+
+            // With one key and nonexisting key, it should return the same elements
+            diffWithScore = db.SortedSetCombineWithScores(SetOperation.Difference, [key1, nxKey]);
             ClassicAssert.AreEqual(5, diffWithScore.Length);
             ClassicAssert.AreEqual(key1Values[0].Element.ToString(), diffWithScore[0].Element.ToString());
             ClassicAssert.AreEqual(key1Values[0].Score, diffWithScore[0].Score);
@@ -3047,6 +3070,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedResponse, response);
             response = await c.ExecuteAsync("ZUNION", "2", "z", "nx", "WITHSCORES");
             ClassicAssert.AreEqual(expectedResponse, response);
+            response = await c.ExecuteAsync("ZDIFF", "2", "z", "nx", "WITHSCORES");
+            ClassicAssert.AreEqual(expectedResponse, response);
 
             response = await c.ExecuteAsync("ZMPOP", "1", "z", "MIN");
             if (respVersion >= 3)
@@ -3616,25 +3641,19 @@ namespace Garnet.test
         {
             //ZRANGE key min max BYLEX [WITHSCORES]
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 0 a");
-            lightClientRequest.SendCommand("ZADD board 0 b");
-            lightClientRequest.SendCommand("ZADD board 0 c");
-            lightClientRequest.SendCommand("ZADD board 0 d");
-            lightClientRequest.SendCommand("ZADD board 0 e");
-            lightClientRequest.SendCommand("ZADD board 0 f");
-            lightClientRequest.SendCommand("ZADD board 0 g");
+            var response = lightClientRequest.SendCommand("ZADD board 0 a 0 b 0 c 0 d 0 e 0 f 0 g");
 
-            // get a range by lex order
+            // Test range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX", 3);
             var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            //by lex with different range
+            // By lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board [aaa (g BYLEX", 6);
             expectedResponse = "*5\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n$1\r\nf\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            //by lex with different range
+            // By lex with different range
             response = lightClientRequest.SendCommand("ZRANGE board - [c BYLEX", 4);
             expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
@@ -3644,9 +3663,14 @@ namespace Garnet.test
             //expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            // By lex when the mininum is over the maximum value in zset
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX board [x [z");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
             // Test infinites
             response = lightClientRequest.SendCommand("ZRANGE board - - BYLEX");
-            expectedResponse = "*0\r\n";
+            //expectedResponse = "*0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("ZRANGE board - (+ BYLEX");
@@ -4858,6 +4882,7 @@ namespace Garnet.test
         [TestCase(2, "ZINTER 2 zset1 zset2", Description = "Basic intersection")]
         [TestCase(3, "ZINTER 3 zset1 zset2 zset3", Description = "Three-way intersection")]
         [TestCase(2, "ZINTER 2 zset1 zset2 WITHSCORES", Description = "With scores")]
+        [TestCase(3, "ZINTER 3 zset1 zset2 nx WITHSCORES", Description = "With nonexisting key")]
         public void CanDoZInter(int numKeys, string command)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -4873,6 +4898,11 @@ namespace Garnet.test
                 if (numKeys == 2)
                 {
                     var expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n2\r\n$3\r\ntwo\r\n$1\r\n4\r\n";
+                    TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+                }
+                else if (numKeys == 3)
+                {
+                    var expectedResponse = "*0\r\n";
                     TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
                 }
             }
@@ -4914,6 +4944,7 @@ namespace Garnet.test
         [TestCase("ZINTERSTORE dest 2 zset1 zset2 WEIGHTS 2 3", 2, Description = "With weights")]
         [TestCase("ZINTERSTORE dest 2 zset1 zset2 AGGREGATE MAX", 2, Description = "With MAX aggregation")]
         [TestCase("ZINTERSTORE dest 2 zset1 zset2 AGGREGATE MIN", 2, Description = "With MIN aggregation")]
+        [TestCase("ZINTERSTORE dest 3 zset1 zset2 nx", 0, Description = "With nonexisting key")]
         public void CanDoZInterStore(string command, int expectedCount)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -4939,6 +4970,10 @@ namespace Garnet.test
             else if (command.Contains("MIN"))
             {
                 expectedResponse = "*4\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n";
+            }
+            else if (command.Contains("nx"))
+            {
+                expectedResponse = "*0\r\n";
             }
             else
             {

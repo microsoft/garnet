@@ -1039,8 +1039,10 @@ namespace Garnet.server
             }
             catch (ArgumentException)
             {
-                // this exception is thrown when the SortedSet is empty
-                Debug.Assert(sortedSet.Count == 0);
+                // this exception is thrown when the SortedSet is empty or
+                // when the supplied minimum is larger than the sortedset maximum.
+                Debug.Assert(sortedSet.Count == 0 ||
+                             new ReadOnlySpan<byte>(sortedSet.Max.Element).SequenceCompareTo(minValueChars) < 0);
             }
 
             errorCode = 0;

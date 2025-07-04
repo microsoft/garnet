@@ -926,17 +926,6 @@ namespace Garnet.server
             }
 
             var includeWithScores = false;
-
-            // Read all the keys
-            if (parseState.Count <= 2)
-            {
-                //return empty array
-                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
-            }
-
             var keys = new ArgSlice[nKeys];
 
             for (var i = 1; i < nKeys + 1; i++)
