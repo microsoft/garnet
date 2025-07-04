@@ -42,12 +42,12 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => this.databaseManager.MainStore;
 
         /// <summary>
         /// Object store (of DB 0)
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => this.databaseManager.ObjectStore;
 
         /// <summary>
         /// AOF (of DB 0)
@@ -102,7 +102,7 @@ namespace Garnet.server
         /// <summary>
         /// Lua script cache
         /// </summary>
-        public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
+        public readonly ConcurrentDictionary<ScriptHashKey, LuaScriptHandle> storeScriptCache;
 
         /// <summary>
         /// Logging frequency
@@ -156,12 +156,12 @@ namespace Garnet.server
         /// <summary>
         /// Garnet checkpoint manager for main store
         /// </summary>
-        public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store.CheckpointManager;
+        public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
 
         /// <summary>
         /// Garnet checkpoint manager for object store
         /// </summary>
-        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore.CheckpointManager;
+        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
         /// <summary>
         /// Constructor
@@ -260,8 +260,15 @@ namespace Garnet.server
             if (!serverOptions.EnableCluster)
             {
                 runId = Generator.CreateHexId();
-                StoreCheckpointManager.CurrentHistoryId = runId;
-                if (!serverOptions.DisableObjects) ObjectStoreCheckpointManager.CurrentHistoryId = runId;
+                if (StoreCheckpointManager != null)
+                {
+                    StoreCheckpointManager.CurrentHistoryId = runId;
+                }
+
+                if (!serverOptions.DisableObjects && ObjectStoreCheckpointManager != null)
+                {
+                    ObjectStoreCheckpointManager.CurrentHistoryId = runId;
+                }
             }
         }
 

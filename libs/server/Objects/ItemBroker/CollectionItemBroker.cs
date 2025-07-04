@@ -524,7 +524,7 @@ namespace Garnet.server
                 dstKey = cmdArgs[0];
             }
 
-            var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
+            var asKey = storageSession.scratchBufferBuilder.CreateArgSlice(key);
 
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)

@@ -557,7 +557,7 @@ namespace Garnet.server
         {
             var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
             var expiryLength = NumUtils.CountDigits(expireAtUtc);
-            var expirySlice = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expirySlice = scratchBufferBuilder.CreateArgSlice(expiryLength);
             var expirySpan = expirySlice.Span;
             NumUtils.WriteInt64(expireAtUtc, expirySpan);
 

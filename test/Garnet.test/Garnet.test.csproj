@@ -45,6 +45,7 @@
     <ProjectReference Include="..\..\main\GarnetServer\GarnetServer.csproj" />
     <ProjectReference Include="..\..\modules\GarnetJSON\GarnetJSON.csproj" />
     <ProjectReference Include="..\..\modules\NoOpModule\NoOpModule.csproj" />
+    <ProjectReference Include="..\Garnet.fuzz\Garnet.fuzz.csproj" />
   </ItemGroup>
 
   <ItemGroup>

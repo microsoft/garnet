@@ -695,7 +695,6 @@ namespace Garnet.server
                 // Extract total element count from the array header.
                 // NOTE: Subtracting one to account for first token being parsed.
                 count = ptr[1] - '1';
-                Debug.Assert(count is >= 0 and < 9);
 
                 // Extract length of the first string header
                 var length = ptr[5] - '0';
@@ -828,7 +827,6 @@ namespace Garnet.server
                 {
                     // Extract length from string header
                     var length = ptr[1] - '0';
-                    Debug.Assert(length is > 0 and <= 9);
 
                     // Ensure that the complete command string is contained in the package. Otherwise exit early.
                     // Include 6 bytes to account for command string header and name terminator.
@@ -1546,7 +1544,6 @@ namespace Garnet.server
                 {
                     // Extract length from string header
                     var length = ptr[2] - '0' + 10;
-                    Debug.Assert(length is >= 10 and <= 19);
 
                     // Ensure that the complete command string is contained in the package. Otherwise exit early.
                     // Include 7 bytes to account for command string header and name terminator.

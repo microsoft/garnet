@@ -43,6 +43,27 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Dispose session with Tsavorite
+        /// </summary>
+        /// <param name="sessionID"></param>
+        /// <returns></returns>
+        internal void DisposeClientSession(int sessionID)
+        {
+            if (_activeSessions != null)
+            {
+                lock (_activeSessions)
+                {
+                    if (_activeSessions.TryGetValue(sessionID, out SessionInfo sessionInfo))
+                    {
+                        var session = sessionInfo.session;
+                        session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+                        _ = _activeSessions.Remove(sessionID);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Dumps the revivification stats to a string.
         /// </summary>
         public string DumpRevivificationStats()

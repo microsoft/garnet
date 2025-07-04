@@ -13,6 +13,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using HdrHistogram;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -62,7 +63,8 @@ namespace Garnet.server
         public void ResetAllLatencyMetrics() => LatencyMetrics?.ResetAll();
 
         readonly StoreWrapper storeWrapper;
-        internal readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
@@ -205,13 +207,25 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        /// <summary>
+        /// Create a new RESP server session
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="networkSender"></param>
+        /// <param name="storeWrapper"></param>
+        /// <param name="subscribeBroker"></param>
+        /// <param name="authenticator"></param>
+        /// <param name="enableScripts"></param>
+        /// <param name="clusterProvider"></param>
+        /// <exception cref="GarnetException"></exception>
         public RespServerSession(
             long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker subscribeBroker,
             IGarnetAuthenticator authenticator,
-            bool enableScripts)
+            bool enableScripts,
+            IClusterProvider clusterProvider = null)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -225,7 +239,10 @@ namespace Garnet.server
             logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferManager = new ScratchBufferManager();
+            this.scratchBufferBuilder = new ScratchBufferBuilder();
+
+            // Initialize session-local scratch allocation of size 64 bytes, used for constructing arguments in GarnetApi
+            this.scratchBufferAllocator = new ScratchBufferAllocator();
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -251,7 +268,8 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            var cp = clusterProvider ?? storeWrapper.clusterProvider;
+            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
@@ -283,8 +301,8 @@ namespace Garnet.server
                 [],
                 cmdManager,
                 new(),
-                null,
-                createDatabaseDelegate: delegate { return null; }
+                subscribeBroker: null,
+                createDatabaseDelegate: delegate { return new(); }
             );
         }
 
@@ -388,6 +406,26 @@ namespace Garnet.server
             return _authenticator.CanAuthenticate ? success : false;
         }
 
+        internal bool CanRunDebug()
+        {
+            var enableDebugCommand = storeWrapper.serverOptions.EnableDebugCommand;
+
+            return
+                (enableDebugCommand == ConnectionProtectionOption.Yes) ||
+                ((enableDebugCommand == ConnectionProtectionOption.Local) &&
+                    !networkSender.IsLocalConnection());
+        }
+
+        internal bool CanRunModule()
+        {
+            var enableModuleCommand = storeWrapper.serverOptions.EnableModuleCommand;
+
+            return
+                (enableModuleCommand == ConnectionProtectionOption.Yes) ||
+                ((enableModuleCommand == ConnectionProtectionOption.Local) &&
+                    !networkSender.IsLocalConnection());
+        }
+
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
             bytesRead = bytesReceived;
@@ -461,7 +499,8 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-                scratchBufferManager.Reset();
+                scratchBufferBuilder.Reset();
+                scratchBufferAllocator.Reset();
             }
 
             if (txnManager.IsSkippingOperations())
@@ -626,7 +665,7 @@ namespace Garnet.server
                 if (cmdLen <= 6 && (ptr + 4 + cmdLen + sizeof(ulong)) <= (ptr + len))
                 {
                     var firstUlong = *(ulong*)(ptr + 4);
-                    var secondUlong = *((ulong*)ptr + 4 + cmdLen);
+                    var secondUlong = *(ulong*)(ptr + 4 + cmdLen);
 
                     // Ye olde bit twiddling to check if any sub-byte is > 95
                     // See: https://graphics.stanford.edu/~seander/bithacks.html#HasMoreInWord
@@ -987,7 +1026,7 @@ namespace Garnet.server
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
                         .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
-                            scratchBufferManager, out _));
+                            scratchBufferAllocator, out _));
                 currentCustomTransaction = null;
                 return true;
             }
@@ -1480,12 +1519,12 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger, dbId);
+                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
             dbStorageSession.txnManager = transactionManager;
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
