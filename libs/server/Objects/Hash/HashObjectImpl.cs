@@ -416,7 +416,7 @@ namespace Garnet.server
 #else
                 var result = SetExpiration(item.ToArray(), expiration, expireOption);
 #endif
-                writer.WriteInt32(result);
+                writer.WriteInt32((int)result);
                 output.Header.result1++;
             }
         }

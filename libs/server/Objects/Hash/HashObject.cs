@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -524,7 +525,7 @@ namespace Garnet.server
                          Utility.RoundUp(value.Length, IntPtr.Size);
         }
 
-        private int SetExpiration(ByteSpan key, long expiration, ExpireOption expireOption)
+        private ExpireResult SetExpiration(ByteSpan key, long expiration, ExpireOption expireOption)
         {
 #if NET9_0_OR_GREATER
             if (!ContainsKey(key, out var keyArray))
@@ -532,35 +533,36 @@ namespace Garnet.server
             if (!ContainsKey(key))
 #endif
             {
-                return (int)ExpireResult.KeyNotFound;
+                return ExpireResult.KeyNotFound;
             }
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
                 Remove(key, out _);
-                return (int)ExpireResult.KeyAlreadyExpired;
+                return ExpireResult.KeyAlreadyExpired;
             }
 
             InitializeExpirationStructures();
 
+            ref var expirationTimeRef = 
 #if NET9_0_OR_GREATER
-            if (expirationTimeSpanLookup.TryGetValue(key, out var currentExpiration))
+                ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimeSpanLookup, key, out var exists);
 #else
-            if (expirationTimes.TryGetValue(key, out var currentExpiration))
+                ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimes, key, out var exists);
 #endif
+            if (exists)
             {
                 if ((expireOption & ExpireOption.NX) == ExpireOption.NX ||
-                    ((expireOption & ExpireOption.GT) == ExpireOption.GT && expiration <= currentExpiration) ||
-                    ((expireOption & ExpireOption.LT) == ExpireOption.LT && expiration >= currentExpiration))
+                    ((expireOption & ExpireOption.GT) == ExpireOption.GT && expiration <= expirationTimeRef) ||
+                    ((expireOption & ExpireOption.LT) == ExpireOption.LT && expiration >= expirationTimeRef))
                 {
-                    return (int)ExpireResult.ExpireConditionNotMet;
+                    return ExpireResult.ExpireConditionNotMet;
                 }
 
+                expirationTimeRef = expiration;
 #if NET9_0_OR_GREATER
-                expirationTimes[keyArray] = expiration;
                 expirationQueue.Enqueue(keyArray, expiration);
 #else
-                expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);
 #endif
                 // Size of dictionary entry already accounted for as the key already exists
@@ -571,20 +573,19 @@ namespace Garnet.server
                 if ((expireOption & ExpireOption.XX) == ExpireOption.XX ||
                     (expireOption & ExpireOption.GT) == ExpireOption.GT)
                 {
-                    return (int)ExpireResult.ExpireConditionNotMet;
+                    return ExpireResult.ExpireConditionNotMet;
                 }
 
+                expirationTimeRef = expiration;
 #if NET9_0_OR_GREATER
-                expirationTimes[keyArray] = expiration;
                 expirationQueue.Enqueue(keyArray, expiration);
 #else
-                expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);
 #endif
                 UpdateExpirationSize(key);
             }
 
-            return (int)ExpireResult.ExpireUpdated;
+            return ExpireResult.ExpireUpdated;
         }
 
         private int Persist(ByteSpan key)
@@ -652,7 +653,7 @@ namespace Garnet.server
         }
     }
 
-    enum ExpireResult
+    enum ExpireResult : int
     {
         KeyNotFound = -2,
         ExpireConditionNotMet = 0,
