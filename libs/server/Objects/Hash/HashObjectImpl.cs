@@ -216,7 +216,7 @@ namespace Garnet.server
                     if (hashValueRef.Length == value.Length)
                     {
                         value.CopyTo(hashValueRef);
-                    } 
+                    }
                     else
                     {
                         hashValueRef = value.ToArray();
@@ -225,7 +225,7 @@ namespace Garnet.server
                         // Skip overhead as existing item is getting replaced.
                         // this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
                         //              Utility.RoundUp(value.Length, IntPtr.Size);
-                    }   
+                    }
 
                     // To persist the key, if it has an expiration
                     if (HasExpirableItems &&

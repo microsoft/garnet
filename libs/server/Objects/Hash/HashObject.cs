@@ -544,7 +544,7 @@ namespace Garnet.server
 
             InitializeExpirationStructures();
 
-            ref var expirationTimeRef = 
+            ref var expirationTimeRef =
 #if NET9_0_OR_GREATER
                 ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimeSpanLookup, key, out var exists);
 #else
