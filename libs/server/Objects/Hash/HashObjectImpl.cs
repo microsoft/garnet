@@ -8,6 +8,8 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Tsavorite.core;
+
 
 #if NET9_0_OR_GREATER
 using ByteSpan = System.ReadOnlySpan<byte>;
@@ -185,34 +187,32 @@ namespace Garnet.server
 
         private void HashSet(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
+            DeleteExpiredItems();
+
             var hashOp = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
                 var key = GetByteSpanFromInput(ref input, i);
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.AsReadOnlySpan();
 
-                // Avoid multiple hash calculations by acquiring ref to the dictionary value
+                // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+                // The ref is unsafe to read/write to if the hash dictionary is mutated.
                 ref var hashValueRef =
 #if NET9_0_OR_GREATER
                     ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
 #else
                     ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
 #endif
-                var isExpired = IsExpired(key);
 
-                if (isExpired || !exists)
+                if (!exists || IsExpired(key))
                 {
-                    DeleteExpiredItems();
-
                     hashValueRef = value.ToArray();
                     UpdateSize(key, value);
 
                     output.Header.result1++;
                 }
-                else if ((hashOp is HashOperation.HSET or HashOperation.HMSET) && hashValueRef != default)
+                else if (exists && (hashOp is HashOperation.HSET or HashOperation.HMSET))
                 {
-                    DeleteExpiredItems();
-
                     if (hashValueRef.Length == value.Length)
                     {
                         value.CopyTo(hashValueRef);
@@ -221,10 +221,9 @@ namespace Garnet.server
                     {
                         hashValueRef = value.ToArray();
 
-                        // TODO: Update size? Following existing logic was a nop, right..?
-                        // Skip overhead as existing item is getting replaced.
-                        // this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                        //              Utility.RoundUp(value.Length, IntPtr.Size);
+                        // Adjust the size to account for the new value replacing the old one.
+                        this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+                                     Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
                     }
 
                     // To persist the key, if it has an expiration

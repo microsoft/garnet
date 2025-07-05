@@ -430,6 +430,7 @@ namespace Garnet.server
             {
                 return false;
             }
+
 #if NET9_0_OR_GREATER
             return hashSpanLookup.TryGetValue(key, out value);
 #else
@@ -505,10 +506,11 @@ namespace Garnet.server
             DeleteExpiredItems();
 #if NET9_0_OR_GREATER
             var success = hashSpanLookup.TryAdd(key, value);
-            Debug.Assert(success);
 #else
-            hash.Add(key, value);
+            var success = hash.TryAdd(key, value);
 #endif
+            Debug.Assert(success);
+
             UpdateSize(key, value);
         }
 
@@ -544,6 +546,8 @@ namespace Garnet.server
 
             InitializeExpirationStructures();
 
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the expiration dictionary is mutated.
             ref var expirationTimeRef =
 #if NET9_0_OR_GREATER
                 ref CollectionsMarshal.GetValueRefOrAddDefault(expirationTimeSpanLookup, key, out var exists);
@@ -592,7 +596,7 @@ namespace Garnet.server
         {
             if (!ContainsKey(key))
             {
-                return -2;
+                return (int)ExpireResult.KeyNotFound;
             }
 
 #if NET9_0_OR_GREATER
@@ -603,7 +607,7 @@ namespace Garnet.server
             {
                 this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                 CleanupExpirationStructures();
-                return 1;
+                return (int)ExpireResult.ExpireUpdated;
             }
 
             return -1;
@@ -613,7 +617,7 @@ namespace Garnet.server
         {
             if (!ContainsKey(key))
             {
-                return -2;
+                return (long)ExpireResult.KeyNotFound;
             }
 
 #if NET9_0_OR_GREATER
