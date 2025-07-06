@@ -2849,7 +2849,7 @@ namespace Garnet.server
             //
             // Separators separate different arguments.
             // Separators are start of line (implied), the lf/crlf at end of line, and the characters:
-            // space, tab and no-break space, when they are in a normal context.
+            // space, tab and carriage return (when not followed by linefeed), when they are in a normal context.
             // In a quote context the same seqeunces are considered normal.
             //
             // Quote characters are ' or ".
@@ -2940,7 +2940,7 @@ namespace Garnet.server
                     else if (quoteChar == *ptr)
                     {
                         var next = ptr + 1;
-                        if (AsciiUtils.IsWhiteSpace(*next) || ((next < end) && ((*(ushort*)next == crlf) || *next == '\n')))
+                        if (AsciiUtils.IsRedisWhiteSpace(*next) || ((next < end) && ((*(ushort*)next == crlf) || *next == '\n')))
                         {
                             bool unQuote;
 
@@ -2963,7 +2963,7 @@ namespace Garnet.server
                         }
                     }
                 }
-                else if ((quoteChar == 0) && AsciiUtils.IsWhiteSpace(*ptr))
+                else if ((quoteChar == 0) && AsciiUtils.IsRedisWhiteSpace(*ptr))
                 {
                     if (anyContents)
                     {
