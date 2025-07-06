@@ -3903,6 +3903,10 @@ namespace Garnet.test
             response = await c.ExecuteAsync("PING");
             ClassicAssert.AreEqual("+PONG\r\n", response);
 
+            // Test accepting both CRLF and LF as terminating characters.
+            response = await c.ExecuteAsync("PING\nPING");
+            ClassicAssert.AreEqual("+PONG\r\n+PONG\r\n", response);
+
             // Test command failure
             response = await c.ExecuteAsync("PIN");
             ClassicAssert.AreEqual('-', response[0]);

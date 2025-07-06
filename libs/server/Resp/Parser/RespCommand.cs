@@ -2854,8 +2854,8 @@ namespace Garnet.server
             // Quote contexts allow escaping depending on their starting character.
             //
             // Separators separate different arguments.
-            // Separators are start of line (implied), the crlf at end of line, and the characters: space, tab and no-break space,
-            // all when they are in a normal context.
+            // Separators are start of line (implied), the lf/crlf at end of line, and the characters:
+            // space, tab and no-break space, when they are in a normal context.
             // In a quote context the same seqeunces are considered normal.
             //
             // Quote characters are ' or ".
@@ -2889,6 +2889,16 @@ namespace Garnet.server
             {
                 if (*(ushort*)ptr == crlf)
                 {
+                    if (anyContents)
+                    {
+                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
+                        anyContents = false;
+                    }
+                    ptr++;
+                }
+
+                if (*ptr == '\n')
+                {
                     commandReceived = true;
                     if (anyContents)
                     {
@@ -2896,7 +2906,7 @@ namespace Garnet.server
                     }
 
                     // Advance past newline
-                    ptr += 2;
+                    ptr++;
 
                     if (quoteChar != 0)
                     {
@@ -2936,7 +2946,7 @@ namespace Garnet.server
                     else if (quoteChar == *ptr)
                     {
                         var next = ptr + 1;
-                        if (AsciiUtils.IsWhiteSpace(*next) || ((next < end) && (*(ushort*)next == crlf)))
+                        if (AsciiUtils.IsWhiteSpace(*next) || ((next < end) && ((*(ushort*)next == crlf) || *next == '\n')))
                         {
                             bool unQuote;
 
