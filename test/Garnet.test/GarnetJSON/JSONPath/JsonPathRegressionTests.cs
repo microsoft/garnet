@@ -67,6 +67,8 @@ namespace Garnet.test.JSONPath
 
         internal static IEnumerable<RegressionTestQuery> LoadCases()
         {
+
+            // JSON adapted from https://github.com/cburgmer/json-path-comparison/blob/master/regression_suite/regression_suite.yaml
             var holder =  JsonSerializer.Deserialize<RegressionTestHolder>(
                 File.OpenRead("GarnetJSON/JSONPath/jpath_regression.json"));
             return holder!.queries;
