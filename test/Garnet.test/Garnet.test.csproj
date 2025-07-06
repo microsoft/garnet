@@ -19,7 +19,7 @@
 	  <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-	  <None Update="GarnetJSON\JSONPath\jpath_regression.json">
+	  <None Update="GarnetJSON\JSONPath\RegressionSuite.json">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </None>
   </ItemGroup>
