@@ -770,7 +770,7 @@ namespace Garnet.test.JSONPath
             ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
             JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
             ClassicAssert.AreEqual(2, Array?.Count);
-            ClassicAssert.AreEqual(true,JsonNode.DeepEquals(Array?[0],JsonNode.Parse("[1,2]")) );
+            ClassicAssert.AreEqual(true, JsonNode.DeepEquals(Array?[0], JsonNode.Parse("[1,2]")));
         }
 
         [Test]
@@ -795,7 +795,7 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual(2, Array?.Count);
 
 
-            ClassicAssert.AreEqual(true,JsonNode.DeepEquals(Array?[0],JsonNode.Parse(hi_there_str)) );
+            ClassicAssert.AreEqual(true, JsonNode.DeepEquals(Array?[0], JsonNode.Parse(hi_there_str)));
         }
     }
 }
