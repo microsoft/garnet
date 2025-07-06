@@ -766,10 +766,16 @@ namespace GarnetJSON.JSONPath
                     currentChar = _expression[_currentIndex];
 
                     var isNegativeSign = _currentIndex == start && currentChar == '-';
-                    var isDecimal = !decimalSeen && currentChar is '.' or 'e' or 'E';
+                    var isDecimal = currentChar is '.' or 'e' or 'E';
                     if (isDecimal)
                     {
                         decimalSeen = true;
+                    }
+
+                    // account for + in scientific notation
+                    if (decimalSeen && currentChar is '+' && _expression[_currentIndex - 1] is 'e' or 'E')
+                    {
+                        isDecimal = true;
                     }
 
                     if (!char.IsDigit(currentChar) && !isNegativeSign && !isDecimal)
