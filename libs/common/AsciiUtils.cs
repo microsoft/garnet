@@ -41,9 +41,9 @@ public static class AsciiUtils
     /// <summary>Indicates whether character is ASCII whitespace.</summary>
     /// <param name="c">The character to evaluate.</param>
     /// <returns>true if <paramref name="c"/> is an ASCII whitespace character; otherwise, false.</returns>
-    public static bool IsWhiteSpace(byte c)
+    public static bool IsRedisWhiteSpace(byte c)
     {
-        return (c == ' ') || (c == '\t') || (c == '\xA0');
+        return (c == ' ') || (c == '\t') || (c == '\r');
     }
 
     public static byte ToLower(byte c)
