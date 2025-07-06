@@ -85,6 +85,47 @@ namespace Garnet.test.JSONPath
         }
 
         [Test]
+        public void BooleanExpression_EqualsOperator()
+        {
+
+
+            string json = """
+                          {
+                          "field1": "test",
+                          "field2": "hi",
+                          "field3": true,
+                          "field4": 1234,
+                          "field5": null
+                          }
+                          """;
+            JsonNode payload = JsonNode.Parse(json)!;
+            (string FieldName, JsonNode Value, bool ShouldMatch)[] checks =
+            [
+                ("field1", JsonNode.Parse("null"), false),
+                ("field2", JsonNode.Parse("\"hi\""), true),
+                ("field3", JsonNode.Parse("true"), true),
+                ("field3", JsonNode.Parse("false"), false),
+                ("field4", JsonNode.Parse("1234"), true),
+                ("field5", JsonNode.Parse("null"), true),
+                ("field5", JsonNode.Parse("123"), false)
+            ];
+
+            foreach (var check in checks)
+            {
+                BooleanQueryExpression EqualExpression = new BooleanQueryExpression(QueryOperator.Equals, new List<PathFilter> { new FieldFilter(check.FieldName) }, check.Value);
+                bool EqualResult = EqualExpression.IsMatch(payload, payload);
+                ClassicAssert.AreEqual(check.ShouldMatch, EqualResult, "Equals {0} - {1}", check.FieldName, check.Value);
+
+                BooleanQueryExpression NotEqualExpression = new BooleanQueryExpression(QueryOperator.NotEquals, new List<PathFilter> { new FieldFilter(check.FieldName) }, check.Value);
+
+                bool NotEqualResult = NotEqualExpression.IsMatch(payload, payload);
+                ClassicAssert.AreNotEqual(check.ShouldMatch, NotEqualResult, "Not Equals {0} - {1}", check.FieldName, check.Value);
+            }
+
+
+        }
+
+        [Test]
         public void BooleanExpressionTest_RegexEqualsOperator()
         {
             BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.RegexEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/foo.*d/\""));

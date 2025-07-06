@@ -4,38 +4,45 @@ using System.Text.Json.Nodes;
 namespace GarnetJSON.JSONPath
 {
     /// <summary>
-    /// Represents a filter that scans through JSON nodes to find nodes matching a specified name. Eg: ..['name']
+    /// Represents a filter that selects multiple indexes from a JSON array. Eg: .[0,1,2]
     /// </summary>
-    internal class ScanFilter : PathFilter
+    internal class ScanArrayMultipleIndexFilter : PathFilter
     {
         /// <summary>
-        /// Gets or sets the name of the JSON node to match.
+        /// Gets or sets the list of indexes to filter.
         /// </summary>
-        internal string? Name;
+        internal List<int> Indexes;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="ScanFilter"/> class with the specified name.
+        /// Initializes a new instance of the <see cref="ArrayMultipleIndexFilter"/> class with the specified indexes.
         /// </summary>
-        /// <param name="name">The name of the JSON node to match. If null, all nodes are matched.</param>
-        public ScanFilter(string? name)
+        /// <param name="indexes">The list of indexes to filter.</param>
+        public ScanArrayMultipleIndexFilter(List<int> indexes)
         {
-            Name = name;
+            Indexes = indexes;
         }
 
         /// <summary>
-        /// Executes the filter on the specified JSON node and returns the matching nodes.
+        /// Executes the filter on the specified JSON node and returns the filtered nodes.
         /// </summary>
         /// <param name="root">The root JSON node.</param>
         /// <param name="current">The current JSON node.</param>
         /// <param name="settings">The settings for JSON selection.</param>
-        /// <returns>An enumerable of matching JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
+           public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
         {
-
-            // Inspired by https://stackoverflow.com/a/30441479/7331395
+                // Inspired by https://stackoverflow.com/a/30441479/7331395
             IEnumerator? enumerator = null;
             if (current is JsonArray arr)
             {
+                foreach (int i in Indexes)
+                {
+                    if (TryGetTokenIndex(arr, i, settings?.ErrorWhenNoMatch ?? false, out var foundNode))
+                    {
+                        yield return foundNode;
+                    }
+                }
+
                 enumerator = arr.GetEnumerator();
             }
             else if (current is JsonObject obj)
@@ -55,25 +62,24 @@ namespace GarnetJSON.JSONPath
                         {
                             var element = arrayEnumerator.Current;
                             jsonNode = element;
-                            if (Name is null)
-                            {
-                                yield return element;
-                            }
                             stack.Push(enumerator);
                         }
                         else if (enumerator is IEnumerator<KeyValuePair<string, JsonNode?>> objectEnumerator)
                         {
                             var element = objectEnumerator.Current;
                             jsonNode = element.Value;
-                            if (Name is null || element.Key == Name)
-                            {
-                                yield return element.Value;
-                            }
                             stack.Push(enumerator);
                         }
 
                         if (jsonNode is JsonArray innerArr)
                         {
+                            foreach (int i in Indexes)
+                            {
+                                if (TryGetTokenIndex(innerArr, i, settings?.ErrorWhenNoMatch ?? false, out var foundNode))
+                                {
+                                    yield return foundNode;
+                                }
+                            }
                             enumerator = innerArr.GetEnumerator();
                         }
                         else if (jsonNode is JsonObject innerOobj)
@@ -91,15 +97,16 @@ namespace GarnetJSON.JSONPath
                     }
                 }
             }
+
         }
 
         /// <summary>
-        /// Executes the filter on the specified enumerable of JSON nodes and returns the matching nodes.
+        /// Executes the filter on the specified enumerable of JSON nodes and returns the filtered nodes.
         /// </summary>
         /// <param name="root">The root JSON node.</param>
-        /// <param name="current">The enumerable of current JSON nodes.</param>
+        /// <param name="current">The current enumerable of JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
-        /// <returns>An enumerable of matching JSON nodes.</returns>
+        /// <returns>An enumerable of filtered JSON nodes.</returns>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
         {
             return current.SelectMany(x => ExecuteFilter(root, x, settings));

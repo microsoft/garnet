@@ -41,7 +41,8 @@ namespace GarnetJSON.JSONPath
             jsonNode = default;
             if (t is JsonArray a)
             {
-                if (a.Count <= index)
+                int indexToUse = index < 0 ? a.Count + index : index;
+                if (indexToUse<0 || a.Count <= indexToUse)
                 {
                     if (errorWhenNoMatch)
                     {
@@ -51,7 +52,7 @@ namespace GarnetJSON.JSONPath
                     return false;
                 }
 
-                jsonNode = a[index];
+                jsonNode = a[indexToUse];
                 return true;
             }
             else

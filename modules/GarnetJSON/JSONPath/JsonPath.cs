@@ -23,6 +23,7 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 #endregion
 
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -35,7 +36,6 @@ namespace GarnetJSON.JSONPath
     /// </summary>
     internal class JsonPath
     {
-        private static readonly char[] FloatCharacters = ['.', 'E', 'e'];
         private static readonly JsonValue TrueJsonValue = JsonValue.Create(true);
         private static readonly JsonValue FalseJsonValue = JsonValue.Create(false);
 
@@ -176,7 +176,6 @@ namespace GarnetJSON.JSONPath
             bool scan = false;
             bool followingIndexer = false;
             bool followingDot = false;
-
             bool ended = false;
             while (_currentIndex < _expression.Length && !ended)
             {
@@ -198,10 +197,14 @@ namespace GarnetJSON.JSONPath
                             scan = false;
                         }
 
-                        filters.Add(ParseIndexer(currentChar, scan));
+                        filters.Add(ParseIndexer(currentChar, scan, query));
                         scan = false;
 
-                        _currentIndex++;
+                        if (_currentIndex<_expression.Length && ((_expression[_currentIndex] == ']' && currentChar is '[') || (_expression[_currentIndex] is ')' && currentChar is '(')))
+                        {
+                            _currentIndex++;
+                        }
+
                         currentPartStartIndex = _currentIndex;
                         followingIndexer = true;
                         followingDot = false;
@@ -288,7 +291,7 @@ namespace GarnetJSON.JSONPath
         /// <returns>A new PathFilter instance.</returns>
         private static PathFilter CreatePathFilter(string? member, bool scan)
         {
-            PathFilter filter = (scan) ? (PathFilter)new ScanFilter(member) : new FieldFilter(member);
+            PathFilter filter = scan ? new ScanFilter(member) : new FieldFilter(member);
             return filter;
         }
 
@@ -297,37 +300,40 @@ namespace GarnetJSON.JSONPath
         /// </summary>
         /// <param name="indexerOpenChar">The opening character of the indexer.</param>
         /// <param name="scan">Indicates if this is a scan operation.</param>
+        /// <param name="query">Indicates if this is within the context of a query parser.</param>
         /// <returns>A PathFilter representing the parsed indexer.</returns>
-        private PathFilter ParseIndexer(char indexerOpenChar, bool scan)
+        private PathFilter ParseIndexer(char indexerOpenChar, bool scan, bool query)
         {
             _currentIndex++;
 
-            char indexerCloseChar = (indexerOpenChar == '[') ? ']' : ')';
+            char indexerCloseChar = indexerOpenChar is '[' ? ']' : ')';
 
             EnsureLength("Path ended with open indexer.");
 
             EatWhitespace();
 
-            if (_expression[_currentIndex] == '\'')
+            if (_expression[_currentIndex] is '\'' or '\"')
             {
                 return ParseQuotedField(indexerCloseChar, scan);
             }
-            else if (_expression[_currentIndex] == '?')
+
+            // either it's a filter like [?( OR we're within a query context and we're parsing a parens grouping
+            if ((query && indexerOpenChar is '(') || _expression[_currentIndex] == '?')
             {
                 return ParseQuery(indexerCloseChar, scan);
             }
-            else
-            {
-                return ParseArrayIndexer(indexerCloseChar);
-            }
+
+            return ParseArrayIndexer(indexerCloseChar, scan);
+
         }
 
         /// <summary>
         /// Parses an array indexer expression, supporting single index, multiple indexes, or slice notation.
         /// </summary>
         /// <param name="indexerCloseChar">The closing character of the indexer.</param>
+        /// <param name="scan">Indicates if this is a scan operation.</param>
         /// <returns>A PathFilter representing the array indexer.</returns>
-        private PathFilter ParseArrayIndexer(char indexerCloseChar)
+        private PathFilter ParseArrayIndexer(char indexerCloseChar, bool scan)
         {
             int start = _currentIndex;
             int? end = null;
@@ -363,7 +369,7 @@ namespace GarnetJSON.JSONPath
                         int index = int.Parse(indexer, CultureInfo.InvariantCulture);
 
                         indexes.Add(index);
-                        return new ArrayMultipleIndexFilter(indexes);
+                        return scan? new ScanArrayMultipleIndexFilter(indexes) : new ArrayMultipleIndexFilter(indexes);
                     }
                     else if (colonCount > 0)
                     {
@@ -382,7 +388,7 @@ namespace GarnetJSON.JSONPath
                             }
                         }
 
-                        return new ArraySliceFilter { Start = startIndex, End = endIndex, Step = step };
+                        return scan? new ScanArraySliceFilter{ Start = startIndex, End = endIndex, Step = step } : new ArraySliceFilter { Start = startIndex, End = endIndex, Step = step };
                     }
                     else
                     {
@@ -394,7 +400,7 @@ namespace GarnetJSON.JSONPath
                         var indexer = _expression.AsSpan(start, length);
                         int index = int.Parse(indexer, CultureInfo.InvariantCulture);
 
-                        return new ArrayIndexFilter { Index = index };
+                        return scan ? new ScanArrayIndexFilter(){Index = index} : new ArrayIndexFilter { Index = index };
                     }
                 }
                 else if (currentCharacter == ',')
@@ -406,10 +412,7 @@ namespace GarnetJSON.JSONPath
                         throw new JsonException("Array index expected.");
                     }
 
-                    if (indexes == null)
-                    {
-                        indexes = new List<int>();
-                    }
+                    indexes ??= [];
 
                     var indexer = _expression.AsSpan(start, length);
                     indexes.Add(int.Parse(indexer, CultureInfo.InvariantCulture));
@@ -432,7 +435,7 @@ namespace GarnetJSON.JSONPath
                         throw new JsonException("Unexpected character while parsing path indexer: " + currentCharacter);
                     }
 
-                    return new ArrayIndexFilter();
+                    return scan? new ScanArrayIndexFilter() : new ArrayIndexFilter();
                 }
                 else if (currentCharacter == ':')
                 {
@@ -511,20 +514,26 @@ namespace GarnetJSON.JSONPath
             _currentIndex++;
             EnsureLength("Path ended with open indexer.");
 
-            if (_expression[_currentIndex] != '(')
+            if (indexerCloseChar is ']')
             {
-                throw new JsonException("Unexpected character while parsing path indexer: " + _expression[_currentIndex]);
+                if (_expression[_currentIndex] != '(')
+                {
+                    throw new JsonException("Unexpected character while parsing path indexer: " + _expression[_currentIndex]);
+                }
+                _currentIndex++;
             }
 
-            _currentIndex++;
 
             QueryExpression expression = ParseExpression();
 
-            _currentIndex++;
+            if (indexerCloseChar is ']')
+            {
+                _currentIndex++;
+            }
             EnsureLength("Path ended with open indexer.");
             EatWhitespace();
 
-            if (_expression[_currentIndex] != indexerCloseChar)
+            if (_expression[_currentIndex++] != indexerCloseChar)
             {
                 throw new JsonException("Unexpected character while parsing path indexer: " + _expression[_currentIndex]);
             }
@@ -539,6 +548,7 @@ namespace GarnetJSON.JSONPath
             }
         }
 
+
         /// <summary>
         /// Attempts to parse an expression starting with '$' or '@'.
         /// </summary>
@@ -546,6 +556,7 @@ namespace GarnetJSON.JSONPath
         /// <returns>True if successfully parsed an expression; otherwise, false.</returns>
         private bool TryParseExpression(out List<PathFilter>? expressionPath)
         {
+
             if (_expression[_currentIndex] == '$')
             {
                 expressionPath = new List<PathFilter> { RootFilter.Instance };
@@ -553,6 +564,12 @@ namespace GarnetJSON.JSONPath
             else if (_expression[_currentIndex] == '@')
             {
                 expressionPath = new List<PathFilter>();
+            }
+            else if (_expression[_currentIndex] == '(')
+            {
+                var query = ParseQuery(')', false);
+                expressionPath = [query];
+                return true;
             }
             else
             {
@@ -562,7 +579,7 @@ namespace GarnetJSON.JSONPath
 
             _currentIndex++;
 
-            if (ParsePath(expressionPath!, _currentIndex, true))
+            if (ParsePath(expressionPath, _currentIndex, true))
             {
                 throw new JsonException("Path ended with open query.");
             }
@@ -603,6 +620,14 @@ namespace GarnetJSON.JSONPath
                 return value;
             }
 
+            if (TryParseArrayLiteral(out var arrayValue))
+            {
+                EatWhitespace();
+                EnsureLength("Path ended with open query.");
+
+                return arrayValue;
+            }
+
             throw CreateUnexpectedCharacterException();
         }
 
@@ -617,6 +642,14 @@ namespace GarnetJSON.JSONPath
 
             while (_currentIndex < _expression.Length)
             {
+
+
+                bool isNot = _expression[_currentIndex] == '!';
+                if (isNot)
+                {
+                    _currentIndex++;
+                }
+
                 object? left = ParseSide();
                 object? right = null;
 
@@ -634,17 +667,36 @@ namespace GarnetJSON.JSONPath
                     right = ParseSide();
                 }
 
-                BooleanQueryExpression booleanExpression = new BooleanQueryExpression(op, left, right);
+
+                QueryExpression thisExpression;
+
+                // If this expression was a grouping ( @.a || @.b), it will return as a QueryFilter, so we need to pull the expression out
+                if (op is QueryOperator.Exists && left is List<PathFilter> leftPathFilters &&
+                    leftPathFilters.Count == 1 && leftPathFilters[0] is QueryFilter qf)
+                {
+                    thisExpression = qf.Expression;
+                }
+                else
+                {
+                    thisExpression=new BooleanQueryExpression(op, left, right);
+                }
+
+                if (isNot)
+                {
+                    var notExpression = new CompositeExpression(QueryOperator.Not);
+                    notExpression.Expressions.Add(thisExpression);
+                    thisExpression = notExpression;
+                }
 
                 if (_expression[_currentIndex] == ')')
                 {
                     if (parentExpression != null)
                     {
-                        parentExpression.Expressions.Add(booleanExpression);
+                        parentExpression.Expressions.Add(thisExpression);
                         return rootExpression!;
                     }
 
-                    return booleanExpression;
+                    return thisExpression;
                 }
                 if (_expression[_currentIndex] == '&')
                 {
@@ -661,13 +713,10 @@ namespace GarnetJSON.JSONPath
 
                         parentExpression = andExpression;
 
-                        if (rootExpression == null)
-                        {
-                            rootExpression = parentExpression;
-                        }
+                        rootExpression ??= parentExpression;
                     }
 
-                    parentExpression.Expressions.Add(booleanExpression);
+                    parentExpression.Expressions.Add(thisExpression);
                 }
                 if (_expression[_currentIndex] == '|')
                 {
@@ -684,13 +733,10 @@ namespace GarnetJSON.JSONPath
 
                         parentExpression = orExpression;
 
-                        if (rootExpression == null)
-                        {
-                            rootExpression = parentExpression;
-                        }
+                        rootExpression ??= parentExpression;
                     }
 
-                    parentExpression.Expressions.Add(booleanExpression);
+                    parentExpression.Expressions.Add(thisExpression);
                 }
             }
 
@@ -705,7 +751,7 @@ namespace GarnetJSON.JSONPath
         private bool TryParseValue(out JsonValue? value)
         {
             char currentChar = _expression[_currentIndex];
-            if (currentChar == '\'')
+            if (currentChar is '\'' or '"' )
             {
                 value = JsonValue.Create(ReadQuotedString());
                 return true;
@@ -714,30 +760,38 @@ namespace GarnetJSON.JSONPath
             {
                 var start = _currentIndex;
                 _currentIndex++;
+                bool decimalSeen = false;
                 while (_currentIndex < _expression.Length)
                 {
                     currentChar = _expression[_currentIndex];
-                    if (currentChar == ' ' || currentChar == ')')
-                    {
-                        var numberText = _expression.AsSpan(start, _currentIndex - start);
 
-                        if (numberText.IndexOfAny(FloatCharacters) != -1)
-                        {
-                            bool result = double.TryParse(numberText, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var d);
-                            value = JsonValue.Create(d);
-                            return result;
-                        }
-                        else
-                        {
-                            bool result = long.TryParse(numberText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var l);
-                            value = JsonValue.Create(l);
-                            return result;
-                        }
-                    }
-                    else
+                    var isNegativeSign = _currentIndex == start && currentChar == '-';
+                    var isDecimal = !decimalSeen && currentChar is '.' or 'e' or 'E';
+                    if (isDecimal)
                     {
-                        _currentIndex++;
+                        decimalSeen = true;
                     }
+
+                    if (!char.IsDigit(currentChar) && !isNegativeSign && !isDecimal)
+                    {
+                        var numberChars = _expression.AsSpan(start.._currentIndex);
+                        if (decimalSeen && double.TryParse(numberChars, out double dbl))
+                        {
+
+                                value = JsonValue.Create(dbl);
+                                return true;
+                        }
+                        if(!decimalSeen && long.TryParse(numberChars, out long long_val))
+                        {
+                            value = JsonValue.Create(long_val);
+                            return true;
+
+                        }
+
+                        value = null;
+                        return false;
+                    }
+                    _currentIndex++;
                 }
             }
             else if (currentChar == 't')
@@ -774,6 +828,75 @@ namespace GarnetJSON.JSONPath
             return false;
         }
 
+        private bool TryParseArrayLiteral(out JsonArray? value)
+        {
+
+            if (_expression[_currentIndex] == '[')
+            {
+                int innerIndex = _currentIndex;
+                int arrayDepth = 0;
+                bool inQuotes = false;
+                bool isEscaped = false;
+                bool done = false;
+                while (innerIndex < _expression.Length && !done)
+                {
+                    char currChar = _expression[innerIndex++];
+                    if (inQuotes && currChar == '\\' && !isEscaped)
+                    {
+                        isEscaped = true;
+                        continue;
+                    }
+
+                    if (currChar == '[' && !inQuotes)
+                    {
+                        arrayDepth++;
+                    }else if (currChar == ']' && !inQuotes)
+                    {
+                        arrayDepth--;
+                        if (arrayDepth == 0)
+                        {
+                            done = true;
+                            break;
+                        }
+                    }else if (currChar == '"' && !isEscaped)
+                    {
+                        inQuotes = !inQuotes;
+                    }
+
+                    isEscaped = false;
+                }
+
+                if (!done)
+                {
+                    throw new JsonException("Incomplete Array Literal");
+                }
+                var possibleJsonArray = _expression.AsSpan(_currentIndex..innerIndex);
+                _currentIndex = innerIndex;
+                var maxByteCount = Encoding.UTF8.GetMaxByteCount(possibleJsonArray.Length);
+                if (maxByteCount > 256)
+                {
+                    var thisJsonBytes = ArrayPool<byte>.Shared.Rent(maxByteCount);
+                    var thisJsonByteLen = Encoding.UTF8.GetBytes(possibleJsonArray, thisJsonBytes);
+                    var arr = JsonNode.Parse(thisJsonBytes.AsSpan(..thisJsonByteLen));
+                    ArrayPool<byte>.Shared.Return(thisJsonBytes);
+                    value = arr?.AsArray();
+                }
+                else
+                {
+                    Span<byte> thisJsonBytes = stackalloc byte[maxByteCount];
+                    var thisJsonByteLen = Encoding.UTF8.GetBytes(possibleJsonArray, thisJsonBytes);
+                    var arr = JsonNode.Parse(thisJsonBytes[..thisJsonByteLen]);
+
+                    value = arr?.AsArray();
+                }
+
+                return true;
+            }
+
+            value = null;
+            return false;
+        }
+
         /// <summary>
         /// Reads a quoted string value, handling escape sequences.
         /// </summary>
@@ -782,60 +905,124 @@ namespace GarnetJSON.JSONPath
         {
             StringBuilder sb = new StringBuilder();
 
+            char quoteChar = _expression[_currentIndex];
             _currentIndex++;
             while (_currentIndex < _expression.Length)
             {
                 char currentChar = _expression[_currentIndex];
-                if (currentChar == '\\' && _currentIndex + 1 < _expression.Length)
-                {
-                    _currentIndex++;
-                    currentChar = _expression[_currentIndex];
 
-                    char resolvedChar;
-                    switch (currentChar)
+                if (currentChar != '\\')
+                {
+                    if (currentChar == quoteChar)
                     {
-                        case 'b':
-                            resolvedChar = '\b';
-                            break;
-                        case 't':
-                            resolvedChar = '\t';
-                            break;
-                        case 'n':
-                            resolvedChar = '\n';
-                            break;
-                        case 'f':
-                            resolvedChar = '\f';
-                            break;
-                        case 'r':
-                            resolvedChar = '\r';
-                            break;
-                        case '\\':
-                        case '"':
-                        case '\'':
-                        case '/':
-                            resolvedChar = currentChar;
-                            break;
-                        default:
-                            throw new JsonException(@"Unknown escape character: \" + currentChar);
+                        _currentIndex++;
+                        return sb.ToString();
                     }
-
-                    sb.Append(resolvedChar);
-
-                    _currentIndex++;
-                }
-                else if (currentChar == '\'')
-                {
-                    _currentIndex++;
-                    return sb.ToString();
-                }
-                else
-                {
-                    _currentIndex++;
                     sb.Append(currentChar);
+                    _currentIndex++;
+                    continue;
+                }
+
+                if (_currentIndex + 1 >= _expression.Length)
+                {
+                    throw new JsonException("Path ended with an open string.");
+                }
+
+                //Get past the '\'
+                _currentIndex++;
+                currentChar = _expression[_currentIndex++];
+                switch (currentChar)
+                {
+                    case 'b':
+                        sb.Append('\b');
+                        break;
+                    case 't':
+                        sb.Append('\t');
+                        break;
+                    case 'n':
+                        sb.Append('\n');
+                        break;
+                    case 'f':
+                        sb.Append('\r');
+                        break;
+                    case 'r':
+                        sb.Append('\r');
+                        break;
+                    case '\\':
+                    case '"':
+                    case '\'':
+                    case '/':
+                        sb.Append(currentChar);
+                        break;
+                    case 'u':
+                    case 'U':
+                        TryParseEscapedCodepoint(sb, currentChar);
+                        break;
+                    default:
+                        throw new JsonException($"Unknown Unknown escape character: \\{currentChar}");
                 }
             }
 
             throw new JsonException("Path ended with an open string.");
+        }
+
+        private void TryParseEscapedCodepoint(StringBuilder sb, char currentChar)
+        {
+             var length = 4;
+                    if (_currentIndex + length >= _expression.Length)
+                    {
+                        throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan()[_currentIndex..]}'");
+                    }
+                    if (!IsValidHex(_currentIndex, 4) ||
+                        !int.TryParse(_expression.AsSpan(_currentIndex,4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hex))
+                    {
+                        throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan().Slice(_currentIndex,length)}'");
+                    }
+
+                    if (_currentIndex + length + 2 < _expression.Length && _expression[_currentIndex + length] == '\\' && _expression[_currentIndex + length + 1] == 'u')
+                    {
+                        // +2 from \u
+                        // +4 from the next four hex chars
+                        length += 6;
+
+                        if (_currentIndex + length >= _expression.Length)
+                        {
+                            throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan()[_currentIndex..]}'");
+                        }
+
+                        if (!IsValidHex(_currentIndex + 6, 4) ||
+                            !int.TryParse(_expression.AsSpan(_currentIndex+6, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int hex2))
+                        {
+                            throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan().Slice(_currentIndex,length)}'");
+                        }
+
+                        hex = ((hex - 0xD800) * 0x400) + ((hex2 - 0xDC00) % 0x400) + 0x10000;
+                    }
+
+                    if (0 <= hex && hex <= 0x10FFFF && !(0xD800 <= hex && hex <= 0xDFFF))
+                    {
+                        sb.Append(char.ConvertFromUtf32(hex));
+                    }
+                    else
+                    {
+                        throw new JsonException($"Invalid UTF-32 code point: '{hex}'");
+
+                    }
+
+                    _currentIndex += length;
+        }
+
+        private bool IsValidHex(int index, int count)
+        {
+            for (int i = index; i < index + count; ++i)
+            {
+                // if not a hex digit
+                if ((_expression[i] < '0' || _expression[i] > '9') &&
+                    (_expression[i] < 'A' || _expression[i] > 'F') &&
+                    (_expression[i] < 'a' || _expression[i] > 'f'))
+                    return false;
+            }
+            return true;
         }
 
         /// <summary>
@@ -892,21 +1079,19 @@ namespace GarnetJSON.JSONPath
         /// <returns>True if the string matches at the current position; otherwise, false.</returns>
         private bool Match(string s)
         {
-            int currentPosition = _currentIndex;
-            for (int i = 0; i < s.Length; i++)
+            if (_currentIndex + s.Length >= _expression.Length)
             {
-                if (currentPosition < _expression.Length && _expression[currentPosition] == s[i])
-                {
-                    currentPosition++;
-                }
-                else
-                {
-                    return false;
-                }
+                return false;
             }
 
-            _currentIndex = currentPosition;
-            return true;
+            if (_expression.AsSpan(_currentIndex, s.Length).Equals(s, StringComparison.OrdinalIgnoreCase))
+            {
+                _currentIndex += s.Length;
+                return true;
+            }
+
+            return false;
+
         }
 
         /// <summary>
@@ -961,6 +1146,11 @@ namespace GarnetJSON.JSONPath
                 return QueryOperator.GreaterThan;
             }
 
+            if (Match("in"))
+            {
+                return QueryOperator.In;
+            }
+
             throw new JsonException("Could not read query operator.");
         }
 
@@ -986,9 +1176,9 @@ namespace GarnetJSON.JSONPath
                     if (fields != null)
                     {
                         fields.Add(field);
-                        return (scan)
-                            ? (PathFilter)new ScanMultipleFilter(fields)
-                            : (PathFilter)new FieldMultipleFilter(fields);
+                        return scan
+                            ? new ScanMultipleFilter(fields)
+                            : new FieldMultipleFilter(fields);
                     }
                     else
                     {
@@ -1000,10 +1190,7 @@ namespace GarnetJSON.JSONPath
                     _currentIndex++;
                     EatWhitespace();
 
-                    if (fields == null)
-                    {
-                        fields = new List<string>();
-                    }
+                    fields ??= [];
 
                     fields.Add(field);
                 }

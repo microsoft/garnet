@@ -757,5 +757,45 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual("System.Xml.ReaderWriter", ((FieldFilter)path.Filters[3]).Name);
             ClassicAssert.AreEqual("source", ((FieldFilter)path.Filters[4]).Name);
         }
+
+        [Test]
+        public void ArrayOfArrayValue()
+        {
+            JsonPath path = new JsonPath("$.a[?(@.a in [[1,2],[2,3]])]");
+
+            ClassicAssert.AreEqual(2, path.Filters.Count);
+            ClassicAssert.AreEqual("a", ((FieldFilter)path.Filters[0]).Name);
+            QueryExpression InExpression = ((QueryFilter)path.Filters[1]).Expression;
+            ClassicAssert.AreEqual(QueryOperator.In, InExpression.Operator);
+            ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
+            JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
+            ClassicAssert.AreEqual(2, Array?.Count);
+            ClassicAssert.AreEqual(true,JsonNode.DeepEquals(Array?[0],JsonNode.Parse("[1,2]")) );
+        }
+
+        [Test]
+        public void ArrayOfArrayValueWithEscaping()
+        {
+
+            string hi_there_str = """
+                                  [
+                                  "\"hi\"",
+                                  "there"
+                                  ]
+                                  """;
+
+            JsonPath path = new JsonPath($"$.a[?(@.a in [{hi_there_str},[2,3]])]");
+
+            ClassicAssert.AreEqual(2, path.Filters.Count);
+            ClassicAssert.AreEqual("a", ((FieldFilter)path.Filters[0]).Name);
+            QueryExpression InExpression = ((QueryFilter)path.Filters[1]).Expression;
+            ClassicAssert.AreEqual(QueryOperator.In, InExpression.Operator);
+            ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
+            JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
+            ClassicAssert.AreEqual(2, Array?.Count);
+
+
+            ClassicAssert.AreEqual(true,JsonNode.DeepEquals(Array?[0],JsonNode.Parse(hi_there_str)) );
+        }
     }
 }
