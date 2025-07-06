@@ -3906,6 +3906,12 @@ namespace Garnet.test
             // Test accepting both CRLF and LF as terminating characters.
             response = await c.ExecuteAsync("PING\nPING");
             ClassicAssert.AreEqual("+PONG\r\n+PONG\r\n", response);
+            // CR is a valid separator
+            response = await c.ExecuteAsync("PING\rPING");
+            ClassicAssert.AreEqual("$4\r\nPING\r\n", response);
+            // As is TAB
+            response = await c.ExecuteAsync("PING\tPING");
+            ClassicAssert.AreEqual("$4\r\nPING\r\n", response);
 
             // Test command failure
             response = await c.ExecuteAsync("PIN");
