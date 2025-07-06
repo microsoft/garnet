@@ -200,7 +200,7 @@ namespace GarnetJSON.JSONPath
                         filters.Add(ParseIndexer(currentChar, scan, query));
                         scan = false;
 
-                        if (_currentIndex<_expression.Length && ((_expression[_currentIndex] == ']' && currentChar is '[') || (_expression[_currentIndex] is ')' && currentChar is '(')))
+                        if (_currentIndex < _expression.Length && ((_expression[_currentIndex] == ']' && currentChar is '[') || (_expression[_currentIndex] is ')' && currentChar is '(')))
                         {
                             _currentIndex++;
                         }
@@ -369,7 +369,7 @@ namespace GarnetJSON.JSONPath
                         int index = int.Parse(indexer, CultureInfo.InvariantCulture);
 
                         indexes.Add(index);
-                        return scan? new ScanArrayMultipleIndexFilter(indexes) : new ArrayMultipleIndexFilter(indexes);
+                        return scan ? new ScanArrayMultipleIndexFilter(indexes) : new ArrayMultipleIndexFilter(indexes);
                     }
                     else if (colonCount > 0)
                     {
@@ -388,7 +388,7 @@ namespace GarnetJSON.JSONPath
                             }
                         }
 
-                        return scan? new ScanArraySliceFilter{ Start = startIndex, End = endIndex, Step = step } : new ArraySliceFilter { Start = startIndex, End = endIndex, Step = step };
+                        return scan ? new ScanArraySliceFilter { Start = startIndex, End = endIndex, Step = step } : new ArraySliceFilter { Start = startIndex, End = endIndex, Step = step };
                     }
                     else
                     {
@@ -400,7 +400,7 @@ namespace GarnetJSON.JSONPath
                         var indexer = _expression.AsSpan(start, length);
                         int index = int.Parse(indexer, CultureInfo.InvariantCulture);
 
-                        return scan ? new ScanArrayIndexFilter(){Index = index} : new ArrayIndexFilter { Index = index };
+                        return scan ? new ScanArrayIndexFilter() { Index = index } : new ArrayIndexFilter { Index = index };
                     }
                 }
                 else if (currentCharacter == ',')
@@ -435,7 +435,7 @@ namespace GarnetJSON.JSONPath
                         throw new JsonException("Unexpected character while parsing path indexer: " + currentCharacter);
                     }
 
-                    return scan? new ScanArrayIndexFilter() : new ArrayIndexFilter();
+                    return scan ? new ScanArrayIndexFilter() : new ArrayIndexFilter();
                 }
                 else if (currentCharacter == ':')
                 {
@@ -678,7 +678,7 @@ namespace GarnetJSON.JSONPath
                 }
                 else
                 {
-                    thisExpression=new BooleanQueryExpression(op, left, right);
+                    thisExpression = new BooleanQueryExpression(op, left, right);
                 }
 
                 if (isNot)
@@ -751,7 +751,7 @@ namespace GarnetJSON.JSONPath
         private bool TryParseValue(out JsonValue? value)
         {
             char currentChar = _expression[_currentIndex];
-            if (currentChar is '\'' or '"' )
+            if (currentChar is '\'' or '"')
             {
                 value = JsonValue.Create(ReadQuotedString());
                 return true;
@@ -784,10 +784,10 @@ namespace GarnetJSON.JSONPath
                         if (decimalSeen && double.TryParse(numberChars, out double dbl))
                         {
 
-                                value = JsonValue.Create(dbl);
-                                return true;
+                            value = JsonValue.Create(dbl);
+                            return true;
                         }
-                        if(!decimalSeen && long.TryParse(numberChars, out long long_val))
+                        if (!decimalSeen && long.TryParse(numberChars, out long long_val))
                         {
                             value = JsonValue.Create(long_val);
                             return true;
@@ -856,7 +856,8 @@ namespace GarnetJSON.JSONPath
                     if (currChar == '[' && !inQuotes)
                     {
                         arrayDepth++;
-                    }else if (currChar == ']' && !inQuotes)
+                    }
+                    else if (currChar == ']' && !inQuotes)
                     {
                         arrayDepth--;
                         if (arrayDepth == 0)
@@ -864,7 +865,8 @@ namespace GarnetJSON.JSONPath
                             done = true;
                             break;
                         }
-                    }else if (currChar == '"' && !isEscaped)
+                    }
+                    else if (currChar == '"' && !isEscaped)
                     {
                         inQuotes = !inQuotes;
                     }
@@ -974,48 +976,48 @@ namespace GarnetJSON.JSONPath
 
         private void TryParseEscapedCodepoint(StringBuilder sb, char currentChar)
         {
-             var length = 4;
-                    if (_currentIndex + length >= _expression.Length)
-                    {
-                        throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan()[_currentIndex..]}'");
-                    }
-                    if (!IsValidHex(_currentIndex, 4) ||
-                        !int.TryParse(_expression.AsSpan(_currentIndex,4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hex))
-                    {
-                        throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan().Slice(_currentIndex,length)}'");
-                    }
+            var length = 4;
+            if (_currentIndex + length >= _expression.Length)
+            {
+                throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan()[_currentIndex..]}'");
+            }
+            if (!IsValidHex(_currentIndex, 4) ||
+                !int.TryParse(_expression.AsSpan(_currentIndex, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var hex))
+            {
+                throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan().Slice(_currentIndex, length)}'");
+            }
 
-                    if (_currentIndex + length + 2 < _expression.Length && _expression[_currentIndex + length] == '\\' && _expression[_currentIndex + length + 1] == 'u')
-                    {
-                        // +2 from \u
-                        // +4 from the next four hex chars
-                        length += 6;
+            if (_currentIndex + length + 2 < _expression.Length && _expression[_currentIndex + length] == '\\' && _expression[_currentIndex + length + 1] == 'u')
+            {
+                // +2 from \u
+                // +4 from the next four hex chars
+                length += 6;
 
-                        if (_currentIndex + length >= _expression.Length)
-                        {
-                            throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan()[_currentIndex..]}'");
-                        }
+                if (_currentIndex + length >= _expression.Length)
+                {
+                    throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan()[_currentIndex..]}'");
+                }
 
-                        if (!IsValidHex(_currentIndex + 6, 4) ||
-                            !int.TryParse(_expression.AsSpan(_currentIndex+6, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int hex2))
-                        {
-                            throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan().Slice(_currentIndex,length)}'");
-                        }
+                if (!IsValidHex(_currentIndex + 6, 4) ||
+                    !int.TryParse(_expression.AsSpan(_currentIndex + 6, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int hex2))
+                {
+                    throw new JsonException($"Invalid escape sequence: '\\{currentChar}{_expression.AsSpan().Slice(_currentIndex, length)}'");
+                }
 
-                        hex = ((hex - 0xD800) * 0x400) + ((hex2 - 0xDC00) % 0x400) + 0x10000;
-                    }
+                hex = ((hex - 0xD800) * 0x400) + ((hex2 - 0xDC00) % 0x400) + 0x10000;
+            }
 
-                    if (0 <= hex && hex <= 0x10FFFF && !(0xD800 <= hex && hex <= 0xDFFF))
-                    {
-                        sb.Append(char.ConvertFromUtf32(hex));
-                    }
-                    else
-                    {
-                        throw new JsonException($"Invalid UTF-32 code point: '{hex}'");
+            if (0 <= hex && hex <= 0x10FFFF && !(0xD800 <= hex && hex <= 0xDFFF))
+            {
+                sb.Append(char.ConvertFromUtf32(hex));
+            }
+            else
+            {
+                throw new JsonException($"Invalid UTF-32 code point: '{hex}'");
 
-                    }
+            }
 
-                    _currentIndex += length;
+            _currentIndex += length;
         }
 
         private bool IsValidHex(int index, int count)

@@ -42,7 +42,7 @@ namespace GarnetJSON.JSONPath
             if (t is JsonArray a)
             {
                 int indexToUse = index < 0 ? a.Count + index : index;
-                if (indexToUse<0 || a.Count <= indexToUse)
+                if (indexToUse < 0 || a.Count <= indexToUse)
                 {
                     if (errorWhenNoMatch)
                     {

@@ -24,12 +24,12 @@ namespace GarnetJSON.JSONPath
         /// <exception cref="JsonException">Thrown when the index is not valid on the current node and errorWhenNoMatch is true.</exception>
         public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
         {
-                // Inspired by https://stackoverflow.com/a/30441479/7331395
+            // Inspired by https://stackoverflow.com/a/30441479/7331395
             IEnumerator? enumerator = null;
             if (current is JsonArray arr)
             {
                 enumerator = arr.GetEnumerator();
-                if (Index is not null && TryGetTokenIndex(arr, Index.Value, settings?.ErrorWhenNoMatch??false, out var foundNode))
+                if (Index is not null && TryGetTokenIndex(arr, Index.Value, settings?.ErrorWhenNoMatch ?? false, out var foundNode))
                 {
                     yield return foundNode;
                 }
