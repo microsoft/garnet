@@ -225,13 +225,13 @@ namespace Garnet.test
             List<string> illegalToModify = ["_G", "bit", "cjson", "cmsgpack", "math", "os", "redis", "string", "struct", "table"];
             List<string> legalToModify = ["KEYS", "ARGV"];
 
-            foreach(var illegal in illegalToModify)
+            foreach (var illegal in illegalToModify)
             {
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate($"table.insert({illegal}, 'foo')"));
                 ClassicAssert.IsTrue(exc.Message.Contains("Attempt to modify a readonly table"));
             }
 
-            foreach(var legal in legalToModify)
+            foreach (var legal in legalToModify)
             {
                 var res = (string[])db.ScriptEvaluate($"table.insert({legal}, 'fizz'); return {legal};");
                 ClassicAssert.IsTrue(res.Contains("fizz"));
