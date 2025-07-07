@@ -366,9 +366,13 @@ namespace GarnetJSON.JSONPath
                         }
 
                         var indexer = _expression.AsSpan(start, length);
-                        int index = int.Parse(indexer, CultureInfo.InvariantCulture);
+                        long index = long.Parse(indexer, CultureInfo.InvariantCulture);
 
-                        indexes.Add(index);
+                        if (Math.Abs(index) > Array.MaxLength)
+                        {
+                            index = index<0? -Array.MaxLength: Array.MaxLength;
+                        }
+                        indexes.Add((int)index);
                         return scan ? new ScanArrayMultipleIndexFilter(indexes) : new ArrayMultipleIndexFilter(indexes);
                     }
                     else if (colonCount > 0)
@@ -376,15 +380,19 @@ namespace GarnetJSON.JSONPath
                         if (length > 0)
                         {
                             var indexer = _expression.AsSpan(start, length);
-                            int index = int.Parse(indexer, CultureInfo.InvariantCulture);
+                            long index = long.Parse(indexer, CultureInfo.InvariantCulture);
 
+                            if (Math.Abs(index) > Array.MaxLength)
+                            {
+                                index = index<0? -Array.MaxLength: Array.MaxLength;
+                            }
                             if (colonCount == 1)
                             {
-                                endIndex = index;
+                                endIndex = (int)index;
                             }
                             else
                             {
-                                step = index;
+                                step =  (int)index;
                             }
                         }
 
@@ -398,9 +406,12 @@ namespace GarnetJSON.JSONPath
                         }
 
                         var indexer = _expression.AsSpan(start, length);
-                        int index = int.Parse(indexer, CultureInfo.InvariantCulture);
-
-                        return scan ? new ScanArrayIndexFilter() { Index = index } : new ArrayIndexFilter { Index = index };
+                        long index = long.Parse(indexer, CultureInfo.InvariantCulture);
+                        if (Math.Abs(index) > Array.MaxLength)
+                        {
+                            index = index<0? -Array.MaxLength: Array.MaxLength;
+                        }
+                        return scan ? new ScanArrayIndexFilter() { Index = (int)index } : new ArrayIndexFilter { Index = (int)index };
                     }
                 }
                 else if (currentCharacter == ',')
@@ -444,19 +455,24 @@ namespace GarnetJSON.JSONPath
                     if (length > 0)
                     {
                         var indexer = _expression.AsSpan(start, length);
-                        int index = int.Parse(indexer, CultureInfo.InvariantCulture);
+                        long index = long.Parse(indexer, CultureInfo.InvariantCulture);
+
+                        if (Math.Abs(index) > Array.MaxLength)
+                        {
+                            index = index<0? -Array.MaxLength: Array.MaxLength;
+                        }
 
                         if (colonCount == 0)
                         {
-                            startIndex = index;
+                            startIndex = (int)index;
                         }
                         else if (colonCount == 1)
                         {
-                            endIndex = index;
+                            endIndex = (int)index;
                         }
                         else
                         {
-                            step = index;
+                            step = (int)index;
                         }
                     }
 
