@@ -545,6 +545,7 @@ namespace Tsavorite.core
                             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                         goto RetryNow;
                     }
+                    addTombstone = newRecordInfo.Tombstone;
                     goto DoCAS;
                 }
                 else
@@ -572,7 +573,8 @@ namespace Tsavorite.core
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
+                    if (!addTombstone)
+                        sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
                 }
                 else
                 {
