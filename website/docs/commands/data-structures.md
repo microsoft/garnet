@@ -1049,7 +1049,7 @@ Trims the stream by evicting older entries using two strategies:
 - MAXLEN: evicts entries as long as stream's length exceeds specified threshold.
 - MINID: evicts entries with IDs lower than threshold where `threshold` is an entry ID. 
 
-Nearly exact trimming using `~` and `LIMIT` clause are not currently supported. 
+`LIMIT` clause is not currently supported. 
 `MINID` defaults to exact trimming, meaning all entries having IDs lower than threshold will be deleted. 
 
 ---
