@@ -522,7 +522,7 @@ namespace Garnet.server
         /// <param name="optType">MAXLEN or MINID</param>
         /// <param name="entriesTrimmed">number of keys trimmed</param>
         /// <returns></returns>
-        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong entriesTrimmed)
+        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong entriesTrimmed, bool approximate = false)
         {
             uint numLeavesDeleted = 0;
             Value headValue = default;
@@ -537,7 +537,7 @@ namespace Garnet.server
                             entriesTrimmed = 0;
                             return false;
                         }
-                        index.TrimByLength(maxLen, out entriesTrimmed, out headValue, out var headValidKey, out numLeavesDeleted);
+                        index.TrimByLength(maxLen, out entriesTrimmed, out headValue, out var headValidKey, out numLeavesDeleted, approximate);
                         break;
                     case StreamTrimOpts.MINID:
                         if (!parseCompleteID(trimArg, out StreamID minID))

@@ -178,7 +178,7 @@ namespace Garnet.server
             return false;
         }
 
-        public bool StreamTrim(ArgSlice keySlice, ArgSlice trimArg, StreamTrimOpts optType, out ulong validKeysRemoved)
+        public bool StreamTrim(ArgSlice keySlice, ArgSlice trimArg, StreamTrimOpts optType, out ulong validKeysRemoved, bool approximate = false)
         {
             bool foundStream;
             var key = keySlice.ToArray();
@@ -190,7 +190,7 @@ namespace Garnet.server
 
                 if (foundStream)
                 {
-                    return stream.Trim(trimArg, optType, out validKeysRemoved);
+                    return stream.Trim(trimArg, optType, out validKeysRemoved, approximate);
                 }
             }
             return true; // no keys removed so return true

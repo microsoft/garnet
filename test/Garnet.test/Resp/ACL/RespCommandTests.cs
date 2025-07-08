@@ -6496,6 +6496,7 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
+        [Test]
         public async Task XTRIMACLsAsync()
         {
             await CheckCommandsAsync(

@@ -249,7 +249,15 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var trimType = parseState.GetArgSliceByRef(1).ToString().ToUpper();
-            var trimArg = parseState.GetArgSliceByRef(2);
+            bool approximate = false;
+            int trimArgIndex = 2;
+            // Check for optional ~
+            if (parseState.Count > 3 && parseState.GetArgSliceByRef(2).ToString() == "~")
+            {
+                approximate = true;
+                trimArgIndex++;
+            }
+            var trimArg = parseState.GetArgSliceByRef(trimArgIndex);
 
             ulong entriesTrimmed = 0;
             StreamTrimOpts optType = StreamTrimOpts.NONE;
@@ -274,11 +282,11 @@ namespace Garnet.server
             bool result;
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                result = cachedStream.Trim(trimArg, optType, out entriesTrimmed);
+                result = cachedStream.Trim(trimArg, optType, out entriesTrimmed, approximate);
             }
             else
             {
-                result = streamManager.StreamTrim(key, trimArg, optType, out entriesTrimmed);
+                result = streamManager.StreamTrim(key, trimArg, optType, out entriesTrimmed, approximate);
             }
             if (!result)
             {
