@@ -290,7 +290,7 @@ function recursively_readonly_table(table)
     table.__readonly = true
 
     for key, value in pairs(table) do
-        if type(value) == 'table' then
+        if type(value) == 'table' and key ~= 'KEYS' and key ~= 'ARGV' then
             recursively_readonly_table(value)
         end
     end
