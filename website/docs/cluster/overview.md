@@ -120,5 +120,42 @@ OK
 127.0.0.1:7000>
 ```
 
+Alternatively, it is possible to configure the cluster manually or programmatically using a combination of the CLUSTER MEET, CLUSTER SET-CONFIG-EPOCH, CLUSTER ADDSLOTS or CLUSTER ADDSLOTSRANGE, and CLUSTER REPLICATE commands.
+The following example demonstrates how to initialize two nodes, assign all slots to one of them, introduce the nodes to each other, and configure the second node as a replica of the first.
 
+```bash
+PS C:\Dev> redis-cli -p 7000 cluster nodes
+d6c7f0c2a2839efad9a6578647d6456f90845836 127.0.0.1:7000@17000,localhost myself,master - 0 0 0 connected
+PS C:\Dev> redis-cli -p 7001 cluster nodes
+c65d29d420960fe5213ccb87ce1f74d7ee6ca4f1 127.0.0.1:7001@17001,localhost myself,master - 0 0 0 connected
+PS C:\Dev> redis-cli -p 7000 cluster set-config-epoch 1
+OK
+PS C:\Dev> redis-cli -p 7001 cluster set-config-epoch 2
+OK
+PS C:\Dev> redis-cli -p 7000 cluster addslotsrange 0 16383
+OK
+PS C:\Dev> redis-cli -p 7000 cluster nodes
+d6c7f0c2a2839efad9a6578647d6456f90845836 127.0.0.1:7000@17000,localhost myself,master - 0 0 1 connected 0-16383
+PS C:\Dev> redis-cli -p 7001 cluster nodes
+c65d29d420960fe5213ccb87ce1f74d7ee6ca4f1 127.0.0.1:7001@17001,localhost myself,master - 0 0 2 connected
+PS C:\Dev> redis-cli -p 7000 cluster meet 127.0.0.1 7001
+OK
+PS C:\Dev> redis-cli -p 7000 cluster nodes
+d6c7f0c2a2839efad9a6578647d6456f90845836 127.0.0.1:7000@17000,localhost myself,master - 0 0 1 connected 0-16383
+c65d29d420960fe5213ccb87ce1f74d7ee6ca4f1 127.0.0.1:7001@17001,localhost master - 638875895159094739 0 2 connected
+PS C:\Dev> redis-cli -p 7001 cluster nodes
+c65d29d420960fe5213ccb87ce1f74d7ee6ca4f1 127.0.0.1:7001@17001,localhost myself,master - 0 0 2 connected
+d6c7f0c2a2839efad9a6578647d6456f90845836 127.0.0.1:7000@17000,localhost master - 638875895161944429 0 1 connected 0-16383
+PS C:\Dev> redis-cli -p 7001 cluster replicate $(redis-cli -p 7000 cluster myid)
+OK
+PS C:\Dev> redis-cli -p 7000 cluster nodes
+d6c7f0c2a2839efad9a6578647d6456f90845836 127.0.0.1:7000@17000,localhost myself,master - 0 0 1 connected 0-16383
+c65d29d420960fe5213ccb87ce1f74d7ee6ca4f1 127.0.0.1:7001@17001,localhost slave d6c7f0c2a2839efad9a6578647d6456f90845836 638875895309129088 638875895309125478 3 connected
+PS C:\Dev> redis-cli -p 7001 cluster nodes
+c65d29d420960fe5213ccb87ce1f74d7ee6ca4f1 127.0.0.1:7001@17001,localhost myself,slave d6c7f0c2a2839efad9a6578647d6456f90845836 0 0 3 connected
+d6c7f0c2a2839efad9a6578647d6456f90845836 127.0.0.1:7000@17000,localhost master - 638875895311833070 638875895311830232 1 connected 0-16383
+PS C:\Dev>
+```
+
+Note that the use of redis-cli is not required; any client compatible with the RESP protocol may be used to execute the aforementioned commands.
 
