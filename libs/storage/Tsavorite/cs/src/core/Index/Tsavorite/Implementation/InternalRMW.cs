@@ -532,7 +532,7 @@ namespace Tsavorite.core
                     forExpiration = true;
 
                     if (!ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo,
-                                            ref rmwInfo, ref addTombstone, newLogicalAddress, sessionFunctions, isIpu: false, out status))
+                                            ref rmwInfo, newLogicalAddress, sessionFunctions, isIpu: false, out status))
                     {
                         // An IPU was not (or could not) be done. Cancel if requested, else invalidate the allocated record and retry.
                         if (status == OperationStatus.CANCELED)
@@ -545,6 +545,7 @@ namespace Tsavorite.core
                             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                         goto RetryNow;
                     }
+                    addTombstone = newRecordInfo.Tombstone;
                     goto DoCAS;
                 }
                 else
@@ -626,7 +627,7 @@ namespace Tsavorite.core
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
 
-        internal bool ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, ref bool addedTombstone,
+        internal bool ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
                                                                                        long logicalAddress, TSessionFunctionsWrapper sessionFunctions, bool isIpu, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -642,7 +643,6 @@ namespace Tsavorite.core
                 }
 
                 // Expiration with no insertion.
-                addedTombstone = true;
                 recordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                 return true;
@@ -673,7 +673,6 @@ namespace Tsavorite.core
                     else
                     {
                         // Expiration with no insertion.
-                        addedTombstone = true;
                         recordInfo.SetTombstone();
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                         return true;
