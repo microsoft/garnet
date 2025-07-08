@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <param name="maxItemNum"></param>
     public unsafe class ArgSliceVector(int maxItemNum = 1 << 18) : IEnumerable<ArgSlice>
     {
-        ScratchBufferManager bufferManager = new();
+        ScratchBufferBuilder bufferManager = new();
         readonly int maxCount = maxItemNum;
         public int Count => items.Count;
         public bool IsEmpty => items.Count == 0;
