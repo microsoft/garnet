@@ -184,7 +184,7 @@ namespace Tsavorite.devices
                                 prefix: prefix,
                                 cancellationToken: StorageErrorHandler.Token)
                                 .AsPages(continuationToken, 100)
-                                .GetAsyncEnumerator();
+                                .ConfigureAwait(false).GetAsyncEnumerator();
 
                             if (!await asEnum.MoveNextAsync())
                             {
