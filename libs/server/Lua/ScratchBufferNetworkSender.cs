@@ -10,7 +10,7 @@ namespace Garnet.server
     /// </summary>
     internal unsafe class ScratchBufferNetworkSender : INetworkSender
     {
-        readonly ScratchBufferManager scratchBufferManager;
+        readonly ScratchBufferBuilder scratchBufferBuilder;
 
         /// <summary>
         /// Max size settings of the in-memory sender buffer
@@ -29,14 +29,14 @@ namespace Garnet.server
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            scratchBufferManager = new();
+            scratchBufferBuilder = new();
         }
 
         public ArgSlice GetResponse()
-            => scratchBufferManager.ViewFullArgSlice();
+            => scratchBufferBuilder.ViewFullArgSlice();
 
         public void Reset()
-            => scratchBufferManager.Reset();
+            => scratchBufferBuilder.Reset();
 
         public MaxSizeSettings GetMaxSizeSettings => maxSizeSettings;
 
@@ -68,7 +68,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
-            var remain = scratchBufferManager.ViewRemainingArgSlice(serverBufferSize);
+            var remain = scratchBufferBuilder.ViewRemainingArgSlice(serverBufferSize);
             head = remain.ptr;
             tail = remain.ptr + remain.length;
         }
@@ -89,14 +89,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe byte* GetResponseObjectHead()
         {
-            var remain = scratchBufferManager.ViewRemainingArgSlice(serverBufferSize);
+            var remain = scratchBufferBuilder.ViewRemainingArgSlice(serverBufferSize);
             return remain.ptr;
         }
 
         /// <inheritdoc />
         public unsafe byte* GetResponseObjectTail()
         {
-            var remain = scratchBufferManager.ViewRemainingArgSlice(serverBufferSize);
+            var remain = scratchBufferBuilder.ViewRemainingArgSlice(serverBufferSize);
             return remain.ptr + remain.length;
         }
 
@@ -113,7 +113,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SendResponse(int offset, int size)
         {
-            scratchBufferManager.MoveOffset(offset + size);
+            scratchBufferBuilder.MoveOffset(offset + size);
             return true;
         }
 

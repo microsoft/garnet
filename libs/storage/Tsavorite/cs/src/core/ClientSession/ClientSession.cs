@@ -118,8 +118,7 @@ namespace Tsavorite.core
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
 
-            if (store.RevivificationManager.IsEnabled)
-                MergeRevivificationStatsTo(ref store.RevivificationManager.stats, reset: true);
+            store.DisposeClientSession(ID);
         }
 
         /// <summary>

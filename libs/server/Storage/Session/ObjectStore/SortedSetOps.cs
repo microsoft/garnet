@@ -184,7 +184,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(min.Length + max.Length);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(min.Length + max.Length);
             var paramsSpan = paramsSlice.Span;
 
             // Store parameters to buffer
@@ -206,7 +206,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ToArray(), ref input, out var output, ref objectStoreContext);
             countRemoved = output.result1;
 
-            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
             return status;
         }
@@ -232,7 +232,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(min.Length + max.Length);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(min.Length + max.Length);
             var paramsSpan = paramsSlice.Span;
 
             // Store parameters to buffer
@@ -256,7 +256,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
                 ref output);
 
-            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
             if (status == GarnetStatus.OK)
             {
@@ -294,7 +294,7 @@ namespace Garnet.server
             var stopLen = NumUtils.CountDigits(stop);
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(startLen + stopLen);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(startLen + stopLen);
             var paramsSpan = paramsSlice.Span;
 
             // Store parameters to buffer
@@ -317,7 +317,7 @@ namespace Garnet.server
             status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectStoreContext,
                 ref output);
 
-            scratchBufferManager.RewindScratchBuffer(ref paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(ref paramsSlice);
 
             if (status == GarnetStatus.OK)
             {
@@ -383,7 +383,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var strIncr = increment.ToString(CultureInfo.InvariantCulture);
-            var incrSlice = scratchBufferManager.CreateArgSlice(strIncr);
+            var incrSlice = scratchBufferBuilder.CreateArgSlice(strIncr);
             Encoding.UTF8.GetBytes(strIncr, incrSlice.Span);
 
             // Prepare the parse state
@@ -485,14 +485,14 @@ namespace Garnet.server
             // Limit parameter
             if (limit != default && (sortedSetOrderOperation == SortedSetOrderOperation.ByScore || sortedSetOrderOperation == SortedSetOrderOperation.ByLex))
             {
-                arguments.Add(scratchBufferManager.CreateArgSlice("LIMIT"u8));
+                arguments.Add(scratchBufferBuilder.CreateArgSlice("LIMIT"u8));
 
                 // Offset
-                arguments.Add(scratchBufferManager.CreateArgSlice(limit.Item1));
+                arguments.Add(scratchBufferBuilder.CreateArgSlice(limit.Item1));
 
                 // Count
                 var limitCountLength = NumUtils.CountDigits(limit.Item2);
-                var limitCountSlice = scratchBufferManager.CreateArgSlice(limitCountLength);
+                var limitCountSlice = scratchBufferBuilder.CreateArgSlice(limitCountLength);
                 NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
                 arguments.Add(limitCountSlice);
             }
@@ -509,7 +509,7 @@ namespace Garnet.server
             for (var i = arguments.Count - 1; i > 1; i--)
             {
                 var currSlice = arguments[i];
-                scratchBufferManager.RewindScratchBuffer(ref currSlice);
+                scratchBufferBuilder.RewindScratchBuffer(ref currSlice);
             }
 
             if (status == GarnetStatus.OK)
@@ -1579,7 +1579,7 @@ namespace Garnet.server
             results = default;
             var expireMillisecs = expireAt.ToUnixTimeMilliseconds();
             var expiryLength = NumUtils.CountDigits(expireMillisecs);
-            var expiryArg = scratchBufferManager.CreateArgSlice(expiryLength);
+            var expiryArg = scratchBufferBuilder.CreateArgSlice(expiryLength);
             var expirySpan = expiryArg.Span;
             NumUtils.WriteInt64(expireMillisecs, expirySpan);
 
