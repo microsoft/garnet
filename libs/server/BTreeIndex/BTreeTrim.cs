@@ -150,7 +150,7 @@ namespace Garnet.server.BTreeIndex
             }
         }
 
-        public void TrimByLength(ref BTreeNode* node, ulong length, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByLength(ref BTreeNode* node, ulong length, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted, bool approximateTrimming)
         {
             var depth = stats.depth - 1;
             ulong currentValidCount = 0;
@@ -193,8 +193,42 @@ namespace Garnet.server.BTreeIndex
                 depth--;
             }
 
-            headValidValue = current->GetValue(0);
-            headValidKey = new ReadOnlySpan<byte>(current->GetKey(0), BTreeNode.KEY_SIZE);
+            if (approximateTrimming)
+            {
+                headValidValue = current->GetValue(0);
+                headValidKey = new ReadOnlySpan<byte>(current->GetKey(0), BTreeNode.KEY_SIZE);
+            }
+            else
+            {
+                ulong keepInCurrent = length - currentValidCount;
+                ulong kept = 0;
+                headValidValue = default;
+                headValidKey = default;
+                for (int i = 0; i < current->info->count; i++)
+                {
+                    if (current->IsValueValid(i))
+                    {
+                        if (kept < keepInCurrent)
+                        {
+                            // Keep this key
+                            if (kept == 0)
+                            {
+                                headValidValue = current->GetValue(i);
+                                headValidKey = new ReadOnlySpan<byte>(current->GetKey(i), BTreeNode.KEY_SIZE);
+                            }
+                            kept++;
+                        }
+                        else
+                        {
+                            // Mark as deleted
+                            current->SetValueValid(i, false);
+                            current->info->validCount--;
+                            entriesTrimmed++;
+                            stats.numValidKeys--;
+                        }
+                    }
+                }
+            }
 
             var leaf = current->info->previous;
             uint deletedValidCount = 0;
@@ -303,10 +337,10 @@ namespace Garnet.server.BTreeIndex
             TrimByID(key, out underflowingNodes, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
         }
 
-        public void TrimByLength(ulong length, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByLength(ulong length, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted, bool approximateTrimming = false)
         {
 
-            TrimByLength(ref root, length, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
+            TrimByLength(ref root, length, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted, approximateTrimming);
         }
     }
 }

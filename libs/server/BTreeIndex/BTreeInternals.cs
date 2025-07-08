@@ -181,6 +181,11 @@ namespace Garnet.server.BTreeIndex
             data.values[index].Valid = valid;
         }
 
+        public bool IsValueValid(int index)
+        {
+            return data.values[index].Valid;
+        }
+
         public void InsertTombstone(int index)
         {
             data.values[index].Valid = false;
