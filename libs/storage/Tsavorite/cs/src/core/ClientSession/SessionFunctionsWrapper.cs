@@ -117,8 +117,9 @@ namespace Tsavorite.core
             if (rmwInfo.Action == RMWAction.ExpireAndResume)
             {
                 // This inserts the tombstone if appropriate
+                var addedTombstone = false;
                 return _clientSession.store.ReinitializeExpiredRecord<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
-                                                    ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, rmwInfo.Address, this, isIpu: true, out status);
+                                                    ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, ref addedTombstone, rmwInfo.Address, this, isIpu: true, out status);
             }
 
             if (rmwInfo.Action == RMWAction.CancelOperation)

@@ -532,7 +532,7 @@ namespace Tsavorite.core
                     forExpiration = true;
 
                     if (!ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo,
-                                            ref rmwInfo, newLogicalAddress, sessionFunctions, isIpu: false, out status))
+                                            ref rmwInfo, ref addTombstone, newLogicalAddress, sessionFunctions, isIpu: false, out status))
                     {
                         // An IPU was not (or could not) be done. Cancel if requested, else invalidate the allocated record and retry.
                         if (status == OperationStatus.CANCELED)
@@ -572,7 +572,8 @@ namespace Tsavorite.core
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
+                    if (!addTombstone)
+                        sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
                 }
                 else
                 {
@@ -625,7 +626,7 @@ namespace Tsavorite.core
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
 
-        internal bool ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
+        internal bool ReinitializeExpiredRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, ref bool addedTombstone,
                                                                                        long logicalAddress, TSessionFunctionsWrapper sessionFunctions, bool isIpu, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -641,6 +642,7 @@ namespace Tsavorite.core
                 }
 
                 // Expiration with no insertion.
+                addedTombstone = true;
                 recordInfo.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                 return true;
@@ -671,6 +673,7 @@ namespace Tsavorite.core
                     else
                     {
                         // Expiration with no insertion.
+                        addedTombstone = true;
                         recordInfo.SetTombstone();
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                         return true;
