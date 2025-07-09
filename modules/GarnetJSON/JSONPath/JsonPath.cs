@@ -366,13 +366,9 @@ namespace GarnetJSON.JSONPath
                         }
 
                         var indexer = _expression.AsSpan(start, length);
-                        long index = long.Parse(indexer, CultureInfo.InvariantCulture);
+                        int index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
 
-                        if (Math.Abs(index) > Array.MaxLength)
-                        {
-                            index = index<0? -Array.MaxLength: Array.MaxLength;
-                        }
-                        indexes.Add((int)index);
+                        indexes.Add(index);
                         return scan ? new ScanArrayMultipleIndexFilter(indexes) : new ArrayMultipleIndexFilter(indexes);
                     }
                     else if (colonCount > 0)
@@ -380,19 +376,14 @@ namespace GarnetJSON.JSONPath
                         if (length > 0)
                         {
                             var indexer = _expression.AsSpan(start, length);
-                            long index = long.Parse(indexer, CultureInfo.InvariantCulture);
-
-                            if (Math.Abs(index) > Array.MaxLength)
-                            {
-                                index = index<0? -Array.MaxLength: Array.MaxLength;
-                            }
+                            int index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
                             if (colonCount == 1)
                             {
-                                endIndex = (int)index;
+                                endIndex = index;
                             }
                             else
                             {
-                                step =  (int)index;
+                                step = index;
                             }
                         }
 
@@ -406,11 +397,7 @@ namespace GarnetJSON.JSONPath
                         }
 
                         var indexer = _expression.AsSpan(start, length);
-                        long index = long.Parse(indexer, CultureInfo.InvariantCulture);
-                        if (Math.Abs(index) > Array.MaxLength)
-                        {
-                            index = index<0? -Array.MaxLength: Array.MaxLength;
-                        }
+                        long index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
                         return scan ? new ScanArrayIndexFilter() { Index = (int)index } : new ArrayIndexFilter { Index = (int)index };
                     }
                 }
@@ -455,24 +442,19 @@ namespace GarnetJSON.JSONPath
                     if (length > 0)
                     {
                         var indexer = _expression.AsSpan(start, length);
-                        long index = long.Parse(indexer, CultureInfo.InvariantCulture);
-
-                        if (Math.Abs(index) > Array.MaxLength)
-                        {
-                            index = index<0? -Array.MaxLength: Array.MaxLength;
-                        }
+                        int index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
 
                         if (colonCount == 0)
                         {
-                            startIndex = (int)index;
+                            startIndex = index;
                         }
                         else if (colonCount == 1)
                         {
-                            endIndex = (int)index;
+                            endIndex = index;
                         }
                         else
                         {
-                            step = (int)index;
+                            step = index;
                         }
                     }
 
@@ -517,6 +499,20 @@ namespace GarnetJSON.JSONPath
 
                 _currentIndex++;
             }
+        }
+
+        /// <summary>
+        /// While an index may be parsed as a long, this ensures it fits within Array.MaxLength bounds
+        /// </summary>
+        /// <param name="index">The parsed (potentially) long value</param>
+        /// <returns>Either the original index as an int or capped </returns>
+        private static int EnsureIndexWithinArrayBounds(long index)
+        {
+            if (Math.Abs(index) > Array.MaxLength)
+            {
+                return index < 0 ? -Array.MaxLength : Array.MaxLength;
+            }
+            return (int)index;
         }
 
         /// <summary>
