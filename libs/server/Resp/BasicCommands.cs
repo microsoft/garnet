@@ -742,9 +742,9 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
                     break;
+                case OperationError.NANORINFINITY:
                 case OperationError.INVALID_TYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                     break;
                 default:
                     throw new GarnetException($"Invalid OperationError {errorFlag}");
@@ -774,7 +774,8 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
-            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1);
+            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1,
+                                           arg1: BitConverter.DoubleToInt64Bits(dbl));
             storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
@@ -788,9 +789,10 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 case OperationError.INVALID_TYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr,
-                                   dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    break;
+                case OperationError.NANORINFINITY:
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
                     break;
                 default:
                     throw new GarnetException($"Invalid OperationError {errorFlag}");
