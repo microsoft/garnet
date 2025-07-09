@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Storage.Blobs" />
-    <PackageReference Include="System.Interactive.Async" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\Tsavorite.core.csproj" />
