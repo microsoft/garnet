@@ -417,7 +417,7 @@ namespace Garnet.cluster
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
             var retryCount = 5;
-            while (retryCount-- > 0)
+            while (true)
             {
                 try
                 {
@@ -451,6 +451,8 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError("SendCheckpointMetadata Error: {msg}", ex.Message);
+                    if (retryCount-- <= 0)
+                        throw new Exception("Max retry attempts reached for checkpoint metadata sending.");
                 }
                 await Task.Yield();
             }
@@ -492,10 +494,6 @@ namespace Garnet.cluster
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
                     throw new Exception($"Primary error at SendFileSegments {type} {resp}");
                 }
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError("SendFileSegments Error: {msg}", ex.Message);
             }
             finally
             {
@@ -544,10 +542,6 @@ namespace Garnet.cluster
                     device.Dispose();
                     device = null;
                 }
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError("SendFileSegments Error: {msg}", ex.Message);
             }
             finally
             {
