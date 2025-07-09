@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -119,6 +120,29 @@ namespace Garnet.test
             ClassicAssert.AreEqual(string2, value2);
         }
 
+        [Test]
+        public void TxnHExpireTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "test";
+            HashEntry[] he = [new HashEntry("a", "1"), new HashEntry("b", "2"), new HashEntry("c", "3")];
+
+            var tran = db.CreateTransaction();
+            var t0 = tran.HashSetAsync(key, he);
+            var t1 = tran.HashFieldExpireAsync(key, [he[0].Name], System.DateTime.Now.AddHours(1));
+            var t2 = tran.ExecuteAsync("HEXPIRE", [key, "1000", "FIELDS", "1", he[1].Name]);
+            var committed = tran.Execute();
+
+            var entries = db.HashGetAll(key);
+            ClassicAssert.AreEqual(he, entries);
+
+            var expire = db.HashFieldGetExpireDateTime(key, he.Select(x => x.Name).ToArray());
+            ClassicAssert.Greater(expire[0], 0);
+            ClassicAssert.Greater(expire[1], 0);
+            ClassicAssert.AreEqual(expire[2], -1);
+        }
 
         [Test]
         public void LargeTxn([Values(512, 2048, 8192)] int size)

@@ -145,6 +145,10 @@ namespace Garnet.server
                 RespCommand.HSETNX => HashObjectKeys((byte)HashOperation.HSETNX),
                 RespCommand.HSTRLEN => HashObjectKeys((byte)HashOperation.HSTRLEN),
                 RespCommand.HVALS => HashObjectKeys((byte)HashOperation.HVALS),
+                RespCommand.HEXPIRE => HashObjectKeys((byte)HashOperation.HEXPIRE),
+                RespCommand.HPEXPIRE => HashObjectKeys((byte)HashOperation.HEXPIRE),
+                RespCommand.HEXPIREAT => HashObjectKeys((byte)HashOperation.HEXPIRE),
+                RespCommand.HPEXPIREAT => HashObjectKeys((byte)HashOperation.HEXPIRE),
                 RespCommand.GET => SingleKey(1, false, LockType.Shared),
                 RespCommand.GETIFNOTMATCH => SingleKey(1, false, LockType.Shared),
                 RespCommand.GETWITHETAG => SingleKey(1, false, LockType.Shared),
@@ -323,6 +327,7 @@ namespace Garnet.server
                 (byte)HashOperation.HSETNX => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HRANDFIELD => SingleKey(1, true, LockType.Shared),
                 (byte)HashOperation.HSTRLEN => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HEXPIRE => SingleKey(1, true, LockType.Exclusive),
                 _ => -1
             };
         }
