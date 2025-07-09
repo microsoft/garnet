@@ -118,7 +118,7 @@ namespace Garnet.cluster
                     errorMessage = Marshal.PtrToStringAnsi(messagePtr);
                 }
 
-                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                logger?.LogError("[ReceiveCheckpointHandler] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             writeCheckpointSemaphore.Release();
         }

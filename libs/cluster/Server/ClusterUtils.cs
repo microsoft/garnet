@@ -109,7 +109,7 @@ namespace Garnet.cluster
                     errorMessage = Marshal.PtrToStringAnsi(messagePtr);
                 }
 
-                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                logger?.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             ((SemaphoreSlim)context).Release();
         }
