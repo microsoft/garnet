@@ -1326,12 +1326,12 @@ namespace Garnet.common
             }
             else if (value.Length == 4)
             {
-                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.POS_INFINITY))
+                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.POS_INFINITY, true))
                 {
                     number = double.PositiveInfinity;
                     return true;
                 }
-                else if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.NEG_INFINITY))
+                else if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.NEG_INFINITY, true))
                 {
                     number = double.NegativeInfinity;
                     return true;
