@@ -2946,7 +2946,9 @@ namespace Garnet.server
                     else if (quoteChar == *ptr)
                     {
                         var next = ptr + 1;
-                        if (AsciiUtils.IsRedisWhiteSpace(*next) || ((next < end) && ((*(ushort*)next == crlf) || *next == '\n')))
+                        if (AsciiUtils.IsRedisWhiteSpace(*next) ||
+                            ((next < end) && (*(ushort*)next == crlf)) ||
+                            ((next <= end) && (*next == '\n')))
                         {
                             bool unQuote;
 
