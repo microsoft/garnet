@@ -59,9 +59,6 @@ namespace Garnet.server
         /// <summary>
         /// Returns a number of skipped args
         /// </summary>
-        /// <summary>
-        /// Returns a number of skipped args
-        /// </summary>
         internal int GetKeys(RespCommand command, int inputCount, out ReadOnlySpan<byte> error)
         {
             error = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
