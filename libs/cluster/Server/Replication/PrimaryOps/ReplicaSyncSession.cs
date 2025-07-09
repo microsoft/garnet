@@ -136,7 +136,7 @@ namespace Garnet.cluster
                 (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
                 logger?.LogInformation("Checkpoint search completed");
 
-                gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
+                gcs.Connect((int)clusterProvider.clusterManager.clusterTimeout.TotalMilliseconds);
 
                 long index_size = -1;
                 long obj_index_size = -1;
@@ -442,7 +442,7 @@ namespace Garnet.cluster
                         }
                     }
 
-                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).ConfigureAwait(false);
+                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
@@ -481,7 +481,7 @@ namespace Garnet.cluster
                         (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes);
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -492,7 +492,7 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).ConfigureAwait(false);
+                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -526,7 +526,7 @@ namespace Garnet.cluster
                         var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
                         var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes, segment);
 
-                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).ConfigureAwait(false);
+                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
                         if (!resp.Equals("OK"))
                         {
                             logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -537,7 +537,7 @@ namespace Garnet.cluster
                         startAddress += readBytes;
                     }
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -572,7 +572,7 @@ namespace Garnet.cluster
                 device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
             else
                 device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
-            semaphore.Wait();
+            semaphore.Wait(clusterProvider.clusterManager.clusterTimeout, cts.Token);
             return (pbuffer, (int)numBytesToRead);
         }
 
