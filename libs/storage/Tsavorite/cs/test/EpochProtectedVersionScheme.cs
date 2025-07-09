@@ -293,7 +293,8 @@ namespace Tsavorite.test
         public VersionSchemeState Enter()
         {
             if (epoch.ThisInstanceProtected())
-                VersionSchemeState.
+                return VersionSchemeState.Error;
+
             epoch.Resume();
             TryStepStateMachine();
 
