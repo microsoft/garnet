@@ -68,7 +68,7 @@ namespace Garnet.server
                 RespCommand.BITCOUNT => SingleKey(1, false, LockType.Shared),
                 RespCommand.BITFIELD => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.BITFIELD_RO => SingleKey(1, false, LockType.Shared),
-                RespCommand.BITPOS => SingleKey(1, false, LockType.Exclusive),
+                RespCommand.BITPOS => SingleKey(1, false, LockType.Shared),
                 RespCommand.BITOP => SSTOREKeys(inputCount, false),
                 RespCommand.DECR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.DECRBY => SingleKey(1, false, LockType.Exclusive),
