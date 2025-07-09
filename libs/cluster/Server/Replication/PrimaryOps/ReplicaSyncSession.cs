@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -47,7 +48,7 @@ namespace Garnet.cluster
 
         public string errorMsg = default;
 
-        const int validateMetadataMaxRetryCount = 5;
+        const int validateMetadataMaxRetryCount = 10;
 
         public void Dispose()
         {
@@ -584,6 +585,9 @@ namespace Garnet.cluster
             }
             semaphore.Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 
     internal static unsafe class SectorAlignedMemoryExtensions
