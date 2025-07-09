@@ -293,7 +293,7 @@ namespace Garnet.test
                 var commandInfo = respCommand.Value;
                 if (excludeCat.Any(flag => commandInfo.AclCategories.HasFlag(flag)))
                     continue;
-                
+
                 // Cluster command equivalent to REPLICAOF
                 if (commandInfo.Name == "SLAVEOF")
                 {
@@ -313,45 +313,45 @@ namespace Garnet.test
                 }
 
                 if (commandDoc.Arguments != null)
-                foreach (var arg in commandDoc.Arguments)
-                {
-                    if (arg.ArgumentFlags.HasFlag(RespCommandArgumentFlags.Optional))
-                        continue;
-
-                    switch (arg.Type)
+                    foreach (var arg in commandDoc.Arguments)
                     {
-                        case RespCommandArgumentType.Key:
-                            if (string.Compare(arg.Name, "DESTINATION", StringComparison.InvariantCultureIgnoreCase) == 0)
-                            {
-                                command.Add("DEST");
-                            }
-                            else
-                            {
-                                command.Add("KEY");
-                            }
-                            startIdx++;
-                            break;
-                        case RespCommandArgumentType.OneOf:
-                            if (!string.IsNullOrEmpty(arg.Token))
-                            {
-                                command.Add(arg.Token);
+                        if (arg.ArgumentFlags.HasFlag(RespCommandArgumentFlags.Optional))
+                            continue;
+
+                        switch (arg.Type)
+                        {
+                            case RespCommandArgumentType.Key:
+                                if (string.Compare(arg.Name, "DESTINATION", StringComparison.InvariantCultureIgnoreCase) == 0)
+                                {
+                                    command.Add("DEST");
+                                }
+                                else
+                                {
+                                    command.Add("KEY");
+                                }
                                 startIdx++;
-                            }
-                            else if (arg is RespCommandContainerArgument con)
-                            {
-                                command.Add(con.Arguments[0].Token);
-                                startIdx++;
-                            }
-                            break;
-                        case RespCommandArgumentType.Integer:
-                            if (string.Compare(arg.Name, "NUMKEYS", StringComparison.InvariantCultureIgnoreCase) == 0)
-                            {
-                                command.Add("1");
-                                startIdx++;
-                            }
-                            break;
+                                break;
+                            case RespCommandArgumentType.OneOf:
+                                if (!string.IsNullOrEmpty(arg.Token))
+                                {
+                                    command.Add(arg.Token);
+                                    startIdx++;
+                                }
+                                else if (arg is RespCommandContainerArgument con)
+                                {
+                                    command.Add(con.Arguments[0].Token);
+                                    startIdx++;
+                                }
+                                break;
+                            case RespCommandArgumentType.Integer:
+                                if (string.Compare(arg.Name, "NUMKEYS", StringComparison.InvariantCultureIgnoreCase) == 0)
+                                {
+                                    command.Add("1");
+                                    startIdx++;
+                                }
+                                break;
+                        }
                     }
-                }
 
                 for (var i = startIdx; i < arity; ++i)
                 {
