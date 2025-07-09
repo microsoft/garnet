@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -581,26 +579,11 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                string errorMessage;
-
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    errorMessage = new Win32Exception((int)errorCode).Message;
-                }
-                else
-                {
-                    // Use strerror for Unix-based systems
-                    var messagePtr = strerror((int)errorCode);
-                    errorMessage = Marshal.PtrToStringAnsi(messagePtr);
-                }
-
-                logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                var errorMessage = Tsavorite.core.Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
+                logger?.LogError("[ReplicaSyncSession] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
         }
-
-        [DllImport("libc")]
-        private static extern IntPtr strerror(int errnum);
     }
 
     internal static unsafe class SectorAlignedMemoryExtensions

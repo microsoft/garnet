@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -361,5 +363,25 @@ namespace Tsavorite.core
         }
 
         internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
+
+        public static string GetCallbackErrorMessage(uint errorCode, uint numBytes, object context)
+        {
+            string errorMessage;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                errorMessage = new Win32Exception((int)errorCode).Message;
+            }
+            else
+            {
+                // Use strerror for Unix-based systems
+                var messagePtr = strerror((int)errorCode);
+                errorMessage = Marshal.PtrToStringAnsi(messagePtr);
+            }
+
+            return errorMessage;
+        }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 }

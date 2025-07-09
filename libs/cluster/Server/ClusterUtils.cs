@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -96,21 +95,10 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                string errorMessage;
-
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    errorMessage = new Win32Exception((int)errorCode).Message;
-                }
-                else
-                {
-                    // Use strerror for Unix-based systems
-                    var messagePtr = strerror((int)errorCode);
-                    errorMessage = Marshal.PtrToStringAnsi(messagePtr);
-                }
-
+                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
+
             ((SemaphoreSlim)context).Release();
         }
 

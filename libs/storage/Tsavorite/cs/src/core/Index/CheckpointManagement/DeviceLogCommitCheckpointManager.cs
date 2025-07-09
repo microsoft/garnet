@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -431,22 +430,9 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                string errorMessage;
-
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    errorMessage = new Win32Exception((int)errorCode).Message;
-                }
-                else
-                {
-                    // Use strerror for Unix-based systems
-                    var messagePtr = strerror((int)errorCode);
-                    errorMessage = Marshal.PtrToStringAnsi(messagePtr);
-                }
-
+                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-
             semaphore.Release();
         }
 
