@@ -49,6 +49,8 @@ namespace Garnet.cluster
 
         public string errorMsg = default;
 
+        const int validateMetadataMaxRetryCount = 5;
+
         public void Dispose()
         {
             AofSyncTask?.garnetClient?.Dispose();
@@ -143,10 +145,13 @@ namespace Garnet.cluster
                 var obj_hlog_size = default(LogFileInfo);
                 var skipLocalMainStoreCheckpoint = false;
                 var skipLocalObjectStoreCheckpoint = false;
+                var retryCount = validateMetadataMaxRetryCount;
                 while (!ValidateMetadata(localEntry, out index_size, out hlog_size, out obj_index_size, out obj_hlog_size, out skipLocalMainStoreCheckpoint, out skipLocalObjectStoreCheckpoint))
                 {
                     logger?.LogError("Failed to validate metadata. Retrying....");
                     await Task.Yield();
+                    if (retryCount-- <= 0)
+                        throw new GarnetException("Failed to validate metadata!");
                 }
 
                 #region sendStoresSnapshotData
@@ -416,7 +421,7 @@ namespace Garnet.cluster
 
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, GarnetClusterCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
-            var retryCount = 5;
+            var retryCount = validateMetadataMaxRetryCount;
             while (true)
             {
                 try
