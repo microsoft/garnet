@@ -1141,14 +1141,10 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            if (NumUtils.TryParse(val, out valueDouble))
+            if (NumUtils.TryParseWithInfinity(val, out valueDouble))
             {
-                return true;
-            }
-
-            if (RespReadUtils.TryReadInfinity(val, out valueDouble))
-            {
-                exclusive = false;
+                if (exclusive && double.IsInfinity(valueDouble))
+                    exclusive = false;
                 return true;
             }
 

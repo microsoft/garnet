@@ -330,16 +330,15 @@ namespace Garnet.server
 
                 if (valueExists)
                 {
-                    if (!NumUtils.TryParse(value, out double result))
+                    if (!NumUtils.TryParseWithInfinity(value, out var result))
                     {
-                        if (RespReadUtils.TryReadInfinity(new ReadOnlySpan<byte>(value), out _))
-                        {
-                            writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                        }
-                        else
-                        {
-                            writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
-                        }
+                        writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
+                        return;
+                    }
+
+                    if (double.IsInfinity(result))
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
                         return;
                     }
 

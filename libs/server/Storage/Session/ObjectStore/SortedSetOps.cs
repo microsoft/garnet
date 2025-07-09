@@ -405,10 +405,7 @@ namespace Garnet.server
                 {
                     var sbResult = result.ReadOnlySpan;
                     // get the new score
-                    if (!NumUtils.TryParse(sbResult, out newScore))
-                    {
-                        _ = RespReadUtils.TryReadInfinity(sbResult, out newScore);
-                    }
+                    _ = NumUtils.TryParseWithInfinity(sbResult, out newScore);
                 }
             }
 
