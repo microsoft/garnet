@@ -440,7 +440,7 @@ namespace Tsavorite.core
                 else
                 {
                     // Use strerror for Unix-based systems
-                    IntPtr messagePtr = strerror((int)errorCode);
+                    var messagePtr = strerror((int)errorCode);
                     errorMessage = Marshal.PtrToStringAnsi(messagePtr);
                 }
 
