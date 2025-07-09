@@ -1,8 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -217,6 +219,152 @@ namespace Garnet.test
                     int counter = (i - 1) / 2 + size;
                     string res = db.StringGet(key + counter);
                     ClassicAssert.AreEqual(res, value + counter);
+                }
+            }
+        }
+
+        [Test]
+        public async Task TxnCommandCoverage()
+        {
+            RespCommand[] excludeList =
+                [
+                    // These are not too interesting in Transaction context,
+                    // and a bit difficult to integrate into this test.
+                    RespCommand.ACL,
+                    RespCommand.ASKING,
+                    RespCommand.ASYNC,
+                    RespCommand.AUTH,
+                    RespCommand.BGSAVE,
+                    RespCommand.COMMAND,
+                    RespCommand.CONFIG,
+                    RespCommand.CLIENT,
+                    RespCommand.CLUSTER,
+                    RespCommand.DEBUG,
+                    RespCommand.FAILOVER,
+                    RespCommand.HELLO,
+                    RespCommand.LATENCY,
+                    RespCommand.LASTSAVE,
+                    RespCommand.MEMORY,
+                    RespCommand.MODULE,
+                    RespCommand.MONITOR,
+                    RespCommand.PUBSUB,
+                    RespCommand.READONLY,
+                    RespCommand.READWRITE,
+                    RespCommand.REPLICAOF,
+                    RespCommand.SAVE,
+                    RespCommand.SCRIPT,
+                    RespCommand.SECONDARYOF,
+
+                    // Not implemented
+                    RespCommand.DUMP,
+                    RespCommand.MIGRATE,
+                    RespCommand.RESTORE,
+                    RespCommand.SLOWLOG,
+
+                    // SELECT / SWAPDB currently not allowed during TXN
+                    RespCommand.SELECT,
+                    RespCommand.SWAPDB,
+
+                    // Implemented, client going down will crash the test
+                    RespCommand.QUIT
+                ];
+
+            RespAclCategories[] excludeCat =
+                [
+                    // These require using a nonblocking context and we don't do that yet
+                    RespAclCategories.Blocking,
+                    // We need to filter out the noninteresting ones
+                    RespAclCategories.Garnet,
+                    // Not too relevant during a transaction
+                    RespAclCategories.PubSub,
+                    RespAclCategories.Scripting,
+                    // Disallowed
+                    RespAclCategories.Transaction
+                ];
+
+            ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo));
+            ClassicAssert.IsTrue(RespCommandDocs.TryGetRespCommandsDocs(out var respCommandsDocs));
+
+            foreach (var respCommand in respCommandsInfo)
+            {
+                if (excludeList.Any(w => w.ToString() == respCommand.Key))
+                    continue;
+
+                var commandInfo = respCommand.Value;
+                if (excludeCat.Any(flag => commandInfo.AclCategories.HasFlag(flag)))
+                    continue;
+                
+                // Cluster command equivalent to REPLICAOF
+                if (commandInfo.Name == "SLAVEOF")
+                {
+                    continue;
+                }
+
+                var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
+                var arity = Math.Abs(commandInfo.Arity);
+
+                System.Collections.Generic.List<string> command = [commandInfo.Name];
+                var startIdx = 1; // starting index including Name
+
+                // We need this due to subcommand structure
+                if (commandInfo.Name == "BITOP")
+                {
+                    arity++;
+                }
+
+                if (commandDoc.Arguments != null)
+                foreach (var arg in commandDoc.Arguments)
+                {
+                    if (arg.ArgumentFlags.HasFlag(RespCommandArgumentFlags.Optional))
+                        continue;
+
+                    switch (arg.Type)
+                    {
+                        case RespCommandArgumentType.Key:
+                            if (string.Compare(arg.Name, "DESTINATION", StringComparison.InvariantCultureIgnoreCase) == 0)
+                            {
+                                command.Add("DEST");
+                            }
+                            else
+                            {
+                                command.Add("KEY");
+                            }
+                            startIdx++;
+                            break;
+                        case RespCommandArgumentType.OneOf:
+                            if (!string.IsNullOrEmpty(arg.Token))
+                            {
+                                command.Add(arg.Token);
+                                startIdx++;
+                            }
+                            else if (arg is RespCommandContainerArgument con)
+                            {
+                                command.Add(con.Arguments[0].Token);
+                                startIdx++;
+                            }
+                            break;
+                        case RespCommandArgumentType.Integer:
+                            if (string.Compare(arg.Name, "NUMKEYS", StringComparison.InvariantCultureIgnoreCase) == 0)
+                            {
+                                command.Add("1");
+                                startIdx++;
+                            }
+                            break;
+                    }
+                }
+
+                for (var i = startIdx; i < arity; ++i)
+                {
+                    command.Add("0");
+                }
+
+                using (var client = TestUtils.GetGarnetClientSession())
+                {
+                    client.Connect();
+                    client.Execute("MULTI");
+                    var result = await client.ExecuteAsync([.. command]);
+                    ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " Transaction coverage");
+                    client.Execute("DISCARD");
                 }
             }
         }
