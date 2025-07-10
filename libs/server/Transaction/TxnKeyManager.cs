@@ -234,7 +234,7 @@ namespace Garnet.server
                 RespCommand.ZTTL => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZUNION => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZUNIONSTORE => SortedSetObjectKeys(command, inputCount),
-                
+
                 RespCommand.COSCAN => SingleKey(1, true, LockType.Shared),
                 _ => OtherCommands(command, out error)
             };

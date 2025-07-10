@@ -287,7 +287,7 @@ namespace Garnet.test
                     continue;
 
                 var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
-                
+
                 // Exclude cluster commands
                 if (commandDoc == default || commandDoc.Group == RespCommandGroup.Cluster)
                     continue;
