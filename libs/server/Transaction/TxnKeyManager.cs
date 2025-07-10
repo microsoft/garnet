@@ -104,12 +104,12 @@ namespace Garnet.server
                 RespCommand.GEOHASH => SortedSetObjectKeys(command, inputCount),
                 RespCommand.GEODIST => SortedSetObjectKeys(command, inputCount),
                 RespCommand.GEOPOS => SortedSetObjectKeys(command, inputCount),
-                RespCommand.GEORADIUS => GeoCommands(RespCommand.GEORADIUS, inputCount),
-                RespCommand.GEORADIUS_RO => GeoCommands(RespCommand.GEORADIUS_RO, inputCount),
-                RespCommand.GEORADIUSBYMEMBER => GeoCommands(RespCommand.GEORADIUSBYMEMBER, inputCount),
-                RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, inputCount),
-                RespCommand.GEOSEARCH => GeoCommands(RespCommand.GEOSEARCH, inputCount),
-                RespCommand.GEOSEARCHSTORE => GeoCommands(RespCommand.GEOSEARCHSTORE, inputCount),
+                RespCommand.GEORADIUS => SortedSetObjectKeys(command, inputCount),
+                RespCommand.GEORADIUS_RO => SortedSetObjectKeys(command, inputCount),
+                RespCommand.GEORADIUSBYMEMBER => SortedSetObjectKeys(command, inputCount),
+                RespCommand.GEORADIUSBYMEMBER_RO => SortedSetObjectKeys(command, inputCount),
+                RespCommand.GEOSEARCH => SortedSetObjectKeys(command, inputCount),
+                RespCommand.GEOSEARCHSTORE => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZREVRANGE => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZREVRANGEBYLEX => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZREVRANGEBYSCORE => SortedSetObjectKeys(command, inputCount),
@@ -166,7 +166,7 @@ namespace Garnet.server
                 RespCommand.DEL => ListKeys(inputCount, StoreType.All, LockType.Exclusive),
                 RespCommand.DELIFGREATER => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.EXISTS => ListKeys(inputCount, StoreType.All, LockType.Shared),
-                RespCommand.RENAME => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.RENAME => SingleKey(1, StoreType.All, LockType.Exclusive),
                 RespCommand.INCR => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBY => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.INCRBYFLOAT => SingleKey(1, false, LockType.Exclusive),
@@ -177,8 +177,8 @@ namespace Garnet.server
                 RespCommand.BITCOUNT => SingleKey(1, false, LockType.Shared),
                 RespCommand.BITPOS => SingleKey(1, false, LockType.Shared),
                 RespCommand.BITFIELD => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.EXPIRE => ListKeys(1, StoreType.All, LockType.Exclusive),
-                RespCommand.PEXPIRE => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.EXPIRE => SingleKey(1, StoreType.All, LockType.Exclusive),
+                RespCommand.PEXPIRE => SingleKey(1, StoreType.All, LockType.Exclusive),
                 RespCommand.PERSIST => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.MGET => ListKeys(inputCount, StoreType.Main, LockType.Shared),
                 RespCommand.MSET => MSETKeys(inputCount, false, LockType.Exclusive),
@@ -188,9 +188,9 @@ namespace Garnet.server
                 RespCommand.APPEND => SingleKey(1, false, LockType.Exclusive),
 
                 RespCommand.BITFIELD_RO => SingleKey(1, false, LockType.Shared),
-                RespCommand.BITOP => SSTOREKeys(inputCount, false, 1),
-                RespCommand.EXPIREAT => ListKeys(1, StoreType.All, LockType.Exclusive),
-                RespCommand.EXPIRETIME => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.BITOP => SingleWriteKeyListReadKeys(inputCount, false, offset: 1),
+                RespCommand.EXPIREAT => SingleKey(1, StoreType.All, LockType.Exclusive),
+                RespCommand.EXPIRETIME => SingleKey(1, StoreType.All, LockType.Shared),
                 RespCommand.GETEX => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.GETSET => SingleKey(1, false, LockType.Exclusive),
 
@@ -205,15 +205,15 @@ namespace Garnet.server
                 RespCommand.LPOS => ListObjectKeys(command),
                 RespCommand.SINTERCARD => SetObjectKeys(command, inputCount),
 
-                RespCommand.PEXPIRETIME => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.PEXPIRETIME => SingleKey(1, StoreType.All, LockType.Shared),
                 RespCommand.PEXPIREAT => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.PSETEX => SingleKey(1, false, LockType.Exclusive),
-                RespCommand.PTTL => ListKeys(1, StoreType.All, LockType.Shared),
-                RespCommand.RENAMENX => ListKeys(1, StoreType.All, LockType.Exclusive),
+                RespCommand.PTTL => SingleKey(1, StoreType.All, LockType.Shared),
+                RespCommand.RENAMENX => SingleKey(1, StoreType.All, LockType.Exclusive),
                 RespCommand.STRLEN => SingleKey(1, false, LockType.Shared),
                 RespCommand.SUBSTR => SingleKey(1, false, LockType.Shared),
-                RespCommand.TTL => ListKeys(1, StoreType.All, LockType.Shared),
-                RespCommand.TYPE => ListKeys(1, StoreType.All, LockType.Shared),
+                RespCommand.TTL => SingleKey(1, StoreType.All, LockType.Shared),
+                RespCommand.TYPE => SingleKey(1, StoreType.All, LockType.Shared),
                 RespCommand.SETNX => SingleKey(1, false, LockType.Exclusive),
 
                 RespCommand.ZDIFFSTORE => SortedSetObjectKeys(command, inputCount),
@@ -368,20 +368,27 @@ namespace Garnet.server
                 RespCommand.ZLEXCOUNT => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZPOPMIN => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.ZRANDMEMBER => SingleKey(1, true, LockType.Shared),
-                RespCommand.ZDIFF => ListKeys(true, LockType.Shared),
+                RespCommand.ZDIFF => ListReadKeysWithCount(true, LockType.Shared),
                 RespCommand.GEOADD => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.GEOHASH => SingleKey(1, true, LockType.Shared),
                 RespCommand.GEODIST => SingleKey(1, true, LockType.Shared),
                 RespCommand.GEOPOS => SingleKey(1, true, LockType.Shared),
 
-                RespCommand.ZDIFFSTORE => ZSTOREKeys(inputCount, true),
+                RespCommand.GEORADIUS => GeoCommands(RespCommand.GEORADIUS, inputCount),
+                RespCommand.GEORADIUS_RO => GeoCommands(RespCommand.GEORADIUS_RO, inputCount),
+                RespCommand.GEORADIUSBYMEMBER => GeoCommands(RespCommand.GEORADIUSBYMEMBER, inputCount),
+                RespCommand.GEORADIUSBYMEMBER_RO => GeoCommands(RespCommand.GEORADIUSBYMEMBER_RO, inputCount),
+                RespCommand.GEOSEARCH => GeoCommands(RespCommand.GEOSEARCH, inputCount),
+                RespCommand.GEOSEARCHSTORE => GeoCommands(RespCommand.GEOSEARCHSTORE, inputCount),
+
+                RespCommand.ZDIFFSTORE => SingleWriteKeyListReadKeysWithCount(inputCount, true),
                 RespCommand.ZEXPIRE => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.ZEXPIREAT => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.ZEXPIRETIME => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 RespCommand.ZINTERCARD => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                RespCommand.ZINTERSTORE => ZSTOREKeys(inputCount, true),
-                RespCommand.ZMPOP => ListKeys(true, LockType.Exclusive),
+                RespCommand.ZINTERSTORE => SingleWriteKeyListReadKeysWithCount(inputCount, true),
+                RespCommand.ZMPOP => ListReadKeysWithCount(true, LockType.Exclusive),
                 RespCommand.ZPEXPIRE => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.ZPEXPIREAT => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.ZPEXPIRETIME => SingleKey(1, true, LockType.Shared),
@@ -389,14 +396,14 @@ namespace Garnet.server
                 RespCommand.ZPTTL => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZRANGEBYLEX => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
-                RespCommand.ZRANGESTORE => SSTOREKeys(2, true),
+                RespCommand.ZRANGESTORE => SingleWriteKeyListReadKeys(2, true),
                 RespCommand.ZREVRANGE => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZREVRANGEBYLEX => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZREVRANGEBYSCORE => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZSCAN => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZTTL => SingleKey(1, true, LockType.Shared),
-                RespCommand.ZUNION => ListKeys(true, LockType.Shared),
-                RespCommand.ZUNIONSTORE => ZSTOREKeys(inputCount, true),
+                RespCommand.ZUNION => ListReadKeysWithCount(true, LockType.Shared),
+                RespCommand.ZUNIONSTORE => SingleWriteKeyListReadKeysWithCount(inputCount, true),
                 _ => -1
             };
         }
@@ -418,7 +425,7 @@ namespace Garnet.server
                 RespCommand.LSET => SingleKey(1, true, LockType.Exclusive),
 
                 RespCommand.LMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
-                RespCommand.LMPOP => ListKeys(true, LockType.Exclusive),
+                RespCommand.LMPOP => ListReadKeysWithCount(true, LockType.Exclusive),
                 RespCommand.LPOS => SingleKey(1, true, LockType.Shared),
                 RespCommand.LPUSHX => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.RPOPLPUSH => ListKeys(2, StoreType.Object, LockType.Exclusive),
@@ -475,13 +482,13 @@ namespace Garnet.server
                 RespCommand.SMISMEMBER => SingleKey(1, true, LockType.Shared),
                 RespCommand.SSCAN => SingleKey(1, true, LockType.Shared),
                 RespCommand.SUNION => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                RespCommand.SUNIONSTORE => SSTOREKeys(inputCount, true),
+                RespCommand.SUNIONSTORE => SingleWriteKeyListReadKeys(inputCount, true),
                 RespCommand.SDIFF => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                RespCommand.SDIFFSTORE => SSTOREKeys(inputCount, true),
-                RespCommand.SMOVE => ListKeys(inputCount, StoreType.Object, LockType.Exclusive),
+                RespCommand.SDIFFSTORE => SingleWriteKeyListReadKeys(inputCount, true),
+                RespCommand.SMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
                 RespCommand.SINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 RespCommand.SINTERCARD => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                RespCommand.SINTERSTORE => SSTOREKeys(inputCount, true),
+                RespCommand.SINTERSTORE => SingleWriteKeyListReadKeys(inputCount, true),
                 _ => -1
             };
         }
@@ -493,6 +500,20 @@ namespace Garnet.server
         {
             var key = respSession.parseState.GetArgSliceByRef(arg - 1);
             SaveKeyEntryToLock(key, isObject, type);
+            SaveKeyArgSlice(key);
+            return arg;
+        }
+
+        /// <summary>
+        /// Returns a single for commands that have a single key
+        /// </summary>
+        private int SingleKey(int arg, StoreType storeType, LockType type)
+        {
+            var key = respSession.parseState.GetArgSliceByRef(arg - 1);
+            if (storeType is StoreType.Main or StoreType.All)
+                SaveKeyEntryToLock(key, false, type);
+            if (storeType is StoreType.Object or StoreType.All && !objectStoreBasicContext.IsNull)
+                SaveKeyEntryToLock(key, true, type);
             SaveKeyArgSlice(key);
             return arg;
         }
@@ -517,7 +538,7 @@ namespace Garnet.server
         /// <summary>
         /// Returns a list of keys for LMPOP command
         /// </summary>
-        private int ListKeys(bool isObject, LockType type)
+        private int ListReadKeysWithCount(bool isObject, LockType type)
         {
             var numKeysArg = respSession.GetCommandAsArgSlice(out bool success);
             if (!success) return -2;
@@ -552,7 +573,7 @@ namespace Garnet.server
         /// Returns a list of keys for set *STORE commands (e.g. SUNIONSTORE, SINTERSTORE etc.)
         /// Where the first key's value is written to and the rest of the keys' values are read from.
         /// </summary>
-        private int SSTOREKeys(int inputCount, bool isObject, int offset = 0)
+        private int SingleWriteKeyListReadKeys(int inputCount, bool isObject, int offset = 0)
         {
             if (inputCount > offset)
             {
@@ -576,7 +597,7 @@ namespace Garnet.server
         /// Where the first key's value is written to and the rest of the keys' values are read from.
         /// We can get number of read keys by checking the second argument.
         /// </summary>
-        private int ZSTOREKeys(int inputCount, bool isObject)
+        private int SingleWriteKeyListReadKeysWithCount(int inputCount, bool isObject)
         {
             if (inputCount > 0)
             {
