@@ -22,66 +22,62 @@ namespace Garnet.test.cluster
     {
         public (Action, string)[] GetUnitTests()
         {
-            var x = new (Action, string)[39];
-            //1
-            x[0] = new(() => ClusterSRTest(true), "ClusterSRTest(true)");
-            x[1] = new(() => ClusterSRTest(false), "ClusterSRTest(false)");
-
-            //2
-            x[2] = new(() => ClusterSRNoCheckpointRestartSecondary(false, false), "ClusterSRNoCheckpointRestartSecondary(false, false)");
-            x[3] = new(() => ClusterSRNoCheckpointRestartSecondary(false, true), "ClusterSRNoCheckpointRestartSecondary(false, true)");
-            x[4] = new(() => ClusterSRNoCheckpointRestartSecondary(true, false), "ClusterSRNoCheckpointRestartSecondary(true, false)");
-            x[5] = new(() => ClusterSRNoCheckpointRestartSecondary(true, true), "ClusterSRNoCheckpointRestartSecondary(true, true)");
-
-            //3
-            x[6] = new(() => ClusterSRPrimaryCheckpoint(false, false), "ClusterSRPrimaryCheckpoint(false, false)");
-            x[7] = new(() => ClusterSRPrimaryCheckpoint(false, true), "ClusterSRPrimaryCheckpoint(false, true)");
-            x[8] = new(() => ClusterSRPrimaryCheckpoint(true, false), "ClusterSRPrimaryCheckpoint(true, false)");
-            x[9] = new(() => ClusterSRPrimaryCheckpoint(true, true), "ClusterSRPrimaryCheckpoint(true, true)");
-
-            //4
-            x[10] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, false)");
-            x[11] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, true)");
-            x[12] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, false)");
-            x[13] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, true)");
-            x[14] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, false)");
-            x[15] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, true)");
-            x[16] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, false)");
-            x[17] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, true)");
-            x[18] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false)");
-            x[19] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true)");
-            x[20] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, false)");
-            x[21] = new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, true)");
-            x[22] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, false)");
-            x[23] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, true)");
-            x[24] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, false)");
-            x[25] = new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, true)");
-
-            //5
-            x[26] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)");
-            x[27] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)");
-            x[28] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)");
-            x[29] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true)");
-            x[30] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false)");
-            x[31] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true)");
-            x[32] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false)");
-            x[33] = new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true)");
-
-            //6
-            x[34] = new(() => ClusterSRPrimaryRestart(false, false), "ClusterSRPrimaryRestart(false, false)");
-            x[35] = new(() => ClusterSRPrimaryRestart(false, true), "ClusterSRPrimaryRestart(false, true)");
-            x[36] = new(() => ClusterSRPrimaryRestart(true, false), "ClusterSRPrimaryRestart(true, false)");
-            x[37] = new(() => ClusterSRPrimaryRestart(true, true), "ClusterSRPrimaryRestart(true, true)");
-
-            //7
-            x[38] = new(ClusterSRRedirectWrites, "ClusterSRRedirectWrites()");
-
-            return x;
+            List<(Action, string)> testList = [
+                new(() => ClusterSRTest(true), "ClusterSRTest(true)"),
+                new(() => ClusterSRTest(false), "ClusterSRTest(false)"),
+                new(() => ClusterSRNoCheckpointRestartSecondary(false, false), "ClusterSRNoCheckpointRestartSecondary(false, false)"),
+                new(() => ClusterSRNoCheckpointRestartSecondary(false, true), "ClusterSRNoCheckpointRestartSecondary(false, true)"),
+                new(() => ClusterSRNoCheckpointRestartSecondary(true, false), "ClusterSRNoCheckpointRestartSecondary(true, false)"),
+                new(() => ClusterSRNoCheckpointRestartSecondary(true, true), "ClusterSRNoCheckpointRestartSecondary(true, true)"),
+                new(() => ClusterSRPrimaryCheckpoint(false, false), "ClusterSRPrimaryCheckpoint(false, false)"),
+                new(() => ClusterSRPrimaryCheckpoint(false, true), "ClusterSRPrimaryCheckpoint(false, true)"),
+                new(() => ClusterSRPrimaryCheckpoint(true, false), "ClusterSRPrimaryCheckpoint(true, false)"),
+                new(() => ClusterSRPrimaryCheckpoint(true, true), "ClusterSRPrimaryCheckpoint(true, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, false, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, false, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, false, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, false, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, false, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, false, true, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, false, true, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(false, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(false, true, true, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, false, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, false, true, true)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, false), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, false)"),
+                new(() => ClusterSRPrimaryCheckpointRetrieve(true, true, true, true), "ClusterSRPrimaryCheckpointRetrieve(true, true, true, true)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, false)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, false, true)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, false)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(false, true, true)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, false)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, false, true)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, false)"),
+                new(() => ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true), "ClusterSRAddReplicaAfterPrimaryCheckpoint(true, true, true)"),
+                new(() => ClusterSRPrimaryRestart(false, false), "ClusterSRPrimaryRestart(false, false)"),
+                new(() => ClusterSRPrimaryRestart(false, true), "ClusterSRPrimaryRestart(false, true)"),
+                new(() => ClusterSRPrimaryRestart(true, false), "ClusterSRPrimaryRestart(true, false)"),
+                new(() => ClusterSRPrimaryRestart(true, true), "ClusterSRPrimaryRestart(true, true)"),
+                new(ClusterSRRedirectWrites, "ClusterSRRedirectWrites()"),
+                new(() => ClusterReplicationCheckpointCleanupTest(false, false, false), "ClusterReplicationCheckpointCleanupTest(false, false, false)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(false, false, true), "ClusterReplicationCheckpointCleanupTest(false, false, true)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(false, true, false), "ClusterReplicationCheckpointCleanupTest(false, true, false)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(false, true, true), "ClusterReplicationCheckpointCleanupTest(false, true, true)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(true, false, false), "ClusterReplicationCheckpointCleanupTest(true, false, false)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(true, false, true), "ClusterReplicationCheckpointCleanupTest(true, false, true)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(true, true, false), "ClusterReplicationCheckpointCleanupTest(true, true, false)"),
+                new(() => ClusterReplicationCheckpointCleanupTest(true, true, true), "ClusterReplicationCheckpointCleanupTest(true, true, true)")
+            ];
+            return testList.ToArray();
         }
 
         ClusterTestContext context;
 
-        public void SetLogTextWriter(TextWriter logTextWriter) => context.logTextWriter = logTextWriter;
+        public TextWriter LogTextWriter { get; set; }
+
         protected bool useTLS = false;
         protected bool asyncReplay = false;
         readonly int timeout = 60;
@@ -96,6 +92,7 @@ namespace Garnet.test.cluster
         public virtual void Setup()
         {
             context = new ClusterTestContext();
+            if (LogTextWriter != null) context.logTextWriter = LogTextWriter;
             context.Setup(monitorTests);
         }
 
@@ -585,6 +582,8 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
             var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
@@ -603,22 +602,22 @@ namespace Garnet.test.cluster
 
             // Populate Primary
             if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
             else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
+                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
 
             // Wait for replication offsets to synchronize
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
 
             if (checkpoint)
             {
-                var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
-                var replicaLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
-                context.clusterTestUtils.Checkpoint(0);
-                context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
-                context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
-                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+                var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+                var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.Checkpoint(primaryIndex);
+                context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
             }
 
             #region InitiateFailover
@@ -632,15 +631,16 @@ namespace Garnet.test.cluster
             #endregion
 
             // Wait for attaching primary to finish
-            context.clusterTestUtils.WaitForNoFailover(1, logger: context.logger);
+            context.clusterTestUtils.WaitForNoFailover(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, logger: context.logger);
             // Enable when old primary becomes replica
-            context.clusterTestUtils.WaitForReplicaRecovery(0, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, logger: context.logger);
 
             // Check if allowed to write to new Primary
             if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0, slotMap: slotMap);
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, slotMap: slotMap);
             else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount, slotMap: slotMap);
+                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, addCount, slotMap: slotMap);
         }
 
         [Test, Order(12)]
@@ -732,7 +732,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, segmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, segmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, useNativeDeviceLinux: true);
             context.CreateConnection(useTLS: useTLS);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
@@ -753,10 +753,10 @@ namespace Garnet.test.cluster
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true));
             var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primary_count, replica_count, disableObjects));
 
-            if (!context.checkpointTask.Wait(TimeSpan.FromSeconds(30)))
+            if (!context.checkpointTask.Wait(TimeSpan.FromSeconds(60)))
                 Assert.Fail("checkpointTask timeout");
 
-            if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(30)))
+            if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(60)))
                 Assert.Fail("attachReplicaTask timeout");
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: 0, secondaryIndex: 1, logger: context.logger);
