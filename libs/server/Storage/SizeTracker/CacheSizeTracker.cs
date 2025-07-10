@@ -1,4 +1,5 @@
-﻿// Copyright (c) Microsoft Corporation.
+﻿
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -22,13 +23,27 @@ namespace Garnet.server
     {
         internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> mainLogTracker;
         internal readonly LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> readCacheTracker;
-        public long TargetSize;
+        private long targetSize;
         public long ReadCacheTargetSize;
 
         int isStarted = 0;
         private const int deltaFraction = 10; // 10% of target size
 
         internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
+
+        /// <summary>
+        /// Total memory size target
+        /// </summary>
+        public long TargetSize
+        {
+            get => targetSize;
+            set
+            {
+                Debug.Assert(value >= 0);
+                targetSize = value;
+                mainLogTracker?.UpdateTargetSize(targetSize, targetSize / deltaFraction);
+            }
+        }
 
         /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
         internal struct LogSizeCalculator : ILogSizeCalculator<byte[], IGarnetObject>
