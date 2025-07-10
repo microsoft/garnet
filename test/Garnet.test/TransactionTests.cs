@@ -231,13 +231,10 @@ namespace Garnet.test
                     // These are not too interesting (or better to not implement) in Transaction context,
                     // and a bit difficult to integrate into this test.
                     RespCommand.ACL,
-                    RespCommand.ASKING,
-                    RespCommand.ASYNC,
                     RespCommand.AUTH,
                     RespCommand.BGSAVE,
                     RespCommand.CONFIG,
                     RespCommand.CLIENT,
-                    RespCommand.CLUSTER,
                     RespCommand.DEBUG,
                     RespCommand.FAILOVER,
                     RespCommand.HELLO,
@@ -245,8 +242,6 @@ namespace Garnet.test
                     RespCommand.MODULE,
                     RespCommand.MONITOR,
                     RespCommand.PUBSUB,
-                    RespCommand.READONLY,
-                    RespCommand.READWRITE,
                     RespCommand.REPLICAOF,
                     RespCommand.SAVE,
                     RespCommand.SCRIPT,
@@ -256,6 +251,11 @@ namespace Garnet.test
                     RespCommand.DUMP,
                     RespCommand.MIGRATE,
                     RespCommand.RESTORE,
+
+                    // Garnet
+                    RespCommand.COSCAN,
+                    RespCommand.HCOLLECT,
+                    RespCommand.ZCOLLECT,
 
                     // SELECT / SWAPDB currently not allowed during TXN
                     RespCommand.SELECT,
@@ -269,12 +269,10 @@ namespace Garnet.test
                 [
                     // These require using a nonblocking context and we don't do that yet
                     RespAclCategories.Blocking,
-                    // We need to filter out the noninteresting ones
-                    RespAclCategories.Garnet,
                     // Not too relevant during a transaction
                     RespAclCategories.PubSub,
                     RespAclCategories.Scripting,
-                    // Disallowed
+                    // Either disallowed or will interfere with test
                     RespAclCategories.Transaction
                 ];
 
@@ -284,13 +282,23 @@ namespace Garnet.test
             foreach (var respCommand in respCommandsInfo)
             {
                 var commandInfo = respCommand.Value;
+                // Exclude commmands explicitly disallowed in MULTI context
+                if (commandInfo.Flags != default && commandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))
+                    continue;
+
+                var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
+                
+                // Exclude cluster commands
+                if (commandDoc == default || commandDoc.Group == RespCommandGroup.Cluster)
+                    continue;
+
                 if (excludeList.Any(w => w == commandInfo.Command))
                     continue;
 
                 if (excludeCat.Any(flag => commandInfo.AclCategories.HasFlag(flag)))
                     continue;
 
-                // Cluster command equivalent to REPLICAOF
+                // Server command equivalent to REPLICAOF
                 if (commandInfo.Name == "SLAVEOF")
                 {
                     continue;
@@ -301,7 +309,6 @@ namespace Garnet.test
                 System.Collections.Generic.List<string> command = [commandInfo.Name];
                 var startIdx = 1; // starting index including Name
 
-                var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
                 if (commandInfo.SubCommands?.Length > 0)
                 {
                     commandInfo = commandInfo.SubCommands[0];

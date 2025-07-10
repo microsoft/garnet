@@ -217,6 +217,8 @@ namespace Garnet.server
                 RespCommand.SETNX => SingleKey(1, false, LockType.Exclusive),
 
                 RespCommand.ZDIFFSTORE => SortedSetObjectKeys(command, inputCount),
+                RespCommand.ZEXPIRE => SortedSetObjectKeys(command, inputCount),
+                RespCommand.ZEXPIREAT => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZEXPIRETIME => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZINTER => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZINTERCARD => SortedSetObjectKeys(command, inputCount),
@@ -232,6 +234,8 @@ namespace Garnet.server
                 RespCommand.ZTTL => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZUNION => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZUNIONSTORE => SortedSetObjectKeys(command, inputCount),
+                
+                RespCommand.COSCAN => SingleKey(1, true, LockType.Shared),
                 _ => OtherCommands(command, out error)
             };
         }
@@ -371,6 +375,8 @@ namespace Garnet.server
                 RespCommand.GEOPOS => SingleKey(1, true, LockType.Shared),
 
                 RespCommand.ZDIFFSTORE => ZSTOREKeys(inputCount, true),
+                RespCommand.ZEXPIRE => SingleKey(1, true, LockType.Exclusive),
+                RespCommand.ZEXPIREAT => SingleKey(1, true, LockType.Exclusive),
                 RespCommand.ZEXPIRETIME => SingleKey(1, true, LockType.Shared),
                 RespCommand.ZINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
                 RespCommand.ZINTERCARD => ListKeys(inputCount, StoreType.Object, LockType.Shared),
