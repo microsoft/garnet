@@ -575,16 +575,16 @@ namespace Garnet.server
         /// </summary>
         private int SingleWriteKeyListReadKeys(int inputCount, bool isObject, int offset = 0)
         {
-            if (inputCount > offset)
-            {
-                var key = respSession.parseState.GetArgSliceByRef(offset);
-                SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
-                SaveKeyArgSlice(key);
-            }
+            if (inputCount <= offset)
+                return 0;
+
+            var key = respSession.parseState.GetArgSliceByRef(offset);
+            SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
+            SaveKeyArgSlice(key);
 
             for (var i = offset + 1; i < inputCount; i++)
             {
-                var key = respSession.parseState.GetArgSliceByRef(i);
+                key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, LockType.Shared);
                 SaveKeyArgSlice(key);
             }
