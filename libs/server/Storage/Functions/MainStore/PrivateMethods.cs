@@ -605,20 +605,17 @@ namespace Garnet.server
         static bool IsValidDouble(int length, byte* source, Span<byte> output, out double val)
         {
             // Check for valid number
-            if (!NumUtils.TryReadDouble(length, source, out val))
+            if (!NumUtils.TryParseWithInfinity(new ReadOnlySpan<byte>(source, length), out val))
             {
-                if (RespReadUtils.TryReadInfinity(new ReadOnlySpan<byte>(source, length), out _))
-                    output[0] = (byte)OperationError.NANORINFINITY;
-                else
-                    // Signal value is not a valid number
-                    output[0] = (byte)OperationError.INVALID_TYPE;
+                // Signal value is not a valid number
+                output[0] = (byte)OperationError.INVALID_TYPE;
                 return false;
             }
 
             if (!double.IsFinite(val))
             {
                 // Signal value is not a Nan/Infinity
-                output[0] = (byte)OperationError.NANORINFINITY;
+                output[0] = (byte)OperationError.NAN_OR_INFINITY;
                 return false;
             }
 

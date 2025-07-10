@@ -742,7 +742,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
                     break;
-                case OperationError.NANORINFINITY:
+                case OperationError.NAN_OR_INFINITY:
                 case OperationError.INVALID_TYPE:
                     WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                     break;
@@ -791,7 +791,7 @@ namespace Garnet.server
                 case OperationError.INVALID_TYPE:
                     WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
                     break;
-                case OperationError.NANORINFINITY:
+                case OperationError.NAN_OR_INFINITY:
                     WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
                     break;
                 default:

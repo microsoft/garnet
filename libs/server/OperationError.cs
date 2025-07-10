@@ -19,6 +19,6 @@ namespace Garnet.server
         /// <summary>
         /// Operation failed due to NaN/infinity
         /// </summary>
-        NANORINFINITY
+        NAN_OR_INFINITY
     }
 }
