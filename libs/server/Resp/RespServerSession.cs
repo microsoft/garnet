@@ -413,7 +413,7 @@ namespace Garnet.server
             return
                 (enableDebugCommand == ConnectionProtectionOption.Yes) ||
                 ((enableDebugCommand == ConnectionProtectionOption.Local) &&
-                    !networkSender.IsLocalConnection());
+                    networkSender.IsLocalConnection());
         }
 
         internal bool CanRunModule()
@@ -423,7 +423,7 @@ namespace Garnet.server
             return
                 (enableModuleCommand == ConnectionProtectionOption.Yes) ||
                 ((enableModuleCommand == ConnectionProtectionOption.Local) &&
-                    !networkSender.IsLocalConnection());
+                    networkSender.IsLocalConnection());
         }
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
