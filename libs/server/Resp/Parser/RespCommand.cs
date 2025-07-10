@@ -2669,16 +2669,17 @@ namespace Garnet.server
             commandReceived = true;
             endReadHead = readHead;
 
+            var remainingBytes = bytesRead - readHead;
             var ptr = recvBufferPtr + readHead;
-            var end = recvBufferPtr + bytesRead;
+            var end = ptr + remainingBytes;
 
             // Attempt parsing using fast parse pass for most common operations
-            cmd = FastParseCommand(out count, ptr, bytesRead - readHead);
+            cmd = FastParseCommand(out count, ptr, remainingBytes);
 
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
-            if ((cmd == RespCommand.NONE) && MakeUpperCase(ptr, bytesRead - readHead))
+            if ((cmd == RespCommand.NONE) && MakeUpperCase(ptr, remainingBytes))
             {
-                cmd = FastParseCommand(out count, ptr, bytesRead - readHead);
+                cmd = FastParseCommand(out count, ptr, remainingBytes);
             }
 
             // If we have not found a command, continue parsing on slow path.
@@ -2854,8 +2855,8 @@ namespace Garnet.server
             // Quote contexts allow escaping depending on their starting character.
             //
             // Separators separate different arguments.
-            // Separators are start of line (implied), the lf/crlf at end of line, and the characters:
-            // space, tab and carriage return (when not followed by linefeed), when they are in a normal context.
+            // Separators are start of line (implied), linefeed which marks end of line, and the characters:
+            // space, tab and carriage return, when they are in a normal context.
             // In a quote context the same seqeunces are considered normal.
             //
             // Quote characters are ' or ".
@@ -2881,22 +2882,16 @@ namespace Garnet.server
 
             var slices = new System.Collections.Generic.List<ArgSlice>();
             var slicePtr = ptr;
+
+            // True if the current slice has any contents.
             var anyContents = false;
+            // True if any quote is used. If no quoting is used, we can save on unescaping later.
             var anyQuote = false;
+            // Current quote char if any.
             byte quoteChar = 0;
 
-            while (ptr + 1 <= end)
+            while (ptr < end)
             {
-                if (*(ushort*)ptr == crlf)
-                {
-                    if (anyContents)
-                    {
-                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
-                        anyContents = false;
-                    }
-                    ptr++;
-                }
-
                 if (*ptr == '\n')
                 {
                     commandReceived = true;
@@ -2943,25 +2938,24 @@ namespace Garnet.server
                         anyContents = true;
                         anyQuote = true;
                     }
-                    else if (quoteChar == *ptr)
+                    else if ((quoteChar == *ptr) && (ptr < end))
                     {
                         var next = ptr + 1;
-                        if (AsciiUtils.IsRedisWhiteSpace(*next) ||
-                            ((next < end) && (*(ushort*)next == crlf)) ||
-                            ((next <= end) && (*next == '\n')))
+                        if (AsciiUtils.IsRedisWhiteSpace(*next) || (*next == '\n'))
                         {
-                            bool unQuote;
+                            var unQuote = true;
 
+                            // We do the unescaping separately, so we need an extra check here to see this quote isn't escaped.
                             if (quoteChar == '"')
                             {
-                                unQuote = true;
-
-                                for (var index = ptr - 1; *index == '\\' && index >= slicePtr; --index)
+                                for (var index = ptr - 1; index >= slicePtr && *index == '\\'; --index)
                                 {
                                     unQuote = !unQuote;
                                 }
                             }
-                            else
+                            // We likely don't need this check, because to get quoteChar != 0 we needed to open up a quote earlier,
+                            // which means slicePtr must have been earlier. But it costs little to be safer.
+                            else if (ptr > slicePtr)
                             {
                                 unQuote = *(ptr - 1) != '\\';
                             }
