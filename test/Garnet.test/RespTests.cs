@@ -1401,6 +1401,7 @@ namespace Garnet.test
         [TestCase("abc", 10)]
         [TestCase(10, "xyz")]
         [TestCase(10, "inf")]
+        [TestCase(double.PositiveInfinity, double.NegativeInfinity)]
         public void SimpleIncrementByFloatWithInvalidFloat(object initialValue, object incrByValue)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

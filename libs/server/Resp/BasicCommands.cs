@@ -771,31 +771,21 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
             }
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var status = storageApi.IncrementByFloat(key, out var output, dbl);
 
-            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1,
-                                           arg1: BitConverter.DoubleToInt64Bits(dbl));
-            storageApi.Increment(key, ref input, ref output);
-
-            var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
-                ? (OperationError)output.Span[0]
-                : OperationError.SUCCESS;
-
-            switch (errorFlag)
+            switch (status)
             {
-                case OperationError.SUCCESS:
-                    while (!RespWriteUtils.TryWriteBulkString(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(output, ref dcurr, dend))
                         SendAndReset();
                     break;
-                case OperationError.INVALID_TYPE:
-                    WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                    break;
-                case OperationError.NAN_OR_INFINITY:
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                    break;
+                case GarnetStatus.WRONGTYPE:
                 default:
-                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+                    if (double.IsNaN(output))
+                        WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    else
+                        WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    break;
             }
 
             return true;

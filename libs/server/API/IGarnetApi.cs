@@ -265,6 +265,15 @@ namespace Garnet.server
         /// <param name="decrementCount"></param>
         /// <returns></returns>
         GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1);
+
+        /// <summary>
+        /// Increment by float (INCRBYFLOAT)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        GarnetStatus IncrementByFloat(ArgSlice key, out double output, double val);
         #endregion
 
         #region DELETE
