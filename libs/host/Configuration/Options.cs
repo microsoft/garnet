@@ -632,6 +632,10 @@ namespace Garnet
         [Option("expired-key-deletion-scan-freq", Required = false, HelpText = "Frequency of background scan for expired key deletion, in seconds")]
         public int ExpiredKeyDeletionScanFrequencySecs { get; set; }
 
+        [OptionValidation]
+        [Option("streams", Required = false, HelpText = "Enable streams on server.")]
+        public bool? EnableStreams { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -903,6 +907,7 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
+                EnableStreams = EnableStreams.GetValueOrDefault(),
             };
         }
 

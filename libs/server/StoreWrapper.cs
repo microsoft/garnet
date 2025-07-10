@@ -163,6 +163,8 @@ namespace Garnet.server
         /// </summary>
         public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
+        internal readonly StreamManager streamManager;
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -270,6 +272,10 @@ namespace Garnet.server
                     ObjectStoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
+            if (serverOptions.EnableStreams)
+            {
+                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
+            }
         }
 
         /// <summary>
@@ -288,6 +294,11 @@ namespace Garnet.server
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory)
         {
+            // initialize stream manager
+            if (serverOptions.EnableStreams)
+            {
+                this.streamManager = new StreamManager(serverOptions.StreamPageSizeBytes(), serverOptions.StreamMemorySizeBytes(), 0);
+            }
         }
 
         /// <summary>

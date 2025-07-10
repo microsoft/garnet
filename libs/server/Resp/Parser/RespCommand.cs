@@ -195,6 +195,11 @@ namespace Garnet.server
         SUNIONSTORE,
         SWAPDB,
         UNLINK,
+        XADD,
+        XLEN,
+        XRANGE,
+        XDEL,
+        XTRIM,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -958,6 +963,21 @@ namespace Garnet.server
                                         }
                                         break;
 
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXADD\r\n"u8))
+                                        {
+                                            return RespCommand.XADD;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXLEN\r\n"u8))
+                                        {
+                                            return RespCommand.XLEN;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nXDEL\r\n"u8))
+                                        {
+                                            return RespCommand.XDEL;
+                                        }
+                                        break;
+
                                     case 'Z':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
                                         {
@@ -1122,6 +1142,12 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
                                         {
                                             return RespCommand.WATCH;
+                                        }
+                                        break;
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nXTRIM\r\n"u8))
+                                        {
+                                            return RespCommand.XTRIM;
                                         }
                                         break;
 
@@ -1309,6 +1335,13 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("UNLINK\r\n"u8))
                                         {
                                             return RespCommand.UNLINK;
+                                        }
+                                        break;
+
+                                    case 'X':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XRANGE\r\n"u8))
+                                        {
+                                            return RespCommand.XRANGE;
                                         }
                                         break;
 

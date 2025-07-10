@@ -266,6 +266,7 @@ namespace Garnet.test
             int slowLogThreshold = 0,
             TextWriter logTo = null,
             bool enableCluster = false,
+            bool enableStreams = false,
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false
             )
@@ -355,6 +356,7 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
+                EnableStreams = enableStreams,
             };
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
