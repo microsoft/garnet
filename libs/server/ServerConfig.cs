@@ -366,7 +366,7 @@ namespace Garnet.server
 
         private static void AppendError(StringBuilder sbErrorMsg, string error)
         {
-            sbErrorMsg.Append($"{(sbErrorMsg.Length == 0 ? error : $"; {error.Skip(4)}")}");
+            sbErrorMsg.Append($"{(sbErrorMsg.Length == 0 ? error : $"; {error.Substring(4)}")}");
         }
 
         private static void AppendErrorWithTemplate(StringBuilder sbErrorMsg, string template, ReadOnlySpan<byte> option)
