@@ -38,7 +38,7 @@ public static class AsciiUtils
         return (c == '"') || (c == '\'');
     }
 
-    /// <summary>Indicates whether character is ASCII whitespace.</summary>
+    /// <summary>Indicates whether character is ASCII whitespace or a carriage return.</summary>
     /// <param name="c">The character to evaluate.</param>
     /// <returns>true if <paramref name="c"/> is an ASCII whitespace character; otherwise, false.</returns>
     public static bool IsRedisWhiteSpace(byte c)
