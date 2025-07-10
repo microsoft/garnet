@@ -98,6 +98,10 @@ namespace Garnet.cluster
             _ = Task.Run(GossipMain);
         }
 
+        public List<(ClusterConfig, ClusterConfig, ClusterConfig)> clusterconfigs = new List<(ClusterConfig, ClusterConfig, ClusterConfig)>();
+
+        public Dictionary<int, List<ClusterConfig>> gmsg = new();
+
         /// <summary>
         /// Merge incoming config to evolve local version
         /// </summary>
@@ -105,12 +109,19 @@ namespace Garnet.cluster
         {
             try
             {
-                if (acquireLock) activeMergeLock.ReadLock();
+                if (acquireLock) activeMergeLock.WriteLock();
                 if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
                 {
                     logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);
                     return false;
                 }
+
+                if (!gmsg.ContainsKey(senderConfig.LocalNodePort))
+                {
+                    gmsg.Add(senderConfig.LocalNodePort, new List<ClusterConfig>());
+                }
+
+                gmsg[senderConfig.LocalNodePort].Add(senderConfig);
 
                 while (true)
                 {
@@ -119,14 +130,17 @@ namespace Garnet.cluster
                     var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
                     if (currentCopy == next) return false;
                     if (Interlocked.CompareExchange(ref currentConfig, next, current) == current)
+                    {
+                        clusterconfigs.Add((senderConfig, current, next));
                         break;
+                    }
                 }
                 FlushConfig();
                 return true;
             }
             finally
             {
-                if (acquireLock) activeMergeLock.ReadUnlock();
+                if (acquireLock) activeMergeLock.WriteUnlock();
             }
         }
 
