@@ -228,23 +228,20 @@ namespace Garnet.test
         {
             RespCommand[] excludeList =
                 [
-                    // These are not too interesting in Transaction context,
+                    // These are not too interesting (or better to not implement) in Transaction context,
                     // and a bit difficult to integrate into this test.
                     RespCommand.ACL,
                     RespCommand.ASKING,
                     RespCommand.ASYNC,
                     RespCommand.AUTH,
                     RespCommand.BGSAVE,
-                    RespCommand.COMMAND,
                     RespCommand.CONFIG,
                     RespCommand.CLIENT,
                     RespCommand.CLUSTER,
                     RespCommand.DEBUG,
                     RespCommand.FAILOVER,
                     RespCommand.HELLO,
-                    RespCommand.LATENCY,
                     RespCommand.LASTSAVE,
-                    RespCommand.MEMORY,
                     RespCommand.MODULE,
                     RespCommand.MONITOR,
                     RespCommand.PUBSUB,
@@ -259,7 +256,6 @@ namespace Garnet.test
                     RespCommand.DUMP,
                     RespCommand.MIGRATE,
                     RespCommand.RESTORE,
-                    RespCommand.SLOWLOG,
 
                     // SELECT / SWAPDB currently not allowed during TXN
                     RespCommand.SELECT,
@@ -287,10 +283,10 @@ namespace Garnet.test
 
             foreach (var respCommand in respCommandsInfo)
             {
-                if (excludeList.Any(w => w.ToString() == respCommand.Key))
+                var commandInfo = respCommand.Value;
+                if (excludeList.Any(w => w == commandInfo.Command))
                     continue;
 
-                var commandInfo = respCommand.Value;
                 if (excludeCat.Any(flag => commandInfo.AclCategories.HasFlag(flag)))
                     continue;
 
@@ -300,11 +296,20 @@ namespace Garnet.test
                     continue;
                 }
 
-                var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
                 var arity = Math.Abs(commandInfo.Arity);
 
                 System.Collections.Generic.List<string> command = [commandInfo.Name];
                 var startIdx = 1; // starting index including Name
+
+                var commandDoc = respCommandsDocs.Where(x => x.Key == commandInfo.Name).FirstOrDefault().Value;
+                if (commandInfo.SubCommands?.Length > 0)
+                {
+                    commandInfo = commandInfo.SubCommands[0];
+                    commandDoc = commandDoc.SubCommands.Where(x => x.Command == commandInfo.Command).First();
+
+                    command.Add(commandInfo.Name.Split('|').Last());
+                    startIdx++;
+                }
 
                 // We need this due to subcommand structure
                 if (commandInfo.Name == "BITOP")
@@ -358,13 +363,18 @@ namespace Garnet.test
                     command.Add("0");
                 }
 
-                using (var client = TestUtils.GetGarnetClientSession())
+                try
                 {
+                    using var client = TestUtils.GetGarnetClientSession();
                     client.Connect();
                     client.Execute("MULTI");
                     var result = await client.ExecuteAsync([.. command]);
-                    ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " Transaction coverage");
+                    ClassicAssert.AreEqual("QUEUED", result, commandInfo.Name + " failed transaction coverage");
                     client.Execute("DISCARD");
+                }
+                catch
+                {
+                    Assert.Fail($"{commandInfo.Name} failed transaction coverage");
                 }
             }
         }
