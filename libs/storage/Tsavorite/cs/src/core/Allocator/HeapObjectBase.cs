@@ -12,19 +12,24 @@ namespace Tsavorite.core
     public struct ObjectSizes
     {
         /// <summary>In-memory size, including .NET object overheads</summary>
-        public long Memory;
+        public long HeapMemory;
 
         /// <summary>Serialized size, for disk IO or other storage</summary>
-        public long Disk;
+        public long Serialized;
 
-        public ObjectSizes(long memory, long disk)
+        /// <summary>Serialized size, for disk IO or other storage</summary>
+        public bool SerializedIsExact;
+        public ObjectSizes(long heap, long serialized) { }
+
+        public ObjectSizes(long heap, long serialized, bool serializedIsExact)
         {
-            Memory = memory;
-            Disk = disk + sizeof(byte); // Additional byte for GarnetObjectBase.Type
+            HeapMemory = heap;
+            Serialized = serialized + sizeof(byte); // Additional byte for GarnetObjectBase.Type
+            this.SerializedIsExact = serializedIsExact;
         }
 
         [Conditional("DEBUG")]
-        public void Verify() => Debug.Assert(Memory >= 0 && Disk >= 0, $"Invalid sizes [{Memory}, {Disk}]");
+        public void Verify() => Debug.Assert(HeapMemory >= 0 && Serialized >= 0, $"Invalid sizes [{HeapMemory}, {Serialized}]");
     }
 
     /// <summary>
@@ -33,10 +38,13 @@ namespace Tsavorite.core
     public abstract class HeapObjectBase : IHeapObject
     {
         /// <inheritdoc />
-        public long MemorySize { get => sizes.Memory; set => sizes.Memory = value; }
+        public long HeapMemorySize { get => sizes.HeapMemory; set => sizes.HeapMemory = value; }
 
         /// <inheritdoc />
-        public long DiskSize { get => sizes.Disk; set => sizes.Disk = value; }
+        public long SerializedSize { get => sizes.Serialized; set => sizes.Serialized = value; }
+
+        /// <inheritdoc />
+        public bool SerializedSizeIsExact { get => sizes.SerializedIsExact; }
 
         /// <summary>Combination of object sizes for memory and disk.</summary>
         public ObjectSizes sizes;

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -115,15 +116,12 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> RecordSpan
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan()
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                if (!Info.RecordIsInline)
-                    throw new TsavoriteException("RecordSpan is not valid for non-inline records");
-                return new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
-            }
+            if (!Info.RecordIsInline)
+                throw new TsavoriteException("RecordSpan is not valid for non-inline records");
+            return new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
         }
 
         /// <inheritdoc/>
@@ -468,6 +466,9 @@ namespace Tsavorite.core
             var valueAddress = ValueAddress;
             return ValueAddress + LogField.GetInlineTotalSizeOfField(valueAddress, Info.ValueIsInline);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly ReadOnlySpan<byte> GetOptionalFieldsSpan() => new((byte*)GetOptionalStartAddress(), OptionalLength);
 
         public readonly int OptionalLength => ETagLen + ExpirationLen;
 

@@ -13,71 +13,144 @@ namespace Tsavorite.core
 {
     using static Utility;
 
-    /// <summary>The record on the disk: header, optional fields, key, value</summary>
-    /// <remarks>The space is laid out as one of:
-    ///     <list>
-    ///     <item>Identical to <see cref="LogRecord"/></item>
-    ///     <item>As a "varbyte" encoding:
-    ///         <list>
-    ///             <item>[RecordInfo][Indicator byte][KeyLength varbytes][ValueLength varbytes][key Span][value Span][ETag?][Expiration?][filler bytes--rounded up to 8 byte boundary]</item>
-    ///             <item>Indicator byte: 3 bits for version, 2 bits for key length, 3 bits for value length</item>
-    ///             <item>Key and Value Length varbytes: from 1-4 bytes for Key and 1-8 bytes for Value</item>
-    ///         </list>
-    ///     </item>
-    ///     </list>
-    /// This lets us get to the optional fields for comparisons without loading the full record (GetIOSize should cover the space for optionals).
-    /// </remarks>
+    /// <summary>A record from the disk or network buffer. Because we read in pieces, we isolate the individual pieces so we don't rely on having the full record in memory.</summary>
+    /// <remarks>This struct is used as a temporary holding space for pending operations (both holding onto keys on the query side, and the results on the completion side) and iteration.</remarks>
     public unsafe struct DiskLogRecord : ISourceLogRecord, IDisposable
     {
-        /// <summary>The initial size to IO from disk when reading a record; by default a single page. If we don't get the full record,
-        /// at least we'll likely get the full Key and value length, and can read the full record using that.</summary>
-        /// <remarks>Must be a power of 2</remarks>
-        public const int InitialIOSize = 4 * 1024;
-
-        /// <summary>The physicalAddress in the log.</summary>
+        /// <summary>The physicalAddress of the record data. May come from <see cref="recordBuffer"/> or from an iterator frame. In either case, it is the full record</summary>
         internal long physicalAddress;
+        /// <summary>If this is non-null, it is the full record; it is the basis for physicalAddress and must be Return()ed on <see cref="Dispose()"/>.</summary>
+        SectorAlignedMemory recordBuffer;
 
-        /// <summary>The deserialized ValueObject if this is a disk record for the Object Store. Held directly; does not use <see cref="ObjectIdMap"/>.</summary>
-        internal IHeapObject valueObject;
+        /// <summary>The record header.</summary>
+        RecordInfo recordInfo;
 
-        /// <summary>If this is non-null, it must be freed on <see cref="Dispose()"/>.</summary>
-        internal SectorAlignedMemory recordBuffer;
+        /// <summary>If not empty, the key is an overflow key.</summary>
+        readonly OverflowByteArray keyOverflow;
+        /// <summary>If not empty, the key is part of either <see cref="keyBuffer"/> or <see cref="recordBuffer"/>.</summary>
+        readonly PinnedSpanByte keySpan;
+        /// <summary>We may have had an initial read of just the key, but not the full value. In that case we hung onto the key memory here (and it must be Return()ed)
+        /// and may also have allocated <see cref="recordBuffer"/>.</summary>
+        readonly SectorAlignedMemory keyBuffer;
+
+        /// <summary>If not empty, the value is an overflow value.</summary>
+        readonly OverflowByteArray valueOverflow;
+        /// <summary>If not empty, the value is part of <see cref="recordBuffer"/>.</summary>
+        readonly PinnedSpanByte valueSpan;
+        /// <summary>If non-null, this is the deserialized ValueObject. Held directly; does not use <see cref="ObjectIdMap"/></summary>
+        readonly IHeapObject valueObject;
+
+        /// <summary>If Info.HasETag, this is the ETag.</summary>
+        readonly long eTag;
+        /// <summary>If Info.HasExpiration, this is the Expiration.</summary>
+        readonly long expiration;
 
         /// <summary>Constructor that takes a physical address, which may come from a <see cref="SectorAlignedMemory"/> or some other allocation
         /// that will have at least the lifetime of this <see cref="DiskLogRecord"/>. This <see cref="DiskLogRecord"/> does not own the memory
         /// allocation so will not free it on <see cref="Dispose()"/>.</summary>
+        /// <param name="physicalAddress">Physical address of the record; may have come from a <see cref="SectorAlignedMemory"/> buffer</param>
+        /// <param name="offsetToKeyStart">Offset to start of key data</param>
+        /// <param name="keyLength">Length of key data</param>
+        /// <param name="valueLength">Length of value data. This is an int; a long length would mean <paramref name="valueObject"/> is not null</param>
+        /// <param name="valueObject"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public DiskLogRecord(long physicalAddress, int length) : this(physicalAddress)
-        {
-            if (!IsComplete(physicalAddress, length, out _, out _))
-                throw new TsavoriteException("DiskLogRecord is not complete");
-        }
-
-        /// <summary>Constructor that takes a physical address, which may come from a <see cref="SectorAlignedMemory"/> or some other allocation
-        /// that will have at least the lifetime of this <see cref="DiskLogRecord"/> and is known to contain the entire record (as there is no length
-        /// supplied). This <see cref="DiskLogRecord"/> does not own the memory allocation so will not free it on <see cref="Dispose()"/>.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(long physicalAddress)
+        internal DiskLogRecord(long physicalAddress, int offsetToKeyStart, int keyLength, int valueLength, IHeapObject valueObject = null)
         {
             this.physicalAddress = physicalAddress;
-            InfoRef.ClearBitsForDiskImages();
+
+            // We assume we have read this directly and not yet processed its components other than possibly deserialize the value object,
+            // so do that now to avoid "if" checks later.
+            var ptr = (byte*)physicalAddress;
+            recordInfo = *(RecordInfo*)ptr;
+            recordInfo.ClearBitsForDiskImages();
+
+            // If there is a value object it should already have been deserialized
+            Debug.Assert(recordInfo.ValueIsObject == valueObject is not null, $"recordInfo.ValueIsObject ({recordInfo.ValueIsObject} does not match (valueObject is not null) {valueObject is not null}");
+
+            ptr += offsetToKeyStart;
+            keySpan = PinnedSpanByte.FromPinnedPointer(ptr, keyLength);
+            ptr += keyLength;
+
+            if (valueObject is not null)
+                this.valueObject = valueObject;
+            else
+                valueSpan = PinnedSpanByte.FromPinnedPointer(ptr, valueLength);
+            ptr += valueLength;
+
+            if (recordInfo.HasETag)
+            {
+                eTag = *(long*)ptr;
+                ptr += LogRecord.ETagSize;
+            }
+            if (recordInfo.HasExpiration)
+                expiration = *(long*)ptr;
         }
 
-        /// <summary>Constructor that takes a <see cref="SectorAlignedMemory"/> from which it obtains the physical address.
+        /// <summary>Static factory that takes a <see cref="SectorAlignedMemory"/> from which it obtains the physical address.
         /// This <see cref="DiskLogRecord"/> owns the memory allocation and must free it on <see cref="Dispose()"/>.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public DiskLogRecord(SectorAlignedMemory allocatedRecord) : this((long)allocatedRecord.GetValidPointer())
+        internal static DiskLogRecord Transfer(ref SectorAlignedMemory allocatedRecord, int offsetToKeyStart, int keyLength, int valueLength, IHeapObject valueObject = null)
         {
-            recordBuffer = allocatedRecord;
+            if (allocatedRecord is null)
+                throw new ArgumentNullException(nameof(allocatedRecord), "Cannot transfer a null SectorAlignedMemory to DiskLogRecord");
+            var diskLogRecord = new DiskLogRecord((long)allocatedRecord.GetValidPointer(), offsetToKeyStart, keyLength, valueLength, valueObject)
+                { recordBuffer = allocatedRecord };
+            allocatedRecord = default;
+            return diskLogRecord;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private DiskLogRecord(ref SectorAlignedMemory allocatedRecord) : this((long)allocatedRecord.GetValidPointer())  // TODO this should be going away
+        {
             if (!IsComplete(allocatedRecord, out _, out _))
                 throw new TsavoriteException("DiskLogRecord is not complete");
+            recordBuffer = allocatedRecord;
+            allocatedRecord = default;
         }
 
         /// <summary>Constructor that takes an <see cref="AsyncIOContext"/> from which it obtains the physical address and ValueObject.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal DiskLogRecord(ref AsyncIOContext ctx) : this(ctx.record)
+        private DiskLogRecord(ref AsyncIOContext ctx) : this(ctx.record)    // TODO: This should be going away
         {
             valueObject = ctx.ValueObject;
+        }
+
+        internal DiskLogRecord(RecordInfo recordInfo, SectorAlignedMemory keyBuffer, OverflowByteArray keyOverflow, SectorAlignedMemory valueBuffer,
+            OverflowByteArray valueOverflow, long eTag, long expiration, IHeapObject valueObject) : this()
+        {
+            this.recordInfo = recordInfo;
+            
+            if (keyBuffer is not null)
+            {
+                Debug.Assert(keyOverflow.IsEmpty, "Must have only one of keyBuffer or keyOverflow");
+                this.keyBuffer = keyBuffer;
+                keySpan = PinnedSpanByte.FromPinnedPointer(keyBuffer.GetValidPointer(), keyBuffer.required_bytes);
+            }
+            else
+            {
+                Debug.Assert(!keyOverflow.IsEmpty, "Must have either keyBuffer or keyOverflow");
+                Debug.Assert(keyBuffer is null, "Must have only one of keyBuffer or keyOverflow");
+                this.keyOverflow = keyOverflow;
+            }
+
+            if (valueObject is not null)
+            {
+                Debug.Assert(valueBuffer is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
+                this.valueObject = valueObject;
+            }
+            if (valueBuffer is not null)
+            {
+                Debug.Assert(valueObject is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
+                recordBuffer = valueBuffer;
+                valueSpan = PinnedSpanByte.FromPinnedPointer(valueBuffer.GetValidPointer(), valueBuffer.required_bytes);
+            }
+            else
+            {
+                Debug.Assert(!valueOverflow.IsEmpty, "Must have valueBuffer, valueObject, or valueOverflow");
+                Debug.Assert(valueObject is null && valueBuffer is null, "Must have only one of valueBuffer, valueOverflow, or valueObject");
+                this.valueOverflow = valueOverflow;
+            }
+            this.eTag = eTag;
+            this.expiration = expiration;
         }
 
         /// <summary>A ref to the record header</summary>
@@ -93,87 +166,11 @@ namespace Tsavorite.core
         public readonly long GetSerializedLength()
             => Info.IsNull ? RecordInfo.GetLength() : RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
-        /// <summary>Called by IO to determine whether the record is complete (full serialized length has been read)</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsComplete(SectorAlignedMemory recordBuffer, out bool hasFullKey, out int requiredBytes)
-            => IsComplete((long)recordBuffer.GetValidPointer(), recordBuffer.available_bytes, out hasFullKey, out requiredBytes);
-
-        private static bool IsComplete(long physicalAddress, int availableBytes, out bool hasFullKey, out int requiredBytes)
-        {
-            hasFullKey = false;
-
-            // Check for RecordInfo and either indicator byte or key length; InlineLengthPrefixSize is the larger.
-            if (availableBytes < RecordInfo.GetLength() + LogField.InlineLengthPrefixSize)
-            {
-                requiredBytes = InitialIOSize;
-                return false;
-            }
-
-            // Now we can tell if this is a fully inline vs. varbyte record.
-            var address = physicalAddress;
-            if ((*(RecordInfo*)address).RecordIsInline)
-            {
-                address += RecordInfo.GetLength();
-                address += sizeof(int) + *(int*)address;                            // Inline key length is after RecordInfo; position address after the Key (but don't dereference it yet!)
-                requiredBytes = (int)(address + sizeof(int) - physicalAddress);     // Include value length int in the calculation
-                if (availableBytes < requiredBytes)
-                {
-                    // We have the RecordInfo and key length, but not the full key data. Get another page.
-                    requiredBytes = RoundUp(requiredBytes, InitialIOSize);
-                    return false;
-                }
-
-                // We have the full Key and the value length available.
-                hasFullKey = true;
-                requiredBytes += *(int*)address;
-            }
-            else
-            {
-                // We are in varbyte format. We need to check the indicator byte for the key and value length.
-                address += RecordInfo.GetLength();      // Point to indicator byte
-                var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3);
-                var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask);
-
-                requiredBytes = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes; // Include the indicator byte in the calculation
-                if (availableBytes < requiredBytes)
-                    return false;
-
-                var ptr = (byte*)++address;  // Move past the indicator byte; the next bytes are key length, then value length
-                var keyLength = ReadVarBytes(keyLengthBytes, ref ptr);
-                var valueLength = ReadVarBytes(valueLengthBytes, ref ptr);
-
-                requiredBytes += (int)keyLength;
-                hasFullKey = availableBytes >= requiredBytes;
-                requiredBytes += (int)valueLength;      // TODO: Handle long values
-            }
-
-            var info = *(RecordInfo*)physicalAddress;
-            var eTagLen = info.HasETag ? LogRecord.ETagSize : 0;
-            var expirationLen = info.HasExpiration ? LogRecord.ExpirationSize : 0;
-
-            requiredBytes += eTagLen + expirationLen;
-            return availableBytes >= requiredBytes;
-        }
-
         /// <summary>If true, this DiskLogRecord owns the buffer and must free it on <see cref="Dispose"/></summary>
-        public readonly bool OwnsMemory => recordBuffer is not null;
-
-        // Indicator bits for version and varlen int. Since the record is always aligned to 8 bytes, we can use long operations (on values only in
-        // the low byte) which are faster than byte or int.
-#pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
-        const long kVersionBitMask = 7 << 5;        // 3 bits for version
-        const long kKeyLengthBitMask = 3 << 3;      // 2 bits for the number of bytes for the key length (this is limited to 512MB)
-        const long kValueLengthBitMask = 7;         // 3 bits for the number of bytes for the value length
-#pragma warning restore IDE1006 // Naming Styles
-
-        const long CurrentVersion = 0 << 5;         // Initial version is 0; shift will always be 5
+        public readonly bool OwnsRecordBuffer => recordBuffer is not null;
 
         /// <summary>This contains the leading byte which are the indicators, plus the up-to-int length for the key, and then some or all of the length for the value.</summary>
         internal readonly long IndicatorAddress => physicalAddress + RecordInfo.GetLength();
-
-        /// <summary>Version of the variable-length byte encoding for key and value lengths. There is no version info for <see cref="RecordInfo.RecordIsInline"/>
-        /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>
-        internal readonly long Version => (*(byte*)IndicatorAddress & kVersionBitMask) >> 6;
 
         internal readonly (int length, long dataAddress) KeyInfo
         {
@@ -184,10 +181,9 @@ namespace Tsavorite.core
                 if (Info.RecordIsInline)    // For inline, the key length int starts at the same offset as IndicatorAddress
                     return (*(int*)address, address + LogField.InlineLengthPrefixSize);
 
-                var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3) + 1;
-                var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask) + 1;
+                var (keyLengthBytes, valueLengthBytes) = DeconstructIndicatorByte(*(byte*)address);
 
-                byte* ptr = (byte*)++address;  // Move past the indicator byte; the next bytes are key length
+                var ptr = (byte*)++address;  // Move past the indicator byte; the next bytes are key length
                 var keyLength = ReadVarBytes(keyLengthBytes, ref ptr);
 
                 // Move past the key and value length bytes to the start of the key
@@ -207,62 +203,20 @@ namespace Tsavorite.core
                     return (*(int*)valueLengthAddress, valueLengthAddress + sizeof(int));
                 }
 
-                var address = IndicatorAddress;
-                var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3) + 1;     // add 1 due to 0-based
-                var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask) + 1;        // add 1 due to 0-based
+                var (keyLengthBytes, valueLengthBytes) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
 
-                byte* ptr = (byte*)IndicatorAddress + 1 + keyLengthBytes;   // Skip over the key length bytes; the value length bytes are immediately after (before the key data)
+                var ptr = (byte*)IndicatorAddress + 1 + keyLengthBytes;   // Skip over the key length bytes; the value length bytes are immediately after (before the key data)
                 var valueLength = ReadVarBytes(valueLengthBytes, ref ptr);
                 return (valueLength, keyInfo.dataAddress + keyInfo.length); // Value data (without length prefix) starts immediately after key data
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static byte CreateIndicatorByte(int keyLength, long valueLength, out int keyByteCount, out int valueByteCount)
-        {
-            keyByteCount = GetByteCount(keyLength);
-            valueByteCount = GetByteCount(valueLength);
-            return (byte)(CurrentVersion                // Already shifted
-                | ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
-                | (long)(valueByteCount - 1));          // Value does not need to be shifted; subtract 1 for 0-based
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetByteCount(long num)
-        {
-            var result = 0;
-            do
-            {
-                num >>= 8;
-                result++;
-            } while (num > 0);
-            return result;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void WriteVarBytes(long value, int len, ref byte* ptr)
-        {
-            for (; len > 0; len--)
-            {
-                *ptr++ = (byte)(value & 0xFF);
-                value >>= 8;
-            }
-            Debug.Assert(value == 0, "len too short");
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static long ReadVarBytes(int len, ref byte* ptr)
-        {
-            long value = 0;
-            for (var ii = 0; ii < len; ii++)
-                value |= (long)*ptr++ << (ii * 8);
-            return value;
-        }
-
         public void Dispose()
         {
-            recordBuffer?.Dispose();
+            recordBuffer?.Return();
             recordBuffer = null;
+            keyBuffer?.Return();
+            keyBuffer = null;
         }
 
         #region ISourceLogRecord
@@ -312,7 +266,7 @@ namespace Tsavorite.core
                 if (Info.ValueIsObject)
                     throw new TsavoriteException("DiskLogRecord with Info.ValueIsObject does not support Span<byte> values");
                 var (length, dataAddress) = ValueInfo;
-                return new((byte*)dataAddress, (int)length);    // TODO: handle long value length
+                return new((byte*)dataAddress, length);    // TODO: handle long value length
             }
         }
 
@@ -330,16 +284,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly ReadOnlySpan<byte> RecordSpan
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan()
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                var valueInfo = ValueInfo;
-                if (valueInfo.length == 0)
-                    throw new TsavoriteException("RecordSpan is not valid for records with unserialized ValueObjects");
-                return new((byte*)physicalAddress, (int)GetSerializedLength()); // TODO: Handle long object sizes
-            }
+            var valueInfo = ValueInfo;
+            if (valueInfo.length == 0)
+                throw new TsavoriteException("RecordSpan is not valid for records with unserialized ValueObjects");
+            return new((byte*)physicalAddress, (int)GetSerializedLength()); // TODO: Handle long object sizes
         }
 
         /// <inheritdoc/>
@@ -365,7 +316,7 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
         {
             KeyDataSize = Key.Length,
-            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : (int)ValueInfo.length,
+            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueInfo.length, // TODO: Handle long object sizes
             ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
@@ -376,6 +327,8 @@ namespace Tsavorite.core
 
         private readonly int ETagLen => Info.HasETag ? LogRecord.ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? LogRecord.ExpirationSize : 0;
+
+        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? LogRecord.ETagSize : 0) + (info.HasExpiration ? LogRecord.ExpirationSize : 0);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly long GetOptionalStartAddress()
@@ -442,26 +395,32 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Serialize for Compact, Scan, Conditional Pending Operations, Migration, Replication, etc. The logRecord comes from the in-memory log; there is no associated TInput, TOutput, TContext.
+        /// Serialize for Compact, Scan, Conditional Pending Operations, Migration, Replication, etc. The logRecord comes from the in-memory log;
+        /// there is no associated TInput, TOutput, TContext, and any object is just reference-copied to the destination.
         /// </summary>
         /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
-        /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Serialize(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
-            => Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
+        public void Serialize(in LogRecord logRecord, SectorAlignedBufferPool bufferPool)
+            => Serialize(in logRecord, bufferPool, ref recordBuffer);
 
         /// <summary>
-        /// Serialize for Compact, Pending Operations, etc. There is no associated TInput, TOutput, TContext for these as it is just a direct copy of data.
+        /// Serialize for Compact, Scan, Conditional Pending Operations, Migration, Replication, etc. The logRecord comes from the in-memory log;
+        /// there is no associated TInput, TOutput, TContext, and any object is just reference-copied to the destination.
         /// </summary>
         /// <param name="logRecord">The log record. This may be either in-memory or from disk IO</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
-        /// <param name="valueSerializer">Serializer for the value object; if null, do not serialize (carry the valueObject (if any) through from the logRecord instead)</param>
         /// <param name="allocatedRecord">The allocated record; may be owned by this instance, or owned by the caller for reuse</param>
         /// <remarks>This overload may be called either directly for a caller who owns the <paramref name="allocatedRecord"/>, or with this.allocatedRecord.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Serialize(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer, ref SectorAlignedMemory allocatedRecord)
+        public void Serialize(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
         {
+            // TODO: Value Overflow allocations should be carried over as objects as well; see also AsyncGetFromDiskCallback.
+            // We won't optimize for huge keys.
+            // TODO the tests that used to pass valueObjectSerializer should use normal MemoryStream-based serialization
+            // and then compare the lengths.
+            // TODO optimize layout for LogRecord, so we have the same layout.
+
             if (logRecord.Info.RecordIsInline)
             {
                 DirectCopyRecord(logRecord.ActualRecordSize, logRecord.physicalAddress, bufferPool, ref allocatedRecord);
@@ -470,11 +429,11 @@ namespace Tsavorite.core
 
             // Record is not inline so we must use the varbyte format: create the indicator byte and space-optimized length representation.
 
-            // If we have an object and we don't serialize it, we don't need to allocate space for it.
-            // Value length prefix on the disk is a long, as it may be an object.
+            // If we have an object we don't serialize it so we don't need to allocate space for it.
+            // Value length prefix on the disk is up to a long, as it may be an object.
             var valueLength = !logRecord.Info.ValueIsObject
                 ? logRecord.ValueSpan.Length
-                : (valueSerializer is not null ? logRecord.ValueObject.DiskSize : 0);
+                : 0;
 
             var indicatorByte = CreateIndicatorByte(logRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
 
@@ -485,36 +444,21 @@ namespace Tsavorite.core
                 + logRecord.OptionalLength;
 
             // This writes the value length, but not value data
-            var ptr = SerializeCommonVarByteFields(logRecord.Info, indicatorByte, logRecord.Key, keyLengthByteCount, valueLength, valueLengthByteCount, recordSize, bufferPool, ref allocatedRecord);
+            EnsureAllocation(recordSize, bufferPool, ref allocatedRecord);
+            var ptr = SerializeCommonVarByteFields(logRecord.Info, indicatorByte, logRecord.Key, keyLengthByteCount, valueLength, valueLengthByteCount, allocatedRecord.GetValidPointer());
 
             // Set the value
             if (!logRecord.Info.ValueIsObject)
-                logRecord.ValueSpan.CopyTo(new Span<byte>(ptr, (int)valueLength));
+                logRecord.ValueSpan.CopyTo(new Span<byte>(ptr, valueLength));
             else
             {
-                if (valueSerializer is not null)
-                {
-                    var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.DiskSize, logRecord.ValueObject.DiskSize, FileAccess.ReadWrite);
-                    valueSerializer.BeginSerialize(stream);
-                    valueSerializer.Serialize(logRecord.ValueObject);
-                    valueSerializer.EndSerialize();
-                }
-                else
-                    valueObject = logRecord.ValueObject;
+                valueObject = logRecord.ValueObject;
                 InfoRef.SetValueIsObject();
             }
             ptr += valueLength;
             CopyOptionals(in logRecord, ref ptr);
 
-            allocatedRecord.available_bytes = (int)recordSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe byte* SerializeCommonVarByteFields(RecordInfo recordInfo, byte indicatorByte, ReadOnlySpan<byte> key, int keyLengthByteCount,
-                long valueLength, int valueLengthByteCount, long recordSize, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord)
-        {
-            EnsureAllocation(recordSize, bufferPool, ref allocatedRecord);
-            return SerializeCommonVarByteFields(recordInfo, indicatorByte, key, keyLengthByteCount, valueLength, valueLengthByteCount, allocatedRecord.GetValidPointer());
+            allocatedRecord.available_bytes = recordSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -610,7 +554,7 @@ namespace Tsavorite.core
             // Value length prefix on the disk is a long, as it may be an object.
             var valueLength = !srcLogRecord.Info.ValueIsObject
                 ? srcLogRecord.ValueSpan.Length
-                : srcLogRecord.ValueObject.DiskSize;
+                : srcLogRecord.ValueObject.SerializedSize;
 
             var indicatorByte = CreateIndicatorByte(srcLogRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
 
@@ -660,7 +604,7 @@ namespace Tsavorite.core
                 srcLogRecord.ValueSpan.CopyTo(new Span<byte>(ptr, (int)valueLength));
             else
             {
-                var stream = new UnmanagedMemoryStream(ptr, srcLogRecord.ValueObject.DiskSize, srcLogRecord.ValueObject.DiskSize, FileAccess.ReadWrite);
+                var stream = new UnmanagedMemoryStream(ptr, srcLogRecord.ValueObject.SerializedSize, srcLogRecord.ValueObject.SerializedSize, FileAccess.ReadWrite);
                 valueSerializer.BeginSerialize(stream);
                 valueSerializer.Serialize(srcLogRecord.ValueObject);
                 valueSerializer.EndSerialize();
@@ -726,24 +670,13 @@ namespace Tsavorite.core
         /// <param name="bufferPool">Allocator for backing storage</param>
         /// <param name="preferDeserializedObject">If true, prefer the deserialized object over copying the serialized value; this saves space for pending operations</param>
         public void CloneFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool, bool preferDeserializedObject)
-            => CloneFrom(ref inputDiskLogRecord, bufferPool, ref recordBuffer, preferDeserializedObject);
-
-        /// <summary>
-        /// Clone from a temporary <see cref="DiskLogRecord"/> (having no overflow <see cref="SectorAlignedMemory"/>) to a longer-lasting one.
-        /// </summary>
-        /// <param name="inputDiskLogRecord"></param>
-        /// <param name="bufferPool">Allocator for backing storage</param>
-        /// <param name="allocatedRecord">The allocated record; may be owned by this instance, or owned by the caller for reuse</param>
-        /// <param name="preferDeserializedObject">If true, prefer the deserialized object over copying the serialized value; this saves space for pending operations</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CloneFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool, ref SectorAlignedMemory allocatedRecord, bool preferDeserializedObject)
         {
             Debug.Assert(inputDiskLogRecord.IsSet, "inputDiskLogRecord is not set");
 
             if (!inputDiskLogRecord.Info.ValueIsObject || !preferDeserializedObject)
             {
                 Debug.Assert(inputDiskLogRecord.ValueInfo.length > 0, "inputDiskLogRecord value length should be > 0");
-                DirectCopyRecord(inputDiskLogRecord.GetSerializedLength(), inputDiskLogRecord.physicalAddress, bufferPool, ref allocatedRecord);
+                DirectCopyRecord(inputDiskLogRecord.GetSerializedLength(), inputDiskLogRecord.physicalAddress, bufferPool, ref recordBuffer);
                 return;
             }
 
@@ -753,11 +686,11 @@ namespace Tsavorite.core
             var partialRecordSize = dataAddress + length - inputDiskLogRecord.physicalAddress;
             var allocatedRecordSize = partialRecordSize + inputDiskLogRecord.OptionalLength;
 
-            if (allocatedRecord is not null)
-                allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)allocatedRecordSize);       // TODO handle 'long' valuelength
+            if (recordBuffer is not null)
+                recordBuffer.pool.EnsureSize(ref recordBuffer, (int)allocatedRecordSize);       // TODO handle 'long' valuelength
             else
-                allocatedRecord = bufferPool.Get((int)allocatedRecordSize);                        // TODO handle 'long' valuelength
-            physicalAddress = (long)allocatedRecord.GetValidPointer();
+                recordBuffer = bufferPool.Get((int)allocatedRecordSize);                        // TODO handle 'long' valuelength
+            physicalAddress = (long)recordBuffer.GetValidPointer();
 
             Buffer.MemoryCopy((void*)inputDiskLogRecord.physicalAddress, (void*)physicalAddress, partialRecordSize, partialRecordSize);
 
@@ -772,13 +705,13 @@ namespace Tsavorite.core
             // Set the Optionals
             ptr = (byte*)physicalAddress + partialRecordSize;
             CopyOptionals(ref inputDiskLogRecord, ref ptr);
-            allocatedRecord.available_bytes = (int)allocatedRecordSize;
+            recordBuffer.available_bytes = (int)allocatedRecordSize;
         }
 
         /// <summary>
         /// Transfer memory ownership from a temporary <see cref="DiskLogRecord"/> to a longer-lasting one.
         /// </summary>
-        /// <remarks>This is separate from <see cref="CloneFrom(ref DiskLogRecord, SectorAlignedBufferPool, ref SectorAlignedMemory, bool)"/> to ensure the caller
+        /// <remarks>This is separate from <see cref="CloneFrom(ref DiskLogRecord, SectorAlignedBufferPool, bool)"/> to ensure the caller
         /// is prepared to handle the implications of the transfer</remarks>
         /// <param name="inputDiskLogRecord"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

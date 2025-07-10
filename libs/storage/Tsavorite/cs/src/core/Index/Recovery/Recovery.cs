@@ -447,7 +447,7 @@ namespace Tsavorite.core
         {
             hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
-            if (hlogBase.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            if (hlogBase.GetTailAddress() > hlog.GetFirstValidLogicalAddressOnPage(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
                 Reset();
@@ -493,7 +493,7 @@ namespace Tsavorite.core
         {
             hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
-            if (hlogBase.GetTailAddress() > hlog.GetFirstValidLogicalAddress(0))
+            if (hlogBase.GetTailAddress() > hlog.GetFirstValidLogicalAddressOnPage(0))
             {
                 logger?.LogInformation("Recovery called on non-empty log - resetting to empty state first. Make sure store is quiesced before calling Recover on a running store.");
                 Reset();
@@ -837,7 +837,7 @@ namespace Tsavorite.core
         {
             startPage = hlogBase.GetPage(scanFromAddress);
             endPage = hlogBase.GetPage(untilAddress);
-            if (untilAddress > hlog.GetStartLogicalAddress(endPage) && untilAddress > scanFromAddress)
+            if (untilAddress > hlog.GetStartLogicalAddressOfPage(endPage) && untilAddress > scanFromAddress)
             {
                 endPage++;
             }
@@ -866,8 +866,8 @@ namespace Tsavorite.core
 
         private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
-            var startLogicalAddress = hlog.GetStartLogicalAddress(page);
-            var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var startLogicalAddress = hlog.GetStartLogicalAddressOfPage(page);
+            var endLogicalAddress = hlog.GetStartLogicalAddressOfPage(page + 1);
             var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
 
             if (recoverFromAddress >= endLogicalAddress)
@@ -996,7 +996,7 @@ namespace Tsavorite.core
             {
                 int pageIndex = hlogBase.GetPageIndexForPage(p);
 
-                var endLogicalAddress = hlog.GetStartLogicalAddress(p + 1);
+                var endLogicalAddress = hlog.GetStartLogicalAddressOfPage(p + 1);
                 if (recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
                     ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
@@ -1016,11 +1016,11 @@ namespace Tsavorite.core
             // Compute startPage and endPage
             startPage = hlogBase.GetPage(fromAddress);
             endPage = hlogBase.GetPage(untilAddress);
-            if (untilAddress > hlog.GetStartLogicalAddress(endPage) && untilAddress > fromAddress)
+            if (untilAddress > hlog.GetStartLogicalAddressOfPage(endPage) && untilAddress > fromAddress)
                 endPage++;
             long snapshotStartPage = hlogBase.GetPage(snapshotStartAddress);
             snapshotEndPage = hlogBase.GetPage(snapshotEndAddress);
-            if (snapshotEndAddress > hlog.GetStartLogicalAddress(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
+            if (snapshotEndAddress > hlog.GetStartLogicalAddressOfPage(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
                 snapshotEndPage++;
 
             // By default first page has one extra record
@@ -1047,8 +1047,8 @@ namespace Tsavorite.core
         private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             // Page at hand
-            var startLogicalAddress = hlog.GetStartLogicalAddress(page);
-            var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var startLogicalAddress = hlog.GetStartLogicalAddressOfPage(page);
+            var endLogicalAddress = hlog.GetStartLogicalAddressOfPage(page + 1);
 
             // Perform recovery if page is part of the re-do portion of log
             if (fromAddress < endLogicalAddress && fromAddress < untilAddress)
@@ -1080,8 +1080,8 @@ namespace Tsavorite.core
 
         private unsafe void ClearBitsOnPage(long page, RecoveryOptions options)
         {
-            var startLogicalAddress = hlog.GetStartLogicalAddress(page);
-            var endLogicalAddress = hlog.GetStartLogicalAddress(page + 1);
+            var startLogicalAddress = hlog.GetStartLogicalAddressOfPage(page);
+            var endLogicalAddress = hlog.GetStartLogicalAddressOfPage(page + 1);
             var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
 
             // no need to clear locks for records that will not end up in main memory

@@ -26,13 +26,13 @@ namespace NoOpModule
     {
         /// <inheritdoc />
         public DummyObject(byte type)
-            : base(type, new(MemoryUtils.DictionaryOverhead, 0))
+            : base(type, new(MemoryUtils.DictionaryOverhead, 0, serializedIsExact: true))           // SerializedSize is always 0
         {
         }
 
         /// <inheritdoc />
         public DummyObject(byte type, BinaryReader reader)
-            : base(type, reader, new(MemoryUtils.DictionaryOverhead, 0))
+            : base(type, reader, new(MemoryUtils.DictionaryOverhead, 0, serializedIsExact: true))   // SerializedSize is always 0
         {
         }
 

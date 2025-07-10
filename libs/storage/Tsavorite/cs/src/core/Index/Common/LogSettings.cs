@@ -32,7 +32,7 @@ namespace Tsavorite.core
         public const int kDefaultMaxInlineValueSizeBits = 10;
 
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
-        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits - 1;
+        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;
 
         /// <summary>Maximum size of a string is 512MB</summary>
         public const int kMaxStringSizeBits = 29;

@@ -154,7 +154,7 @@ namespace Tsavorite.core
         {
             completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
 
-            AsyncGetFromDisk(logicalAddress, DiskLogRecord.InitialIOSize, completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, (int)device.SectorSize, completionEvent.request);
             completionEvent.Wait();
 
             stop = false;

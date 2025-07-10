@@ -178,7 +178,7 @@ namespace Garnet.server
         /// Constructor
         /// </summary>
         public SortedSetObject()
-            : base(new (MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(new (MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
@@ -188,7 +188,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SortedSetObject(BinaryReader reader)
-            : base(reader, new(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(reader, new(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
@@ -359,7 +359,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var prevMemorySize = this.MemorySize;
+            var prevMemorySize = this.HeapMemorySize;
             var op = header.SortedSetOp;
             switch (op)
             {
@@ -445,7 +445,7 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
             }
 
-            memorySizeChange = this.MemorySize - prevMemorySize;
+            memorySizeChange = this.HeapMemorySize - prevMemorySize;
 
             if (sortedSetDict.Count == 0)
                 output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
@@ -637,7 +637,7 @@ namespace Garnet.server
             {
                 expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
                 expirationQueue = new PriorityQueue<byte[], long>();
-                this.MemorySize += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
+                this.HeapMemorySize += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
                 // No DiskSize adjustment needed yet; wait until keys are added or removed
             }
         }
@@ -652,15 +652,15 @@ namespace Garnet.server
 
             if (add)
             {
-                this.MemorySize += memorySize;
-                this.DiskSize += sizeof(long);  // DiskSize only needs to adjust the writing or not of the expiration value
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += sizeof(long);  // SerializedSize only needs to adjust the writing or not of the expiration value
             }
             else
             {
-                this.MemorySize -= memorySize;
-                this.DiskSize -= sizeof(long);  // DiskSize only needs to adjust the writing or not of the expiration value
-                Debug.Assert(this.MemorySize >= MemoryUtils.DictionaryOverhead);
-                Debug.Assert(this.DiskSize >= sizeof(int));
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= sizeof(long);  // SerializedSize only needs to adjust the writing or not of the expiration value
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
             }
         }
 
@@ -669,9 +669,9 @@ namespace Garnet.server
         {
             if (expirationTimes.Count == 0)
             {
-                this.MemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
-                this.MemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
-                this.DiskSize -= sizeof(long) * expirationTimes.Count;
+                this.HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+                this.HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
+                this.SerializedSize -= sizeof(long) * expirationTimes.Count;
                 expirationTimes = null;
                 expirationQueue = null;
             }
@@ -706,8 +706,8 @@ namespace Garnet.server
                     // The key was not in expirationTimes. It may have been Remove()d.
                     _ = expirationQueue.Dequeue();
 
-                    // Adjust memory size for the priority queue entry removal. No DiskSize change needed as it was not in expirationTimes.
-                    this.MemorySize -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
+                    // Adjust memory size for the priority queue entry removal. No SerializedSize change needed as it was not in expirationTimes.
+                    this.HeapMemorySize -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
                 }
             }
 
@@ -742,8 +742,8 @@ namespace Garnet.server
                 expirationQueue.Enqueue(key, expiration);
 
                 // MemorySize of dictionary entry already accounted for as the key already exists.
-                // DiskSize of expiration already accounted for as the key already exists in expirationTimes.
-                this.MemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
+                // SerializedSize of expiration already accounted for as the key already exists in expirationTimes.
+                this.HeapMemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
             }
             else
             {
@@ -822,15 +822,15 @@ namespace Garnet.server
 
             if (add)
             {
-                this.MemorySize += memorySize;
-                this.DiskSize += kvSize;
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += kvSize;
             }
             else
             {
-                this.MemorySize -= memorySize;
-                this.DiskSize -= kvSize;
-                Debug.Assert(this.MemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
-                Debug.Assert(this.DiskSize >= sizeof(int));
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= kvSize;
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
             }
         }
 

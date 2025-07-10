@@ -35,29 +35,35 @@ namespace Tsavorite.core
         internal GCHandle handle;
 
         /// <summary>
-        /// Offset
+        /// Offset for initial allocation alignment of the block to form <see cref="aligned_pointer"/>.
         /// </summary>
         public int offset;
 
         /// <summary>
-        /// Aligned pointer
+        /// Aligned pointer; initial allocation plus <see cref="offset"/>
         /// </summary>
         public byte* aligned_pointer;
 
         /// <summary>
-        /// Valid offset
+        /// Valid offset for operations above <see cref="aligned_pointer"/>, such as file IO; when reading, we round down to the nearest sector size,
+        /// and this is the amount we rounded down by. Used by <see cref="GetValidPointer()"/>.
         /// </summary>
         public int valid_offset;
 
         /// <summary>
-        /// Required bytes
+        /// Required bytes for the current operation, e.g. number of bytes to read. Will be less than or equal to <see cref="available_bytes"/>.
         /// </summary>
         public int required_bytes;
 
         /// <summary>
-        /// Available bytes
+        /// Available bytes after the operation is complete, e.g. the number of bytes actually read, including <see cref="valid_offset"/> and <see cref="end_offset"/>. Will be greater than or equal to <see cref="required_bytes"/>.
         /// </summary>
         public int available_bytes;
+
+        /// <summary>
+        /// Offset from the end of the required bytes to the end of the available bytes; i.e. due to alignment there are <see cref="end_offset"/> valid bytes after <see cref="required_bytes"/>.
+        /// </summary>
+        public int end_offset => available_bytes - required_bytes;
 
         private int level;
         internal int Level => level
@@ -148,6 +154,11 @@ namespace Tsavorite.core
         public int AlignedTotalCapacity => buffer.Length - offset;
 
         /// <summary>
+        /// Get the total unaligned memory capacity of the buffer
+        /// </summary>
+        public int UnalignedTotalCapacity => buffer.Length;
+
+        /// <summary>
         /// Get valid pointer
         /// </summary>
         /// <returns></returns>
@@ -156,6 +167,8 @@ namespace Tsavorite.core
         {
             return aligned_pointer + valid_offset;
         }
+
+        public Span<byte> AsSpan() => new Span<byte>(GetValidPointer(), AlignedTotalCapacity);
 
         /// <summary>
         /// ToString

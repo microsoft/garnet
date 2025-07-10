@@ -25,9 +25,9 @@ namespace Tsavorite.core
         public PinnedSpanByte request_key;
 
         /// <summary>
-        /// Deserialized ValueObject if RecordInfo.ValueIsObject, else null
+        /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
         /// </summary>
-        public IHeapObject ValueObject;
+        public DiskLogRecord diskLogRecord;
 
         /// <summary>
         /// Logical address
@@ -43,11 +43,6 @@ namespace Tsavorite.core
         /// Record buffer
         /// </summary>
         public SectorAlignedMemory record;
-
-        /// <summary>
-        /// Object buffer
-        /// </summary>
-        public SectorAlignedMemory objBuffer;
 
         /// <summary>
         /// Callback queue

@@ -49,7 +49,7 @@ namespace Tsavorite.core
                     long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
                     long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress >
-                        store.hlog.GetStartLogicalAddress(endPage))
+                        store.hlog.GetStartLogicalAddressOfPage(endPage))
                     {
                         endPage++;
                     }

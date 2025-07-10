@@ -282,7 +282,7 @@ namespace Tsavorite.core
         public IHeapObject ValueObject => CurrentIter.ValueObject;
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> RecordSpan => CurrentIter.RecordSpan;
+        public ReadOnlySpan<byte> AsReadOnlySpan() => CurrentIter.AsReadOnlySpan();
 
         /// <inheritdoc/>
         public bool IsPinnedValue => CurrentIter.IsPinnedValue;

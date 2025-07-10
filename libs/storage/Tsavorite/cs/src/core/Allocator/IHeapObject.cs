@@ -12,14 +12,21 @@ namespace Tsavorite.core
     public interface IHeapObject : IDisposable
     {
         /// <summary>
-        /// Total size of the object in memory, including .NET object overheads.
+        /// Total estimated size of the object in heap memory, including .NET object overheads, for Overflow allocations and Objects.
         /// </summary>
-        public long MemorySize { get; set; }
+        public long HeapMemorySize { get; set; }
 
         /// <summary>
-        /// Total serialized size of the object; the size it will take when written to disk or other storage.
+        /// Total serialized size of the object as a byte stream; the size it will take when written to disk or other storage.
+        /// May be an estimate if <see cref="SerializedSizeIsExact"/> is false. Will be updated after an <see cref="IObjectSerializer{IHeapObject}.Serialize(IHeapObject)"/> call.
         /// </summary>
-        public long DiskSize { get; set; }
+        public long SerializedSize { get; set; }
+
+        /// <summary>
+        /// Total serialized size of the object as a byte stream; the size it will take when written to disk or other storage.
+        /// May be an estimate if 
+        /// </summary>
+        public bool SerializedSizeIsExact { get; }
 
         /// <summary>
         /// Create a cloned (shallow copy) of this object

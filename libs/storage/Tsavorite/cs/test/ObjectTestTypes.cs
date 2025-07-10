@@ -38,8 +38,8 @@ namespace Tsavorite.test
 
         public TestObjectValue()
         {
-            MemorySize = sizeof(int);
-            DiskSize = MemorySize;
+            HeapMemorySize = sizeof(int);
+            SerializedSize = HeapMemorySize;
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>
@@ -204,8 +204,8 @@ namespace Tsavorite.test
 
         private void SetSizes()
         {
-            DiskSize = sizeof(int) + value.Length;
-            MemorySize = DiskSize + 24; // TODO: ByteArrayOverhead
+            SerializedSize = sizeof(int) + value.Length;
+            HeapMemorySize = SerializedSize + 24; // TODO: ByteArrayOverhead
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>

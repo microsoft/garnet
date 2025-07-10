@@ -125,7 +125,7 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             if (!pendingContext.IsSet)
-                pendingContext.Serialize(in srcLogRecord, hlogBase.bufferPool, valueSerializer: null);
+                pendingContext.Serialize(in srcLogRecord, hlogBase.bufferPool);
             return OperationStatus.RECORD_ON_DISK;
         }
     }

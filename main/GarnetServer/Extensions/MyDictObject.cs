@@ -22,13 +22,13 @@ namespace Garnet
         readonly Dictionary<byte[], byte[]> dict;
 
         public MyDict(byte type)
-            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
         {
             dict = new(ByteArrayComparer.Instance);
         }
 
         public MyDict(byte type, BinaryReader reader)
-            : base(type, reader, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(type, reader, new(MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
         {
             dict = new(ByteArrayComparer.Instance);
 
@@ -147,15 +147,15 @@ namespace Garnet
 
             if (add)
             {
-                this.MemorySize += memorySize;
-                this.DiskSize += kvSize;
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += kvSize;
             }
             else
             {
-                this.MemorySize -= memorySize;
-                this.DiskSize -= kvSize;
-                Debug.Assert(this.MemorySize >= MemoryUtils.DictionaryOverhead);
-                Debug.Assert(this.DiskSize >= sizeof(int));
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= kvSize;
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
             }
         }
 

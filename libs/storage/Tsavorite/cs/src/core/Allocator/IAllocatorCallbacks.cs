@@ -13,10 +13,10 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
     {
         /// <summary>Get start logical address on <paramref name="page"/></summary>
-        long GetStartLogicalAddress(long page);
+        long GetStartLogicalAddressOfPage(long page);
 
         /// <summary>Get first valid logical address on <paramref name="page"/></summary>
-        long GetFirstValidLogicalAddress(long page);
+        long GetFirstValidLogicalAddressOnPage(long page);
 
         /// <summary>Get physical address from <paramref name="logicalAddress"/></summary>
         long GetPhysicalAddress(long logicalAddress);

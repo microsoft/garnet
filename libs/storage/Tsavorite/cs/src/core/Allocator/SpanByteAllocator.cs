@@ -32,11 +32,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddressOfPage(page);
+        public readonly long GetStartLogicalAddressOfPage(long page) => _this.GetStartLogicalAddressOfPage(page);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetFirstValidLogicalAddress(long page) => _this.GetFirstValidLogicalAddressOnPage(page);
+        public readonly long GetFirstValidLogicalAddressOnPage(long page) => _this.GetFirstValidLogicalAddressOnPage(page);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

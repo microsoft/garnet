@@ -18,16 +18,15 @@ namespace Tsavorite.core
         internal TContext context;
         internal CountdownEvent handle;
         internal SectorAlignedMemory freeBuffer1;
-        internal SectorAlignedMemory freeBuffer2;
+        internal SectorAlignedMemory freeBuffer2;   // TODO apparently unused
         internal DeviceIOCompletionCallback callback;
-        internal IDevice objlogDevice;
         internal object frame;
         internal CancellationTokenSource cts;
 
         /* Used for iteration */
-        internal long resumePtr;
-        internal long untilPtr;
-        internal long maxPtr;
+        internal long resumePtr;    // TODO unused
+        internal long untilPtr;     // TODO unused
+        internal long maxPtr;       // TODO set but not used
 
         /// <summary>
         /// Free

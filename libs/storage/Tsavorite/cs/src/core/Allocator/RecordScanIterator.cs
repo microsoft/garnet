@@ -90,6 +90,8 @@ namespace Tsavorite.core
 
         private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
+            TODO xx; // This needs to transition from physical-address to in-memory when it gets above HA equivalent.. and needs to keep checking that bc we may drop below HA when we release the epoch
+
             if (diskLogRecord.IsSet)
             {
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
@@ -132,6 +134,8 @@ namespace Tsavorite.core
         internal long SnapToLogicalAddressBoundary(ref long logicalAddress, long headAddress, long currentPage)
         {
             var offset = hlogBase.GetOffsetOnPage(logicalAddress);
+
+            TODO xx; // This won't work with variable-length disk pages
 
             // Subtracting offset means this physicalAddress is at the start of the page.
             var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset;
@@ -230,7 +234,7 @@ namespace Tsavorite.core
                         {
                             if (currentAddress >= headAddress && store is not null)
                                 store.LockForScan(ref stackCtx, logRecord.Key);
-                            diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
+                            diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, ref recordBuffer);
                         }
                         finally
                         {
@@ -342,7 +346,7 @@ namespace Tsavorite.core
         public IHeapObject ValueObject => diskLogRecord.ValueObject;
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> RecordSpan => diskLogRecord.RecordSpan;
+        public ReadOnlySpan<byte> AsReadOnlySpan() => diskLogRecord.AsReadOnlySpan();
 
         /// <inheritdoc/>
         public bool IsPinnedValue => diskLogRecord.IsPinnedValue;

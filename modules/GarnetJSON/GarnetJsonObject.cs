@@ -58,7 +58,7 @@ namespace GarnetJSON
         /// </summary>
         /// <param name="type">The type of the object.</param>
         public GarnetJsonObject(byte type)
-            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: false))    // SerializedSize is only an estimate
         {
         }
 
@@ -207,7 +207,7 @@ namespace GarnetJSON
         /// <param name="errorMessage">The error message if the operation fails.</param>
         /// <returns>The result of the set operation.</returns>
         /// <exception cref="JsonException">Thrown when there is an error in JSON processing.</exception>
-        /// <remarks>TODO: This currently does not update <see cref="HeapObjectBase.MemorySize"/> or <see cref="HeapObjectBase.DiskSize"/></remarks>
+        /// <remarks>TODO: This currently does not update <see cref="HeapObjectBase.HeapMemorySize"/> or <see cref="HeapObjectBase.SerializedSize"/></remarks>
         public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions, out ReadOnlySpan<byte> errorMessage)
         {
             try
