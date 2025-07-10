@@ -7,12 +7,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -637,6 +639,12 @@ namespace Garnet.test.cluster
         {
             redis?.Close(false);
             redis?.Dispose();
+
+            if (gcsConnections != null)
+            {
+                foreach (var gcs in gcsConnections)
+                    gcs?.Dispose();
+            }
         }
 
         public string[] GetNodeIds(List<int> nodes = null, ILogger logger = null)
@@ -682,16 +690,47 @@ namespace Garnet.test.cluster
 
         public IDatabase GetDatabase() => redis.GetDatabase(0);
 
-        public GarnetClientSession GetGarnetClientSession(int nodeIndex)
+        public GarnetClientSession GetGarnetClientSession(int nodeIndex, bool useTLS = false)
         {
             gcsConnections ??= new GarnetClientSession[endpoints.Count];
 
             if (gcsConnections[nodeIndex] == null)
             {
-                gcsConnections[nodeIndex] = new GarnetClientSession(GetEndPoint(nodeIndex), new());
+                SslClientAuthenticationOptions sslOptions = null;
+                if (useTLS)
+                {
+                    sslOptions = new SslClientAuthenticationOptions
+                    {
+                        ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        TargetHost = "GarnetTest",
+                        AllowRenegotiation = false,
+                        RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+                    };
+                }
+                gcsConnections[nodeIndex] = new GarnetClientSession(GetEndPoint(nodeIndex), new(), tlsOptions: sslOptions);
                 gcsConnections[nodeIndex].Connect();
             }
             return gcsConnections[nodeIndex];
+        }
+
+        public const string certFile = "testcert.pfx";
+        public const string certPassword = "placeholder";
+
+        public GarnetClientSession CreateGarnetClientSession(int nodeIndex, bool useTLS = false)
+        {
+            SslClientAuthenticationOptions sslOptions = null;
+            if (useTLS)
+            {
+                sslOptions = new SslClientAuthenticationOptions
+                {
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    TargetHost = "GarnetTest",
+                    AllowRenegotiation = false,
+                    RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+                };
+            }
+
+            return new(endpoints[nodeIndex], new(), tlsOptions: sslOptions);
         }
 
         public IServer GetServer(int nodeIndex) => redis.GetServer(GetEndPoint(nodeIndex));
@@ -719,6 +758,12 @@ namespace Garnet.test.cluster
         {
             RandomBytes(ref data, startOffset, endOffset);
             while (HashSlot(data) != slot) RandomBytes(ref data, startOffset, endOffset);
+        }
+
+        public void RandomBytesRestrictedToSlot(ref Random r, ref byte[] data, int slot, int startOffset = -1, int endOffset = -1)
+        {
+            RandomBytes(ref data, startOffset, endOffset);
+            while (HashSlot(data) != slot) RandomBytes(ref r, ref data, startOffset, endOffset);
         }
 
         public void InitRandom(int seed)
@@ -2891,6 +2936,17 @@ namespace Garnet.test.cluster
                 var failoverState = GetFailoverState(nodeIndex, logger);
                 if (failoverState.Equals("no-failover")) break;
                 BackOff(cancellationToken: context.cts.Token);
+            }
+        }
+
+        public void WaitForFailoverCompleted(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var infoItem = context.clusterTestUtils.GetReplicationInfo(nodeIndex, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-completed"))
+                    break;
+                BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForFailoverCompleted));
             }
         }
 
