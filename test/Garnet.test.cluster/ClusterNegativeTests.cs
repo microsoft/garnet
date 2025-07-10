@@ -11,6 +11,10 @@ using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using System.Threading.Tasks;
+
+using StackExchange.Redis;
+
 
 #if DEBUG
 using Garnet.common;
@@ -363,5 +367,60 @@ namespace Garnet.test.cluster
             }
         }
 #endif
+
+        [Test, CancelAfter(60_000)]
+        public async Task ClusterParallelFailoverOnDistinctShards(CancellationToken cancellationToken)
+        {
+            var nodes_count = 4;
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                timeout: timeout,
+                OnDemandCheckpoint: true,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                useAofNullDevice: true);
+            context.CreateConnection();
+
+            context.clusterTestUtils.SetConfigEpoch(0, 1);
+            context.clusterTestUtils.SetConfigEpoch(1, 2);
+            context.clusterTestUtils.SetConfigEpoch(2, 3);
+            context.clusterTestUtils.SetConfigEpoch(3, 4);
+
+            context.clusterTestUtils.AddSlotsRange(0, [(0, 8191)], logger: context.logger);
+            context.clusterTestUtils.AddSlotsRange(1, [(8192, 16383)], logger: context.logger);
+
+            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
+            context.clusterTestUtils.Meet(0, 2, logger: context.logger);
+            context.clusterTestUtils.Meet(0, 3, logger: context.logger);
+
+            context.clusterTestUtils.WaitClusterNodesSync(0, 4, context.logger);
+
+            context.clusterTestUtils.ClusterReplicate(2, 0, logger: context.logger);
+            context.clusterTestUtils.ClusterReplicate(3, 1, logger: context.logger);
+
+            context.clusterTestUtils.WaitClusterNodesSync(0, 4, context.logger);
+            context.clusterTestUtils.WaitClusterNodesSync(1, 4, context.logger);
+            context.clusterTestUtils.WaitClusterNodesSync(2, 4, context.logger);
+            context.clusterTestUtils.WaitClusterNodesSync(3, 4, context.logger);
+
+            Assert.That("OK" == context.clusterTestUtils.ClusterFailover(2));
+            Assert.That("OK" == context.clusterTestUtils.ClusterFailover(3));
+
+            context.clusterTestUtils.WaitForNoFailover(2);
+            context.clusterTestUtils.WaitForNoFailover(3);
+
+            for (var i = 0; i < 10; i++)
+            {
+                await Task.Delay(500);
+                var cluster = context.clusterTestUtils.ClusterNodes(3);
+                var replicaWithHashSlots = cluster.Nodes.FirstOrDefault(x => x.IsReplica && x.Slots.Count > 0);
+                if (replicaWithHashSlots != null)
+                {
+                    Assert.Fail($"There should be no replica with assigned hashslots.{context.clusterTestUtils.ClusterStatus([0, 1, 2, 3])}");
+                }
+            }
+        }
     }
 }

@@ -991,7 +991,7 @@ namespace Garnet.cluster
             // Track if update happened to avoid expensive merge and FlushConfig operation when possible
             var updated = false;
             var senderSlotMap = senderConfig.slotMap;
-            var senderWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
+            var assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
 
             // Create a copy of the local slotMap
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
@@ -1004,8 +1004,9 @@ namespace Garnet.cluster
                 if (senderSlotMap[i]._state != SlotState.STABLE)
                     continue;
 
-                // Process this slot information when sender is claimant of this slot
-                if (senderSlotMap[i]._workerId != 1)
+                // Process this slot information when sender is claimant of this slot or
+                // If the sender is a replica then we can update the slotMap on behalf of its primary (possible failover where old primary became replica)
+                if (senderSlotMap[i]._workerId != 1 && senderConfig.IsPrimary)
                 {
                     var currentOwnerNodeId = workers[currentOwnerId].Nodeid;
                     // Sender does not own node but local node believes it does
@@ -1022,16 +1023,28 @@ namespace Garnet.cluster
                     continue;
                 }
 
-                // Process this slot information when config epoch of original owner is greater than config epoch of sender
-                if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
-                    continue;
+                if (senderConfig.IsPrimary)
+                {
+                    // Process this slot information when config epoch of original owner is greater than config epoch of sender
+                    if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
+                        continue;
+                }
+                else
+                {
+                    // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
+                    // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,
+                    // then due to delay D will receive a gossip from A,B,C in any order.
+                    if (!workers[currentOwnerId].Nodeid.Equals(senderConfig.LocalNodeId))
+                        continue;
+                    assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodePrimaryId);
+                }
 
                 // Update happened only if workerId or state changed
                 // NOTE: this avoids message flooding when sender epoch equals zero
-                updated = newSlotMap[i]._workerId != senderWorkerId || newSlotMap[i]._state != SlotState.STABLE;
+                updated = newSlotMap[i]._workerId != assignToWorkerId || newSlotMap[i]._state != SlotState.STABLE;
 
                 // Update ownership of node
-                newSlotMap[i]._workerId = senderWorkerId;
+                newSlotMap[i]._workerId = assignToWorkerId;
                 newSlotMap[i]._state = SlotState.STABLE;
             }
 
@@ -1180,6 +1193,25 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Assign slots to workerId
+        /// </summary>
+        /// <param name="slots"></param>
+        /// <param name="workerId"></param>
+        /// <param name="state"></param>
+        /// <returns></returns>
+        public ClusterConfig AssignSlots(List<int> slots, ushort workerId, SlotState state)
+        {
+            var newSlotMap = new HashSlot[16384];
+            Array.Copy(slotMap, newSlotMap, slotMap.Length);
+            foreach (var slot in slots)
+            {
+                newSlotMap[slot]._workerId = workerId;
+                newSlotMap[slot]._state = state;
+            }
+            return new ClusterConfig(newSlotMap, workers);
+        }
+
+        /// <summary>
         /// Try to remove slots from this local node.
         /// </summary>
         /// <param name="slots">Slots to be removed.</param>
@@ -1309,7 +1341,7 @@ namespace Garnet.cluster
             var senderConfigEpoch = senderConfig.LocalNodeConfigEpoch;
 
             // If incoming config epoch different than local don't need to do anything
-            if (localNodeConfigEpoch != senderConfigEpoch || !IsPrimary || !senderConfig.IsPrimary)
+            if (localNodeConfigEpoch != senderConfigEpoch)
                 return this;
 
             var senderNodeId = senderConfig.LocalNodeId;
