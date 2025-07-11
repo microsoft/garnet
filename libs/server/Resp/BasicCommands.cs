@@ -643,7 +643,7 @@ namespace Garnet.server
             if (!getValue && !withEtag)
             {
                 // the following debug assertion is the catch any edge case leading to SETIFMATCH, or SETIFGREATER skipping the above block
-                Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right output variable");
+                Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right outputDbl variable");
 
                 var status = storageApi.SET_Conditional(ref key, ref input);
 
@@ -771,17 +771,17 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
             }
 
-            var status = storageApi.IncrementByFloat(key, out var output, dbl);
+            var status = storageApi.IncrementByFloat(key, out ArgSlice output, dbl);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDoubleBulkString(output, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:
                 default:
-                    if (double.IsNaN(output))
+                    if ((OperationError)output.Span[0] == OperationError.NAN_OR_INFINITY)
                         WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
                     else
                         WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
