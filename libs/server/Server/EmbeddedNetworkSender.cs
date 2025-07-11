@@ -111,6 +111,16 @@ namespace Garnet.server
         /// <inheritdoc />
         public void GetResponseObject()
         {
+            if (buffer.currOffset == buffer.buffer.Length)
+            {
+                var _buffer = new NetworkBuffer(buffer.buffer.Length * 2);
+                _buffer.currOffset = buffer.currOffset;
+                // Copy the existing data to the new buffer
+                buffer.buffer.AsSpan(0, buffer.currOffset).CopyTo(_buffer.buffer.AsSpan());
+                buffer.currOffset = 0;
+                networkBufferPool.Return(buffer);
+                buffer = _buffer;
+            }
         }
 
         /// <inheritdoc />
