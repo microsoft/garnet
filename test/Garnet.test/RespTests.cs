@@ -3980,6 +3980,8 @@ namespace Garnet.test
             // Test escapes in command position
             response = await c.ExecuteAsync(@"""\x50\x49\x4E\x47""");
             ClassicAssert.AreEqual("+PONG\r\n", response);
+            response = await c.ExecuteAsync(@"""P\i\x6Eg""");
+            ClassicAssert.AreEqual("+PONG\r\n", response);
 
             // Test value being passed
             response = await c.ExecuteAsync($"SET {key} \"a\\x0Ab\"");

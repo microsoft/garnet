@@ -2817,6 +2817,9 @@ namespace Garnet.server
             var command = result[0];
             var subCommand = result.Length > 1 ? result[1] : default;
 
+            // Make sure the command is uppercased.
+            MakeUpperCase(command.ptr, command.length);
+
             // We'll parse the result by creating a RESP string to parse and then calling the regular code.
 
             // Minumum estimate is array header + length + command + crlf + length + subcommand + crlf
@@ -2912,13 +2915,15 @@ namespace Garnet.server
                         return false;
                     }
 
-                    if (anyQuote)
+                    if (anyQuote && slices.Count > 0)
                     {
                         result = new ArgSlice[slices.Count];
 
-                        for (var i = 0; i < slices.Count; ++i)
+                        // MakeUpperCase could have been run on the first slice earlier.
+                        result[0] = ArgSliceUtils.Unescape(slices[0], true);
+                        for (var i = 1; i < slices.Count; ++i)
                         {
-                            result[i] = ArgSliceUtils.Unescape(slices[i], i == 0);
+                            result[i] = ArgSliceUtils.Unescape(slices[i]);
                         }
                     }
                     // If there are no quotes, we can be faster
