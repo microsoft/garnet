@@ -896,15 +896,15 @@ namespace Garnet.server
             {
                 expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
             }
-            else if (isInMilliseconds && !isInTimestamp)
+            else if (isInMilliseconds)
             {
                 expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiration);
             }
-            else if (!isInMilliseconds && isInTimestamp)
+            else if (isInTimestamp)
             {
                 expiration = ConvertUtils.UnixTimestampInSecondsToTicks(expiration);
             }
-            else if (!isInMilliseconds && !isInTimestamp)
+            else
             {
                 expiration = ConvertUtils.UnixTimestampInSecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiration);
             }
@@ -916,7 +916,7 @@ namespace Garnet.server
                     idx++;
                 }
 
-                idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the valudation is done in the caller
+                idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the validation is done in the caller
             }
 
             var numFields = input.parseState.Count - idx;

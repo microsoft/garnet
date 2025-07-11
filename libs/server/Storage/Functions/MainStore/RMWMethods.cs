@@ -588,37 +588,19 @@ namespace Garnet.server
 
                 case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
-                    var expiryExists = value.MetadataSize > 0;
-
-                    var expiryValue = input.parseState.GetLong(0);
-                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
-                        ? TimeSpan.FromSeconds(expiryValue)
-                        : TimeSpan.FromMilliseconds(expiryValue);
-                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    var expireOption = (ExpireOption)input.arg1;
-
-                    // reset etag state that may have been initialized earlier
-                    EtagState.ResetState(ref functionsState.etagState);
-
-                    if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
-                        return false;
-
-                    // doesn't update etag, since it's only the metadata that was updated
-                    return true;
                 case RespCommand.PEXPIREAT:
                 case RespCommand.EXPIREAT:
-                    expiryExists = value.MetadataSize > 0;
+                    var expiryExists = value.MetadataSize > 0;
 
-                    var expiryTimestamp = input.parseState.GetLong(0);
-                    expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
-                        ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
-                        : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
-                    expireOption = (ExpireOption)input.arg1;
+                    var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
+
+                    // Convert to ticks
+                    expiration *= 10000;
 
                     // reset etag state that may have been initialized earlier
                     EtagState.ResetState(ref functionsState.etagState);
 
-                    if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
+                    if (!EvaluateExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output))
                         return false;
 
                     // doesn't update etag, since it's only the metadata that was updated
@@ -850,7 +832,7 @@ namespace Garnet.server
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
-                        var expiration = input.arg1;
+                        expiration = input.arg1;
                         if (expiration == -1)
                         {
                             // there is existing metadata, but we want to clear it.

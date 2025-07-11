@@ -391,10 +391,15 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetInt(1, out _))
+
+            if (!parseState.TryGetInt(1, out var timeout))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
+
+            // Convert to milliseconds
+            if (command == RespCommand.EXPIRE)
+                timeout *= 1000;
 
             var expireOption = ExpireOption.None;
             if (parseState.Count > 2)
@@ -434,7 +439,10 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
+            var expirationInMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + timeout;
+            var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationInMs, expireOption);
+
+            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: encodedExpiration);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
@@ -468,10 +476,14 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetLong(1, out _))
+            if (!parseState.TryGetLong(1, out var expiration))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
+
+            // Convert to unix-time-milliseconds
+            if (command == RespCommand.EXPIREAT)
+                expiration *= 1000;
 
             var expireOption = ExpireOption.None;
 
@@ -509,7 +521,8 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
+            var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expiration, expireOption);
+            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: encodedExpiration);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
