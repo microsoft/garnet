@@ -64,9 +64,13 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
-            // Do not dispose request_key as it is a shallow copy of the key in pendingContext
+            // Do not dispose request_key as it is a shallow copy of the key in pendingContext.
+            // If we transferred the record buffer to the DiskLogRecord, it will be null here.
             record?.Return();
             record = null;
+
+            diskLogRecord.Dispose();
+            diskLogRecord = default;
         }
     }
 

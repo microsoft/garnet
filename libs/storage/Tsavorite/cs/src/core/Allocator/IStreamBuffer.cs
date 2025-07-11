@@ -26,6 +26,9 @@ namespace Tsavorite.core
         /// <summary>The size of the write buffer used for writing data to the disk. Must be a sector multiple.</summary>
         internal const int DiskWriteBufferSize = 4 * 1024 * 1024;
 
+        /// <summary>Initial IO size to read.</summary>
+        internal static int InitialIOSize => Environment.SystemPageSize;
+
         /// <summary>
         /// The cumulative length of the data previously and currently in the buffer, in bytes.
         /// </summary>

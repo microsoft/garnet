@@ -390,7 +390,7 @@ namespace Tsavorite.core
                 return;
             }
 
-            Debug.Assert(asyncResult.page == flushPage, "TODO: should these always be equal?");
+            Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
 
             // TODO: If ObjectIdMap for this page is empty and FlushedDiskTailOffset is 0, we can write directly from the page to disk (with the sector-aligning pre-Read).
 
@@ -401,7 +401,7 @@ namespace Tsavorite.core
                 // We're writing only a subset of the page, so aligned_start will be rounded down to sectorSize-aligned start position.
                 var pageStart = GetStartLogicalAddressOfPage(asyncResult.page);
                 startOffset = (int)(asyncResult.fromAddress - pageStart);
-                alignedStartOffset = (int)RoundDown(startOffset, sectorSize);
+                alignedStartOffset = RoundDown(startOffset, sectorSize);
                 endOffset = (int)(asyncResult.untilAddress - pageStart);
             }
 
@@ -413,7 +413,7 @@ namespace Tsavorite.core
             // TODO: Should Page eviction null the ObjectIdMap, or its internal MultiLevelPageArray, vs. just clearing the objects
             var localObjectIdMap = values[flushPage % BufferSize].objectIdMap;
             var srcBuffer = bufferPool.Get(endOffset - alignedStartOffset); // Source buffer adjusts size for alignment subtraction from startOffset.
-            var pageSpan = new Span<byte>((byte*)(pagePointers[flushPage % BufferSize]) + startOffset, (int)numBytesToWrite);
+            var pageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
             pageSpan.CopyTo(srcBuffer.AsSpan());
 
             // We suspend epoch during the actual flush as that can take a long time.
@@ -479,16 +479,6 @@ namespace Tsavorite.core
                 if (epochWasProtected)
                     epoch.Resume();
             }
-        }
-
-        private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
-        {
-            if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
-
-            // Signal the event so the waiter can continue
-            var result = (PageAsyncReadResult<Empty>)context;
-            _ = result.handle.Signal();
         }
 
         protected override void ReadAsync<TContext>(

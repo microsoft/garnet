@@ -28,7 +28,7 @@ namespace Tsavorite.core
             internal readonly int maxInlineValueLength;
 
             /// <summary>The sector size of the device; will be either 512b or 4kb</summary>
-            internal readonly int sectorSize;
+            internal readonly uint sectorSize;
 
             /// <summary>The unaligned start of the record on the device</summary>
             internal readonly long unalignedRecordStartOffset;
@@ -37,7 +37,7 @@ namespace Tsavorite.core
             internal readonly TStoreFunctions storeFunctions;
 
             /// <summary>Constructor for SpanByteAllocator, which has a fixed page size and no overflow</summary>
-            internal ReadParameters(SectorAlignedBufferPool bufferPool, int fixedPageSize, int sectorSize, int unalignedRecordStartOffset, TStoreFunctions storeFunctions)
+            internal ReadParameters(SectorAlignedBufferPool bufferPool, int fixedPageSize, uint sectorSize, long unalignedRecordStartOffset, TStoreFunctions storeFunctions)
             {
                 this.bufferPool = bufferPool ?? throw new ArgumentNullException(nameof(bufferPool));
                 this.fixedPageSize = fixedPageSize;
@@ -49,7 +49,7 @@ namespace Tsavorite.core
             }
 
             /// <summary>Constructor for ObjectAllocator, which has no fixed pages size and may have overflow and objects</summary>
-            internal ReadParameters(SectorAlignedBufferPool bufferPool, int maxInlineKeyLength, int maxInlineValueLength, int sectorSize, int unalignedRecordStartOffset, TStoreFunctions storeFunctions)
+            internal ReadParameters(SectorAlignedBufferPool bufferPool, int maxInlineKeyLength, int maxInlineValueLength, uint sectorSize, long unalignedRecordStartOffset, TStoreFunctions storeFunctions)
             {
                 this.bufferPool = bufferPool ?? throw new ArgumentNullException(nameof(bufferPool));
                 fixedPageSize = -1;
@@ -62,21 +62,27 @@ namespace Tsavorite.core
 
             internal readonly (long alignedFieldOffset, int padding) GetAlignedReadStart(long unalignedFieldOffset)
             {
-                var alignedFieldOffset = RoundDown(unalignedRecordStartOffset + unalignedFieldOffset, sectorSize);
+                var alignedFieldOffset = RoundDown(unalignedRecordStartOffset + unalignedFieldOffset, (int)sectorSize);
                 return (alignedFieldOffset, (int)(unalignedFieldOffset - alignedFieldOffset));
             }
 
             internal readonly (int alignedBytesToRead, int padding) GetAlignedBytesToRead(int unalignedBytesToRead)
             {
-                var alignedBytesToRead = RoundUp(unalignedBytesToRead, sectorSize);
+                var alignedBytesToRead = RoundUp(unalignedBytesToRead, (int)sectorSize);
                 return (alignedBytesToRead, alignedBytesToRead - unalignedBytesToRead);
             }
         }
 
         readonly ReadParameters readParams;
         readonly IDevice logDevice;
-        SectorAlignedMemory chunkBuffer;
         readonly IObjectSerializer<IHeapObject> valueObjectSerializer;
+
+        /// <summary>The <see cref="SectorAlignedMemory"/> of the non-overflow key buffer.</summary>
+        /// <remarks>Held as a field instead of a local so it can be Dispose()d in case of an exception.</remarks>
+        SectorAlignedMemory keyBuffer;
+        /// <summary>The <see cref="SectorAlignedMemory"/> of the non-overflow value buffer or the buffer used to read value-object chunks.</summary>
+        /// <remarks>Held as a field instead of a local so it can be Dispose()d in case of an exception.</remarks>
+        SectorAlignedMemory valueBuffer;
 
         /// <summary>Deserialization position (we do not support write in this buffer) in the current (sub-)chunk. This is less than or equal to <see cref="currentLength"/>;
         /// if equal to, then there is no more to data process in the buffer and another buffer must be read if the record is incomplete.</summary>
@@ -98,14 +104,14 @@ namespace Tsavorite.core
         bool isChunkedValue;
 
         /// <summary>The current record header; used for chunks to identify when they need to extract the optionals after the final chunk.</summary>
-        RecordInfo recordInfo;
+        internal RecordInfo recordInfo;
         /// <summary>The number of bytes of optional fields (ETag and Expiration), if any.</summary>
         int optionalLength;
 
         /// <summary>
         /// Maximum buffer size to read for a (sub-)chunk; includes an extra sector to get the optionalLength on the final chunk.
         /// </summary>
-        int maxBufferSize => IStreamBuffer.DiskWriteBufferSize + readParams.sectorSize;
+        int maxBufferSize => IStreamBuffer.DiskWriteBufferSize + (int)readParams.sectorSize;
 
         /// <summary>
         /// When we read from the buffer this callback will be used and must signal the <see cref="PageAsyncFlushResult{T}.done"/> event so we can continue.
@@ -113,7 +119,7 @@ namespace Tsavorite.core
         readonly DeviceIOCompletionCallback ioCompletionCallback;
 
         /// <summary>The Span of current chunk data read into the buffer.</summary>
-        public Span<byte> ChunkBufferSpan => chunkBuffer.AsSpan();
+        public Span<byte> ChunkBufferSpan => valueBuffer.AsSpan();
 
         /// <summary>The amount of data written to the buffer so far (from Read() or Write()).</summary>
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
@@ -149,17 +155,20 @@ namespace Tsavorite.core
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <summary>
-        /// Process the record in recordBuffer:
+        /// Process the record in recordBuffer. which came from the initial IO operation or from an interator record:
         /// <list type="bullet">
-        /// <item>If we have the key, compare it to the passed key and return false if it does not match. If we don't have the key, it is either ReadAtAddress or Scan.</item>
+        /// <item>If we have the key, compare it to the passed key and return false if it does not match. If we don't have the key, it is either
+        ///       ReadAtAddress (which is an implicit match) or Scan.</item>
         /// <item>If we have the full record, create the output <paramref name="diskLogRecord"/> from it and return true.</item>
         /// <item>Otherwise, do additional reads as needed (possibly multiple, for object chunks), compare the key if needed as in the first bullet,
         ///       then create the output <paramref name="diskLogRecord"/> from it and return true.</item>
         /// </list>
         /// </summary>
-        /// <remarks>The "fast path" for SpanByteAllocator goes through here with <see cref="ReadParameters.fixedPageSize"/> set to nonzero, checking for having
+        /// <remarks>
+        /// The "fast path" for SpanByteAllocator goes through here with <see cref="ReadParameters.fixedPageSize"/> set to nonzero, checking for having
         /// a complete key for comparison and for having a complete record, allocating a full-size record if another read is necessary, in the same way as
-        /// was previously done in <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncGetFromDiskCallback(uint, uint, object)"/></remarks>
+        /// was previously done in <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncGetFromDiskCallback(uint, uint, object)"/>
+        /// </remarks>
         public bool Read(ref SectorAlignedMemory recordBuffer, ReadOnlySpan<byte> requestedKey, out DiskLogRecord diskLogRecord)
         {
             var availableBytes = recordBuffer.available_bytes;
@@ -179,6 +188,8 @@ namespace Tsavorite.core
             {
                 (var keyLengthBytes, var valueLengthBytes, isChunkedValue) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
                 recordInfo = *(RecordInfo*)ptr;
+                if (recordInfo.Invalid)
+                    return false;
                 optionalLength = DiskLogRecord.GetOptionalLength(recordInfo);
 
                 var offsetToKeyStart = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes;
@@ -215,11 +226,14 @@ namespace Tsavorite.core
                             return true;
                         }
 
-                        // Read the rest of the record, possibly in pieces. Set up recordBuffer as keyBuffer with appropriate ranges first.
-                        Debug.Assert(requestedKey.IsEmpty || requestedKey.Length == keyLength, $"Key length mismatch: expected (input key) {keyLength}, actual (read from disk) {requestedKey.Length}");
-                        recordBuffer.valid_offset += (int)(ptrToKeyData - ptr);
-                        recordBuffer.required_bytes = keyLength;
-                        ReadValue(ref recordBuffer, keyOverflow: default, offsetToValueStart: minRequiredLength, valueLength, out diskLogRecord);
+                        // Transfer ownership of recordBuffer to be our keyBuffer with appropriate ranges.
+                        keyBuffer = recordBuffer;
+                        recordBuffer = default;
+                        keyBuffer.valid_offset += (int)(ptrToKeyData - ptr);    // So DiskLogRecord can retrieve GetValidPointer() as the start of the key...
+                        keyBuffer.required_bytes = keyLength;                   // ... and this is the length of the key
+
+                        // Read the rest of the record, possibly in pieces.
+                        ReadValue(keyOverflow: default, offsetToValueStart: minRequiredLength, valueLength, out diskLogRecord);
                         return true;
                     }
 
@@ -238,7 +252,7 @@ namespace Tsavorite.core
             try
             {
                 // Read() will clear initialRecordBuffer if it transfers it to the output diskLogRecord.
-                initialRecordBuffer = AllocateBufferAndReadFromDevice(offsetToFieldStart: 0, readParams.sectorSize);
+                initialRecordBuffer = AllocateBufferAndReadFromDevice(offsetToFieldStart: 0, IStreamBuffer.InitialIOSize);
                 return Read(ref initialRecordBuffer, requestedKey, out diskLogRecord);
             }
             finally
@@ -248,17 +262,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read the value (and optionals if present)</summary>
-        private void ReadValue(ref SectorAlignedMemory keyBuffer, OverflowByteArray keyOverflow, int offsetToValueStart, long valueLength, out DiskLogRecord diskLogRecord)
+        private void ReadValue(OverflowByteArray keyOverflow, int offsetToValueStart, long valueLength, out DiskLogRecord diskLogRecord)
         {
             // The most common case is that we have the recordInfo and the key in either keyBuffer or keyOverflow.
             // This broken out into two functions to allow ReadKeyAndValue to wait on an event and then compare the key.
-            BeginReadValue(offsetToValueStart, valueLength, out var valueBuffer, out var valueOverflow, out var eTag, out var expiration);
-            diskLogRecord = EndReadValue(keyBuffer, keyOverflow, valueLength, valueBuffer, valueOverflow, eTag, expiration);
+            BeginReadValue(offsetToValueStart, valueLength, out var valueOverflow, out var eTag, out var expiration);
+            diskLogRecord = EndReadValue(keyOverflow, valueLength, valueOverflow, eTag, expiration);
             return;
         }
 
-        private void BeginReadValue(int offsetToValueStart, long valueLength,
-            out SectorAlignedMemory valueBuffer, out OverflowByteArray valueOverflow, out long eTag, out long expiration, CountdownEvent multiCountdownEvent = null)
+        private void BeginReadValue(int offsetToValueStart, long valueLength, out OverflowByteArray valueOverflow,
+                out long eTag, out long expiration, CountdownEvent multiCountdownEvent = null)
         {
             // This is the most common initial case: we have the recordInfo and the key in either keyBuffer or keyOverflow.
             // If multiCountdownEvent is not null, then we're called from ReadKeyAndValue where the key has an IO pending in the countdownEvent; in that case
@@ -280,7 +294,7 @@ namespace Tsavorite.core
             {
                 valueBuffer = AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), multiCountdownEvent);
                 if (optionalLength > 0)
-                    ExtractOptionals(valueBuffer.GetValidPointer() + (int)valueLength, out eTag, out expiration);
+                    ExtractOptionals((int)valueLength, out eTag, out expiration);
                 return;
             }
 
@@ -302,8 +316,8 @@ namespace Tsavorite.core
                 recordBuffer.available_bytes = alignedBytesToRead - startPadding;
 
                 // Now reduce the actual size we expect to read.
-                ReadFromDevice(chunkBuffer, alignedReadStart, alignedBytesToRead, multiCountdownEvent);
-                Debug.Assert(chunkBuffer.valid_offset == 0, $"Expected valid_offset 0, actual {chunkBuffer.valid_offset}");
+                ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead, multiCountdownEvent);
+                Debug.Assert(valueBuffer.valid_offset == 0, $"Expected valid_offset 0, actual {valueBuffer.valid_offset}");
             }
             else
             {
@@ -311,23 +325,23 @@ namespace Tsavorite.core
                 // chunks (with isChunkedValue/continuation) or sub-chunks (pieces of a full chunk; but no isChunkedValue/continuation) and get the optionals on the final sub-chunk.
                 if (valueLength + optionalLength <= maxBufferSize)
                 {
-                    chunkBuffer = AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), multiCountdownEvent);
-                    Debug.Assert(chunkBuffer.required_bytes == (int)valueLength, $"Expected required_bytes {(int)valueLength}, actual {chunkBuffer.required_bytes}");
+                    valueBuffer = AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), multiCountdownEvent);
+                    Debug.Assert(valueBuffer.required_bytes == (int)valueLength, $"Expected required_bytes {(int)valueLength}, actual {valueBuffer.required_bytes}");
                     currentLength = (int)valueLength;
                 }
                 else
                 {
                     // Start the multi-sub-chunk Read sequence. Don't read optionals here, they are read after the last sub-chunk.
-                    chunkBuffer = AllocateBuffer(offsetToValueStart, maxBufferSize, out var alignedReadStart, out var alignedBytesToRead);
+                    valueBuffer = AllocateBuffer(offsetToValueStart, maxBufferSize, out var alignedReadStart, out var alignedBytesToRead);
                     Debug.Assert(alignedBytesToRead == maxBufferSize, $"Expected alignedBytesToRead {alignedBytesToRead} to match maxBufferSize {maxBufferSize}");
-                    ReadFromDevice(chunkBuffer, alignedReadStart, alignedBytesToRead, multiCountdownEvent);
-                    currentLength = chunkBuffer.required_bytes = (int)valueLength;
-                    Debug.Assert(chunkBuffer.valid_offset == 0, $"Expected valid_offset 0, actual {chunkBuffer.valid_offset}");
+                    ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead, multiCountdownEvent);
+                    currentLength = valueBuffer.required_bytes = (int)valueLength;
+                    Debug.Assert(valueBuffer.valid_offset == 0, $"Expected valid_offset 0, actual {valueBuffer.valid_offset}");
                 }
             }
         }
 
-        private DiskLogRecord EndReadValue(SectorAlignedMemory keyBuffer, OverflowByteArray keyOverflow, long valueLength, SectorAlignedMemory valueBuffer, OverflowByteArray valueOverflow,
+        private DiskLogRecord EndReadValue(OverflowByteArray keyOverflow, long valueLength, OverflowByteArray valueOverflow,
             long eTag, long expiration)
         {
             // Deserialize the object if there is one. This will also read any optionals if they are there.
@@ -336,10 +350,13 @@ namespace Tsavorite.core
             {
                 unreadExactLength = valueLength - currentLength;
                 valueObject = DoDeserialize(out eTag, out expiration);
+                valueBuffer = default;
             }
 
-            // Transfer any non-null keyBuffer or valueBuffer to the DiskLogRecord. If valueObject is not null, there won't be a valueBuffer.
-            return new DiskLogRecord(recordInfo, keyBuffer, keyOverflow, valueBuffer, valueOverflow, eTag, expiration, valueObject);
+            // Transfer any non-null keyBuffer or valueBuffer to the DiskLogRecord. If valueObject is not null, Return() our valueBuffer first for immediate reuse.
+            valueBuffer.Return();
+            valueBuffer = null;
+            return new DiskLogRecord(recordInfo, ref keyBuffer, keyOverflow, ref valueBuffer, valueOverflow, eTag, expiration, valueObject);
         }
 
         /// <summary>Read the key and value (and optionals if present)</summary>
@@ -366,8 +383,8 @@ namespace Tsavorite.core
             }
 
             var keyIsOverflow = keyLength > readParams.maxInlineKeyLength;
-            SectorAlignedMemory keyBuffer = default;
             var offsetToValueStart = offsetToKeyStart + keyLength;
+            OverflowByteArray valueOverflow;
 
             // The record is large. If key is not overflow then the value is large, either an overflow or a chunked object.
             // If the value is large and not an object then it is overflow and we may be able to optimize the two reads to reduce copying of the large value,
@@ -381,7 +398,7 @@ namespace Tsavorite.core
                 {
                     // Yes it will fit. We'll start reading at alignedKeyStart, which will use offsetToKeyStart as the OverflowByteArray's start, and include optionals.
                     // From that we'll extract the key, then update the offset to be at the beginning of the actual value.
-                    var valueOverflow = AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength));
+                    valueOverflow = AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength));
 
                     keyBuffer = readParams.bufferPool.Get(keyLength);
                     valueOverflow.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.AsSpan());
@@ -390,19 +407,20 @@ namespace Tsavorite.core
                     if (optionalLength > 0)
                         valueOverflow.ExtractOptionals(recordInfo, (int)(keyLength + valueLength), out eTag, out expiration);
 
-                    diskLogRecord = new(recordInfo, keyBuffer, keyOverflow: default, valueBuffer: default, valueOverflow, eTag, expiration, valueObject: null);
+                    Debug.Assert(valueBuffer is null, "Should not have allocated a valueBuffer when Value is overflow");
+                    diskLogRecord = new(recordInfo, ref keyBuffer, keyOverflow: default, ref valueBuffer, valueOverflow, eTag, expiration, valueObject: null);
                     return true;
                 }
             }
 
             // At this point the key is either:
-            //   a. Not overflow, but we couldn't fit it in to the value read; we'll issue a separate AllocateBufferAndReadFromDevice into a SectorAlignedMemory keyBuffer,
+            //   a. Not overflow, but we couldn't fit it in to the value read; we'll issue a separate AllocateBufferAndReadFromDevice into our SectorAlignedMemory keyBuffer field,
             //      because we know the value is overflow or a chunked object.
-            //   b. Overflow; we'll issue a separate ReadOverflowFromDevice into an OverflowByteArray.
+            //   b. Overflow; we'll issue a separate ReadOverflowFromDevice into a non-field OverflowByteArray.
             // Then we will wait for the Key IO to complete in parallel with a Read for the value, which may be:
-            //   a. Not overflow; we'll read it into a SectorAlignedMemory valueBuffer along with optionals. In this case we know the key is overflow.
-            //   b. Overflow; we'll read it into an OverflowByteArray valueOverflow, along with optionals as above
-            //   c. A chunked value, in which case we'll read the first chunk into a SectorAlignedMemory valueBuffer. The buffer should be large enough that the final chunk can include optionals.
+            //   a. Not overflow; we'll read it into our SectorAlignedMemory valueBuffer field along with optionals. In this case we know the key is overflow.
+            //   b. Overflow; we'll read it into a non-field OverflowByteArray valueOverflow, along with optionals as above
+            //   c. A chunked value, in which case we'll read the first chunk into our SectorAlignedMemory valueBuffer field. This buffer must be large enough that the final chunk can include optionals.
             OverflowByteArray keyOverflow = default;
 
             // Set up the CountdownEvent outside Key and Value reading, so we can wait for those in parallel; the individual ReadFromDevice calls will not Wait().
@@ -414,7 +432,7 @@ namespace Tsavorite.core
                 keyBuffer = AllocateBufferAndReadFromDevice(offsetToKeyStart, keyLength, countdownEvent);
 
             // Initiate reading the value, which may be the initial buffer for a chunked object.
-            BeginReadValue(offsetToValueStart, valueLength, out var valueBuffer, out var valueOverflow, out eTag, out expiration, countdownEvent);
+            BeginReadValue(offsetToValueStart, valueLength, out valueOverflow, out eTag, out expiration, countdownEvent);
 
             // Wait until both ReadFromDevice()s complete.
             countdownEvent?.Wait();
@@ -434,7 +452,7 @@ namespace Tsavorite.core
             }
 
             // Finish the value read, which at this point is done unless we are deserializing objects, and create and return the DiskLogRecord.
-            diskLogRecord = EndReadValue(keyBuffer, keyOverflow, valueLength, valueBuffer, valueOverflow, eTag, expiration);
+            diskLogRecord = EndReadValue(keyOverflow, valueLength, valueOverflow, eTag, expiration);
             return true;
         }
 
@@ -521,8 +539,8 @@ namespace Tsavorite.core
             // the remaining unread chunk length.
             var valueLength = unreadExactLength;    // This may be 0
 
-            // Reset to the start position. Since we already did at least one sector-aligned read, we do not need to use valid_offset in the chunkBuffer anymore.
-            chunkBuffer.valid_offset = 0;
+            // Reset to the start position. Since we already did at least one sector-aligned read, we do not need to use valid_offset in the valueBuffer anymore.
+            valueBuffer.valid_offset = 0;
             long getOptionalLength = 0;
 
             // Get the next (sub-)chunk. If it's the last chunk, get the optionals too.
@@ -531,7 +549,7 @@ namespace Tsavorite.core
             {
                 // If isChunkedValue becomes false then there is no chunk after this, read the optionals (if any). We allocated a large enough buffer that continuation
                 // chunks fit inside IStreamBuffer.DiskWriteBufferSize and thus with the addtional sector size we added at the end we have enough room for optionals.
-                valueLength = GetContinuationLength(chunkBuffer.GetValidPointer() + currentPosition, out isChunkedValue);   // This may be zero
+                valueLength = GetContinuationLength(valueBuffer.GetValidPointer() + currentPosition, out isChunkedValue);   // This may be zero
                 if (!isChunkedValue)
                     getOptionalLength = optionalLength;
             }
@@ -548,10 +566,10 @@ namespace Tsavorite.core
             var deviceOffset = readParams.unalignedRecordStartOffset + priorCumulativeLength + currentLength;
             Debug.Assert((deviceOffset & (readParams.sectorSize - 1)) == 0, $"Next device position is not aligned for chunk continuation");
 
-            chunkBuffer.required_bytes = (int)valueLength;
+            valueBuffer.required_bytes = (int)valueLength;
             var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)(valueLength + getOptionalLength));
             if (alignedBytesToRead > 0)
-                ReadFromDevice(chunkBuffer, deviceOffset, alignedBytesToRead);
+                ReadFromDevice(valueBuffer, deviceOffset, alignedBytesToRead);
             currentPosition = 0;
             priorCumulativeLength += currentLength;
             currentLength = (int)valueLength;   // Again, this may be 0
@@ -582,20 +600,20 @@ namespace Tsavorite.core
         void OnDeserializeComplete(out long eTag, out long expiration)
         {
             // Extract optionals if they are present. This assumes currentPosition has been correctly set to the first byte after value data.
-            ExtractOptionals(chunkBuffer.GetValidPointer() + currentPosition, out eTag, out expiration);
+            ExtractOptionals(currentPosition, out eTag, out expiration);
         }
 
-        private void ExtractOptionals(byte* ptrToOptionals, out long eTag, out long expiration)
+        private void ExtractOptionals(int offsetToOptionals, out long eTag, out long expiration)
         {
-            var optionalOffset = 0;
+            var ptrToOptionals = valueBuffer.GetValidPointer() + offsetToOptionals;
             eTag = expiration = 0;
             if (recordInfo.HasETag)
             {
                 eTag = *(long*)ptrToOptionals;
-                optionalOffset += LogRecord.ETagSize;
+                offsetToOptionals += LogRecord.ETagSize;
             }
             if (recordInfo.HasExpiration)
-                expiration = *(long*)(ptrToOptionals + optionalOffset);
+                expiration = *(long*)(ptrToOptionals + offsetToOptionals);
         }
 
         /// <inheritdoc/>
@@ -604,7 +622,10 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            chunkBuffer.Return();
+            keyBuffer?.Return();
+            keyBuffer = default;
+            valueBuffer?.Return();
+            valueBuffer = default;
         }
     }
 }

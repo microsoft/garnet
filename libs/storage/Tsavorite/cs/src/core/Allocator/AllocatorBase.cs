@@ -1872,6 +1872,16 @@ namespace Tsavorite.core
             }
         }
 
+        private protected void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
+        {
+            if (errorCode != 0)
+                logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
+
+            // Signal the event so the waiter can continue
+            var result = (PageAsyncReadResult<Empty>)context;
+            _ = result.handle.Signal();
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
@@ -1882,68 +1892,38 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
-                // TODO: Separate path for SBA vs. OA
-                // TODO Set ctx.diskLogRecord
-
-                bool hasFullRecord = DiskLogRecord.IsComplete(ctx.record, out bool hasFullKey, out int requiredBytes);      // TODO: support 'long' lengths
-                if (hasFullKey || ctx.request_key.IsEmpty)
+                // TODO: logicalAddress must be physicalAddress here.
+                // TODO: move this "if" to an IAllocator function call to do the DiskStreamReadBuffer.Read().
+                DiskStreamReadBuffer<TStoreFunctions>.ReadParameters readParams = IsObjectAllocator
+                    ? new(bufferPool, PageSize, device.SectorSize, ctx.logicalAddress, storeFunctions)
+                    : new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, ctx.logicalAddress, storeFunctions);
+                var valueObjectSerializer = IsObjectAllocator ? storeFunctions.CreateValueObjectSerializer() : default;
+                var readBuffer = new DiskStreamReadBuffer<TStoreFunctions>(in readParams, device, valueObjectSerializer, AsyncReadPageCallback);
+                if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord))
                 {
-                    var diskLogRecord = new DiskLogRecord((long)ctx.record.GetValidPointer());  // This ctor does not test for having the complete record; we've already set hasFullRecord
-                    Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
+                    Debug.Assert(!readBuffer.recordInfo.Invalid, "Invalid records should not be in the hash chain for pending IO");
 
-                    // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    var currentRecordIsInRange = ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress;
-                    if (!ctx.request_key.IsEmpty && !storeFunctions.KeysEqual(ctx.request_key, diskLogRecord.Key))
+                    // Keys don't match so request the previous record in the chain if it is in the range to resolve, else fall through to signal "IO complete".
+                    ctx.logicalAddress = readBuffer.recordInfo.PreviousAddress;
+                    if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
-                        // Keys don't match so request the previous record in the chain if it is in the range to resolve.
-                        ctx.logicalAddress = diskLogRecord.Info.PreviousAddress;
-                        if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
-                        {
-                            ctx.record.Return();
-                            ctx.record = default;
-                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                            return;
-                        }
-                    }
-
-                    if (hasFullRecord)
-                    {
-                        // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
-                        if (currentRecordIsInRange && diskLogRecord.Info.ValueIsObject)
-                            ctx.ValueObject = diskLogRecord.DeserializeValueObject(storeFunctions.CreateValueObjectSerializer());
-
-                        if (ctx.completionEvent is not null)
-                            ctx.completionEvent.Set(ref ctx);
-                        else
-                            ctx.callbackQueue.Enqueue(ctx);
-                    }
-                    else
-                    {
-                        // We have the full key but not value (or edge case, maybe we have the value but not optionals).
-                        // TODO: Secondary IO here, spinning if necessary on max chunksize for the value. We will not optimize for oversize keys.
-                        // Start the read by copying the chunk of "value" that we have into the DiskStreamBuffer, where it can be used by deserialization
-                        // before we continue IO'ing. 
-                        // For Oversize we can allocate the byte[] right here as we'll know the size, and then read directly into that. Then we need to
-                        // add GetOversizeAllocation for use in LogRecord.TryCopyFrom(...).
-                        // for Object, we can deserialize in chunks using DiskStreamBuffer.
+                        ctx.Dispose();
+                        AsyncGetFromDisk(ctx.logicalAddress, IStreamBuffer.InitialIOSize, ctx);
+                        return;
                     }
                 }
 
-                // TODO: Initialize Readparams oversized limits with DiskReadForceOverflowSize
-
-                if (!hasFullRecord) // TODO this should be identical to "if !hasFullKey", if we do the secondary read in the hasFullKey block
-                {
-                    // We don't have the full record and may not even have gotten a full key, so we need to do another IO
-                    if (requiredBytes > int.MaxValue)
-                        throw new TsavoriteException("Records exceeding 2GB are not yet supported"); // TODO note: We should not have written this yet; serialization is int-limited
-
-                    ctx.record.Return();
-                    AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                }
+                // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                if (ctx.completionEvent is not null)
+                    ctx.completionEvent.Set(ref ctx);
+                else
+                    ctx.callbackQueue.Enqueue(ctx);
             }
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
+
+                ctx.Dispose();
 
                 // If someone is waiting on the event, set the exception there; otherwise rethrow
                 if (ctx.completionEvent is not null)

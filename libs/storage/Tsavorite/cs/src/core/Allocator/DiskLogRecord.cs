@@ -98,23 +98,7 @@ namespace Tsavorite.core
             return diskLogRecord;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private DiskLogRecord(ref SectorAlignedMemory allocatedRecord) : this((long)allocatedRecord.GetValidPointer())  // TODO this should be going away
-        {
-            if (!IsComplete(allocatedRecord, out _, out _))
-                throw new TsavoriteException("DiskLogRecord is not complete");
-            recordBuffer = allocatedRecord;
-            allocatedRecord = default;
-        }
-
-        /// <summary>Constructor that takes an <see cref="AsyncIOContext"/> from which it obtains the physical address and ValueObject.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private DiskLogRecord(ref AsyncIOContext ctx) : this(ctx.record)    // TODO: This should be going away
-        {
-            valueObject = ctx.ValueObject;
-        }
-
-        internal DiskLogRecord(RecordInfo recordInfo, SectorAlignedMemory keyBuffer, OverflowByteArray keyOverflow, SectorAlignedMemory valueBuffer,
+        internal DiskLogRecord(RecordInfo recordInfo, ref SectorAlignedMemory keyBuffer, OverflowByteArray keyOverflow, ref SectorAlignedMemory valueBuffer,
             OverflowByteArray valueOverflow, long eTag, long expiration, IHeapObject valueObject) : this()
         {
             this.recordInfo = recordInfo;
@@ -122,7 +106,8 @@ namespace Tsavorite.core
             if (keyBuffer is not null)
             {
                 Debug.Assert(keyOverflow.IsEmpty, "Must have only one of keyBuffer or keyOverflow");
-                this.keyBuffer = keyBuffer;
+                this.keyBuffer = keyBuffer;     // Transfer ownership to us
+                keyBuffer = default;
                 keySpan = PinnedSpanByte.FromPinnedPointer(keyBuffer.GetValidPointer(), keyBuffer.required_bytes);
             }
             else
@@ -140,7 +125,8 @@ namespace Tsavorite.core
             if (valueBuffer is not null)
             {
                 Debug.Assert(valueObject is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
-                recordBuffer = valueBuffer;
+                recordBuffer = valueBuffer;     // Transfer ownership to us
+                valueBuffer = default;
                 valueSpan = PinnedSpanByte.FromPinnedPointer(valueBuffer.GetValidPointer(), valueBuffer.required_bytes);
             }
             else
