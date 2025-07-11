@@ -369,7 +369,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(4, res.Length);
 
             // Test infinity value
-            res = db.GeoSearch(key, new RedisValue("Columbus"), new GeoSearchBox(double.PositiveInfinity, 10, GeoUnit.Kilometers),
+            res = db.GeoSearch(key, new RedisValue("Columbus"), new GeoSearchBox(double.PositiveInfinity, 2, GeoUnit.Kilometers),
                                order: Order.Descending,
                                options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
             ClassicAssert.AreEqual(2, res.Length);
