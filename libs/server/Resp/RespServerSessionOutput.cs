@@ -111,14 +111,12 @@ namespace Garnet.server
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteError(scoped ReadOnlySpan<byte> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))
                 SendAndReset();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteError(ReadOnlySpan<char> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref dcurr, dend))

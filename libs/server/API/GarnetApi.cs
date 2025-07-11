@@ -248,6 +248,56 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1)
             => Increment(key, out output, -decrementCount);
+
+        /// <inheritdoc />
+        public GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val)
+        {
+            SessionParseState parseState = default;
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            output = ArgSlice.FromPinnedSpan(outputBuffer);
+
+            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
+            _ = Increment(key, ref input, ref output);
+
+            var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
+                            ? (OperationError)output.Span[0]
+                            : OperationError.SUCCESS;
+
+            switch (errorFlag)
+            {
+                case OperationError.SUCCESS:
+                    return GarnetStatus.OK;
+                case OperationError.NAN_OR_INFINITY:
+                    return GarnetStatus.WRONGTYPE;
+                case OperationError.INVALID_TYPE:
+                    return GarnetStatus.WRONGTYPE;
+                default:
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+            }
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus IncrementByFloat(ArgSlice key, out double dbl, double val)
+        {
+            dbl = default;
+            var status = IncrementByFloat(key, out ArgSlice output, val);
+
+            var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
+                            ? (OperationError)output.Span[0]
+                            : OperationError.SUCCESS;
+
+            switch (errorFlag)
+            {
+                case OperationError.SUCCESS:
+                    _ = NumUtils.TryReadDouble(output.ReadOnlySpan, out dbl);
+                    break;
+                case OperationError.NAN_OR_INFINITY:
+                    dbl = double.NaN;
+                    break;
+            }
+
+            return status;
+        }
         #endregion
 
         #region DELETE

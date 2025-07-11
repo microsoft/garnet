@@ -403,8 +403,9 @@ namespace Garnet.server
                 var result = ProcessRespSingleTokenOutput(output);
                 if (result.length > 0)
                 {
+                    var sbResult = result.ReadOnlySpan;
                     // get the new score
-                    _ = NumUtils.TryParse(result.ReadOnlySpan, out newScore);
+                    _ = NumUtils.TryParseWithInfinity(sbResult, out newScore);
                 }
             }
 
@@ -1535,6 +1536,12 @@ namespace Garnet.server
                         SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
                         _ => kvp.Value + weightedScore // Default to SUM
                     };
+
+                    // That's what the references do. Arguably we're doing bug compatible behaviour here.
+                    if (double.IsNaN(pairs[kvp.Key]))
+                    {
+                        pairs[kvp.Key] = 0;
+                    }
                 }
 
                 // If intersection becomes empty, we can stop early

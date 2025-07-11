@@ -95,13 +95,15 @@ namespace Garnet.server
         /// <summary>
         /// Read a signed 64-bit double from a given ArgSlice.
         /// </summary>
+        /// <param name="slice">Source</param>
+        /// <param name="canBeInfinite">Allow reading an infinity</param>
         /// <returns>
         /// Parsed double
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double ReadDouble(ref ArgSlice slice)
+        public static double ReadDouble(ref ArgSlice slice, bool canBeInfinite)
         {
-            if (!TryReadDouble(ref slice, out var number))
+            if (!TryReadDouble(ref slice, out var number, canBeInfinite))
             {
                 RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
             }
@@ -111,15 +113,21 @@ namespace Garnet.server
         /// <summary>
         /// Try to read a signed 64-bit double from a given ArgSlice.
         /// </summary>
+        /// <param name="slice">Source</param>
+        /// <param name="number">Result</param>
+        /// <param name="canBeInfinite">Allow reading an infinity</param>
         /// <returns>
         /// True if double parsed successfully
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadDouble(ref ArgSlice slice, out double number)
+        public static bool TryReadDouble(ref ArgSlice slice, out double number, bool canBeInfinite)
         {
             var sbNumber = slice.ReadOnlySpan;
-            return Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
-                            bytesConsumed == sbNumber.Length;
+            if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
+                            bytesConsumed == sbNumber.Length)
+                return true;
+
+            return canBeInfinite && RespReadUtils.TryReadInfinity(sbNumber, out number);
         }
 
         /// <summary>
