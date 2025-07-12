@@ -37,6 +37,9 @@ RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/de
 WORKDIR /src/main/GarnetServer
 RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
+# Delete xmldoc files
+RUN find /app -name '*.xml' -delete
+
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
 WORKDIR /app
