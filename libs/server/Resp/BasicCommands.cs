@@ -742,9 +742,9 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
                     break;
+                case OperationError.NAN_OR_INFINITY:
                 case OperationError.INVALID_TYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                     break;
                 default:
                     throw new GarnetException($"Invalid OperationError {errorFlag}");
@@ -760,38 +760,32 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
-            var incrSlice = parseState.GetArgSliceByRef(1);
 
-            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out float _))
+            if (!parseState.TryGetDouble(1, out var dbl))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
             }
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var output = ArgSlice.FromPinnedSpan(outputBuffer);
-
-            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, startIdx: 1);
-            storageApi.Increment(key, ref input, ref output);
-
-            var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
-                ? (OperationError)output.Span[0]
-                : OperationError.SUCCESS;
-
-            switch (errorFlag)
+            if (double.IsInfinity(dbl))
             {
-                case OperationError.SUCCESS:
-                    while (!RespWriteUtils.TryWriteBulkString(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+            }
+
+            var status = storageApi.IncrementByFloat(key, out ArgSlice output, dbl);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
                         SendAndReset();
                     break;
-                case OperationError.INVALID_TYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref dcurr,
-                                   dend))
-                        SendAndReset();
-                    break;
+                case GarnetStatus.WRONGTYPE:
                 default:
-                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+                    if ((OperationError)output.Span[0] == OperationError.NAN_OR_INFINITY)
+                        WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    else
+                        WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    break;
             }
 
             return true;
