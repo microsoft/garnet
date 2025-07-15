@@ -1770,18 +1770,6 @@ namespace Garnet.server
                                              ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived,
                                              ArgSlice inlineSubCommand = default)
         {
-            ReadOnlySpan<byte> GetSubCommand(out bool gotSubCommand)
-            {
-                if (inlineSubCommand.length == 0)
-                {
-                    return GetUpperCaseCommand(out gotSubCommand);
-                }
-
-                gotSubCommand = true;
-                AsciiUtils.ToUpperInPlace(inlineSubCommand.Span);
-                return inlineSubCommand.ReadOnlySpan;
-            }
-
             commandReceived = true;
             if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
@@ -1794,45 +1782,6 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.RUNTXP))
             {
                 return RespCommand.RUNTXP;
-            }
-            else if (command.SequenceEqual(CmdStrings.SCRIPT))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.SCRIPT)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.LOAD))
-                {
-                    return RespCommand.SCRIPT_LOAD;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.FLUSH))
-                {
-                    return RespCommand.SCRIPT_FLUSH;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.EXISTS))
-                {
-                    return RespCommand.SCRIPT_EXISTS;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.SCRIPT));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.ECHO))
             {
@@ -1862,100 +1811,6 @@ namespace Garnet.server
             {
                 return RespCommand.SECONDARYOF;
             }
-            else if (command.SequenceEqual(CmdStrings.CONFIG))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CONFIG)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.GET))
-                {
-                    return RespCommand.CONFIG_GET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
-                {
-                    return RespCommand.CONFIG_REWRITE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SET))
-                {
-                    return RespCommand.CONFIG_SET;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CONFIG));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.CLIENT))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CLIENT)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.ID))
-                {
-                    return RespCommand.CLIENT_ID;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.INFO))
-                {
-                    return RespCommand.CLIENT_INFO;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.LIST))
-                {
-                    return RespCommand.CLIENT_LIST;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.KILL))
-                {
-                    return RespCommand.CLIENT_KILL;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
-                {
-                    return RespCommand.CLIENT_GETNAME;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
-                {
-                    return RespCommand.CLIENT_SETNAME;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
-                {
-                    return RespCommand.CLIENT_SETINFO;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
-                {
-                    return RespCommand.CLIENT_UNBLOCK;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CLIENT));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
             else if (command.SequenceEqual(CmdStrings.AUTH))
             {
                 return RespCommand.AUTH;
@@ -1968,53 +1823,6 @@ namespace Garnet.server
             {
                 return RespCommand.ROLE;
             }
-            else if (command.SequenceEqual(CmdStrings.COMMAND))
-            {
-                if (count == 0)
-                {
-                    return RespCommand.COMMAND;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.COUNT))
-                {
-                    return RespCommand.COMMAND_COUNT;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.INFO))
-                {
-                    return RespCommand.COMMAND_INFO;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.DOCS))
-                {
-                    return RespCommand.COMMAND_DOCS;
-                }
-
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
-                {
-                    return RespCommand.COMMAND_GETKEYS;
-                }
-
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
-                {
-                    return RespCommand.COMMAND_GETKEYSANDFLAGS;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.COMMAND));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
             else if (command.SequenceEqual(CmdStrings.PING))
             {
                 return RespCommand.PING;
@@ -2022,284 +1830,6 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.HELLO))
             {
                 return RespCommand.HELLO;
-            }
-            else if (command.SequenceEqual(CmdStrings.CLUSTER))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CLUSTER)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.BUMPEPOCH))
-                {
-                    return RespCommand.CLUSTER_BUMPEPOCH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.FORGET))
-                {
-                    return RespCommand.CLUSTER_FORGET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.gossip))
-                {
-                    return RespCommand.CLUSTER_GOSSIP;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.INFO))
-                {
-                    return RespCommand.CLUSTER_INFO;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.MEET))
-                {
-                    return RespCommand.CLUSTER_MEET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.MYID))
-                {
-                    return RespCommand.CLUSTER_MYID;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.myparentid))
-                {
-                    return RespCommand.CLUSTER_MYPARENTID;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.NODES))
-                {
-                    return RespCommand.CLUSTER_NODES;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SHARDS))
-                {
-                    return RespCommand.CLUSTER_SHARDS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                {
-                    return RespCommand.CLUSTER_RESET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.FAILOVER))
-                {
-                    return RespCommand.CLUSTER_FAILOVER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTS))
-                {
-                    return RespCommand.CLUSTER_ADDSLOTS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTSRANGE))
-                {
-                    return RespCommand.CLUSTER_ADDSLOTSRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.COUNTKEYSINSLOT))
-                {
-                    return RespCommand.CLUSTER_COUNTKEYSINSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.DELSLOTS))
-                {
-                    return RespCommand.CLUSTER_DELSLOTS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.DELSLOTSRANGE))
-                {
-                    return RespCommand.CLUSTER_DELSLOTSRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GETKEYSINSLOT))
-                {
-                    return RespCommand.CLUSTER_GETKEYSINSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.HELP))
-                {
-                    return RespCommand.CLUSTER_HELP;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.KEYSLOT))
-                {
-                    return RespCommand.CLUSTER_KEYSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETSLOT))
-                {
-                    return RespCommand.CLUSTER_SETSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SLOTS))
-                {
-                    return RespCommand.CLUSTER_SLOTS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.REPLICAS))
-                {
-                    return RespCommand.CLUSTER_REPLICAS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.REPLICATE))
-                {
-                    return RespCommand.CLUSTER_REPLICATE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.delkeysinslot))
-                {
-                    return RespCommand.CLUSTER_DELKEYSINSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.delkeysinslotrange))
-                {
-                    return RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.setslotsrange))
-                {
-                    return RespCommand.CLUSTER_SETSLOTSRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.slotstate))
-                {
-                    return RespCommand.CLUSTER_SLOTSTATE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.publish))
-                {
-                    return RespCommand.CLUSTER_PUBLISH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.spublish))
-                {
-                    return RespCommand.CLUSTER_SPUBLISH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
-                {
-                    return RespCommand.CLUSTER_MIGRATE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.mtasks))
-                {
-                    return RespCommand.CLUSTER_MTASKS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.aofsync))
-                {
-                    return RespCommand.CLUSTER_AOFSYNC;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.appendlog))
-                {
-                    return RespCommand.CLUSTER_APPENDLOG;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.attach_sync))
-                {
-                    return RespCommand.CLUSTER_ATTACH_SYNC;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.banlist))
-                {
-                    return RespCommand.CLUSTER_BANLIST;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.begin_replica_recover))
-                {
-                    return RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.endpoint))
-                {
-                    return RespCommand.CLUSTER_ENDPOINT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.failreplicationoffset))
-                {
-                    return RespCommand.CLUSTER_FAILREPLICATIONOFFSET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
-                {
-                    return RespCommand.CLUSTER_FAILSTOPWRITES;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
-                {
-                    return RespCommand.CLUSTER_FLUSHALL;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
-                {
-                    return RespCommand.CLUSTER_SETCONFIGEPOCH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.initiate_replica_sync))
-                {
-                    return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_file_segment))
-                {
-                    return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
-                {
-                    return RespCommand.CLUSTER_SEND_CKPT_METADATA;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
-                {
-                    return RespCommand.CLUSTER_SYNC;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CLUSTER));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.LATENCY))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.LATENCY)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.HELP))
-                {
-                    return RespCommand.LATENCY_HELP;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
-                {
-                    return RespCommand.LATENCY_HISTOGRAM;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                {
-                    return RespCommand.LATENCY_RESET;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.LATENCY));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.SLOWLOG))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.SLOWLOG)));
-                }
-                else if (count >= 1)
-                {
-                    var subCommand = GetSubCommand(out var gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        commandReceived = false;
-                        return RespCommand.NONE;
-                    }
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.HELP))
-                    {
-                        return RespCommand.SLOWLOG_HELP;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.GET))
-                    {
-                        return RespCommand.SLOWLOG_GET;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.LEN))
-                    {
-                        return RespCommand.SLOWLOG_LEN;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                    {
-                        return RespCommand.SLOWLOG_RESET;
-                    }
-                }
             }
             else if (command.SequenceEqual(CmdStrings.TIME))
             {
@@ -2353,103 +1883,9 @@ namespace Garnet.server
             {
                 return RespCommand.FAILOVER;
             }
-            else if (command.SequenceEqual(CmdStrings.MEMORY))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.MEMORY)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
-                {
-                    return RespCommand.MEMORY_USAGE;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.MEMORY));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
             else if (command.SequenceEqual(CmdStrings.MONITOR))
             {
                 return RespCommand.MONITOR;
-            }
-            else if (command.SequenceEqual(CmdStrings.ACL))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.ACL)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.CAT))
-                {
-                    return RespCommand.ACL_CAT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
-                {
-                    return RespCommand.ACL_DELUSER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GENPASS))
-                {
-                    return RespCommand.ACL_GENPASS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
-                {
-                    return RespCommand.ACL_GETUSER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.LIST))
-                {
-                    return RespCommand.ACL_LIST;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.LOAD))
-                {
-                    return RespCommand.ACL_LOAD;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SAVE))
-                {
-                    return RespCommand.ACL_SAVE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETUSER))
-                {
-                    return RespCommand.ACL_SETUSER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.USERS))
-                {
-                    return RespCommand.ACL_USERS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.WHOAMI))
-                {
-                    return RespCommand.ACL_WHOAMI;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.ACL));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
@@ -2458,72 +1894,6 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ASYNC))
             {
                 return RespCommand.ASYNC;
-            }
-            else if (command.SequenceEqual(CmdStrings.MODULE))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.MODULE)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.LOADCS))
-                {
-                    return RespCommand.MODULE_LOADCS;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.MODULE));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.PUBSUB))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.PUBSUB)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetSubCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    commandReceived = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
-                {
-                    return RespCommand.PUBSUB_CHANNELS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
-                {
-                    return RespCommand.PUBSUB_NUMSUB;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
-                {
-                    return RespCommand.PUBSUB_NUMPAT;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.PUBSUB));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.HCOLLECT))
             {
@@ -2557,6 +1927,578 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
             {
                 return RespCommand.DELIFGREATER;
+            }
+            else
+            {
+                ReadOnlySpan<byte> subCommand = default;
+                var oldReadHead = -1;
+
+                if (count > 0)
+                {
+                    if (inlineSubCommand.length != 0)
+                    {
+                        AsciiUtils.ToUpperInPlace(inlineSubCommand.Span);
+                        subCommand = inlineSubCommand.ReadOnlySpan;
+                    }
+                    else
+                    {
+                        oldReadHead = readHead;
+                        // Optimistically advance readHead
+                        subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                        if (!gotSubCommand)
+                        {
+                            commandReceived = false;
+                            return RespCommand.NONE;
+                        }
+                    }
+                }
+
+                if (command.SequenceEqual(CmdStrings.SCRIPT))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.SCRIPT)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.LOAD))
+                    {
+                        return RespCommand.SCRIPT_LOAD;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.FLUSH))
+                    {
+                        return RespCommand.SCRIPT_FLUSH;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.EXISTS))
+                    {
+                        return RespCommand.SCRIPT_EXISTS;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                                Encoding.UTF8.GetString(subCommand),
+                                                nameof(RespCommand.SCRIPT));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.CONFIG))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.CONFIG)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.GET))
+                    {
+                        return RespCommand.CONFIG_GET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
+                    {
+                        return RespCommand.CONFIG_REWRITE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SET))
+                    {
+                        return RespCommand.CONFIG_SET;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.CONFIG));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.CLIENT))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.CLIENT)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.ID))
+                    {
+                        return RespCommand.CLIENT_ID;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.CLIENT_INFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
+                    {
+                        return RespCommand.CLIENT_LIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.KILL))
+                    {
+                        return RespCommand.CLIENT_KILL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                    {
+                        return RespCommand.CLIENT_GETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                    {
+                        return RespCommand.CLIENT_SETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                    {
+                        return RespCommand.CLIENT_SETINFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
+                    {
+                        return RespCommand.CLIENT_UNBLOCK;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.CLIENT));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.COMMAND))
+                {
+                    if (count == 0)
+                    {
+                        return RespCommand.COMMAND;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.COUNT))
+                    {
+                        return RespCommand.COMMAND_COUNT;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.COMMAND_INFO;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.DOCS))
+                    {
+                        return RespCommand.COMMAND_DOCS;
+                    }
+
+                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
+                    {
+                        return RespCommand.COMMAND_GETKEYS;
+                    }
+
+                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
+                    {
+                        return RespCommand.COMMAND_GETKEYSANDFLAGS;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.COMMAND));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.CLUSTER))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.CLUSTER)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.BUMPEPOCH))
+                    {
+                        return RespCommand.CLUSTER_BUMPEPOCH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.FORGET))
+                    {
+                        return RespCommand.CLUSTER_FORGET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.gossip))
+                    {
+                        return RespCommand.CLUSTER_GOSSIP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.CLUSTER_INFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.MEET))
+                    {
+                        return RespCommand.CLUSTER_MEET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.MYID))
+                    {
+                        return RespCommand.CLUSTER_MYID;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.myparentid))
+                    {
+                        return RespCommand.CLUSTER_MYPARENTID;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.NODES))
+                    {
+                        return RespCommand.CLUSTER_NODES;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SHARDS))
+                    {
+                        return RespCommand.CLUSTER_SHARDS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.CLUSTER_RESET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.FAILOVER))
+                    {
+                        return RespCommand.CLUSTER_FAILOVER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTS))
+                    {
+                        return RespCommand.CLUSTER_ADDSLOTS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTSRANGE))
+                    {
+                        return RespCommand.CLUSTER_ADDSLOTSRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.COUNTKEYSINSLOT))
+                    {
+                        return RespCommand.CLUSTER_COUNTKEYSINSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.DELSLOTS))
+                    {
+                        return RespCommand.CLUSTER_DELSLOTS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.DELSLOTSRANGE))
+                    {
+                        return RespCommand.CLUSTER_DELSLOTSRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETKEYSINSLOT))
+                    {
+                        return RespCommand.CLUSTER_GETKEYSINSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.CLUSTER_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.KEYSLOT))
+                    {
+                        return RespCommand.CLUSTER_KEYSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETSLOT))
+                    {
+                        return RespCommand.CLUSTER_SETSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SLOTS))
+                    {
+                        return RespCommand.CLUSTER_SLOTS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.REPLICAS))
+                    {
+                        return RespCommand.CLUSTER_REPLICAS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.REPLICATE))
+                    {
+                        return RespCommand.CLUSTER_REPLICATE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.delkeysinslot))
+                    {
+                        return RespCommand.CLUSTER_DELKEYSINSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.delkeysinslotrange))
+                    {
+                        return RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.setslotsrange))
+                    {
+                        return RespCommand.CLUSTER_SETSLOTSRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.slotstate))
+                    {
+                        return RespCommand.CLUSTER_SLOTSTATE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.publish))
+                    {
+                        return RespCommand.CLUSTER_PUBLISH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.spublish))
+                    {
+                        return RespCommand.CLUSTER_SPUBLISH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
+                    {
+                        return RespCommand.CLUSTER_MIGRATE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.mtasks))
+                    {
+                        return RespCommand.CLUSTER_MTASKS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.aofsync))
+                    {
+                        return RespCommand.CLUSTER_AOFSYNC;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.appendlog))
+                    {
+                        return RespCommand.CLUSTER_APPENDLOG;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.attach_sync))
+                    {
+                        return RespCommand.CLUSTER_ATTACH_SYNC;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.banlist))
+                    {
+                        return RespCommand.CLUSTER_BANLIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.begin_replica_recover))
+                    {
+                        return RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.endpoint))
+                    {
+                        return RespCommand.CLUSTER_ENDPOINT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.failreplicationoffset))
+                    {
+                        return RespCommand.CLUSTER_FAILREPLICATIONOFFSET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
+                    {
+                        return RespCommand.CLUSTER_FAILSTOPWRITES;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
+                    {
+                        return RespCommand.CLUSTER_FLUSHALL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
+                    {
+                        return RespCommand.CLUSTER_SETCONFIGEPOCH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.initiate_replica_sync))
+                    {
+                        return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_file_segment))
+                    {
+                        return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
+                    {
+                        return RespCommand.CLUSTER_SEND_CKPT_METADATA;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
+                    {
+                        return RespCommand.CLUSTER_SYNC;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.CLUSTER));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.LATENCY))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.LATENCY)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.LATENCY_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
+                    {
+                        return RespCommand.LATENCY_HISTOGRAM;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.LATENCY_RESET;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.LATENCY));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.SLOWLOG))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.SLOWLOG)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.SLOWLOG_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GET))
+                    {
+                        return RespCommand.SLOWLOG_GET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LEN))
+                    {
+                        return RespCommand.SLOWLOG_LEN;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.SLOWLOG_RESET;
+                    }
+                }
+                else if (command.SequenceEqual(CmdStrings.MEMORY))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.MEMORY)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
+                    {
+                        return RespCommand.MEMORY_USAGE;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.MEMORY));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.ACL))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.ACL)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.CAT))
+                    {
+                        return RespCommand.ACL_CAT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
+                    {
+                        return RespCommand.ACL_DELUSER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GENPASS))
+                    {
+                        return RespCommand.ACL_GENPASS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
+                    {
+                        return RespCommand.ACL_GETUSER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
+                    {
+                        return RespCommand.ACL_LIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LOAD))
+                    {
+                        return RespCommand.ACL_LOAD;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SAVE))
+                    {
+                        return RespCommand.ACL_SAVE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETUSER))
+                    {
+                        return RespCommand.ACL_SETUSER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.USERS))
+                    {
+                        return RespCommand.ACL_USERS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.WHOAMI))
+                    {
+                        return RespCommand.ACL_WHOAMI;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.ACL));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.MODULE))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.MODULE)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.LOADCS))
+                    {
+                        return RespCommand.MODULE_LOADCS;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.MODULE));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.PUBSUB))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.PUBSUB)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
+                    {
+                        return RespCommand.PUBSUB_CHANNELS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
+                    {
+                        return RespCommand.PUBSUB_NUMSUB;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
+                    {
+                        return RespCommand.PUBSUB_NUMPAT;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.PUBSUB));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+
+                // Reset read head if we didn't match command.
+                if (oldReadHead != -1)
+                {
+                    readHead = oldReadHead;
+                }
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
