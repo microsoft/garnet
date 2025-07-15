@@ -559,6 +559,10 @@ namespace Garnet
         public ConnectionProtectionOption EnableDebugCommand { get; set; }
 
         [OptionValidation]
+        [Option("enable-inline-command", Required = false, HelpText = "Enable inline commands for 'no', 'local' or 'all' connections")]
+        public ConnectionProtectionOption EnableInlineCommands { get; set; }
+
+        [OptionValidation]
         [Option("enable-module-command", Required = false, HelpText = "Enable MODULE command for 'no', 'local' or 'all' connections. Command can only load from paths listed in ExtensionBinPaths")]
         public ConnectionProtectionOption EnableModuleCommand { get; set; }
 
@@ -917,6 +921,7 @@ namespace Garnet
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
                 RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
+                EnableInlineCommands = EnableInlineCommands,
                 EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
