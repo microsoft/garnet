@@ -642,7 +642,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private static readonly ushort crlf = MemoryMarshal.Read<ushort>("\r\n"u8);
+        private static readonly ushort CrLf = MemoryMarshal.Read<ushort>("\r\n"u8);
 
         /// <summary>
         /// Fast-parses for command type, starting at the current read head in the receive buffer
@@ -1404,47 +1404,47 @@ namespace Garnet.server
                                 }
                                 break;
                             case 8:
-                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == crlf)
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.ZREVRANK;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.SMEMBERS;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.BITFIELD;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.EXPIREAT;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.HPEXPIRE;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.HPERSIST;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.ZPEXPIRE;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.ZPERSIST;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.BZPOPMAX;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.BZPOPMIN;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == crlf)
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.SPUBLISH;
                                 }
@@ -1651,22 +1651,22 @@ namespace Garnet.server
                                 break;
 
                             case 14:
-                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == crlf)
+                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == CrLf)
                                 {
                                     return RespCommand.ZREMRANGEBYLEX;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == crlf)
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == CrLf)
                                 {
                                     return RespCommand.GEOSEARCHSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == crlf)
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == CrLf)
                                 {
                                     return RespCommand.ZREVRANGEBYLEX;
                                 }
                                 break;
 
                             case 15:
-                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == crlf)
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == CrLf)
                                 {
                                     return RespCommand.ZREMRANGEBYRANK;
                                 }
@@ -2692,8 +2692,6 @@ namespace Garnet.server
 
             if (cmd != RespCommand.NONE)
             {
-                // Eureka!
-
                 // Set up read pointer past the command.
                 ptr = recvBufferPtr + readHead;
 
@@ -2767,13 +2765,13 @@ namespace Garnet.server
             // We priorize the normal processing, it's better to let inline parsing hack around it.
             // We can exploit the fact that any such short command would be invalid to skip it.
             var tptr = ptr;
-            for (var i = 0; i < MINIMUMPROCESSLENGTH - 1; ++i)
+            for (var i = 0; i < MinimumProcessLength - 1; ++i)
             {
-                if (*(ushort*)tptr++ == crlf)
+                if (*(ushort*)tptr++ == CrLf)
                 {
                     ptr = tptr + 1;
 
-                    if (bytesRead - i < MINIMUMPROCESSLENGTH)
+                    if (bytesRead - i < MinimumProcessLength)
                     {
                         commandReceived = true;
                         readHead = i + 2;
