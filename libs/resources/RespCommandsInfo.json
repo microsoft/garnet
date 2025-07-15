@@ -3285,6 +3285,13 @@
         "Arity": -3,
         "Flags": "Admin, NoAsyncLoading, NoScript",
         "AclCategories": "Admin, Dangerous, Slow"
+      },
+      {
+        "Command": "MODULE_HELP",
+        "Name": "MODULE|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       }
     ]
   },

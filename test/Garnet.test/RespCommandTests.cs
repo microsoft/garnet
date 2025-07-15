@@ -432,6 +432,7 @@ namespace Garnet.test
                 RespCommand.SWAPDB,
                 RespCommand.ECHO,
                 RespCommand.MONITOR,
+                RespCommand.MODULE_HELP,
                 RespCommand.MODULE_LOADCS,
                 RespCommand.REGISTERCS,
                 RespCommand.INFO,

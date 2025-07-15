@@ -236,7 +236,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | PURGE | ➖ |  |
 |  | STATS | ➖ |  |
 |  | [USAGE](server.md#memory-usage) | ➕ |  |
-| <span id="module">**MODULE**</span> | HELP | ➖ |  |
+| <span id="module">**MODULE**</span> | HELP | ➕ |  |
 |  | LIST | ➖ |  |
 |  | LOAD | ➖ |  |
 |  | LOADEX | ➖ |  |

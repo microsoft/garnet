@@ -5500,6 +5500,13 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
+        "Command": "MODULE_HELP",
+        "Name": "MODULE|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "MODULE_LOADCS",
         "Name": "MODULE|LOADCS",
         "Summary": "Load a C# module in Garnet.",

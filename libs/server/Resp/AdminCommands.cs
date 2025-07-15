@@ -72,6 +72,7 @@ namespace Garnet.server
                 RespCommand.ACL_SAVE => NetworkAclSave(),
                 RespCommand.DEBUG => NetworkDebug(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
+                RespCommand.MODULE_HELP => NetworkModuleHelp(),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
                 _ => cmdFound = false
@@ -520,6 +521,27 @@ namespace Garnet.server
                     SendAndReset();
             }
 
+            return true;
+        }
+
+        private bool NetworkModuleHelp()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.HELP)}");
+            }
+
+            if (!CanRunModule())
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
+            }
+
+            WriteHelp(
+                "MODULE <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "LOADCS <path>",
+                "\tLoad a module library from <path>",
+                "HELP",
+                "\tPrint this help.");
             return true;
         }
 
