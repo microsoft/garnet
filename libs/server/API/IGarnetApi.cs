@@ -240,7 +240,7 @@ namespace Garnet.server
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <summary>
-        /// Increment (INCR, INCRBY, DECR, DECRBY)
+        /// Increment (INCR, INCRBY, INCRBYFLOAT, DECR, DECRBY)
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -265,6 +265,24 @@ namespace Garnet.server
         /// <param name="decrementCount"></param>
         /// <returns></returns>
         GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1);
+
+        /// <summary>
+        /// Increment by float (INCRBYFLOAT)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="val"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val);
+
+        /// <summary>
+        /// Increment by float (INCRBYFLOAT)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="outputDbl"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        GarnetStatus IncrementByFloat(ArgSlice key, out double outputDbl, double val);
         #endregion
 
         #region DELETE
