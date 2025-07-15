@@ -246,12 +246,7 @@ namespace Garnet.server
                     CopyUpdateNumber(decrBy, ref value, ref output);
                     break;
                 case RespCommand.INCRBYFLOAT:
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
-                    {
-                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                        return true;
-                    }
+                    var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     CopyUpdateNumber(incrByFloat, ref value, ref output);
                     break;
                 default:
@@ -666,14 +661,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCRBYFLOAT:
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
-                    {
-                        output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                        // reset etag state that may have been initialized earlier
-                        EtagState.ResetState(ref functionsState.etagState);
-                        return true;
-                    }
+                    var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     if (!TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, incrByFloat, functionsState.etagState.etagSkippedStart))
                         return false;
                     break;
@@ -1273,13 +1261,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCRBYFLOAT:
-                    // Check if input contains a valid number
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
-                    {
-                        // Move to tail of the log
-                        oldValue.CopyTo(ref newValue);
-                        break;
-                    }
+                    var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrByFloat, functionsState.etagState.etagSkippedStart);
                     break;
 
