@@ -2231,7 +2231,7 @@ namespace Garnet.test
             SortedSetEntry[] values1_1 = [new SortedSetEntry("val1_1", 1.1), new SortedSetEntry("val1_2", 1.2)];
             SortedSetEntry[] values1_2 = [new SortedSetEntry("val1_3", 1.3), new SortedSetEntry("val1_4", 1.4)];
             SortedSetEntry[] values2_1 = [new SortedSetEntry("val2_1", 2.1), new SortedSetEntry("val2_2", 2.2)];
-            SortedSetEntry[] values2_2 = [new SortedSetEntry("val2_3", 2.2), new SortedSetEntry("val2_4", 2.4)];
+            SortedSetEntry[] values2_2 = [new SortedSetEntry("val2_3", 2.3), new SortedSetEntry("val2_4", 2.4)];
 
             var expireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
 
