@@ -38,7 +38,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="expirationTimeInMs">Unix expiration timestamp in milliseconds</param>
         /// <param name="expirationOption">Expiration option</param>
-        /// <returns>Encoded tail & head of expiration time and expiration option</returns>
+        /// <returns>Encoded tail and head of expiration time and expiration option</returns>
         internal static (int encodedTail, int encodedHead) EncodeExpirationToTwoInt32(long expirationTimeInMs, ExpireOption expirationOption)
         {
             // Encode the expiration time and expiration option into two int32 values.
