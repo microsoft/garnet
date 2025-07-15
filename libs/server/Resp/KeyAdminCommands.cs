@@ -397,10 +397,6 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            // Convert to milliseconds
-            if (command == RespCommand.EXPIRE)
-                timeout *= 1000;
-
             var expireOption = ExpireOption.None;
             if (parseState.Count > 2)
             {
@@ -439,7 +435,14 @@ namespace Garnet.server
                 }
             }
 
+            // Convert timeout to milliseconds
+            if (command == RespCommand.EXPIRE)
+                timeout *= 1000;
+
+            // Convert to expiration time
             var expirationInMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + timeout;
+
+            // Encode expiration time and expiration option and pass them into the input object
             var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationInMs, expireOption);
 
             var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
@@ -481,10 +484,6 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            // Convert to unix-time-milliseconds
-            if (command == RespCommand.EXPIREAT)
-                expiration *= 1000;
-
             var expireOption = ExpireOption.None;
 
             if (parseState.Count > 2)
@@ -521,7 +520,13 @@ namespace Garnet.server
                 }
             }
 
+            // Convert expiration to milliseconds
+            if (command == RespCommand.EXPIREAT)
+                expiration *= 1000;
+
+            // Encode expiration time and expiration option and pass them into the input object
             var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expiration, expireOption);
+
             var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 

@@ -604,13 +604,6 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
             }
 
-            // Convert to unix-time-milliseconds
-            if (command == RespCommand.HEXPIRE || command == RespCommand.HEXPIREAT)
-                expiration *= 1000;
-
-            if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
-                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
             var currIdx = 2;
             if (parseState.TryGetExpireOption(currIdx, out var expireOption))
             {
@@ -633,6 +626,15 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
             }
 
+            // Convert expiration to milliseconds
+            if (command == RespCommand.HEXPIRE || command == RespCommand.HEXPIREAT)
+                expiration *= 1000;
+            
+            // Convert to expiration time
+            if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
+                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            // Encode expiration time and expiration option and pass them into the input object
             var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
 
             // Prepare input
