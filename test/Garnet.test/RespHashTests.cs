@@ -428,6 +428,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
             Assert.Throws<RedisServerException>(() => db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 4));
+            Assert.Throws<RedisServerException>(() => db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), double.PositiveInfinity));
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-3, result);
             //new Key

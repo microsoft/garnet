@@ -503,5 +503,25 @@ namespace Garnet.common
             return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length;
         }
+
+        /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out double, out int, char)" path="//*[not(self::summary)]"/>
+        /// <summary>
+        /// Parses a Double at the start of a Utf8 string, including RESP's infinity format
+        /// </summary>
+        /// <remarks>
+        /// Formats supported:
+        ///     G/g  (default)
+        ///     F/f             12.45       Fixed point
+        ///     E/e             1.245000e1  Exponential
+        ///     [+-]inf         plus/minus infinity
+        /// </remarks>
+        public static bool TryParseWithInfinity(ReadOnlySpan<byte> source, out double value)
+        {
+            if (Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
+                bytesConsumed == source.Length)
+                return true;
+
+            return RespReadUtils.TryReadInfinity(source, out value);
+        }
     }
 }
