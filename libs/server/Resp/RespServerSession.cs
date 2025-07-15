@@ -435,6 +435,16 @@ namespace Garnet.server
                     networkSender.IsLocalConnection());
         }
 
+        internal bool CanRunInlineCommands()
+        {
+            var enableInlineCommands = storeWrapper.serverOptions.EnableInlineCommands;
+
+            return
+                (enableInlineCommands == ConnectionProtectionOption.Yes) ||
+                ((enableInlineCommands == ConnectionProtectionOption.Local) &&
+                    networkSender.IsLocalConnection());
+        }
+
         internal bool CanRunModule()
         {
             var enableModuleCommand = storeWrapper.serverOptions.EnableModuleCommand;

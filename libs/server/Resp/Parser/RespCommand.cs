@@ -2497,6 +2497,29 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Attempts to skip to the end of the line ("\r\n") under the current read head.
+        /// </summary>
+        /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
+        private bool AttemptSkipLine()
+        {
+            // We might have received an inline command package.Try to find the end of the line.
+            logger?.LogWarning("Received malformed input message. Trying to skip line.");
+
+            for (var stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
+            {
+                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
+                {
+                    // Skip to the end of the string
+                    readHead = endReadHead = stringEnd + 2;
+                    return true;
+                }
+            }
+
+            // We received an incomplete string and require more input.
+            return false;
+        }
+
+        /// <summary>
         /// Try to parse a command out of a provided buffer.
         ///
         /// Useful for when we have a command to validate somewhere, but aren't actually running it.
@@ -2641,7 +2664,7 @@ namespace Garnet.server
 
                 readHead = (int)(ptr - recvBufferPtr);
             }
-            else
+            else if (CanRunInlineCommands())
             {
                 // This may be an inline command string. We'll parse it and convert a part to a RESP command string,
                 // which is then parsed to get the command.
@@ -2678,6 +2701,12 @@ namespace Garnet.server
                 // Note that arguments are initialized from the actual command string, and not our made-up RESP string.
                 parseState.InitializeWithArguments(result[(result.Length - count)..]);
             }
+            else
+            {
+                commandReceived = AttemptSkipLine();
+                return RespCommand.INVALID;
+            }
+
             endReadHead = readHead;
 
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
