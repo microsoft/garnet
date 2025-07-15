@@ -594,34 +594,22 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            long expireAt = 0;
-            var isMilliseconds = false;
-            if (!parseState.TryGetLong(1, out expireAt))
+            if (!parseState.TryGetLong(1, out var expiration))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            if (expireAt < 0)
+            if (expiration < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
             }
 
-            switch (command)
-            {
-                case RespCommand.HEXPIRE:
-                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expireAt;
-                    isMilliseconds = false;
-                    break;
-                case RespCommand.HPEXPIRE:
-                    expireAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expireAt;
-                    isMilliseconds = true;
-                    break;
-                case RespCommand.HPEXPIREAT:
-                    isMilliseconds = true;
-                    break;
-                default: // RespCommand.HEXPIREAT
-                    break;
-            }
+            // Convert to unix-time-milliseconds
+            if (command == RespCommand.HEXPIRE || command == RespCommand.HEXPIREAT)
+                expiration *= 1000;
+
+            if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
+                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var currIdx = 2;
             if (parseState.TryGetExpireOption(currIdx, out var expireOption))
@@ -645,15 +633,15 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
             }
 
-            var fieldsParseState = parseState.Slice(currIdx, numFields);
+            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
-            var input = new ObjectInput(header, ref fieldsParseState);
+            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, arg1: encExpirationTail, arg2: encExpirationHead);
 
             var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref output);
+            var status = storageApi.HashExpire(key, ref input, ref output);
 
             switch (status)
             {

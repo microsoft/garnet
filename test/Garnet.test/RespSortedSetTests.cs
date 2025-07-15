@@ -1983,7 +1983,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.SortedSetAdd("mysortedset", [new SortedSetEntry("member1", 1), new SortedSetEntry("member2", 2), new SortedSetEntry("member3", 3), new SortedSetEntry("member4", 4), new SortedSetEntry("member5", 5), new SortedSetEntry("member6", 6)]);
 
-            var result = db.Execute("ZEXPIRE", "mysortedset", "10", "MEMBERS", "3", "member1", "member5", "nonexistmember");
+            var result = db.Execute("ZEXPIRE", "mysortedset", "3", "MEMBERS", "3", "member1", "member5", "nonexistmember");
             var results = (RedisResult[])result;
             ClassicAssert.AreEqual(3, results.Length);
             ClassicAssert.AreEqual(1, (long)results[0]);

@@ -1754,31 +1754,14 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetLong(1, out var expireAt))
+            if (!parseState.TryGetLong(1, out var expiration))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            if (expireAt < 0)
+            if (expiration < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
-            }
-
-            var inputFlag = SortedSetExpireInputFlags.Default;
-            switch (command)
-            {
-                case RespCommand.ZPEXPIRE:
-                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
-                    break;
-                case RespCommand.ZEXPIREAT:
-                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
-                    break;
-                case RespCommand.ZPEXPIREAT:
-                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
-                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
-                    break;
-                default: // RespCommand.ZEXPIRE
-                    break;
             }
 
             var currIdx = 2;
@@ -1803,8 +1786,17 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
             }
 
+            // Convert to unix-time-milliseconds
+            if (command == RespCommand.ZEXPIRE || command == RespCommand.ZEXPIREAT)
+                expiration *= 1000;
+
+            if (command == RespCommand.ZEXPIRE || command == RespCommand.ZPEXPIRE)
+                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
+
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
+            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, encExpirationTail, encExpirationHead);
 
             var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 

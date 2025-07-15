@@ -884,48 +884,13 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            var expireOption = (ExpireOption)input.arg1;
-            var inputFlags = (SortedSetExpireInputFlags)input.arg2;
-            var isInMilliseconds = inputFlags.HasFlag(SortedSetExpireInputFlags.InMilliseconds);
-            var isInTimestamp = inputFlags.HasFlag(SortedSetExpireInputFlags.InTimestamp);
-            var idx = 0;
-            var expiration = input.parseState.GetLong(idx++);
-
-            // Convert to UTC ticks
-            if (isInMilliseconds && isInTimestamp)
-            {
-                expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
-            }
-            else if (isInMilliseconds)
-            {
-                expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiration);
-            }
-            else if (isInTimestamp)
-            {
-                expiration = ConvertUtils.UnixTimestampInSecondsToTicks(expiration);
-            }
-            else
-            {
-                expiration = ConvertUtils.UnixTimestampInSecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiration);
-            }
-
-            if (!inputFlags.HasFlag(SortedSetExpireInputFlags.NoSkip))
-            {
-                if (expireOption != ExpireOption.None)
-                {
-                    idx++;
-                }
-
-                idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the validation is done in the caller
-            }
-
-            var numFields = input.parseState.Count - idx;
+            var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
+            expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteArrayLength(input.parseState.Count);
 
-            writer.WriteArrayLength(numFields);
-
-            foreach (var item in input.parseState.Parameters.Slice(idx))
+            foreach (var item in input.parseState.Parameters)
             {
                 var result = SetExpiration(item.ToArray(), expiration, expireOption);
                 writer.WriteInt32(result);
