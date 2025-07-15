@@ -258,6 +258,7 @@ namespace Garnet.server
 
         MONITOR,
         MODULE,
+        MODULE_HELP,
         MODULE_LOADCS,
         REGISTERCS,
 
@@ -411,6 +412,7 @@ namespace Garnet.server
             RespCommand.SWAPDB,
             RespCommand.ECHO,
             RespCommand.MONITOR,
+            RespCommand.MODULE_HELP,
             RespCommand.MODULE_LOADCS,
             RespCommand.REGISTERCS,
             RespCommand.INFO,
@@ -2499,6 +2501,11 @@ namespace Garnet.server
                 if (subCommand.SequenceEqual(CmdStrings.LOADCS))
                 {
                     return RespCommand.MODULE_LOADCS;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.MODULE_HELP;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,

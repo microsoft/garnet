@@ -222,6 +222,7 @@ namespace CommandInfoUpdater
             new("PURGEBP", RespCommand.PURGEBP),
             new("MODULE", RespCommand.MODULE,
             [
+                new("MODULE|HELP", RespCommand.MODULE_HELP),
                 new("MODULE|LOADCS", RespCommand.MODULE_LOADCS),
             ]),
             new("MONITOR", RespCommand.MONITOR),
