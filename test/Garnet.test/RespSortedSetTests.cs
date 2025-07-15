@@ -78,7 +78,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -2220,6 +2220,82 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(1, (long)result[1]); // no TTL = infinite
                     ClassicAssert.AreEqual(1, (long)result[2]); // 4 < 6
                     break;
+            }
+        }
+
+        [Test]
+        public void CanDoSortedSetExpireWithAofRecovery()
+        {
+            var key1 = "key1";
+            var key2 = "key2";
+            SortedSetEntry[] values1_1 = [new SortedSetEntry("val1_1", 1.1), new SortedSetEntry("val1_2", 1.2)];
+            SortedSetEntry[] values1_2 = [new SortedSetEntry("val1_3", 1.3), new SortedSetEntry("val1_4", 1.4)];
+            SortedSetEntry[] values2_1 = [new SortedSetEntry("val2_1", 2.1), new SortedSetEntry("val2_2", 2.2)];
+            SortedSetEntry[] values2_2 = [new SortedSetEntry("val2_3", 2.2), new SortedSetEntry("val2_4", 2.4)];
+
+            var expireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.SortedSetAdd(key1, values1_1);
+                db.Execute("ZEXPIREAT", key1, expireTime.ToUnixTimeSeconds(), "MEMBERS", 1, "val1_1");
+                db.SortedSetAdd(key2, values2_1);
+                db.Execute("ZEXPIRE", key2, 1, "MEMBERS", 1, "val2_1");
+                Thread.Sleep(2000);
+
+                db.SortedSetAdd(key1, values1_2);
+                db.SortedSetAdd(key2, values2_2);
+                db.Execute("ZPEXPIRE", key2, 15000, "MEMBERS", 1, "val2_2");
+                Thread.Sleep(2000);
+
+                var recoveredValues = db.SortedSetRangeByScoreWithScores(key1);
+                CollectionAssert.AreEqual(values1_1.Union(values1_2), recoveredValues);
+                var recoveredValuesExpTime = (RedisResult[])db.Execute("ZEXPIRETIME", key1, "MEMBERS", 2, "val1_1", "val1_2");
+                ClassicAssert.IsNotNull(recoveredValuesExpTime);
+                ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
+                ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
+
+                recoveredValues = db.SortedSetRangeByScoreWithScores(key2);
+                CollectionAssert.AreEqual(values2_1.Skip(1).Union(values2_2), recoveredValues);
+                var recoveredValuesTtl = (RedisResult[])db.Execute("ZTTL", key2, "MEMBERS", 4, "val2_1", "val2_2", "val2_3", "val2_4");
+                ClassicAssert.IsNotNull(recoveredValuesTtl);
+                ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
+                ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
+                ClassicAssert.Less((long)recoveredValuesTtl[1], 13);
+                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                var recoveredValues = db.SortedSetRangeByScoreWithScores(key1);
+                CollectionAssert.AreEqual(values1_1.Union(values1_2), recoveredValues);
+                var recoveredValuesExpTime = (RedisResult[])db.Execute("ZEXPIRETIME", key1, "MEMBERS", 2, "val1_1", "val1_2");
+                ClassicAssert.IsNotNull(recoveredValuesExpTime);
+                ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
+                ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
+
+                recoveredValues = db.SortedSetRangeByScoreWithScores(key2);
+                CollectionAssert.AreEqual(values2_1.Skip(1).Union(values2_2), recoveredValues);
+                var recoveredValuesTtl = (RedisResult[])db.Execute("ZPTTL", key2, "MEMBERS", 4, "val2_1", "val2_2", "val2_3", "val2_4");
+                ClassicAssert.IsNotNull(recoveredValuesTtl);
+                ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
+                ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
+                ClassicAssert.Less((long)recoveredValuesTtl[1], 13000);
+                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }
         }
 
