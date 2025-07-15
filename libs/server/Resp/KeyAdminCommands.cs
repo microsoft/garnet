@@ -442,7 +442,7 @@ namespace Garnet.server
             var expirationInMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + timeout;
             var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationInMs, expireOption);
 
-            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: encodedExpiration);
+            var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
@@ -522,7 +522,7 @@ namespace Garnet.server
             }
 
             var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expiration, expireOption);
-            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: encodedExpiration);
+            var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)

@@ -20,7 +20,6 @@ namespace Garnet.server
             switch (type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
                 case GarnetObjectType.DelIfExpIm:
                     return false;
@@ -57,7 +56,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
@@ -118,14 +117,13 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
                     var expiryExists = value.Expiration > 0;
 
                     var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
 
-                    // Convert to ticks
-                    expiration *= 10000;
-                    
+                    // Convert to .NET ticks
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
+
                     return EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -216,13 +214,12 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
                     var expiryExists = value.Expiration > 0;
 
                     var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
 
-                    // Convert to ticks
-                    expiration *= 10000;
+                    // Convert to .NET ticks
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
 
                     EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
                     break;

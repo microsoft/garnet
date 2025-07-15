@@ -21,9 +21,6 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIRE:
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
                 case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
@@ -172,9 +169,6 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIRE:
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.PERSIST:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
@@ -586,16 +580,13 @@ namespace Garnet.server
 
                     break;
 
-                case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIREAT:
-                case RespCommand.EXPIREAT:
                     var expiryExists = value.MetadataSize > 0;
 
                     var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
 
-                    // Convert to ticks
-                    expiration *= 10000;
+                    // Convert to .NET ticks
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
 
                     // reset etag state that may have been initialized earlier
                     EtagState.ResetState(ref functionsState.etagState);
@@ -1195,33 +1186,16 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIRE:
                     shouldUpdateEtag = false;
 
                     var expiryExists = oldValue.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetLong(0);
-                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
-                        ? TimeSpan.FromSeconds(expiryValue)
-                        : TimeSpan.FromMilliseconds(expiryValue);
-                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    var expireOption = (ExpireOption)input.arg1;
+                    var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
 
-                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
-                    break;
+                    // Convert to .NET ticks
+                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
 
-                case RespCommand.PEXPIREAT:
-                case RespCommand.EXPIREAT:
-                    expiryExists = oldValue.MetadataSize > 0;
-                    shouldUpdateEtag = false;
-
-                    var expiryTimestamp = input.parseState.GetLong(0);
-                    expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
-                        ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
-                        : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
-                    expireOption = (ExpireOption)input.arg1;
-
-                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
+                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiration, ref oldValue, ref newValue, ref output);
                     break;
 
                 case RespCommand.PERSIST:
@@ -1401,7 +1375,7 @@ namespace Garnet.server
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        var expiration = input.arg1;
+                        expiration = input.arg1;
                         if (expiration == 0)
                         {
                             // We want to retain the old metadata

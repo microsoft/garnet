@@ -937,17 +937,13 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                var respCommand = input.header.cmd;
+                var header = new RespInputHeader(GarnetObjectType.Expire);
 
-                var type = (respCommand == RespCommand.PEXPIRE || respCommand == RespCommand.PEXPIREAT)
-                    ? GarnetObjectType.PExpire
-                    : GarnetObjectType.Expire;
+                // Re-encode expiration and expiration option as two integers instead of a long
+                var (expiration, expirationOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
+                var (tail, head) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expirationOption);
 
-                var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
-
-                var header = new RespInputHeader(type);
-
-                var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
+                var objInput = new ObjectInput(header, arg1: tail, arg2: head);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput(output);
@@ -1046,7 +1042,7 @@ namespace Garnet.server
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expiration, expireOption);
-                var input = new RawStringInput(respCommand, arg1: encodedExpiration);
+                var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
 
                 var _key = key.SpanByte;
                 var status = context.RMW(ref _key, ref input, ref output);
@@ -1059,15 +1055,11 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                var type = (respCommand == RespCommand.PEXPIRE || respCommand == RespCommand.PEXPIREAT)
-                    ? GarnetObjectType.PExpire
-                    : GarnetObjectType.Expire;
-
                 var (encodedExpirationHead, encodedExpirationTail) =
                     ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
 
-                var header = new RespInputHeader(type);
-                var objInput = new ObjectInput(header, ref parseState, arg1: encodedExpirationHead, arg2: encodedExpirationTail);
+                var header = new RespInputHeader(GarnetObjectType.Expire);
+                var objInput = new ObjectInput(header, arg1: encodedExpirationHead, arg2: encodedExpirationTail);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput(output);
