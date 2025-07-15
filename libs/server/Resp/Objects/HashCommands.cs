@@ -629,7 +629,7 @@ namespace Garnet.server
             // Convert expiration to milliseconds
             if (command == RespCommand.HEXPIRE || command == RespCommand.HEXPIREAT)
                 expiration *= 1000;
-            
+
             // Convert to expiration time
             if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
                 expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
