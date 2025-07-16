@@ -77,7 +77,8 @@ namespace Garnet.test
             ];
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
-                enableModuleCommand: true, extensionBinPaths: [extTestDir]);
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
+                extensionBinPaths: [extTestDir]);
             server.Start();
         }
 
