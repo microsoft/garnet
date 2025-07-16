@@ -9,6 +9,7 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [NonParallelizable]
     [TestFixture]
     public class InlineCommandlineTests
     {
@@ -33,15 +34,16 @@ namespace Garnet.test
         public void TearDown()
         {
             server.Dispose();
+            client.Close();
             client.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private async Task<string> Send(string message, string suffix = "\r\n")
         {
-            _ = await client.SendAsync(Encoding.UTF8.GetBytes(message + suffix));
+            _ = await client.SendAsync(Encoding.ASCII.GetBytes(message + suffix));
             var received = await client.ReceiveAsync(buffer, SocketFlags.None);
-            return Encoding.UTF8.GetString(buffer, 0, received);
+            return Encoding.ASCII.GetString(buffer, 0, received);
         }
 
         [Test]
@@ -72,7 +74,7 @@ namespace Garnet.test
             // Should fail due to missing argument. We test such failures to ensure
             // readhead is not messed up and commands can be placed afterwards.
             response = await Send("CLIENT");
-            ClassicAssert.AreEqual('-', response[0]);
+            ClassicAssert.AreEqual("-ERR wrong number of arguments for 'CLIENT' command\r\n", response);
 
             // Test client name was actually set
             response = await Send("CLIENT GETNAME");
@@ -86,7 +88,7 @@ namespace Garnet.test
             response = await Send("PING\nPING");
             ClassicAssert.AreEqual("+PONG\r\n+PONG\r\n", response);
             // CR is a valid separator
-            response = await Send("PING\rPING");
+            response = await Send("PING\rPING", "\n");
             ClassicAssert.AreEqual("$4\r\nPING\r\n", response);
             // As is TAB
             response = await Send("PING\tPING");
@@ -94,7 +96,7 @@ namespace Garnet.test
 
             // Test command failure
             response = await Send("PIN");
-            ClassicAssert.AreEqual('-', response[0]);
+            ClassicAssert.AreEqual("-ERR unknown command\r\n", response);
 
             // Test ordinary commands
             response = await Send($"SET {key} {value}");
@@ -108,7 +110,7 @@ namespace Garnet.test
 
             // Test command failure in normal RESP doesn't interfere
             response = await Send("*1\r\n$3\r\nPIN");
-            ClassicAssert.AreEqual('-', response[0]);
+            ClassicAssert.AreEqual("-ERR unknown command\r\n", response);
 
             // Test quit
             response = await Send("QUIT");
@@ -137,7 +139,7 @@ namespace Garnet.test
 
             // This should lead to quoting failure
             response = await Send(@"PING ""\\\""");
-            ClassicAssert.AreEqual('-', response[0]);
+            ClassicAssert.AreEqual("-ERR Protocol error: unbalanced quotes in request\r\n", response);
             // This should work
             response = await Send(@"PING ""\\\\""");
             ClassicAssert.AreEqual("$2\r\n\\\\\r\n", response);
@@ -158,6 +160,7 @@ namespace Garnet.test
             // Test escapes in command position
             response = await Send(@"""\x50\x49\x4E\x47""");
             ClassicAssert.AreEqual("+PONG\r\n", response);
+            // Test escapes for lowercase characters
             response = await Send(@"""P\i\x6Eg""");
             ClassicAssert.AreEqual("+PONG\r\n", response);
 
@@ -181,7 +184,7 @@ namespace Garnet.test
             // We need to test failures too to be sure readHead is reset right,
             // and that there are no leftovers that would interfere with future commands.
             response = await Send("PING 'unfinished quote");
-            ClassicAssert.AreEqual('-', response[0]);
+            ClassicAssert.AreEqual("-ERR Protocol error: unbalanced quotes in request\r\n", response);
 
             // Test empty and short strings
             response = await Send("ECHO ''");
@@ -191,7 +194,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual("$1\r\na\r\n", response);
 
             // We can even accept commands formed like this
-            response = await Send("\"PING\"\tword ");
+            response = await Send("\"PING\" word");
             ClassicAssert.AreEqual("$4\r\nword\r\n", response);
             response = await Send("PINg \"hello 'world'!\"");
             ClassicAssert.AreEqual("$14\r\nhello 'world'!\r\n", response);
@@ -201,6 +204,61 @@ namespace Garnet.test
             // Extension
             response = await Send("PING '\"'\"''");
             ClassicAssert.AreEqual("$4\r\n\"'\"'\r\n", response);
+        }
+
+        [Test]
+        public async Task InlineCommandShortlinesTest()
+        {
+            var oldTimeout = client.ReceiveTimeout;
+            client.ReceiveTimeout = 100;
+
+            await client.ConnectAsync(TestUtils.EndPoint);
+
+            _ = await client.SendAsync(Encoding.ASCII.GetBytes("\r\n"));
+            try
+            {
+                _ = client.Receive(buffer);
+                Assert.Fail("This should timeout since buffer is not long enough");
+            }
+            catch (SocketException ex)
+            {
+                // We expect nothing to be emitted.
+                ClassicAssert.AreEqual(SocketError.TimedOut, ex.SocketErrorCode);
+            }
+
+            _ = await client.SendAsync(Encoding.ASCII.GetBytes("PI"));
+            try
+            {
+                _ = client.Receive(buffer);
+                Assert.Fail("This should timeout since buffer is not long enough");
+            }
+            catch (SocketException ex)
+            {
+                // We expect nothing to be emitted.
+                ClassicAssert.AreEqual(SocketError.TimedOut, ex.SocketErrorCode);
+            }
+
+            // Because there was no linefeed separator for "PI", we should be able to
+            // complete the command.
+            var response = await Send("NG", "\n");
+            ClassicAssert.AreEqual("+PONG\r\n", response);
+
+            _ = await client.SendAsync(Encoding.ASCII.GetBytes("A\r\n"));
+            try
+            {
+                _ = client.Receive(buffer);
+                Assert.Fail("This should timeout since buffer is not long enough");
+            }
+            catch (SocketException ex)
+            {
+                // We expect nothing to be emitted due to minimum processing length.
+                ClassicAssert.AreEqual(SocketError.TimedOut, ex.SocketErrorCode);
+            }
+
+            response = await Send("PING");
+            ClassicAssert.AreEqual("+PONG\r\n", response);
+
+            client.ReceiveTimeout = oldTimeout;
         }
     }
 }
