@@ -20,6 +20,9 @@ RUN dotnet restore && \
     dotnet build -c Release -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false && \
     dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
+# Delete xmldoc files
+RUN pwsh -Command "gci -Path /app -Filter '*.xml' -Recurse | del -Force"
+
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-$TAG AS runtime
 WORKDIR /app
