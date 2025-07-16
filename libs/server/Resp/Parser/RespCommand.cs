@@ -2506,7 +2506,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Attempts to skip to the end of the line ("\n") under the current read head.
+        /// Attempts to skip to the end of the line ("\r\n") under the current read head.
         /// </summary>
         /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
         private bool AttemptSkipLine()
@@ -2514,12 +2514,12 @@ namespace Garnet.server
             // We might have received an inline command package.Try to find the end of the line.
             logger?.LogWarning("Received malformed input message. Trying to skip line.");
 
-            for (var stringEnd = readHead; stringEnd < bytesRead; stringEnd++)
+            for (var stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
             {
-                if (recvBufferPtr[stringEnd] == '\n')
+                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
                 {
                     // Skip to the end of the string
-                    readHead = endReadHead = stringEnd + 1;
+                    readHead = endReadHead = stringEnd + 2;
                     return true;
                 }
             }
@@ -2738,17 +2738,16 @@ namespace Garnet.server
             // Normal RESP processing is prioritzed, so let's keep the minimum as is.
             // We can exploit the fact that any such short command would be invalid.
             var tptr = ptr;
-            var anyContents = false;
             for (var i = 0; i < MinimumProcessLength - 1; ++i)
             {
-                if (*tptr == '\n')
+                if (*(ushort*)tptr++ == CrLf)
                 {
-                    ptr = tptr;
-                    readHead = i + 1;
+                    ptr = tptr + 1;
 
-                    if (anyContents && (bytesRead - i < MinimumProcessLength))
+                    if (bytesRead - i < MinimumProcessLength)
                     {
                         commandReceived = true;
+                        readHead = i + 2;
                         if (writeErrorOnFailure)
                         {
                             while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
@@ -2758,12 +2757,6 @@ namespace Garnet.server
                     }
                     break;
                 }
-                else if (!AsciiUtils.IsRedisWhiteSpace(*tptr))
-                {
-                    anyContents = true;
-                }
-
-                tptr++;
             }
 
             // We might have received an inline command package. Try parsing it.
