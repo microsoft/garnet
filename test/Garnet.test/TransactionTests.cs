@@ -257,6 +257,19 @@ namespace Garnet.test
                     RespCommand.HCOLLECT,
                     RespCommand.ZCOLLECT,
 
+                    // Decided to not support,
+                    RespCommand.CONFIG_GET,
+                    RespCommand.CONFIG_REWRITE,
+                    RespCommand.CONFIG_SET,
+                    RespCommand.CLIENT_KILL,
+                    RespCommand.FLUSHALL,
+                    RespCommand.FLUSHDB,
+                    RespCommand.HELLO,
+                    RespCommand.LATENCY_RESET,
+                    RespCommand.REPLICAOF,
+                    RespCommand.SECONDARYOF,
+                    RespCommand.SLOWLOG_RESET,
+
                     // SELECT / SWAPDB currently not allowed during TXN
                     RespCommand.SELECT,
                     RespCommand.SWAPDB,
