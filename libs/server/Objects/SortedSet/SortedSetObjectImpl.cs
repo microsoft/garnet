@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -150,6 +149,12 @@ namespace Garnet.server
                         {
                             score += scoreStored;
                             incrResult = score;
+
+                            if (double.IsNaN(score))
+                            {
+                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                                return;
+                            }
                         }
 
                         // No need for update
@@ -328,9 +333,17 @@ namespace Garnet.server
 
             if (sortedSetDict.TryGetValue(member, out var score))
             {
-                sortedSetDict[member] += incrValue;
+                var result = score + incrValue;
+
+                if (double.IsNaN(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                    return;
+                }
+
+                sortedSetDict[member] = result;
                 sortedSet.Remove((score, member));
-                sortedSet.Add((sortedSetDict[member], member));
+                sortedSet.Add((result, member));
             }
             else
             {
@@ -1039,8 +1052,10 @@ namespace Garnet.server
             }
             catch (ArgumentException)
             {
-                // this exception is thrown when the SortedSet is empty
-                Debug.Assert(sortedSet.Count == 0);
+                // this exception is thrown when the SortedSet is empty or
+                // when the supplied minimum is larger than the sortedset maximum.
+                Debug.Assert(sortedSet.Count == 0 ||
+                             new ReadOnlySpan<byte>(sortedSet.Max.Element).SequenceCompareTo(minValueChars) < 0);
             }
 
             errorCode = 0;
@@ -1112,7 +1127,7 @@ namespace Garnet.server
         #region HelperMethods
 
         /// <summary>
-        /// Helper method to parse parameters min and max
+        /// Helper method to parse parameters min and max and exclusions
         /// in commands including +inf -inf
         /// </summary>
         private static bool TryParseParameter(ReadOnlySpan<byte> val, out double valueDouble, out bool exclusive)
@@ -1126,24 +1141,13 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            if (NumUtils.TryParse(val, out valueDouble))
+            if (NumUtils.TryParseWithInfinity(val, out valueDouble))
             {
+                if (exclusive && double.IsInfinity(valueDouble))
+                    exclusive = false;
                 return true;
             }
 
-            var strVal = Encoding.ASCII.GetString(val);
-            if (string.Equals("+inf", strVal, StringComparison.OrdinalIgnoreCase))
-            {
-                valueDouble = double.PositiveInfinity;
-                exclusive = false;
-                return true;
-            }
-            else if (string.Equals("-inf", strVal, StringComparison.OrdinalIgnoreCase))
-            {
-                valueDouble = double.NegativeInfinity;
-                exclusive = false;
-                return true;
-            }
             return false;
         }
 

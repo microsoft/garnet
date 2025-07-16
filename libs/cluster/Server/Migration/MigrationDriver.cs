@@ -54,6 +54,8 @@ namespace Garnet.cluster
             var configResumed = true;
             try
             {
+                clusterProvider.storeWrapper.store.PauseRevivification();
+
                 // Set target node to import state
                 if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
                 {
@@ -78,7 +80,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 // Migrate actual data
-                if (!MigrateSlotsDriver())
+                if (!MigrateSlotsDriverInline())
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
@@ -128,6 +130,7 @@ namespace Garnet.cluster
             }
             finally
             {
+                clusterProvider.storeWrapper.store.ResumeRevivification();
                 if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
                 _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
             }

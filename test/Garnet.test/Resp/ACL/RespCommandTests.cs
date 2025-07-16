@@ -33,7 +33,8 @@ namespace Garnet.test.Resp.ACL
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword,
-                                                  useAcl: true, enableLua: true, enableModuleCommand: true);
+                                                  useAcl: true, enableLua: true,
+                                                  enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));

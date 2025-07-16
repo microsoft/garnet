@@ -25,7 +25,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
-                enableModuleCommand: true,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
                 extensionBinPaths: [testModuleDir, binPath],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
@@ -386,7 +386,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disableObjects: true,
                 disablePubSub: true,
-                enableModuleCommand: true,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
                 extensionBinPaths: null,
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
@@ -415,7 +415,7 @@ namespace Garnet.test
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disableObjects: true,
                 disablePubSub: true,
-                enableModuleCommand: false,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.No,
                 extensionBinPaths: [testModuleDir, binPath],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
