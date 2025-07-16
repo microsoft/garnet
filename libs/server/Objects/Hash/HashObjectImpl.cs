@@ -6,7 +6,10 @@ using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
+using Tsavorite.core;
+
 
 #if NET9_0_OR_GREATER
 using ByteSpan = System.ReadOnlySpan<byte>;
@@ -66,7 +69,7 @@ namespace Garnet.server
 
             writer.WriteMapLength(Count());
 
-            var isExpirable = HasExpirableItems();
+            var isExpirable = HasExpirableItems;
 
             foreach (var item in hash)
             {
@@ -184,27 +187,55 @@ namespace Garnet.server
 
         private void HashSet(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var hop = input.header.HashOp;
+            DeleteExpiredItems();
+
+            var hashOp = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
                 var key = GetByteSpanFromInput(ref input, i);
                 var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.AsReadOnlySpan();
 
-                if (!TryGetValue(key, out var hashValue))
+                // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+                // The ref is unsafe to read/write to if the hash dictionary is mutated.
+                ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+                if (!exists || IsExpired(key))
                 {
-                    Add(key, value.ToArray());
+                    hashValueRef = value.ToArray();
+                    UpdateSize(key, value);
+
                     output.Header.result1++;
                 }
-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
+                else if (exists && (hashOp is HashOperation.HSET or HashOperation.HMSET))
                 {
-                    if (hashValue.Length == value.Length)
+                    if (hashValueRef.Length == value.Length)
                     {
-                        value.CopyTo(hashValue);
-                        Set(key, hashValue);
+                        value.CopyTo(hashValueRef);
                     }
                     else
                     {
-                        Set(key, value.ToArray());
+                        hashValueRef = value.ToArray();
+
+                        // Adjust the size to account for the new value replacing the old one.
+                        this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+                                     Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                    }
+
+                    // To persist the key, if it has an expiration
+                    if (HasExpirableItems &&
+#if NET9_0_OR_GREATER
+                        expirationTimeSpanLookup.Remove(key))
+#else
+                        expirationTimes.Remove(key))
+#endif
+                    {
+                        this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        CleanupExpirationStructures();
                     }
                 }
             }
@@ -226,7 +257,7 @@ namespace Garnet.server
 
             writer.WriteArrayLength(count);
 
-            var isExpirable = HasExpirableItems();
+            var isExpirable = HasExpirableItems;
 
             foreach (var item in hash)
             {
@@ -396,7 +427,7 @@ namespace Garnet.server
 #else
                 var result = SetExpiration(item.ToArray(), expiration, expireOption);
 #endif
-                writer.WriteInt32(result);
+                writer.WriteInt32((int)result);
                 output.Header.result1++;
             }
         }
