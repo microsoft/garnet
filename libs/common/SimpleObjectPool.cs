@@ -22,7 +22,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="factory"></param>
         /// <param name="maxObjects"></param>
-        public SimpleObjectPool(Func<T> factory, int maxObjects = 128)
+        public SimpleObjectPool(Func<T> factory, int maxObjects = 8192)
         {
             this.factory = factory;
             stack = new LightConcurrentStack<T>(maxObjects);

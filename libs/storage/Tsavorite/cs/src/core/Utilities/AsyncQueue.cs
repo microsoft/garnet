@@ -36,6 +36,11 @@ namespace Tsavorite.core
         /// <param name="item"></param>
         public void Enqueue(T item)
         {
+            while (queue.Count > 1024)
+            {
+                // Prevent excessive memory usage by limiting the queue size
+                Thread.Yield();
+            }
             queue.Enqueue(item);
             semaphore.Release();
         }
