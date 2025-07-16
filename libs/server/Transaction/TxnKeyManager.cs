@@ -159,7 +159,7 @@ namespace Garnet.server
                 RespCommand.SETRANGE => SingleKey(StoreType.Main, LockType.Exclusive),
                 RespCommand.PFADD => SingleKey(StoreType.Main, LockType.Exclusive),
                 RespCommand.PFCOUNT => ListKeys(inputCount, StoreType.Main, LockType.Shared),
-                RespCommand.PFMERGE => ListKeys(inputCount, StoreType.Main, LockType.Exclusive),
+                RespCommand.PFMERGE => SingleWriteKeyListReadKeys(inputCount, false),
                 RespCommand.SETEX => SingleKey(StoreType.Main, LockType.Exclusive),
                 RespCommand.SETEXNX => SingleKey(StoreType.Main, LockType.Exclusive),
                 RespCommand.SETEXXX => SingleKey(StoreType.Main, LockType.Exclusive),
@@ -476,7 +476,7 @@ namespace Garnet.server
                 RespCommand.SDIFFSTORE => SingleWriteKeyListReadKeys(inputCount),
                 RespCommand.SMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
                 RespCommand.SINTER => ListKeys(inputCount, StoreType.Object, LockType.Shared),
-                RespCommand.SINTERCARD => ListKeys(inputCount, StoreType.Object, LockType.Shared),
+                RespCommand.SINTERCARD => ListReadKeysWithCount(LockType.Shared),
                 RespCommand.SINTERSTORE => SingleWriteKeyListReadKeys(inputCount),
                 _ => -1
             };
