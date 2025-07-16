@@ -22,7 +22,7 @@ namespace Garnet.server
             this.source = source;
             ongoingPackets = [];
             random = new Random();
-            sessionPacketPool = new SimpleObjectPool<SessionPacket>(() => new SessionPacket { completed = new SemaphoreSlim(0) });
+            sessionPacketPool = new SimpleObjectPool<SessionPacket>(() => new SessionPacket());
         }
 
         public void Send(int destination, ArgSlice request)
@@ -45,7 +45,7 @@ namespace Garnet.server
             int readHead = 0;
             foreach (var packet in ongoingPackets)
             {
-                packet.completed.Wait();
+                while (packet.response == null) Thread.Yield();
                 WriteDirectLarge(new ReadOnlySpan<byte>(packet.response.bufferPtr, packet.response.currOffset), ref dcurr, ref dend);
                 packet.CompleteResponse();
                 readHead += packet.readHead;

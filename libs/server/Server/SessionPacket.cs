@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 
@@ -14,12 +13,12 @@ namespace Garnet.server
         public int readHead;
         public NetworkBuffer response;
         public SimpleObjectPool<NetworkBuffer> responsePool;
-        public SemaphoreSlim completed;
+        //public SemaphoreSlim completed;
         public INetworkSender responseSender;
 
         public void Dispose()
         {
-            completed?.Dispose();
+            //completed?.Dispose();
         }
 
         public void CompleteResponse()

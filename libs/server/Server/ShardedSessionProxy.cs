@@ -62,7 +62,6 @@ namespace Garnet.server
                     nextInput.readHead = session.TryConsumeMessages(nextInput.request.ptr, nextInput.request.length);
                     nextInput.responsePool = embeddedNetworkSender.networkBufferPool;
                     nextInput.response = embeddedNetworkSender.buffer;
-                    nextInput.completed.Release();
                 }
             }
         }
