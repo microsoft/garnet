@@ -69,11 +69,6 @@ namespace Garnet.client
         public bool RawResult = false;
 
         /// <summary>
-        /// Send raw string + crlf to server
-        /// </summary>
-        public bool RawSend = false;
-
-        /// <summary>
         /// Username to authenticate the session on the server.
         /// </summary>
         readonly string authUsername = null;
@@ -109,7 +104,6 @@ namespace Garnet.client
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="rawResult">Recieve result as raw string</param>
-        /// <param name="rawSend">Send command as raw string + crlf</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -120,7 +114,6 @@ namespace Garnet.client
             string authPassword = null,
             int networkSendThrottleMax = 8,
             bool rawResult = false,
-            bool rawSend = false,
             ILogger logger = null)
         {
             EndPoint = endpoint;
@@ -137,7 +130,6 @@ namespace Garnet.client
             this.authUsername = authUsername;
             this.authPassword = authPassword;
             this.RawResult = rawResult;
-            this.RawSend = rawSend;
         }
 
         /// <summary>
@@ -441,43 +433,21 @@ namespace Garnet.client
         {
             byte* curr = offset;
 
-            if (!RawSend)
+            while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
             {
-                while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            foreach (var cmd in command)
+            {
+                while (!RespWriteUtils.TryWriteAsciiBulkString(cmd, ref curr, end))
                 {
                     Flush();
                     curr = offset;
                 }
                 offset = curr;
-
-                foreach (var cmd in command)
-                {
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(cmd, ref curr, end))
-                    {
-                        Flush();
-                        curr = offset;
-                    }
-                    offset = curr;
-                }
-            }
-            else
-            {
-                foreach (var cmd in command)
-                {
-                    while (!RespWriteUtils.TryWriteDirect(Encoding.ASCII.GetBytes(cmd), ref curr, end))
-                    {
-                        Flush();
-                        curr = offset;
-                    }
-                    offset = curr;
-
-                    while (!RespWriteUtils.TryWriteNewLine(ref curr, end))
-                    {
-                        Flush();
-                        curr = offset;
-                    }
-                    offset = curr;
-                }
             }
 
             Interlocked.Increment(ref numCommands);
