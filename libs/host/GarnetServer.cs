@@ -34,7 +34,7 @@ namespace Garnet
         /// <summary>
         /// Resp protocol version
         /// </summary>
-        internal const string RedisProtocolVersion = "7.2.5";
+        internal const string RedisProtocolVersion = "7.4.3";
 
         static readonly string version = GetVersion();
         static string GetVersion()
