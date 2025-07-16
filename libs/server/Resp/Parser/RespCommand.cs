@@ -2732,11 +2732,21 @@ namespace Garnet.server
             result = default;
 
             // Minimum processing length is 4. But a user can send shorter lines
-            // (e.g. in telnet), and these get appended to next lines.
-            // We need to either change the minimum or find a way to skip these.
+            // (e.g. just pressing enter in telnet), and these get appended to next
+            // lines in inline mode.
             //
-            // Normal RESP processing is prioritzed, so let's keep the minimum as is.
-            // We can exploit the fact that any such short command would be invalid.
+            // Another complication is that the terminator is different:
+            // It's CRLF in Normal RESP processing, but inline can also handle just LF.
+            // Also, A RESP packet can be sent in parts or be malformed, so
+            // it's possible this path tries to inline parse a partial RESP packet.
+            //
+            // In short: The way we process RESP is a bit hostile to inline processing,
+            // however normal RESP processing is prioritzed, so we'll have to work around it.
+            //
+            // First, we can exploit the fact that any such short command would be invalid.
+            // Every CRLF below the minimum can be discarded.
+            // Second, we can only check for CRLF and not LF, since discarding
+            // upto LF might conflict with partial normal RESP packets.
             var tptr = ptr;
             for (var i = 0; i < MinimumProcessLength - 1; ++i)
             {
