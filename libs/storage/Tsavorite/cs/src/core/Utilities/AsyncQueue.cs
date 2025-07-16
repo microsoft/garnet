@@ -36,7 +36,7 @@ namespace Tsavorite.core
         /// <param name="item"></param>
         public void Enqueue(T item)
         {
-            while (queue.Count > 1024)
+            while (queue.Count > 2048)
             {
                 // Prevent excessive memory usage by limiting the queue size
                 Thread.Yield();
