@@ -98,11 +98,11 @@ $basePath = $string.Substring(0,$position-1)  # take off slash off end as well
 
 if ($buildDir -ne "") {
 	New-Item -Type Directory -Force $buildDir | Out-Null
-	$artifactArg = "--artifacts-path",(Resolve-Path $buildDir).Path
+	$artifactArg = @("--artifacts-path",(Resolve-Path -LiteralPath $buildDir).Path)
 }
 if ($destDir -ne "") {
 	New-Item -Type Directory -Force $destDir | Out-Null
-	$destDir = (Resolve-Path $destDir).Path
+	$destDir = (Resolve-Path -LiteralPath $destDir).Path
 } else {
 	$destDir = "$basePath/main/GarnetServer"
 }
