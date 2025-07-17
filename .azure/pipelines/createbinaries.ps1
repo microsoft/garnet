@@ -15,15 +15,15 @@
 			Doing this allows actions (code signing etc) on the files before it is zipped. Running the script after that can zip up everything (using mode 2).
    
 .PARAMETER destDir
-		defaults to main\GarnetServer from base of solution
-.
+		Defaults to main\GarnetServer from base of solution
+
 		This parameter allows choosing the destination directory for the build.
-.
+
 .PARAMETER buildDir
-		defaults to none, solution settings will be used
-.
+		Defaults to none, solution settings will be used
+
 		This parameter allows choosing the artifacts directory for the build.
-.
+
 .EXAMPLE
 	./createbinaries.ps1
 	./createbinaries.ps1 0
@@ -91,8 +91,6 @@ function BuildAndCleanUpFiles {
 	}
 }
 
-$lastPwd = $pwd
-
 # Get base path since paths can differ from machine to machine
 $string = $pwd.Path
 $position = $string.IndexOf(".azure")
@@ -108,7 +106,6 @@ if ($destDir -ne "") {
 } else {
 	$destDir = "$basePath/main/GarnetServer"
 }
-Set-Location $destDir
 
 if ($mode -eq 0 -or $mode -eq 1) {
 	Write-Host "** Publish ... **"
@@ -139,7 +136,6 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	
 	if (!(Test-Path $publishedFilesFolderNet8) -or !(Test-Path $publishedFilesFolderNet9)) {
 		Write-Error "$publishedFilesFolderNet8 or $publishedFilesFolderNet9 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
-		Set-Location $lastPwd
 		exit
 	}
 	
@@ -153,7 +149,6 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	# Make the destination path where the compressed files will be
 	New-Item -Type Directory -Force $destinationPath | Out-Null
 	New-Item -Type Directory -Force $zipfiledestinationPath | Out-Null
-	Set-Location $zipfiledestinationPath
 
 	foreach ($dir in $directories) {
 		New-Item -Type Directory -Force (Join-Path -Path $destinationPath -ChildPath $dir) | Out-Null
@@ -172,18 +167,22 @@ if ($mode -eq 0 -or $mode -eq 2) {
  
 	# Compress the files - both net80 and net90 in the same zip file
 	Write-Host "** Compressing the files ... **"
-	7z a -mmt20 -mx5 -mm=Deflate64 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
-	7z a -mmt20 -mx5 -mm=Deflate64 -scsWIN -r win-arm64-based-readytorun.zip ../win-arm64/*
-	7z a -scsUTF-8 -r linux-x64-based.tar ../linux-x64/*
-	7z a -scsUTF-8 -r linux-arm64-based.tar ../linux-arm64/*
-	7z a -scsUTF-8 -r osx-x64-based.tar ../osx-x64/*
-	7z a -scsUTF-8 -r osx-arm64-based.tar ../osx-arm64/*
-	7z a -mmt20 -mx5 -sdel linux-x64-based.tar.xz linux-x64-based.tar
-	7z a -mmt20 -mx5 -sdel linux-arm64-based.tar.xz linux-arm64-based.tar
-	7z a -mmt20 -mx5 -sdel osx-x64-based.tar.xz osx-x64-based.tar
-	7z a -mmt20 -mx5 -sdel osx-arm64-based.tar.xz osx-arm64-based.tar
-	7z a -mmt20 -mx5 -scsUTF-8 portable.7z ../portable/*
+	Push-Location $zipfiledestinationPath -StackName createbinaries
+	try {
+		7z a -mmt20 -mx5 -mm=Deflate64 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
+		7z a -mmt20 -mx5 -mm=Deflate64 -scsWIN -r win-arm64-based-readytorun.zip ../win-arm64/*
+		7z a -scsUTF-8 -r linux-x64-based.tar ../linux-x64/*
+		7z a -scsUTF-8 -r linux-arm64-based.tar ../linux-arm64/*
+		7z a -scsUTF-8 -r osx-x64-based.tar ../osx-x64/*
+		7z a -scsUTF-8 -r osx-arm64-based.tar ../osx-arm64/*
+		7z a -mmt20 -mx5 -sdel linux-x64-based.tar.xz linux-x64-based.tar
+		7z a -mmt20 -mx5 -sdel linux-arm64-based.tar.xz linux-arm64-based.tar
+		7z a -mmt20 -mx5 -sdel osx-x64-based.tar.xz osx-x64-based.tar
+		7z a -mmt20 -mx5 -sdel osx-arm64-based.tar.xz osx-arm64-based.tar
+		7z a -mmt20 -mx5 -scsUTF-8 portable.7z ../portable/*
+	} finally {
+		Pop-Location -StackName createbinaries
+	}
 }
 
 Write-Host "** DONE! **"
-Set-Location $lastPwd
