@@ -466,12 +466,13 @@ namespace Garnet.cluster
         {
             var fileTokenBytes = token.ToByteArray();
             var device = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
-            logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress}", token, type, startAddress, endAddress);
 
             Debug.Assert(device != null);
             batchSize = !ReplicationManager.ShouldInitialize(type) ?
                 batchSize : (int)Math.Min(batchSize, 1L << clusterProvider.serverOptions.SegmentSizeBits());
             string resp;
+
+            logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress} {batchsSize}", token, type, startAddress, endAddress, batchSize);
             try
             {
                 while (startAddress < endAddress)
