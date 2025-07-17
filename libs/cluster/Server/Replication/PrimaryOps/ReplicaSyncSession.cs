@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Net;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -472,7 +471,7 @@ namespace Garnet.cluster
                 batchSize : (int)Math.Min(batchSize, 1L << clusterProvider.serverOptions.SegmentSizeBits());
             string resp;
 
-            logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress} {batchsSize}", token, type, startAddress, endAddress, batchSize);
+            logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress} {batchSize}", token, type, startAddress, endAddress, batchSize);
             try
             {
                 while (startAddress < endAddress)
@@ -586,9 +585,6 @@ namespace Garnet.cluster
             }
             semaphore.Release();
         }
-
-        [DllImport("libc")]
-        private static extern IntPtr strerror(int errnum);
     }
 
     internal static unsafe class SectorAlignedMemoryExtensions
