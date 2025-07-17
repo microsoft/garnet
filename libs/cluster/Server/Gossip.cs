@@ -25,7 +25,6 @@ namespace Garnet.cluster
         public GossipStats gossipStats;
         readonly int GossipSamplePercent;
 
-        public TimeSpan GetClusterTimeout() => clusterTimeout;
         readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
 
