@@ -2864,12 +2864,14 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
+        public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
             long primaryReplicationOffset;
             long secondaryReplicationOffset1;
             while (true)
             {
+                cancellation.ThrowIfCancellationRequested();
+
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)

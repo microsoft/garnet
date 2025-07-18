@@ -32,5 +32,9 @@ namespace Garnet.common
         /// Wait at migration slot driver right after acquiring the end scan range
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
+        /// <summary>
+        /// AOF on replica has diverged from stream coming from primary.
+        /// </summary>
+        Divergent_AOF_Stream,
     }
 }
