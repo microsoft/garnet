@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using System.Threading;
 using Garnet.common;
 
 namespace Garnet.server
