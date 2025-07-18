@@ -100,7 +100,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.MIGRATE:
-                    DiskLogRecord.Serialize(in srcLogRecord, valueSerializer: null, ref output, functionsState.memoryPool);
+                    DiskLogRecord.Serialize(in srcLogRecord, valueSerializer: null, memoryPool: functionsState.memoryPool, output: ref output);
                     break;
 
                 case RespCommand.GET:

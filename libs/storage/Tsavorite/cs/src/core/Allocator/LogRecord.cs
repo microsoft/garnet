@@ -3,14 +3,16 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using static Utility;
+    using static VarbyteLengthUtility;
+
     /// <summary>The in-memory record on the log: header, key, value, and optional fields
     ///     until some other things have been done that will allow clean separation.
     /// </summary>
@@ -49,6 +51,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
+        readonly long IndicatorAddress => physicalAddress + RecordInfo.GetLength();
+
         /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord(long physicalAddress, ObjectIdMap objectIdMap)
@@ -85,7 +89,7 @@ namespace Tsavorite.core
         public readonly bool IsPinnedKey => Info.KeyIsInline;
 
         /// <inheritdoc/>
-        public byte* PinnedKeyPointer => IsPinnedKey ? (byte*)LogField.GetInlineDataAddress(KeyAddress) : null;
+        public readonly byte* PinnedKeyPointer => IsPinnedKey ? (byte*)LogField.GetInlineDataAddress(KeyAddress) : null;
 
         /// <inheritdoc/>
         public readonly Span<byte> ValueSpan
@@ -115,7 +119,7 @@ namespace Tsavorite.core
             }
         }
 
-        /// <inheritdoc/>
+        /// <summary>The span of the entire record, if <see cref="RecordInfo.RecordIsInline"/>, else an exception is thrown.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly ReadOnlySpan<byte> AsReadOnlySpan()
         {
@@ -124,11 +128,16 @@ namespace Tsavorite.core
             return new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
         }
 
-        /// <inheritdoc/>
-        public bool IsPinnedValue => Info.ValueIsInline;
+        /// <summary>The span of the RecordInfo.</summary>
+        public readonly ReadOnlySpan<byte> RecordInfoSpan => new((byte*)physicalAddress, RecordInfo.GetLength());
 
         /// <inheritdoc/>
-        public byte* PinnedValuePointer => IsPinnedValue ? (byte*)LogField.GetInlineDataAddress(ValueAddress) : null;
+        public readonly bool IsPinnedValue => Info.ValueIsInline;
+
+        /// <inheritdoc/>
+        public readonly byte* PinnedValuePointer => IsPinnedValue ? (byte*)LogField.GetInlineDataAddress(ValueAddress) : null;
+
+        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0);
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : NoETag;
@@ -159,11 +168,6 @@ namespace Tsavorite.core
         };
         #endregion // ISourceLogRecord
 
-        /// <summary>
-        /// The record is directly copyable if it is entirely inline; otherwise it must be Serialized to linear format
-        /// </summary>
-        public readonly bool IsDirectlyCopyable => Info.RecordIsInline;
-
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoRef(long physicalAddress) => ref *(RecordInfo*)physicalAddress;
@@ -171,6 +175,46 @@ namespace Tsavorite.core
         /// <summary>Fast access returning a copy of the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly OverflowByteArray GetKeyOverflow()
+        {
+            if (Info.KeyIsInline)
+                return default;
+            var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+            var objectId = *(int*)dataAddress;
+            return objectIdMap.GetOverflowByteArray(objectId);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void SetKeyOverflow(OverflowByteArray overflowArray)
+        {
+            var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+            Debug.Assert(Info.KeyIsInline && length == ObjectIdMap.ObjectIdSize, "SetKeyOverflow should only be called by CopyFrom(ref DiskLogRecord)");
+            var objectId = *(int*)dataAddress;
+            objectIdMap.Set(objectId, overflowArray);
+            Info.ClearKeyIsInline();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly OverflowByteArray GetValueOverflow()
+        {
+            if (Info.ValueIsInline)
+                return default;
+            var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+            var objectId = *(int*)dataAddress;
+            return new(Unsafe.As<byte[]>(objectIdMap.Get(objectId)));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly void SetValueOverflow(OverflowByteArray overflowArray)
+        {
+            var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+            Debug.Assert(Info.ValueIsInline && length == ObjectIdMap.ObjectIdSize, "SetValueOverflow should only be called by CopyFrom(ref DiskLogRecord)");
+            var objectId = *(int*)dataAddress;
+            objectIdMap.Set(objectId, overflowArray);
+            Info.ClearValueIsInline();
+        }
 
         /// <summary>The address of the key</summary>
         public readonly long KeyAddress => GetKeyAddress(physicalAddress);
@@ -406,7 +450,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo)
+        public readonly bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo)
         {
             RecordSizeInfo.AssertValueDataLength(value.Length, in sizeInfo);
 
@@ -499,7 +543,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetFillerLength(int allocatedSize)
+        public readonly void SetFillerLength(int allocatedSize)
         {
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
             // Therefore optionals (ETag, Expiration) are not considered here.
@@ -518,8 +562,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Called during cleanup of a record allocation, before the key was copied.
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeForReuse(in RecordSizeInfo sizeInfo)
+        public readonly void InitializeForReuse(in RecordSizeInfo sizeInfo)
         {
             Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Record should not have ETag or Expiration here");
 
@@ -542,7 +587,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetETag(long eTag)
+        public readonly bool TrySetETag(long eTag)
         {
             if (Info.HasETag)
             {
@@ -646,7 +691,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetExpiration(long expiration)
+        public readonly bool TrySetExpiration(long expiration)
         {
             if (expiration == 0)
                 return RemoveExpiration();
@@ -724,8 +769,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy the entire record values: Value and optionals (ETag, Expiration)
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
+        public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // This assumes the Key has been set and is not changed
@@ -748,8 +794,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy the record optional values (ETag, Expiration)
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyOptionals<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
+        public readonly bool TryCopyOptionals<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             var srcRecordInfo = srcLogRecord.Info;
@@ -801,8 +848,9 @@ namespace Tsavorite.core
         /// <summary>
         /// For revivification or reuse: prepare the current record to be passed to initial updaters, based upon the sizeInfo's key and value lengths.
         /// </summary>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PrepareForRevivification(in RecordSizeInfo sizeInfo, int allocatedSize)
+        public readonly void PrepareForRevivification(in RecordSizeInfo sizeInfo, int allocatedSize)
         {
             var keyAddress = KeyAddress;
             var newKeySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;

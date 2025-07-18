@@ -51,19 +51,14 @@ namespace Tsavorite.core
         public int valid_offset;
 
         /// <summary>
-        /// Required bytes for the current operation, e.g. number of bytes to read. Will be less than or equal to <see cref="available_bytes"/>.
+        /// Required bytes for the current operation, e.g. number of bytes to read. There will always be at least this much usable space in the allocation.
         /// </summary>
         public int required_bytes;
 
         /// <summary>
-        /// Available bytes after the operation is complete, e.g. the number of bytes actually read, including <see cref="valid_offset"/> and <see cref="end_offset"/>. Will be greater than or equal to <see cref="required_bytes"/>.
+        /// Available bytes after the operation is complete, e.g. the number of bytes actually read; starts at <see cref="valid_offset"/>.
         /// </summary>
         public int available_bytes;
-
-        /// <summary>
-        /// Offset from the end of the required bytes to the end of the available bytes; i.e. due to alignment there are <see cref="end_offset"/> valid bytes after <see cref="required_bytes"/>.
-        /// </summary>
-        public int end_offset => available_bytes - required_bytes;
 
         private int level;
         internal int Level => level
@@ -113,7 +108,8 @@ namespace Tsavorite.core
         public SectorAlignedMemory(int numRecords, int sectorSize)
         {
             int recordSize = 1;
-            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            required_bytes = numRecords * recordSize;
+            int requiredSize = sectorSize + ((required_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
 
             buffer = GC.AllocateArray<byte>(requiredSize, true);
             long bufferAddr = (long)Unsafe.AsPointer(ref buffer[0]);
@@ -154,21 +150,38 @@ namespace Tsavorite.core
         public int AlignedTotalCapacity => buffer.Length - offset;
 
         /// <summary>
-        /// Get the total unaligned memory capacity of the buffer
-        /// </summary>
-        public int UnalignedTotalCapacity => buffer.Length;
-
-        /// <summary>
         /// Get valid pointer
         /// </summary>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte* GetValidPointer()
         {
             return aligned_pointer + valid_offset;
         }
 
-        public Span<byte> AsSpan() => new Span<byte>(GetValidPointer(), AlignedTotalCapacity);
+        /// <summary>
+        /// Get Span of entire allocated space
+        /// </summary>
+        public Span<byte> Span => new (GetValidPointer(), AlignedTotalCapacity);
+
+        /// <summary>
+        /// Get Span of used space (required bytes)
+        /// </summary>
+        public Span<byte> RequiredSpan => new (GetValidPointer(), required_bytes);
+
+        /// <summary>
+        /// Get Span of used space (required bytes)
+        /// </summary>
+        public PinnedSpanByte RequiredSpanByte => PinnedSpanByte.FromPinnedPointer(GetValidPointer(), required_bytes);
+
+        /// <summary>
+        /// Get Span of used space plus alignment overhead (available bytes) 
+        /// </summary>
+        public Span<byte> AvailableSpan => new (GetValidPointer(), available_bytes);
+
+        /// <summary>
+        /// Get Span of used space plus alignment overhead (available bytes) 
+        /// </summary>
+        public Span<byte> AlignedTotalSpan => new(GetValidPointer(), AlignedTotalCapacity);
 
         /// <summary>
         /// ToString
@@ -178,7 +191,7 @@ namespace Tsavorite.core
         {
             return string.Format($"{(long)aligned_pointer} {offset} {valid_offset} {required_bytes} {available_bytes}"
 #if CHECK_FREE
-                + $" {this.Free}"
+                + $" {Free}"
 #endif
                 );
         }
@@ -236,7 +249,11 @@ namespace Tsavorite.core
             {
                 page.Return();
                 page = Get(size);
+                return;
             }
+
+            // Reusing the page, so ensure this is set correctly.
+            page.required_bytes = size;
         }
 
         /// <summary>
@@ -294,8 +311,8 @@ namespace Tsavorite.core
 #if CHECK_FOR_LEAKS
             Interlocked.Increment(ref totalGets);
 #endif
-
-            int requiredSize = sectorSize + ((numRecords * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            int required_bytes = numRecords * recordSize;
+            int requiredSize = sectorSize + ((required_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
             int index = Position(requiredSize / sectorSize);
             if (queue[index] == null)
             {
@@ -314,6 +331,7 @@ namespace Tsavorite.core
                     page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
                     page.offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
                 }
+                page.required_bytes = required_bytes;
                 return page;
             }
 
@@ -327,6 +345,7 @@ namespace Tsavorite.core
             page.aligned_pointer = (byte*)((pageAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
             page.offset = (int)((long)page.aligned_pointer - pageAddr);
             page.pool = this;
+            page.required_bytes = required_bytes;
             return page;
         }
 

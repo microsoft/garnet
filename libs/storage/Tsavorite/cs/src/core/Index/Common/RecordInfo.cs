@@ -298,6 +298,7 @@ namespace Tsavorite.core
         public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
         public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
         public readonly bool KeyIsOverflow => !KeyIsInline;
+        public void SetKeyIsOverflow() => word &= ~kKeyIsInlineBitMask;
 
         // Note: ValueIsOveflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
         public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;

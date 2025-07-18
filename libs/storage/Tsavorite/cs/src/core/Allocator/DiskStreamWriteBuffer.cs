@@ -9,6 +9,8 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static VarbyteLengthUtility;
+
     internal unsafe class DiskStreamWriteBuffer : IStreamBuffer
     {
         readonly IDevice logDevice;
@@ -52,14 +54,14 @@ namespace Tsavorite.core
         readonly DeviceIOCompletionCallback ioCompletionCallback;
 
         /// <summary>The Span of data written to the buffer so far (from Read() or Write()).</summary>
-        public Span<byte> BufferSpan => buffer.AsSpan();
+        public Span<byte> BufferSpan => buffer.Span;
 
         internal byte* BufferPointer => buffer.GetValidPointer();
 
         private int RemainingCapacity => buffer.AlignedTotalCapacity - currentPosition;
 
         /// <summary>The Span of data in the buffer past the <see cref="currentPosition"/> position.</summary>
-        public Span<byte> RemainingSpan => buffer.AsSpan().Slice(currentPosition);
+        public Span<byte> RemainingSpan => buffer.Span.Slice(currentPosition);
 
         /// <summary>The amount of data written to the buffer so far (from Read() or Write()). TODO: Make sure Length and priorCumulativeLength are for object serialization only.</summary>
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
@@ -99,14 +101,15 @@ namespace Tsavorite.core
             keyEndSectorCapPosition = NoPosition;
             expectedSerializedLength = 0;
 
-            if (logRecord.IsDirectlyCopyable)
+            // If the record is inline, we can just write it directly; the indicator bytes will be correct.
+            if (logRecord.Info.RecordIsInline)
             {
                 Write(logRecord.AsReadOnlySpan());
                 return;
             }
 
-            // Everything writes the RecordInfo first
-            Write(logRecord.AsReadOnlySpan().Slice(0, RecordInfo.GetLength()));
+            // Everything writes the RecordInfo first. Because the record is not inline, we cannot just write the indicator bytes directly.
+            Write(logRecord.RecordInfoSpan);
 
             ReadOnlySpan<byte> keySpan = logRecord.Key, valueSpan = logRecord.ValueSpan;
 
@@ -201,7 +204,7 @@ namespace Tsavorite.core
             keyEndSectorCapPosition = currentPosition;
             capSpan = keySpan.Slice(beginCapLength + interiorLength);
             if (capSpan.Length > 0)
-                capSpan.CopyTo(buffer.AsSpan());
+                capSpan.CopyTo(buffer.Span);
             currentPosition += capSpan.Length;
             valueStartOffsetFromEndOfLength = currentPosition - valueLengthPosition + sizeof(int);
 
@@ -212,17 +215,17 @@ namespace Tsavorite.core
 
         private void WriteIndicatorByteAndLengths(int keyLength, long valueLength, bool isChunked = false)
         {
-            var indicatorByte = DiskLogRecord.CreateIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
+            var indicatorByte = CreateIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
             if (isChunked)
             {
-                DiskLogRecord.SetChunkedValueIndicator(ref indicatorByte);
+                SetChunkedValueIndicator(ref indicatorByte);
                 valueLengthPosition = currentPosition + 1 + keyByteCount;   // skip indicator byte and key length varbytes
             }
 
             var ptr = BufferPointer + currentPosition;
             *ptr++ = indicatorByte;
-            DiskLogRecord.WriteVarBytes(keyLength, keyByteCount, ref ptr);
-            DiskLogRecord.WriteVarBytes(valueLength, valueByteCount, ref ptr);
+            WriteVarByteLength(keyLength, keyByteCount, ref ptr);
+            WriteVarByteLength(valueLength, valueByteCount, ref ptr);
             currentPosition += (int)(ptr - (BufferPointer + currentPosition));
         }
 
@@ -347,7 +350,7 @@ namespace Tsavorite.core
         {
             var copyLength = currentPosition - startPosition;
             if (copyLength > 0)
-                BufferSpan.Slice(startPosition, copyLength).CopyTo(buffer.AsSpan());
+                BufferSpan.Slice(startPosition, copyLength).CopyTo(buffer.Span);
             currentPosition = copyLength;
         }
 

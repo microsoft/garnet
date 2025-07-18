@@ -1101,7 +1101,7 @@ namespace Tsavorite.core
                     pointer += RecordInfo.GetLength();
                 else
                 {
-                    long size = diskLogRecord.GetSerializedLength();
+                    long size = diskLogRecord.GetSerializedLength();    // ClearBitsOnPage()
                     Debug.Assert(size <= hlogBase.GetPageSize());   // TODO: This will likely exceed pagesize for large objects. Make sure we don't need this limitation
                     pointer += size;
                 }
@@ -1164,7 +1164,7 @@ namespace Tsavorite.core
                         }
                     }
                 }
-                pointer += diskLogRecord.GetSerializedLength();
+                pointer += diskLogRecord.GetSerializedLength(); // RecoverFromPage()
             }
 
             return touched;

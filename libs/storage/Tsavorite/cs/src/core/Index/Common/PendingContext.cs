@@ -117,23 +117,23 @@ namespace Tsavorite.core
             {
                 if (diskLogRecord.IsSet)
                     return;
-                diskLogRecord.SerializeForPendingReadOrRMW(key, bufferPool);
+                diskLogRecord.CopyKey(key, bufferPool);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
             /// <summary>
-            /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> into the local <see cref="DiskLogRecord"/> for Pending operations
+            /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> into the local <see cref="DiskLogRecord"/> for Pending operations, e.g. CopyToTail.
             /// </summary>
             /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool)
+            internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, bool transferIfPossible)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
                 if (srcLogRecord.IsMemoryLogRecord)
                 {
                     ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                    diskLogRecord.Serialize(in inMemoryLogRecord, bufferPool);
+                    diskLogRecord.CopyFrom(in inMemoryLogRecord, bufferPool);
                     return;
                 }
 
@@ -141,10 +141,10 @@ namespace Tsavorite.core
                 if (!srcLogRecord.IsDiskLogRecord)
                     throw new TsavoriteException("Unknown TSourceLogRecord type");
                 ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
-                if (inputDiskLogRecord.OwnsRecordBuffer)
+                if (inputDiskLogRecord.OwnsRecordBuffer && transferIfPossible)
                     diskLogRecord.TransferFrom(ref inputDiskLogRecord);
                 else
-                    diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
+                    diskLogRecord.CopyFrom(ref inputDiskLogRecord, bufferPool);
             }
 
             private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions) 
@@ -187,12 +187,6 @@ namespace Tsavorite.core
 
             /// <inheritdoc/>
             public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
-
-            /// <inheritdoc/>
-            public ReadOnlySpan<byte> AsReadOnlySpan() => diskLogRecord.AsReadOnlySpan();
-
-            /// <inheritdoc/>
-            public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
 
             /// <inheritdoc/>
             public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;

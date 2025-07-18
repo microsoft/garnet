@@ -12,15 +12,14 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed unsafe class RecordScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
+    public sealed unsafe class ObjectScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
-        private readonly BlittableFrame frame;  // TODO remove GenericFrame
+        private readonly ObjectFrame frame;
 
-        private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
 
         private DiskLogRecord diskLogRecord;
@@ -38,7 +37,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, 
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeSealedRecords = false, bool assumeInMemory = false, ILogger logger = null)
@@ -48,21 +47,22 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
             if (frameSize > 0)
-                frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+                frame = new ObjectFrame(frameSize, hlogBase.PageSize);
         }
 
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering,
+                false, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
             assumeInMemory = false;
             if (frameSize > 0)
-                frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+                frame = new ObjectFrame(frameSize, hlogBase.PageSize);
         }
 
         /// <inheritdoc/>
@@ -71,11 +71,13 @@ namespace Tsavorite.core
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
             Debug.Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
 
+            TODO xx; // See comments in SnapToLogicalAddressBoundary regarding on-disk/physical address
+
             if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                 return false;
             try
             {
-                if (!LoadPageIfNeeded(out var headAddress, out var currentPage, stopAddress))
+                if (!LoadPageIfNeeded(stopAddress, out var headAddress, out var currentPage))
                     return false;
                 beginAddress = nextAddress = SnapToLogicalAddressBoundary(ref cursor, headAddress, currentPage);
             }
@@ -84,7 +86,6 @@ namespace Tsavorite.core
                 epoch?.Suspend();
                 throw;
             }
-
             return true;
         }
 
@@ -93,10 +94,7 @@ namespace Tsavorite.core
             TODO xx; // This needs to transition from physical-address to in-memory when it gets above HA equivalent.. and needs to keep checking that bc we may drop below HA when we release the epoch
 
             if (diskLogRecord.IsSet)
-            {
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-                diskLogRecord = default;
-            }
             diskLogRecord = default;
             currentAddress = nextAddress;
             stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
@@ -108,7 +106,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        private bool LoadPageIfNeeded(out long headAddress, out long currentPage, long stopAddress)
+        private bool LoadPageIfNeeded(long stopAddress, out long headAddress, out long currentPage)
         {
             headAddress = hlogBase.HeadAddress;
 
@@ -134,8 +132,6 @@ namespace Tsavorite.core
         internal long SnapToLogicalAddressBoundary(ref long logicalAddress, long headAddress, long currentPage)
         {
             var offset = hlogBase.GetOffsetOnPage(logicalAddress);
-
-            TODO xx; // This won't work with variable-length disk pages
 
             // Subtracting offset means this physicalAddress is at the start of the page.
             var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset;
@@ -164,9 +160,12 @@ namespace Tsavorite.core
             }
             else
             {
+                TODO xx; // SnapToLogicalAddressBoundary(): This won't work for OA; we don't have a known "start of page".
+                         // May need to just accept physicalAddress as is; perhaps add a checksum in the upper bits of the returned cursor
+
                 while (totalSizes <= offset)
                 {
-                    var allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();
+                    var allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();   // SnapToLogicalAddressBoundary()
                     if (totalSizes + allocatedSize > offset)
                         break;
                     totalSizes += allocatedSize;
@@ -190,7 +189,7 @@ namespace Tsavorite.core
 
                 try
                 {
-                    if (!LoadPageIfNeeded(out var headAddress, out var currentPage, stopAddress))
+                    if (!LoadPageIfNeeded(stopAddress, out var headAddress, out var currentPage))
                         return false;
 
                     var offset = hlogBase.GetOffsetOnPage(currentAddress);
@@ -232,14 +231,12 @@ namespace Tsavorite.core
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
-                            if (currentAddress >= headAddress && store is not null)
-                                store.LockForScan(ref stackCtx, logRecord.Key);
-                            diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, ref recordBuffer);
+                            store?.LockForScan(ref stackCtx, logRecord.Key);
+                            diskLogRecord.CopyFrom(in logRecord, hlogBase.bufferPool);
                         }
                         finally
                         {
-                            if (stackCtx.recSrc.HasLock)
-                                store.UnlockForScan(ref stackCtx);
+                            store?.UnlockForScan(ref stackCtx);
                         }
                     }
                     else
@@ -248,7 +245,7 @@ namespace Tsavorite.core
                         diskLogRecord = new(physicalAddress);
                         if (diskLogRecord.Info.ValueIsObject)
                             _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
-                        nextAddress = currentAddress + diskLogRecord.GetSerializedLength();
+                        nextAddress = currentAddress + diskLogRecord.GetSerializedLength(); // GetNext()
                     }
                 }
                 finally
@@ -269,6 +266,8 @@ namespace Tsavorite.core
         {
             while (true)
             {
+                epoch?.Resume();
+
                 // "nextAddress" is reused as "previous address" for this operation.
                 currentAddress = nextAddress;
                 var headAddress = hlogBase.HeadAddress;
@@ -276,10 +275,9 @@ namespace Tsavorite.core
                 {
                     logRecord = default;
                     continueOnDisk = currentAddress >= hlogBase.BeginAddress;
+                    epoch?.Suspend();
                     return false;
                 }
-
-                epoch?.Resume();
 
                 logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
                 nextAddress = logRecord.Info.PreviousAddress;
@@ -317,7 +315,7 @@ namespace Tsavorite.core
             }
 
             long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
-            allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();
+            allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();   // GetPhysicalAddressAndAllocatedSize()
             return physicalAddress;
         }
 
@@ -344,12 +342,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public IHeapObject ValueObject => diskLogRecord.ValueObject;
-
-        /// <inheritdoc/>
-        public ReadOnlySpan<byte> AsReadOnlySpan() => diskLogRecord.AsReadOnlySpan();
-
-        /// <inheritdoc/>
-        public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
 
         /// <inheritdoc/>
         public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
@@ -392,8 +384,7 @@ namespace Tsavorite.core
             base.Dispose();
             if (diskLogRecord.IsSet)
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-            recordBuffer?.Return();
-            recordBuffer = null;
+            diskLogRecord.Dispose();
             frame?.Dispose();
         }
 

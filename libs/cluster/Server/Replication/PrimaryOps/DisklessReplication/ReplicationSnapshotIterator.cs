@@ -116,7 +116,7 @@ namespace Garnet.cluster
             }
 
             // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-            DiskLogRecord.Serialize(in srcLogRecord, valueSerializer: null, ref serializationOutput, memoryPool);
+            DiskLogRecord.Serialize(in srcLogRecord, valueSerializer: null, memoryPool: memoryPool, output: ref serializationOutput);
 
             var needToFlush = false;
             while (true)
@@ -168,7 +168,7 @@ namespace Garnet.cluster
             }
 
             // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-            DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer, ref serializationOutput, memoryPool);
+            DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer, memoryPool, ref serializationOutput);
 
             var needToFlush = false;
             while (true)

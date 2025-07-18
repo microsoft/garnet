@@ -16,57 +16,62 @@ namespace Tsavorite.core
         /// </summary>
         internal const int MaxInternalOffset = 64 * 1024;
 
-        readonly byte[] data;
+        internal readonly byte[] Data { get; init; }
 
-        internal readonly bool IsEmpty => data is null;
+        internal readonly bool IsEmpty => Data is null;
 
-        readonly int Offset => Unsafe.As<byte, ushort>(ref data[0]);
+        readonly int Offset => Unsafe.As<byte, ushort>(ref Data[0]);
 
-        readonly int Length => data.Length - Offset - Unsafe.As<byte, ushort>(ref data[sizeof(ushort)]);
+        readonly int Length => Data.Length - Offset - Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
 
-        internal readonly ReadOnlySpan<byte> ReadOnlySpan => data.AsSpan().Slice(Offset, Length);
-        internal readonly Span<byte> Span => data.AsSpan().Slice(Offset, Length);
+        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Data.AsSpan().Slice(Offset, Length);
+        internal readonly Span<byte> Span => Data.AsSpan().Slice(Offset, Length);
 
-        internal OverflowByteArray(byte[] data) => this.data = data;
+        internal OverflowByteArray(byte[] data) => Data = data;
 
         /// <summary>Increase the offset from the start, e.g. after having extracted the key that was read in the same IO operation as the value.</summary>
-        internal void IncreaseOffsetFromStart(int increment) => Unsafe.As<byte, ushort>(ref data[0]) += (ushort)increment;
+        /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/>> array field, only its contents.</remarks>
+        internal readonly void IncreaseOffsetFromStart(int increment) => Unsafe.As<byte, ushort>(ref Data[0]) += (ushort)increment;
         /// <summary>Increase the offset from the end, e.g. after having extracted the optionals that were read in the same IO operation as the value.</summary>
-        internal void IncreaseOffsetFromEnd(int increment) => Unsafe.As<byte, ushort>(ref data[2]) += (ushort)increment;
+        /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/>> array field, only its contents.</remarks>
+        internal readonly void IncreaseOffsetFromEnd(int increment) => Unsafe.As<byte, ushort>(ref Data[2]) += (ushort)increment;
 
         internal OverflowByteArray(int length, int startOffset, int endOffset)
         {
             Debug.Assert(startOffset <= ushort.MaxValue, "startOffset must be less than or equal to ushort.MaxValue");
             Debug.Assert(endOffset <= ushort.MaxValue, "endOffset must be less than or equal to ushort.MaxValue");
-            this.data = new byte[length + sizeof(ushort) * 2];
-            Unsafe.As<byte, ushort>(ref data[0]) = (ushort)startOffset;
-            Unsafe.As<byte, ushort>(ref data[sizeof(ushort)]) = (ushort)endOffset;
+            Data = new byte[length + (sizeof(ushort) * 2)];
+            Unsafe.As<byte, ushort>(ref Data[0]) = (ushort)startOffset;
+            Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]) = (ushort)endOffset;
         }
 
         internal readonly void SetOffsets(int offsetFromStart, int offsetFromEnd)
         {
-            Debug.Assert(offsetFromStart > 0 && offsetFromStart < data.Length - 1, "offsetFromStart is out of range");
-            Debug.Assert(offsetFromEnd > 0 && offsetFromEnd < data.Length - 1, "offsetFromEnd is out of range");
+            Debug.Assert(offsetFromStart > 0 && offsetFromStart < Data.Length - 1, "offsetFromStart is out of range");
+            Debug.Assert(offsetFromEnd > 0 && offsetFromEnd < Data.Length - 1, "offsetFromEnd is out of range");
             Debug.Assert(offsetFromStart < offsetFromEnd, "offsetFromStart must be less than offsetFromEnd");
-            Unsafe.As<byte, ushort>(ref data[0]) = (ushort)offsetFromStart;
-            Unsafe.As<byte, ushort>(ref data[2]) = (ushort)offsetFromEnd;
+            Unsafe.As<byte, ushort>(ref Data[0]) = (ushort)offsetFromStart;
+            Unsafe.As<byte, ushort>(ref Data[2]) = (ushort)offsetFromEnd;
         }
 
-        internal void ExtractOptionals(RecordInfo recordInfo, int valueLength, out long eTag, out long expiration)
+        internal readonly void ExtractOptionals(RecordInfo recordInfo, int valueLength, out long eTag, out long expiration)
         {
             var optionalOffset = 0;
             eTag = expiration = 0L;
             if (recordInfo.HasETag)
             {
-                eTag = Unsafe.As<byte, long>(ref Span.Slice((int)valueLength, LogRecord.ETagSize)[0]);
+                eTag = Unsafe.As<byte, long>(ref Span.Slice(valueLength, LogRecord.ETagSize)[0]);
                 optionalOffset += LogRecord.ETagSize;
             }
             if (recordInfo.HasExpiration)
             {
-                expiration = Unsafe.As<byte, long>(ref Span.Slice((int)valueLength + optionalOffset, LogRecord.ExpirationSize)[0]);
+                expiration = Unsafe.As<byte, long>(ref Span.Slice(valueLength + optionalOffset, LogRecord.ExpirationSize)[0]);
                 optionalOffset += LogRecord.ExpirationSize;
             }
             IncreaseOffsetFromEnd(optionalOffset);
         }
+
+        internal static ReadOnlySpan<byte> AsReadOnlySpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).ReadOnlySpan;
+        internal static Span<byte> AsSpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).Span;
     }
 }

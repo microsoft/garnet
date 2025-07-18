@@ -1,11 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    /// <summary>
+    /// Utilities for varlen bytes: one indicator byte identifying the number of key and value bytes
+    /// </summary>
     public static unsafe class VarbyteLengthUtility
     {
         // Indicator bits for version and varlen int. Since the record is always aligned to 8 bytes, we can use long operations (on values only in
@@ -24,7 +28,7 @@ namespace Tsavorite.core
         internal static long GetVersion(byte indicatorByte) => (indicatorByte & kVersionBitMask) >> 6;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long ReadVarByteLen(int numBytes, byte* ptrToFirstByte)
+        internal static long ReadVarByteLength(int numBytes, byte* ptrToFirstByte)
         {
             var valueMask = (long)(ulong.MaxValue >> ((sizeof(ulong) - numBytes) * 8));
             var startPtr = (long*)(ptrToFirstByte + numBytes - sizeof(long));
@@ -32,16 +36,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void WriteVarByteLen(long value, int numBytes, ref byte* ptrToFirstByte)
+        internal static void WriteVarByteLength(long value, int numBytes, ref byte* ptrToFirstByte)
         {
             var valueMask = (long)(ulong.MaxValue >> ((sizeof(ulong) - numBytes) * 8));
             var startPtr = (long*)(ptrToFirstByte + numBytes - sizeof(long));
             *startPtr = (*startPtr & ~valueMask) | (value & valueMask);
         }
 
-        internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarByteLen(numBytes, ptrToFirstByte);
+        internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarByteLength(numBytes, ptrToFirstByte);
 
-        internal static long GetValueLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarByteLen(numBytes, ptrToFirstByte);
+        internal static long GetValueLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarByteLength(numBytes, ptrToFirstByte);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (int keyLengthBytes, int valueLengthBytes, bool isChunkedValue) DeconstructIndicatorByte(byte indicatorByte)
@@ -77,6 +81,37 @@ namespace Tsavorite.core
             var length = *(int*)ptr;
             hasContinuationBit = (length & IStreamBuffer.ValueChunkContinuationBit) != 0;
             return length & ~IStreamBuffer.ValueChunkContinuationBit;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static (int length, long dataAddress) GetKeyFieldInfo(long indicatorAddress)
+        {
+            var address = indicatorAddress;
+            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*(byte*)address);
+
+            // Move past the indicator byte; the next bytes are key length
+            var ptr = (byte*)++address;
+            var keyLength = ReadVarByteLength(keyLengthBytes, ptr);
+
+            // Move past the key and value length bytes to the start of the key
+            return ((int)keyLength, address + keyLengthBytes + valueLengthBytes);
+        }
+
+        internal static (long length, long dataAddress) GetValueFieldInfo(long indicatorAddress)
+        {
+            var address = indicatorAddress;
+            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*(byte*)address);
+
+            // Move past the indicator byte; the next bytes are key length
+            var ptr = (byte*)++address;
+            var keyLength = ReadVarByteLength(keyLengthBytes, ptr);
+
+            // The next bytes are valueLength
+            ptr += keyLengthBytes;
+            var valueLength = ReadVarByteLength(valueLengthBytes, ptr);
+
+            // Move past the key and value length bytes and the key data to the start of the value
+            return (valueLength, address + keyLengthBytes + valueLengthBytes + keyLength);
         }
     }
 }

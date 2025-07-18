@@ -119,7 +119,7 @@ namespace Tsavorite.core
         readonly DeviceIOCompletionCallback ioCompletionCallback;
 
         /// <summary>The Span of current chunk data read into the buffer.</summary>
-        public Span<byte> ChunkBufferSpan => valueBuffer.AsSpan();
+        public Span<byte> ChunkBufferSpan => valueBuffer.Span;
 
         /// <summary>The amount of data written to the buffer so far (from Read() or Write()).</summary>
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
@@ -178,25 +178,20 @@ namespace Tsavorite.core
             // Check for RecordInfo and indicator byte. If we have that, check for key length; for disk IO we are called for a specific key
             // and can verify it here (unless NoKey, in which case key is empty and we assume we have the record we want; and for Scan(), the same).
 
-            // Default to single-byte lengths and no optional. These are filled in if we have enough bytes to read the RecordInfo and varbyte lengths.
-            var keyLength = 255;
-            long valueLength = 255;
-            optionalLength = 0;
-
             // In the vast majority of cases we will already have read at least one sector, which has all we need for length bytes, and maybe the full record.
             if (availableBytes >= RecordInfo.GetLength() + 1 + 2) // + 1 for indicator byte + the minimum of 2 1-byte lengths for key and value
             {
                 (var keyLengthBytes, var valueLengthBytes, isChunkedValue) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
                 recordInfo = *(RecordInfo*)ptr;
-                if (recordInfo.Invalid)
+                if (recordInfo.Invalid) // includes IsNull
                     return false;
-                optionalLength = DiskLogRecord.GetOptionalLength(recordInfo);
+                optionalLength = LogRecord.GetOptionalLength(recordInfo);
 
                 var offsetToKeyStart = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes;
                 if (availableBytes >= offsetToKeyStart)
                 {
-                    keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-                    valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
+                    var keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
+                    var valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
 
                     if (availableBytes >= offsetToKeyStart + keyLength)
                     {
@@ -401,7 +396,7 @@ namespace Tsavorite.core
                     valueOverflow = AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength));
 
                     keyBuffer = readParams.bufferPool.Get(keyLength);
-                    valueOverflow.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.AsSpan());
+                    valueOverflow.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.Span);
                     valueOverflow.IncreaseOffsetFromStart(keyLength);
 
                     if (optionalLength > 0)

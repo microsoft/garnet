@@ -75,7 +75,8 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress, ILogger logger = null)
-            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, default, logPageSizeBits, false, logger: logger)
+            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, includeSealedRecords: false, default, logPageSizeBits,
+                   initForReads: false, logger: logger)
         {
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;
@@ -207,12 +208,9 @@ namespace Tsavorite.core
                 if (disposed)
                     return false;
 
-                var _endAddress = endAddress;
-                if (tailAddress > _endAddress) _endAddress = tailAddress;
-
+                var _endAddress = tailAddress > endAddress ? tailAddress : endAddress;
                 if (currentAddress >= _endAddress)
                     return false;
-
 
                 if (BufferAndLoad(currentAddress, _currentPage, _currentFrame, _headAddress, _endAddress))
                     continue;
