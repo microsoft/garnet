@@ -1271,5 +1271,70 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
             }
         }
+
+        [Test, Order(24)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationManualCheckpointing()
+        {
+            // Use case here is, outside of the cluster, period COMMITAOFs are requested.
+            // Done so in recovery scenarios, if a primary does NOT come back there's still confidence
+            // a replica has recent data.
+
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + primary_count * replica_count;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1);
+            context.CreateConnection(useTLS: true);
+            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+
+            var primaryEndPoint = (IPEndPoint)context.endpoints[0];
+            var replicaEndPoint = (IPEndPoint)context.endpoints[1];
+
+            // Check cluster is in good state pre-commit
+            {
+                var firstVal = Guid.NewGuid().ToString();
+                var setPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "SET", ["test-key", firstVal]);
+                ClassicAssert.AreEqual("OK", setPrimaryRes);
+                var getPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "GET", ["test-key"]);
+                ClassicAssert.AreEqual(firstVal, getPrimaryRes);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
+                var readonlyReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "READONLY", []);
+                ClassicAssert.AreEqual("OK", readonlyReplicaRes);
+                var getReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "GET", ["test-key"]);
+                ClassicAssert.AreEqual(firstVal, getReplicaRes);
+            }
+
+            // Commit outside of cluster logic
+            var primaryCommit = context.nodes[0].Store.CommitAOF();
+            ClassicAssert.IsTrue(primaryCommit);
+            var secondCommit = context.nodes[1].Store.CommitAOF();
+            ClassicAssert.IsFalse(secondCommit);
+
+            // Check cluster remains in good state
+            {
+                var secondVal = Guid.NewGuid().ToString();
+                var setPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "SET", ["test-key2", secondVal]);
+                ClassicAssert.AreEqual("OK", setPrimaryRes);
+                var getPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "GET", ["test-key2"]);
+                ClassicAssert.AreEqual(secondVal, getPrimaryRes);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
+                var readonlyReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "READONLY", []);
+                ClassicAssert.AreEqual("OK", readonlyReplicaRes);
+                var getReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "GET", ["test-key2"]);
+                ClassicAssert.AreEqual(secondVal, getReplicaRes);
+            }
+        }
     }
 }

@@ -9,24 +9,41 @@ namespace Garnet.server
     /// <summary>
     /// Store API
     /// </summary>
-    public class StoreApi
+    public sealed class StoreApi(StoreWrapper storeWrapper)
     {
-        readonly StoreWrapper storeWrapper;
-
-        /// <summary>
-        /// Construct new Store API instance
-        /// </summary>
-        /// <param name="storeWrapper"></param>
-        public StoreApi(StoreWrapper storeWrapper)
-        {
-            this.storeWrapper = storeWrapper;
-        }
-
         /// <summary>
         /// Commit AOF
         /// </summary>
-        /// <param name="spinWait"></param>
-        public void CommitAOF(bool spinWait = false) => storeWrapper.CommitAOF(spinWait);
+        /// <param name="spinWait">True if should wait until all commits complete</param>
+        /// <returns>false if the commit was ignored due to node state or config</returns>
+        public bool CommitAOF(bool spinWait = false)
+        {
+            if (storeWrapper.clusterProvider != null)
+            {
+                if (!storeWrapper.clusterProvider.PreventRoleChange())
+                {
+                    return false;
+                }
+
+                try
+                {
+                    if (storeWrapper.clusterProvider.IsReplica())
+                    {
+                        return false;
+                    }
+
+                    // We must always wait for commits to complete if we're
+                    // holding the role lock
+                    return storeWrapper.CommitAOF(spinWait: true);
+                }
+                finally
+                {
+                    storeWrapper.clusterProvider.AllowRoleChange();
+                }
+            }
+
+            return storeWrapper.CommitAOF(spinWait);
+        }
 
         /// <summary>
         /// Wait for commit

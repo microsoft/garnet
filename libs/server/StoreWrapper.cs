@@ -464,14 +464,20 @@ namespace Garnet.server
         /// Commit AOF for all active databases
         /// </summary>
         /// <param name="spinWait">True if should wait until all commits complete</param>
-        internal void CommitAOF(bool spinWait)
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool CommitAOF(bool spinWait)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF)
+            {
+                return false;
+            }
 
             var task = databaseManager.CommitToAofAsync();
-            if (!spinWait) return;
+            if (!spinWait) return true;
 
             task.GetAwaiter().GetResult();
+
+            return true;
         }
 
         /// <summary>

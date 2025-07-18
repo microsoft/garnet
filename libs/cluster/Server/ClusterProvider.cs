@@ -85,6 +85,14 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public bool PreventRoleChange()
+        => replicationManager.BeginRecovery(RecoveryStatus.ReadRole);
+
+        /// <inheritdoc />
+        public void AllowRoleChange()
+        => replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
+
+        /// <inheritdoc />
         public void Start()
         {
             clusterManager?.Start();
