@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using System.Threading;
 using Garnet.common;
 
 namespace Garnet.server
@@ -626,13 +627,14 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
             }
 
-            // Convert expiration to milliseconds
-            if (command == RespCommand.HEXPIRE || command == RespCommand.HEXPIREAT)
-                expiration *= 1000;
-
-            // Convert to expiration time
-            if (command == RespCommand.HEXPIRE || command == RespCommand.HPEXPIRE)
-                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // Convert to expiration time in milliseconds
+            expiration = command switch
+            {
+                RespCommand.HEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).ToUnixTimeMilliseconds(),
+                RespCommand.HPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).ToUnixTimeMilliseconds(),
+                RespCommand.HEXPIREAT => expiration * 1000,
+                _ => expiration
+            };
 
             // Encode expiration time and expiration option and pass them into the input object
             var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);

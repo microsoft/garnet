@@ -1786,13 +1786,14 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
             }
 
-            // Convert to milliseconds
-            if (command == RespCommand.ZEXPIRE || command == RespCommand.ZEXPIREAT)
-                expiration *= 1000;
-
-            // Convert to expiration time
-            if (command == RespCommand.ZEXPIRE || command == RespCommand.ZPEXPIRE)
-                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // Convert to expiration time in milliseconds
+            expiration = command switch
+            {
+                RespCommand.ZEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).ToUnixTimeMilliseconds(),
+                RespCommand.ZPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).ToUnixTimeMilliseconds(),
+                RespCommand.ZEXPIREAT => expiration * 1000,
+                _ => expiration
+            };
 
             // Encode expiration time and expiration option and pass them into the input object
             var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
