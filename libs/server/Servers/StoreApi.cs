@@ -31,6 +31,14 @@ namespace Garnet.server
         private PreventRoleChangeLock reusableLock;
 
         /// <summary>
+        /// Helper for checking if node is currently a replica.
+        /// 
+        /// Only call under a <see cref="PreventRoleChangeLock"/> using acquired via <see cref="PreventRoleChange"/>.
+        /// </summary>
+        private bool IsReplica
+        => storeWrapper.clusterProvider?.IsReplica() ?? false;
+
+        /// <summary>
         /// Commit AOF
         /// </summary>
         /// <param name="spinWait">True if should wait until all commits complete</param>
@@ -39,7 +47,7 @@ namespace Garnet.server
         {
             using (PreventRoleChange(out var acquired))
             {
-                if (!acquired)
+                if (!acquired || IsReplica)
                 {
                     return false;
                 }
@@ -58,7 +66,7 @@ namespace Garnet.server
         {
             using (PreventRoleChange(out var acquired))
             {
-                if (!acquired)
+                if (!acquired || IsReplica)
                 {
                     return false;
                 }
@@ -75,7 +83,7 @@ namespace Garnet.server
         {
             using (PreventRoleChange(out var acquired))
             {
-                if (!acquired)
+                if (!acquired || IsReplica)
                 {
                     return false;
                 }
@@ -92,7 +100,7 @@ namespace Garnet.server
         {
             using (PreventRoleChange(out var acquired))
             {
-                if (!acquired)
+                if (!acquired || IsReplica)
                 {
                     return false;
                 }
@@ -106,8 +114,21 @@ namespace Garnet.server
         /// Optionally truncate log on disk. This is a destructive operation. Instead take a checkpoint if you are using checkpointing, as
         /// that will safely truncate the log on disk after the checkpoint.
         /// </summary>
-        public void FlushDB(int dbId = 0, bool unsafeTruncateLog = false) =>
-            storeWrapper.FlushDatabase(unsafeTruncateLog, dbId);
+        /// <returns>false if the commit was ignored due to node state or config</returns>
+        public bool FlushDB(int dbId = 0, bool unsafeTruncateLog = false)
+        {
+            using (PreventRoleChange(out var acquired))
+            {
+                if (!acquired || IsReplica)
+                {
+                    return false;
+                }
+
+                storeWrapper.FlushDatabase(unsafeTruncateLog, dbId);
+
+                return true;
+            }
+        }
 
         /// <summary>
         /// Helper to disable role changes during a using block.
