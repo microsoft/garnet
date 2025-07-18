@@ -303,8 +303,8 @@ namespace Garnet.server
         /// </summary>
         public static bool GetDistanceWhenInRectangle(double widthMts, double heightMts, double latCenterPoint, double lonCenterPoint, double lat2, double lon2, ref double distance)
         {
-            var lonDistance = Distance(lat2, lon2, latCenterPoint, lon2);
-            var latDistance = Distance(lat2, lon2, lat2, lonCenterPoint);
+            var lonDistance = Distance(lat2, lon2, lat2, lonCenterPoint);
+            var latDistance = Distance(lat2, lon2, latCenterPoint, lon2);
             if (lonDistance > widthMts / 2 || latDistance > heightMts / 2)
             {
                 return false;
