@@ -1367,7 +1367,8 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(0, 12.6)]
+        [TestCase(0, 0.1)]
+        [TestCase(0.1, 12.5)]
         [TestCase(12.6, 0)]
         [TestCase(10, 10)]
         [TestCase(910151, 0.23659)]
