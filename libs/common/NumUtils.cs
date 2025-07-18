@@ -466,7 +466,7 @@ namespace Garnet.common
 
             signSize = (byte)(value < 0 ? 1 : 0); // Add sign if the number is negative
             value = Math.Abs(value);
-            integerDigits = (int)Math.Log10(value) + 1;
+            integerDigits = (value < 10) ? 1 : (int)Math.Log10(value) + 1;
 
             fractionalDigits = 0; // Max of 15 significant digits
             while (fractionalDigits <= 14 && Math.Abs(value - Math.Round(value, fractionalDigits)) > 2 * Double.Epsilon) // 2 * Double.Epsilon is used to handle floating point errors
