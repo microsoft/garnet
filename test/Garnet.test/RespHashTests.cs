@@ -1181,6 +1181,8 @@ namespace Garnet.test
         [Test]
         public void CanDoHashExpireWithAofRecovery()
         {
+            // Test AOF recovery of hash entries with expiry
+
             var key1 = "key1";
             var key2 = "key2";
             HashEntry[] values1_1 = [new HashEntry("key1_1", "val1_1"), new HashEntry("key1_2", "val1_2")];
@@ -1193,27 +1195,42 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+
+                // Set 1st hash set, add long expiry to 1 entry
                 db.HashSet(key1, values1_1);
                 db.Execute("HEXPIREAT", key1, expireTime.ToUnixTimeSeconds(), "FIELDS", 1, "key1_1");
+
+                // Set 1st hash set, add short expiry to 1 entry
                 db.HashSet(key2, values2_1);
                 db.Execute("HEXPIRE", key2, 1, "FIELDS", 1, "key2_1");
+
+                // Wait for short expiry to pass
                 Thread.Sleep(2000);
 
+                // Add more entries to 1st and 2nd hash sets
                 db.HashSet(key1, values1_2);
                 db.HashSet(key2, values2_2);
+
+                // Add longer expiry to entry in 2nd hash set
                 db.Execute("HPEXPIRE", key2, 15000, "FIELDS", 1, "key2_2");
                 Thread.Sleep(2000);
 
+                // Verify 1st hash set contains all added entries
                 var recoveredValues = db.HashGetAll(key1);
                 CollectionAssert.AreEquivalent(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry times of entries in 1st hash set
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("HEXPIRETIME", key1, "FIELDS", 2, "key1_1", "key1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
                 ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
+                // Verify 2nd hash set contains all added entries except 1 expired entry
                 recoveredValues = db.HashGetAll(key2);
                 CollectionAssert.AreEquivalent(values2_1.Skip(1).Union(values2_2), recoveredValues);
+
+                // Verify 2nd hash set entries ttls
                 var recoveredValuesTtl = (RedisResult[])db.Execute("HTTL", key2, "FIELDS", 4, "key2_1", "key2_2", "key2_3", "key2_4");
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
@@ -1224,6 +1241,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }
 
+            // Commit to AOF and restart server
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -1233,16 +1251,22 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
+                // Verify 1st hash set contains all added entries
                 var recoveredValues = db.HashGetAll(key1);
                 CollectionAssert.AreEquivalent(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry times of entries in 1st hash set
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("HEXPIRETIME", key1, "FIELDS", 2, "key1_1", "key1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
                 ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
+                // Verify 2nd hash set contains all added entries except 1 expired entry
                 recoveredValues = db.HashGetAll(key2);
                 CollectionAssert.AreEquivalent(values2_1.Skip(1).Union(values2_2), recoveredValues);
+
+                // Verify 2nd hash set entries ttls
                 var recoveredValuesTtl = (RedisResult[])db.Execute("HPTTL", key2, "FIELDS", 4, "key2_1", "key2_2", "key2_3", "key2_4");
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);

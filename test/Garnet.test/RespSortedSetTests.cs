@@ -2291,6 +2291,8 @@ namespace Garnet.test
         [Test]
         public void CanDoSortedSetExpireWithAofRecovery()
         {
+            // Test AOF recovery of sorted set entries with expiry
+
             var key1 = "key1";
             var key2 = "key2";
             SortedSetEntry[] values1_1 = [new SortedSetEntry("val1_1", 1.1), new SortedSetEntry("val1_2", 1.2)];
@@ -2303,27 +2305,42 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+
+                // Set 1st sorted set, add long expiry to 1 entry
                 db.SortedSetAdd(key1, values1_1);
                 db.Execute("ZEXPIREAT", key1, expireTime.ToUnixTimeSeconds(), "MEMBERS", 1, "val1_1");
+
+                // Set 2nd sorted set, add short expiry to 1 entry
                 db.SortedSetAdd(key2, values2_1);
                 db.Execute("ZEXPIRE", key2, 1, "MEMBERS", 1, "val2_1");
+
+                // Wait for short expiry to pass
                 Thread.Sleep(2000);
 
+                // Add more entries to 1st and 2nd sorted sets
                 db.SortedSetAdd(key1, values1_2);
                 db.SortedSetAdd(key2, values2_2);
+
+                // Add longer expiry to entry in 2nd sorted set
                 db.Execute("ZPEXPIRE", key2, 15000, "MEMBERS", 1, "val2_2");
                 Thread.Sleep(2000);
 
+                // Verify 1st sorted set contains all added entries
                 var recoveredValues = db.SortedSetRangeByScoreWithScores(key1);
                 CollectionAssert.AreEqual(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry times of entries in 1st sorted set
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("ZEXPIRETIME", key1, "MEMBERS", 2, "val1_1", "val1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
                 ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
+                // Verify 2nd sorted set contains all added entries except 1 expired entry
                 recoveredValues = db.SortedSetRangeByScoreWithScores(key2);
                 CollectionAssert.AreEqual(values2_1.Skip(1).Union(values2_2), recoveredValues);
+
+                // Verify 2nd sorted set entries ttls
                 var recoveredValuesTtl = (RedisResult[])db.Execute("ZTTL", key2, "MEMBERS", 4, "val2_1", "val2_2", "val2_3", "val2_4");
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
@@ -2334,6 +2351,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
             }
 
+            // Commit to AOF and restart server
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -2343,16 +2361,22 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
+                // Verify 1st sorted set contains all added entries
                 var recoveredValues = db.SortedSetRangeByScoreWithScores(key1);
                 CollectionAssert.AreEqual(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry times of entries in 1st sorted set
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("ZEXPIRETIME", key1, "MEMBERS", 2, "val1_1", "val1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
                 ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
+                // Verify 2nd sorted set contains all added entries except 1 expired entry
                 recoveredValues = db.SortedSetRangeByScoreWithScores(key2);
                 CollectionAssert.AreEqual(values2_1.Skip(1).Union(values2_2), recoveredValues);
+
+                // Verify 2nd sorted set entries ttls
                 var recoveredValuesTtl = (RedisResult[])db.Execute("ZPTTL", key2, "MEMBERS", 4, "val2_1", "val2_2", "val2_3", "val2_4");
                 ClassicAssert.IsNotNull(recoveredValuesTtl);
                 ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);

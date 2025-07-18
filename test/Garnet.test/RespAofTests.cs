@@ -293,33 +293,50 @@ namespace Garnet.test
         [Test]
         public void AofExpiryRMWStoreRecoverTest()
         {
+            // Test AOF recovery of main store records with an expiry time
+
             var expireTime = DateTime.UtcNow + TimeSpan.FromMinutes(1);
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+
+                // Add 1st string to main store with long expiry
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey1", "AofExpiryRMWStoreRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
+                // Add 2nd string to main store with short expiry
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue2", expiry: TimeSpan.FromSeconds(1), when: When.NotExists);
+                // Wait for 2nd string record to expire
                 Thread.Sleep(2000);
+
+                // Set values for 1st and 2nd records only if they don't exist
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey1", "AofExpiryRMWStoreRecoverTestValue3", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10), when: When.NotExists);
+                
+                // Set expiry time for 2nd string
                 db.KeyExpire("AofExpiryRMWStoreRecoverTestKey1", expireTime);
                 Thread.Sleep(2000);
 
+                // Verify 1st string did not change
                 var recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue1", recoveredValue.ToString());
+
+                // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
                 Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
 
+                // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue4", recoveredValue.ToString());
+
+                // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
                 ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 
+            // Commit to AOF and restart server
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -328,14 +345,21 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+
+                // Verify 1st string value has not changed
                 var recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue1", recoveredValue.ToString());
+
+                // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
                 Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
 
+                // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.AreEqual("AofExpiryRMWStoreRecoverTestValue4", recoveredValue.ToString());
+
+                // Verify 2nd string ttl
                 var recoveredValueTtl = db.KeyTimeToLive("AofExpiryRMWStoreRecoverTestKey2");
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
                 ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 8);
@@ -426,6 +450,8 @@ namespace Garnet.test
         [Test]
         public void AofExpiryRMWObjectStoreRecoverTest()
         {
+            // Test AOF recovery of object store records with an expiry time
+
             var key1 = "AofExpiryRMWObjectStoreRecoverTestKey1";
             var key2 = "AofExpiryRMWObjectStoreRecoverTestKey2";
             RedisValue[] values1_1 = ["AofExpiryRMWObjectStoreRecoverTestValue1_1", "AofExpiryRMWObjectStoreRecoverTestValue1_2"];
@@ -434,36 +460,52 @@ namespace Garnet.test
             RedisValue[] values2_2 = ["AofExpiryRMWObjectStoreRecoverTestValue2_3", "AofExpiryRMWObjectStoreRecoverTestValue2_4"];
 
             var expireTime = DateTime.UtcNow + TimeSpan.FromSeconds(45);
-
+            
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
 
+                // Add 1st list to object store with long expiry
                 db.ListRightPush(key1, values1_1);
                 db.KeyExpire(key1, expireTime);
+
+                // Add 2nd list to object store with short expiry
                 db.ListRightPush(key2, values2_1);
                 db.KeyExpire(key2, TimeSpan.FromSeconds(1));
+
+                // Wait for 2nd list record to expire
                 Thread.Sleep(2000);
 
+                // Push to elements to 1st list and 2nd list (now empty)
                 db.ListRightPush(key1, values1_2);
                 db.ListRightPush(key2, values2_2);
+                
+                // Add longer expiry to 2nd list
                 db.KeyExpire(key2, TimeSpan.FromSeconds(15));
+
                 Thread.Sleep(2000);
 
+                // Verify 1st list has values from both pushes
                 var recoveredValues = db.ListRange(key1);
                 CollectionAssert.AreEqual(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry time of 1st list
                 var recoveredValuesExpTime = db.KeyExpireTime(key1);
                 ClassicAssert.IsTrue(recoveredValuesExpTime.HasValue);
                 Assert.That(recoveredValuesExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
 
+                // Verify 2nd list has values only from 2nd push
                 recoveredValues = db.ListRange(key2);
                 CollectionAssert.AreEqual(values2_2, recoveredValues);
+
+                // Verify 2nd list ttl
                 var recoveredValueTtl = db.KeyTimeToLive(key2);
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
                 ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 13);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
             }
 
+            // Commit to AOF and restart server
             server.Store.CommitAOF(true);
             server.Dispose(false);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
@@ -472,15 +514,22 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
+
+                // Verify 1st list has values from both pushes
                 var recoveredValues = db.ListRange(key1);
                 CollectionAssert.AreEqual(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry time of 1st list
                 var recoveredValuesExpTime = db.KeyExpireTime(key1);
                 ClassicAssert.IsTrue(recoveredValuesExpTime.HasValue);
                 Assert.That(recoveredValuesExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
 
+                // Verify 2nd list has values only from 2nd push
                 recoveredValues = db.ListRange(key2);
                 CollectionAssert.AreEqual(values2_2, recoveredValues);
                 var recoveredValueTtl = db.KeyTimeToLive(key2);
+
+                // Verify 2nd list ttl
                 ClassicAssert.IsTrue(recoveredValueTtl.HasValue);
                 ClassicAssert.Less(recoveredValueTtl.Value.TotalSeconds, 13);
                 ClassicAssert.Greater(recoveredValueTtl.Value.TotalSeconds, 0);
