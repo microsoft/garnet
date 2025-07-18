@@ -144,23 +144,23 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
                 var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
 
-                if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Memory))
+                if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Memory, allowNonAlphabeticChars: false))
                     memorySize = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjLogMemory))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjLogMemory, allowNonAlphabeticChars: true))
                     objLogMemory = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjHeapMemory))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjHeapMemory, allowNonAlphabeticChars: true))
                     objHeapMemory = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Index))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Index, allowNonAlphabeticChars: false))
                     index = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjIndex))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjIndex, allowNonAlphabeticChars: true))
                     objIndex = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertFileName))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertFileName, allowNonAlphabeticChars: true))
                     certFileName = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertPassword))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertPassword, allowNonAlphabeticChars: true))
                     certPassword = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterUsername))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterUsername, allowNonAlphabeticChars: true))
                     clusterUsername = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterPassword))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterPassword, allowNonAlphabeticChars: true))
                     clusterPassword = Encoding.ASCII.GetString(value);
                 else
                 {

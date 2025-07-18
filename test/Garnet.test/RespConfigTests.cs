@@ -238,4 +238,75 @@ namespace Garnet.test
                 string.Format(CmdStrings.GenericErrIncorrectSizeFormat, option));
         }
     }
+
+    [TestFixture]
+    public class RespConfigLowMemoryTests
+    {
+        GarnetServer server;
+        private string memorySize = "1m";
+        private string indexSize = "1m";
+        private string objectStoreLogMemorySize = "16m";
+        private string objectStoreHeapMemorySize = "16m";
+        private string objectStoreIndexSize = "8m";
+        private string pageSize = "1024";
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                memorySize: memorySize,
+                indexSize: indexSize,
+                pageSize: pageSize,
+                objectStoreLogMemorySize: objectStoreLogMemorySize,
+                objectStoreIndexSize: objectStoreIndexSize,
+                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
+                lowMemory: true);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        [TestCase(true, "1m")]
+        [TestCase(false, "1m")]
+        public void ConfigSetMemorySizeTest2(bool mainStore, string newSize)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var option = mainStore ? "memory" : "obj-log-memory";
+            var metricType = mainStore ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
+            var initMemorySize = mainStore ? memorySize : objectStoreLogMemorySize;
+
+            var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
+            var server = redis.GetServer(TestUtils.EndPoint);
+            var info = TestUtils.GetStoreAddressInfo(server);
+            var headAddress = info.HeadAddress;
+
+            // Start at tail address of 64
+            ClassicAssert.AreEqual(64, info.TailAddress);
+
+            var i = 0;
+            var key = $"key{i++:00000}";
+            var value = new string('x', 512);
+            _ = db.StringSet(key, value);
+            info = TestUtils.GetStoreAddressInfo(server);
+            var recordSize = info.TailAddress - info.HeadAddress;
+
+            while (info.HeadAddress == headAddress)
+            {
+                key = $"key{i++:00000}";
+                value = new string('x', 512);
+                _ = db.StringSet(key, value);
+                info = TestUtils.GetStoreAddressInfo(server);
+            }
+
+            Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+        }
+    }
 }
