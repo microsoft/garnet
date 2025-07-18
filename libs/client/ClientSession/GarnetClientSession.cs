@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.client
 {
     /// <summary>
-    /// Mono-threaded remote client session for Garnet (a session makes a single network connection, and 
+    /// Mono-threaded remote client session for Garnet (a session makes a single network connection, and
     /// expects mono-threaded client access, i.e., no concurrent invocations of API by client)
     /// </summary>
     public sealed partial class GarnetClientSession : IServerHook, IMessageConsumer
@@ -44,7 +44,7 @@ namespace Garnet.client
         Socket socket;
         int disposed;
 
-        // Send        
+        // Send
         unsafe byte* offset, end;
 
         // Num outstanding commands
@@ -103,6 +103,7 @@ namespace Garnet.client
         /// <param name="networkBufferSettings">Settings for send and receive network buffers</param>
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
+        /// <param name="rawResult">Recieve result as raw string</param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -431,6 +432,7 @@ namespace Garnet.client
         private unsafe void InternalExecute(params string[] command)
         {
             byte* curr = offset;
+
             while (!RespWriteUtils.TryWriteArrayLength(command.Length, ref curr, end))
             {
                 Flush();

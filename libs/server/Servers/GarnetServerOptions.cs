@@ -428,6 +428,11 @@ namespace Garnet.server
         public ConnectionProtectionOption EnableDebugCommand;
 
         /// <summary>
+        /// Enables the DEBUG command
+        /// </summary>
+        public ConnectionProtectionOption EnableInlineCommands;
+
+        /// <summary>
         /// Enables the MODULE command
         /// </summary>
         public ConnectionProtectionOption EnableModuleCommand;

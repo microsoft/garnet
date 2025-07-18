@@ -88,6 +88,11 @@ namespace Garnet.server
         /// </summary>
         int endReadHead;
 
+        /// <summary>
+        /// No redis command (including the terminator) is smaller than this length.
+        /// </summary>
+        private const int MinimumProcessLength = 4;
+
         internal byte* dcurr, dend;
         bool toDispose;
 
@@ -416,6 +421,16 @@ namespace Garnet.server
                     networkSender.IsLocalConnection());
         }
 
+        internal bool CanRunInlineCommands()
+        {
+            var enableInlineCommands = storeWrapper.serverOptions.EnableInlineCommands;
+
+            return
+                (enableInlineCommands == ConnectionProtectionOption.Yes) ||
+                ((enableInlineCommands == ConnectionProtectionOption.Local) &&
+                    networkSender.IsLocalConnection());
+        }
+
         internal bool CanRunModule()
         {
             var enableModuleCommand = storeWrapper.serverOptions.EnableModuleCommand;
@@ -554,7 +569,7 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
-            while (bytesRead - readHead >= 4)
+            while (bytesRead - readHead >= MinimumProcessLength)
             {
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
@@ -643,7 +658,7 @@ namespace Garnet.server
         }
 
         // Make first command in string as uppercase
-        private bool MakeUpperCase(byte* ptr)
+        private bool MakeUpperCase(byte* ptr, int len)
         {
             // Assume most commands are already upper case.
             // Assume most commands are 2-8 bytes long.
@@ -658,7 +673,6 @@ namespace Garnet.server
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
-            var len = bytesRead - readHead;
             if (len >= 12)
             {
                 var cmdLen = (uint)(*(ptr + 5) - '2');
