@@ -250,11 +250,11 @@ namespace Garnet.server
             => Increment(key, out output, -decrementCount);
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val)
+        public GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val,
+                                             Span<byte> pinnedOutputBuffer)
         {
             SessionParseState parseState = default;
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            output = ArgSlice.FromPinnedSpan(outputBuffer);
+            output = ArgSlice.FromPinnedSpan(pinnedOutputBuffer);
 
             var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
             _ = Increment(key, ref input, ref output);
@@ -280,7 +280,9 @@ namespace Garnet.server
         public GarnetStatus IncrementByFloat(ArgSlice key, out double dbl, double val)
         {
             dbl = default;
-            var status = IncrementByFloat(key, out ArgSlice output, val);
+
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            var status = IncrementByFloat(key, out var output, val, outputBuffer);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
                             ? (OperationError)output.Span[0]
