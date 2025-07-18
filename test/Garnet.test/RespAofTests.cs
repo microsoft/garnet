@@ -311,7 +311,7 @@ namespace Garnet.test
                 // Set values for 1st and 2nd records only if they don't exist
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey1", "AofExpiryRMWStoreRecoverTestValue3", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("AofExpiryRMWStoreRecoverTestKey2", "AofExpiryRMWStoreRecoverTestValue4", expiry: TimeSpan.FromSeconds(10), when: When.NotExists);
-                
+
                 // Set expiry time for 2nd string
                 db.KeyExpire("AofExpiryRMWStoreRecoverTestKey1", expireTime);
                 Thread.Sleep(2000);
@@ -460,7 +460,7 @@ namespace Garnet.test
             RedisValue[] values2_2 = ["AofExpiryRMWObjectStoreRecoverTestValue2_3", "AofExpiryRMWObjectStoreRecoverTestValue2_4"];
 
             var expireTime = DateTime.UtcNow + TimeSpan.FromSeconds(45);
-            
+
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
                 var db = redis.GetDatabase(0);
@@ -479,7 +479,7 @@ namespace Garnet.test
                 // Push to elements to 1st list and 2nd list (now empty)
                 db.ListRightPush(key1, values1_2);
                 db.ListRightPush(key2, values2_2);
-                
+
                 // Add longer expiry to 2nd list
                 db.KeyExpire(key2, TimeSpan.FromSeconds(15));
 
