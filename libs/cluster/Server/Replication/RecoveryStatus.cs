@@ -32,5 +32,9 @@ namespace Garnet.cluster
         /// Replica has recovered the checkpoint after signal from primary
         /// </summary>
         CheckpointRecoveredAtReplica,
+        /// <summary>
+        /// Need to ensure a node does not change its role during a commit or checkpoint
+        /// </summary>
+        ReadRole,
     }
 }

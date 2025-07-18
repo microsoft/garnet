@@ -464,32 +464,40 @@ namespace Garnet.server
         /// Commit AOF for all active databases
         /// </summary>
         /// <param name="spinWait">True if should wait until all commits complete</param>
-        internal void CommitAOF(bool spinWait)
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool CommitAOF(bool spinWait)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF)
+            {
+                return false;
+            }
 
             var task = databaseManager.CommitToAofAsync();
-            if (!spinWait) return;
+            if (!spinWait) return true;
 
             task.GetAwaiter().GetResult();
+
+            return true;
         }
 
         /// <summary>
         /// Wait for commits from all active databases
         /// </summary>
-        internal void WaitForCommit() =>
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool WaitForCommit() =>
             WaitForCommitAsync().GetAwaiter().GetResult();
 
         /// <summary>
         /// Asynchronously wait for commits from all active databases
         /// </summary>
         /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
+        /// <returns>false if commit is skipped for config reasons</returns>
+        internal async ValueTask<bool> WaitForCommitAsync(CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF) return false;
 
             await databaseManager.WaitForCommitToAofAsync(token);
+            return true;
         }
 
         /// <summary>
@@ -498,21 +506,22 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
+        /// <returns>false if commit is skipped for config reasons</returns>
+        internal async ValueTask<bool> CommitAOFAsync(int dbId = -1, CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF) return false;
 
             if (dbId == -1)
             {
                 await databaseManager.CommitToAofAsync(token, logger);
-                return;
+                return true;
             }
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
 
             await databaseManager.CommitToAofAsync(dbId, token);
+            return true;
         }
 
         /// <summary>

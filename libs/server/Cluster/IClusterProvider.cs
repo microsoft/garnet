@@ -154,5 +154,19 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         string GetRunId();
+
+        /// <summary>
+        /// Call to prevent this node from changing its current role.
+        /// 
+        /// If this returns true, must be followed by a single call to 
+        /// <see cref="AllowRoleChange"/>
+        /// </summary>
+        bool PreventRoleChange();
+
+        /// <summary>
+        /// After a successful call to <see cref="PreventRoleChange"/>, 
+        /// allows the node to change roles again.
+        /// </summary>
+        void AllowRoleChange();
     }
 }

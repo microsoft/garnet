@@ -38,7 +38,7 @@ namespace Garnet.cluster
         private SingleWriterMultiReaderLock recoverLock;
         private SingleWriterMultiReaderLock recoveryStateChangeLock;
 
-        public bool IsRecovering => currentRecoveryStatus != RecoveryStatus.NoRecovery;
+        public bool IsRecovering => currentRecoveryStatus is not (RecoveryStatus.NoRecovery or RecoveryStatus.ReadRole);
 
         public bool CannotStreamAOF => IsRecovering && currentRecoveryStatus != RecoveryStatus.CheckpointRecoveredAtReplica;
 
@@ -232,7 +232,13 @@ namespace Garnet.cluster
                 return false;
             }
 
-            if (!recoverLock.TryWriteLock())
+            // For just reading a role, we need a non-exclusive lock
+            var lockAcquired =
+                nextRecoveryStatus == RecoveryStatus.ReadRole ?
+                    recoverLock.TryReadLock() :
+                    recoverLock.TryWriteLock();
+
+            if (!lockAcquired)
             {
                 logger?.LogError("Error could not acquire recover lock [{recoverStatus}]", nextRecoveryStatus);
                 // If failed to acquire recoverLock re-enable checkpoint taking
@@ -290,6 +296,11 @@ namespace Garnet.cluster
                             default:
                                 throw new GarnetException($"Invalid state change [{currentRecoveryStatus},{nextRecoveryStatus}]");
                         }
+                        break;
+                    case RecoveryStatus.ReadRole:
+                        currentRecoveryStatus = nextRecoveryStatus;
+                        recoverLock.ReadUnlock();
+                        clusterProvider.storeWrapper.ResumeCheckpoints();
                         break;
                 }
             }
