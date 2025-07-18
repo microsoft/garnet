@@ -28,5 +28,9 @@ namespace Garnet.common
         /// Wait after checkpoint acquisition
         /// </summary>
         Replication_Wait_After_Checkpoint_Acquisition,
+        /// <summary>
+        /// Wait at migration slot driver right after acquiring the end scan range
+        /// </summary>
+        Migration_Slot_End_Scan_Range_Acquisition,
     }
 }
