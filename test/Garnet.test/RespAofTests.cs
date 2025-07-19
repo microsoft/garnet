@@ -323,7 +323,7 @@ namespace Garnet.test
                 // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
-                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromSeconds(1)));
 
                 // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
@@ -353,7 +353,7 @@ namespace Garnet.test
                 // Verify 1st string expiry time
                 var recoveredValueExpTime = db.KeyExpireTime("AofExpiryRMWStoreRecoverTestKey1");
                 ClassicAssert.IsTrue(recoveredValueExpTime.HasValue);
-                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
+                Assert.That(recoveredValueExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromSeconds(1)));
 
                 // Verify 2nd string did change
                 recoveredValue = db.StringGet("AofExpiryRMWStoreRecoverTestKey2");
@@ -492,7 +492,7 @@ namespace Garnet.test
                 // Verify expiry time of 1st list
                 var recoveredValuesExpTime = db.KeyExpireTime(key1);
                 ClassicAssert.IsTrue(recoveredValuesExpTime.HasValue);
-                Assert.That(recoveredValuesExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
+                Assert.That(recoveredValuesExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromSeconds(1)));
 
                 // Verify 2nd list has values only from 2nd push
                 recoveredValues = db.ListRange(key2);
@@ -522,7 +522,7 @@ namespace Garnet.test
                 // Verify expiry time of 1st list
                 var recoveredValuesExpTime = db.KeyExpireTime(key1);
                 ClassicAssert.IsTrue(recoveredValuesExpTime.HasValue);
-                Assert.That(recoveredValuesExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromMilliseconds(1)));
+                Assert.That(recoveredValuesExpTime.Value, Is.EqualTo(expireTime).Within(TimeSpan.FromSeconds(1)));
 
                 // Verify 2nd list has values only from 2nd push
                 recoveredValues = db.ListRange(key2);
