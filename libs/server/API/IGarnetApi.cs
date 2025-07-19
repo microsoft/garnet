@@ -280,10 +280,10 @@ namespace Garnet.server
         /// Increment by float (INCRBYFLOAT)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="outputDbl"></param>
+        /// <param name="output"></param>
         /// <param name="val"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(ArgSlice key, out double outputDbl, double val);
+        GarnetStatus IncrementByFloat(ArgSlice key, out double output, double val);
         #endregion
 
         #region DELETE

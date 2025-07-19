@@ -259,17 +259,16 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
             _ = Increment(key, ref input, ref output);
 
-            var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
-                            ? (OperationError)output.Span[0]
-                            : OperationError.SUCCESS;
+            if (output.Length != NumUtils.MaximumFormatDoubleLength + 1)
+                return GarnetStatus.OK;
+
+            var errorFlag = (OperationError)output.Span[0];
 
             switch (errorFlag)
             {
-                case OperationError.SUCCESS:
-                    return GarnetStatus.OK;
-                case OperationError.NAN_OR_INFINITY:
-                    return GarnetStatus.WRONGTYPE;
                 case OperationError.INVALID_TYPE:
+                    return GarnetStatus.WRONGTYPE;
+                case OperationError.NAN_OR_INFINITY:
                     return GarnetStatus.WRONGTYPE;
                 default:
                     throw new GarnetException($"Invalid OperationError {errorFlag}");
@@ -279,22 +278,22 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus IncrementByFloat(ArgSlice key, out double dbl, double val)
         {
-            dbl = default;
-
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var status = IncrementByFloat(key, out var output, val, outputBuffer);
+            var status = IncrementByFloat(key, out var _output, val, outputBuffer);
 
-            var errorFlag = output.Length == NumUtils.MaximumFormatDoubleLength + 1
-                            ? (OperationError)output.Span[0]
-                            : OperationError.SUCCESS;
-
-            switch (errorFlag)
+            switch (status)
             {
-                case OperationError.SUCCESS:
-                    _ = NumUtils.TryReadDouble(output.ReadOnlySpan, out dbl);
+                case GarnetStatus.OK:
+                    _ = NumUtils.TryReadDouble(_output.ReadOnlySpan, out dbl);
                     break;
-                case OperationError.NAN_OR_INFINITY:
-                    dbl = double.NaN;
+                case GarnetStatus.WRONGTYPE:
+                default:
+                    var errorFlag = (OperationError)_output.Span[0];
+
+                    if (errorFlag == OperationError.NAN_OR_INFINITY)
+                        dbl = double.NaN;
+                    else
+                        dbl = default;
                     break;
             }
 
