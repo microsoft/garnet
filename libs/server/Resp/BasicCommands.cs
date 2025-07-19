@@ -771,7 +771,8 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
             }
 
-            var status = storageApi.IncrementByFloat(key, out ArgSlice output, dbl);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            var status = storageApi.IncrementByFloat(key, out var output, dbl, outputBuffer);
 
             switch (status)
             {
