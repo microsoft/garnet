@@ -244,7 +244,8 @@ namespace Tsavorite.core
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
                         stats.inChainSuccesses++;
                         return true;
                     }
@@ -346,7 +347,7 @@ namespace Tsavorite.core
                 if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
-                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
 
                 if (upsertInfo.Action == UpsertAction.CancelOperation)
                     return OperationStatus.CANCELED;

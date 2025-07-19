@@ -250,7 +250,6 @@ namespace Tsavorite.core
             if (pendingContext.key == default)
                 pendingContext.key = hlog.GetKeyContainer(ref key);
             if (pendingContext.input == default)
-                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
 
             pendingContext.output = output;
             sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
@@ -295,7 +294,8 @@ namespace Tsavorite.core
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically). OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
                         stats.inChainSuccesses++;
                         return true;
                     }

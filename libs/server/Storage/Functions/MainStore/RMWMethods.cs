@@ -101,11 +101,18 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     int spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
-                    var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    var newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
-                    newInputValue.CopyTo(value.AsSpan(spaceForEtag));
+
+                    SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                        src: ref newInputValue,
+                        dst: ref value,
+                        rmwInfo: ref rmwInfo,
+                        recordInfo: ref recordInfo,
+                        metadata: input.arg1,
+                        dstOffsetToCopyTo: spaceForEtag);
 
                     long clientSentEtag = input.parseState.GetLong(1);
 
@@ -134,11 +141,18 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
-                    newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
                     metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
-                    newInputValue.CopyTo(value.AsSpan(spaceForEtag));
+
+                    SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                        src: ref newInputValue,
+                        dst: ref value,
+                        rmwInfo: ref rmwInfo,
+                        recordInfo: ref recordInfo,
+                        metadata: input.arg1,
+                        dstOffsetToCopyTo: spaceForEtag);
 
                     if (spaceForEtag != 0)
                     {
@@ -154,9 +168,17 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
-                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
-                    setValue.CopyTo(value.AsSpan(spaceForEtag));
+                    var setValue = input.parseState.GetArgSliceByRef(0).SpanByte;
+                    //value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
+
+                    // HK TODO: Do i still need the above code?
+                    SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                        src: ref setValue,
+                        dst: ref value,
+                        rmwInfo: ref rmwInfo,
+                        recordInfo: ref recordInfo,
+                        metadata: input.arg1,
+                        dstOffsetToCopyTo: spaceForEtag);
 
                     if (spaceForEtag != 0)
                     {
