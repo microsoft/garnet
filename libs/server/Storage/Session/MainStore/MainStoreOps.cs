@@ -940,8 +940,8 @@ namespace Garnet.server
                 var header = new RespInputHeader(GarnetObjectType.Expire);
 
                 // Re-encode expiration and expiration option as two integers instead of a long
-                var (expiration, expirationOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
-                var (tail, head) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expirationOption);
+                var (expirationInTicks, expirationOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
+                var (tail, head) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationInTicks, expirationOption);
 
                 var objInput = new ObjectInput(header, arg1: tail, arg2: head);
 
@@ -1031,17 +1031,18 @@ namespace Garnet.server
             timeoutSet = false;
             var found = false;
 
-            // Convert to milliseconds
-            if (respCommand == RespCommand.EXPIRE || respCommand == RespCommand.EXPIREAT)
-                expiration *= 1000;
-
-            // Convert to unix-time in milliseconds
-            if (respCommand == RespCommand.EXPIRE || respCommand == RespCommand.PEXPIRE)
-                expiration += DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = respCommand switch
+            {
+                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+            };
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
-                var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expiration, expireOption);
+                var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationTimeInTicks, expireOption);
                 var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
 
                 var _key = key.SpanByte;
@@ -1056,7 +1057,7 @@ namespace Garnet.server
                 !objectStoreBasicContext.IsNull)
             {
                 var (encodedExpirationHead, encodedExpirationTail) =
-                    ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
+                    ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
 
                 var header = new RespInputHeader(GarnetObjectType.Expire);
                 var objInput = new ObjectInput(header, arg1: encodedExpirationHead, arg2: encodedExpirationTail);

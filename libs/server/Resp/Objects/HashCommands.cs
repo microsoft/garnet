@@ -626,17 +626,17 @@ namespace Garnet.server
                 return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrMustMatchNoOfArgs, "numFields")));
             }
 
-            // Convert to expiration time in milliseconds
-            expiration = command switch
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = command switch
             {
-                RespCommand.HEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).ToUnixTimeMilliseconds(),
-                RespCommand.HPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).ToUnixTimeMilliseconds(),
-                RespCommand.HEXPIREAT => expiration * 1000,
-                _ => expiration
+                RespCommand.HEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.HPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.HEXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
             };
 
             // Encode expiration time and expiration option and pass them into the input object
-            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
+            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };

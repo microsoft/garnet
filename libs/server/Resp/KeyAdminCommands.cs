@@ -444,17 +444,17 @@ namespace Garnet.server
                 }
             }
 
-            // Convert to expiration time in milliseconds
-            expiration = command switch
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = command switch
             {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).ToUnixTimeMilliseconds(),
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).ToUnixTimeMilliseconds(),
-                RespCommand.EXPIREAT => expiration * 1000,
-                _ => expiration
+                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
             };
 
             // Encode expiration time and expiration option and pass them into the input object
-            var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expiration, expireOption);
+            var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationTimeInTicks, expireOption);
 
             var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);

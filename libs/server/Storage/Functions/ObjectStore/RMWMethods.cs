@@ -119,12 +119,9 @@ namespace Garnet.server
                 case GarnetObjectType.Expire:
                     var expiryExists = value.Expiration > 0;
 
-                    var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
+                    var (expirationInTicks, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
 
-                    // Convert to .NET ticks
-                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
-
-                    return EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
+                    return EvaluateObjectExpireInPlace(expireOption, expiryExists, expirationInTicks, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -216,12 +213,9 @@ namespace Garnet.server
                 case GarnetObjectType.Expire:
                     var expiryExists = value.Expiration > 0;
 
-                    var (expiration, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
+                    var (expirationInTicks, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
 
-                    // Convert to .NET ticks
-                    expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
-
-                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expiration, ref value, ref output);
+                    EvaluateObjectExpireInPlace(expireOption, expiryExists, expirationInTicks, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)

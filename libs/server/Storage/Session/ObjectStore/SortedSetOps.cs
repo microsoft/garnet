@@ -1584,8 +1584,9 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             results = default;
-            var expiration = expireAt.ToUnixTimeMilliseconds();
-            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
+            var expirationInTicks = expireAt.UtcTicks;
+
+            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationInTicks, expireOption);
 
             parseState.InitializeWithArguments(members);
 

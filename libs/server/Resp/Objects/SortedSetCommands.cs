@@ -1786,17 +1786,17 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
             }
 
-            // Convert to expiration time in milliseconds
-            expiration = command switch
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = command switch
             {
-                RespCommand.ZEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).ToUnixTimeMilliseconds(),
-                RespCommand.ZPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).ToUnixTimeMilliseconds(),
-                RespCommand.ZEXPIREAT => expiration * 1000,
-                _ => expiration
+                RespCommand.ZEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.ZPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.ZEXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
             };
 
             // Encode expiration time and expiration option and pass them into the input object
-            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expiration, expireOption);
+            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: currIdx, encExpirationTail, encExpirationHead);
