@@ -75,7 +75,6 @@ namespace Garnet.server
                     _ => true,
                 },
                 GarnetObjectType.Expire => false,
-                GarnetObjectType.PExpire => false,
                 GarnetObjectType.Persist => false,
                 _ => true,
             };

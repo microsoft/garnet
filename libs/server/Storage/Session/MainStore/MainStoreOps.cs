@@ -937,17 +937,13 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                var respCommand = input.header.cmd;
+                var header = new RespInputHeader(GarnetObjectType.Expire);
 
-                var type = (respCommand == RespCommand.PEXPIRE || respCommand == RespCommand.PEXPIREAT)
-                    ? GarnetObjectType.PExpire
-                    : GarnetObjectType.Expire;
+                // Re-encode expiration and expiration option as two integers instead of a long
+                var (expirationInTicks, expirationOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
+                var (tail, head) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationInTicks, expirationOption);
 
-                var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
-
-                var header = new RespInputHeader(type);
-
-                var objInput = new ObjectInput(header, ref input.parseState, arg1: (int)input.arg1, arg2: expiryAt ? 1 : 0);
+                var objInput = new ObjectInput(header, arg1: tail, arg2: head);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput(output);
@@ -1018,7 +1014,7 @@ namespace Garnet.server
         /// <typeparam name="TContext"></typeparam>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="expiry">The timespan value to set the expiration for.</param>
+        /// <param name="expiration">The timespan value to set the expiration for.</param>
         /// <param name="timeoutSet">True when the timeout was properly set.</param>
         /// <param name="storeType">The store to operate on.</param>
         /// <param name="expireOption">Flags to use for the operation.</param>
@@ -1026,7 +1022,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext">Object context for the object store</param>
         /// <param name="respCommand">The current RESP command</param>
         /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, long expiry, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, RespCommand respCommand)
+        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, long expiration, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, RespCommand respCommand)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
@@ -1035,18 +1031,19 @@ namespace Garnet.server
             timeoutSet = false;
             var found = false;
 
-            // Serialize expiry + expiry options to parse state
-            var expiryLength = NumUtils.CountDigits(expiry);
-            var expirySlice = scratchBufferBuilder.CreateArgSlice(expiryLength);
-            var expirySpan = expirySlice.Span;
-            NumUtils.WriteInt64(expiry, expirySpan);
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = respCommand switch
+            {
+                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+            };
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
-                // Build parse state
-                parseState.InitializeWithArgument(expirySlice);
-
-                var input = new RawStringInput(respCommand, ref parseState, arg1: (byte)expireOption);
+                var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationTimeInTicks, expireOption);
+                var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
 
                 var _key = key.SpanByte;
                 var status = context.RMW(ref _key, ref input, ref output);
@@ -1059,17 +1056,11 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                // Build parse state
+                var (encodedExpirationHead, encodedExpirationTail) =
+                    ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
 
-                var type = (respCommand == RespCommand.PEXPIRE || respCommand == RespCommand.PEXPIREAT)
-                    ? GarnetObjectType.PExpire
-                    : GarnetObjectType.Expire;
-                parseState.InitializeWithArgument(expirySlice);
-
-                var expiryAt = respCommand == RespCommand.PEXPIREAT || respCommand == RespCommand.EXPIREAT;
-
-                var header = new RespInputHeader(type);
-                var objInput = new ObjectInput(header, ref parseState, arg1: (byte)expireOption, arg2: expiryAt ? 1 : 0);
+                var header = new RespInputHeader(GarnetObjectType.Expire);
+                var objInput = new ObjectInput(header, arg1: encodedExpirationHead, arg2: encodedExpirationTail);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput(output);
@@ -1082,8 +1073,6 @@ namespace Garnet.server
 
                 output = objOutput.SpanByteAndMemory;
             }
-
-            scratchBufferBuilder.RewindScratchBuffer(ref expirySlice);
 
             Debug.Assert(output.IsSpanByte);
             if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;

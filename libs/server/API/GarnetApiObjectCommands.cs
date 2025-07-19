@@ -542,8 +542,8 @@ namespace Garnet.server
             => storageSession.HashIncrement(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output)
-            => storageSession.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref output, ref objectContext);
+        public GarnetStatus HashExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashExpire(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashPersist(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
