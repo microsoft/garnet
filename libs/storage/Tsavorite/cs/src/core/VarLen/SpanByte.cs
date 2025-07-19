@@ -402,7 +402,6 @@ namespace Tsavorite.core
                 return false;
 
             var newLength = addMetadata ? Length + sizeof(long) : Length;
-            newLength += dstOffsetToCopyTo;
 
             if (dst.Length < newLength)
             {

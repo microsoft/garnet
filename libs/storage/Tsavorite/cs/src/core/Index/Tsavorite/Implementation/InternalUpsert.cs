@@ -347,7 +347,7 @@ namespace Tsavorite.core
                 if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
-                stackCtx.SetNewRecordInvalid(ref newRecordInfo);
+                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
 
                 if (upsertInfo.Action == UpsertAction.CancelOperation)
                     return OperationStatus.CANCELED;
