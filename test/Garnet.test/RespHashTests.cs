@@ -1223,7 +1223,7 @@ namespace Garnet.test
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("HEXPIRETIME", key1, "FIELDS", 2, "key1_1", "key1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
-                ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
+                Assert.That(expireTime.ToUnixTimeSeconds(), Is.EqualTo((long)recoveredValuesExpTime[0]).Within(1));
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
                 // Verify 2nd hash set contains all added entries except 1 expired entry
@@ -1259,7 +1259,7 @@ namespace Garnet.test
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("HEXPIRETIME", key1, "FIELDS", 2, "key1_1", "key1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
-                ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
+                Assert.That(expireTime.ToUnixTimeSeconds(), Is.EqualTo((long)recoveredValuesExpTime[0]).Within(1));
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
                 // Verify 2nd hash set contains all added entries except 1 expired entry

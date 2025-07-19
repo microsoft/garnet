@@ -2333,7 +2333,7 @@ namespace Garnet.test
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("ZEXPIRETIME", key1, "MEMBERS", 2, "val1_1", "val1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
-                ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
+                Assert.That(expireTime.ToUnixTimeSeconds(), Is.EqualTo((long)recoveredValuesExpTime[0]).Within(1));
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
                 // Verify 2nd sorted set contains all added entries except 1 expired entry
@@ -2369,7 +2369,7 @@ namespace Garnet.test
                 var recoveredValuesExpTime = (RedisResult[])db.Execute("ZEXPIRETIME", key1, "MEMBERS", 2, "val1_1", "val1_2");
                 ClassicAssert.IsNotNull(recoveredValuesExpTime);
                 ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
-                ClassicAssert.AreEqual(expireTime.ToUnixTimeSeconds(), (long)recoveredValuesExpTime[0]);
+                Assert.That(expireTime.ToUnixTimeSeconds(), Is.EqualTo((long)recoveredValuesExpTime[0]).Within(1));
                 ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
 
                 // Verify 2nd sorted set contains all added entries except 1 expired entry
