@@ -397,11 +397,17 @@ namespace Tsavorite.core
             // Need to account for extra metadata if current value does not have any.
             var addMetadata = metadata > 0 && MetadataSize == 0;
 
+            // check if the full allocated destination size can accommodate the new value + metadata + offset to copy to
             var newTotalSize = addMetadata ? TotalSize + sizeof(long) : TotalSize;
+            newTotalSize += dstOffsetToCopyTo;
+
             if (fullDestSize < newTotalSize)
                 return false;
 
             var newLength = addMetadata ? Length + sizeof(long) : Length;
+            // when copying "this" to dst, we basically skip "dstOffsetToCopyTo" bytes at the beginning of dst.
+            // hence, we need to add it to the new length we are asking for dst to have to be able to copy "this" into the Nth byte and onwards of dst.
+            newLength += dstOffsetToCopyTo;
 
             if (dst.Length < newLength)
             {

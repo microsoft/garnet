@@ -100,19 +100,17 @@ namespace Garnet.server
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     int spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
-                    // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
-                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
-                    value.ExtraMetadata = input.arg1;
 
-                    SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                    var success = SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
                         src: ref newInputValue,
                         dst: ref value,
                         rmwInfo: ref rmwInfo,
                         recordInfo: ref recordInfo,
                         metadata: input.arg1,
                         dstOffsetToCopyTo: spaceForEtag);
+
+                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
 
                     long clientSentEtag = input.parseState.GetLong(1);
 
@@ -142,17 +140,16 @@ namespace Garnet.server
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
                     newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
-                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
-                    value.ExtraMetadata = input.arg1;
 
-                    SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                    success = SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
                         src: ref newInputValue,
                         dst: ref value,
                         rmwInfo: ref rmwInfo,
                         recordInfo: ref recordInfo,
                         metadata: input.arg1,
                         dstOffsetToCopyTo: spaceForEtag);
+
+                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
 
                     if (spaceForEtag != 0)
                     {
@@ -169,16 +166,15 @@ namespace Garnet.server
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
                     var setValue = input.parseState.GetArgSliceByRef(0).SpanByte;
-                    //value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
-
-                    // HK TODO: Do i still need the above code?
-                    SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                    success = SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
                         src: ref setValue,
                         dst: ref value,
                         rmwInfo: ref rmwInfo,
                         recordInfo: ref recordInfo,
                         metadata: input.arg1,
                         dstOffsetToCopyTo: spaceForEtag);
+
+                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
 
                     if (spaceForEtag != 0)
                     {
@@ -239,10 +235,15 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.APPEND:
-                    var appendValue = input.parseState.GetArgSliceByRef(0);
-                    value.ShrinkSerializedLength(appendValue.Length);
+                    var appendValue = input.parseState.GetArgSliceByRef(0).SpanByte;
                     // Copy value to be appended to the newly allocated value buffer
-                    appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
+                    success = SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                        src: ref appendValue,
+                        dst: ref value,
+                        rmwInfo: ref rmwInfo,
+                        recordInfo: ref recordInfo);
+
+                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
 
                     CopyValueLengthToOutput(ref value, ref output, 0);
                     break;
@@ -277,7 +278,7 @@ namespace Garnet.server
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
                         // compute metadata size for result
                         var expiration = input.arg1;
-                        metadataSize = expiration switch
+                        var metadataSize = expiration switch
                         {
                             -1 => 0,
                             0 => 0,
