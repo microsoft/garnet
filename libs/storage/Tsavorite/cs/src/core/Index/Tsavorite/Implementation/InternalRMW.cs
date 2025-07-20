@@ -251,7 +251,7 @@ namespace Tsavorite.core
                 pendingContext.key = hlog.GetKeyContainer(ref key);
             if (pendingContext.input == default)
 
-            pendingContext.output = output;
+                pendingContext.output = output;
             sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
 
             pendingContext.userContext = userContext;
