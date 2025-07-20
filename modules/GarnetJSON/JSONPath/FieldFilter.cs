@@ -51,6 +51,10 @@ namespace GarnetJSON.JSONPath
                     return (obj as IDictionary<string, JsonNode>).Values;
                 }
             }
+            else if (Name is null && current is JsonArray arr)
+            {
+                return arr;
+            }
             else
             {
                 if (settings?.ErrorWhenNoMatch ?? false)
@@ -118,6 +122,13 @@ namespace GarnetJSON.JSONPath
                         {
                             yield return p.Value;
                         }
+                    }
+                }
+                else if (Name is null && item is JsonArray arr)
+                {
+                    foreach (var a in arr)
+                    {
+                        yield return a;
                     }
                 }
                 else
