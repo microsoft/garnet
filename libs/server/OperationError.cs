@@ -15,6 +15,10 @@ namespace Garnet.server
         /// <summary>
         /// Operation failed due to incompatible type
         /// </summary>
-        INVALID_TYPE
+        INVALID_TYPE,
+        /// <summary>
+        /// Operation failed due to NaN/infinity
+        /// </summary>
+        NAN_OR_INFINITY
     }
 }

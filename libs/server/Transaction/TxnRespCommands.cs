@@ -111,6 +111,8 @@ namespace Garnet.server
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
             int count = parseState.Count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
+            if (commandInfo.Parent != null)
+                arity = arity > 0 ? arity - 1 : arity + 1;
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
