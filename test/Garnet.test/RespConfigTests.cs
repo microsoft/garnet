@@ -243,10 +243,10 @@ namespace Garnet.test
     public class RespConfigLowMemoryTests
     {
         GarnetServer server;
-        private string memorySize = "1m";
-        private string indexSize = "1m";
-        private string objectStoreLogMemorySize = "16m";
-        private string objectStoreHeapMemorySize = "16m";
+        private string memorySize = "3m";
+        private string indexSize = "3m";
+        private string objectStoreLogMemorySize = "2500";
+        private string objectStoreHeapMemorySize = "3m";
         private string objectStoreIndexSize = "8m";
         private string pageSize = "1024";
 
@@ -273,40 +273,76 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(true, "1m")]
-        [TestCase(false, "1m")]
-        public void ConfigSetMemorySizeTest2(bool mainStore, string newSize)
+        [TestCase(true, "1m", "4m")]
+        [TestCase(false, "1024", "4000")]
+        public void ConfigSetMemorySizeTest2(bool mainStore, string smallerSize, string largerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var option = mainStore ? "memory" : "obj-log-memory";
-            var metricType = mainStore ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
             var initMemorySize = mainStore ? memorySize : objectStoreLogMemorySize;
 
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var server = redis.GetServer(TestUtils.EndPoint);
-            var info = TestUtils.GetStoreAddressInfo(server);
+            var info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
             var headAddress = info.HeadAddress;
-
-            // Start at tail address of 64
-            ClassicAssert.AreEqual(64, info.TailAddress);
-
+            ClassicAssert.AreEqual(mainStore ? 64 : 24, info.TailAddress);
+            
             var i = 0;
             var key = $"key{i++:00000}";
-            var value = new string('x', 512);
-            _ = db.StringSet(key, value);
-            info = TestUtils.GetStoreAddressInfo(server);
+
+            if (mainStore)
+                _ = db.StringSet(key, new string('x', 512));
+            else
+                _ = db.ListRightPush(key, [new("x")]);
+
+            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
             var recordSize = info.TailAddress - info.HeadAddress;
 
+            // Insert records until head address moves
             while (info.HeadAddress == headAddress)
             {
                 key = $"key{i++:00000}";
-                value = new string('x', 512);
-                _ = db.StringSet(key, value);
-                info = TestUtils.GetStoreAddressInfo(server);
+                if (mainStore)
+                    _ = db.StringSet(key, new string('x', 512));
+                else
+                    _ = db.ListRightPush(key, [new("x")]);
+                info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
             }
 
+            // Verify that records were inserted up to the configured memory size limit
             Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+
+            // Try to set memory size to a smaller value than current
+            var result = db.Execute("CONFIG", "SET", option, smallerSize);
+            ClassicAssert.AreEqual("OK", result.ToString());
+
+            // Verify that head address has moved forward accordingly
+            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
+            currMemorySize = ServerOptions.ParseSize(smallerSize, out _);
+            Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+
+            // Try to set memory size to a larger value than current
+            result = db.Execute("CONFIG", "SET", option, largerSize);
+            ClassicAssert.AreEqual("OK", result.ToString());
+
+            // Continue to insert records until new memory capacity is reached
+            currMemorySize = ServerOptions.ParseSize(largerSize, out _);
+            var remainingBuffer = currMemorySize - (info.TailAddress - info.HeadAddress);
+
+            while (remainingBuffer > recordSize)
+            {
+                key = $"key{i++:00000}";
+                if (mainStore)
+                    _ = db.StringSet(key, new string('x', 512));
+                else
+                    _ = db.ListRightPush(key, [new("x")]);
+                info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
+                remainingBuffer = currMemorySize - (info.TailAddress - info.HeadAddress);
+            }
+
+            // Verify that head address has moved backward accordingly
+            //Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
         }
     }
 }
