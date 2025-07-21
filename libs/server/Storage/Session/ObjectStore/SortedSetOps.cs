@@ -1584,14 +1584,14 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             results = default;
-            var expirationInTicks = expireAt.UtcTicks;
+            var expirationTimeInTicks = expireAt.UtcTicks;
 
-            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationInTicks, expireOption);
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             parseState.InitializeWithArguments(members);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var innerInput = new ObjectInput(header, ref parseState, arg1: encExpirationTail, arg2: encExpirationHead);
+            var innerInput = new ObjectInput(header, ref parseState, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
             var output = new GarnetObjectStoreOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);

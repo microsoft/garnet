@@ -454,9 +454,9 @@ namespace Garnet.server
             };
 
             // Encode expiration time and expiration option and pass them into the input object
-            var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationTimeInTicks, expireOption);
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
+            var input = new RawStringInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)

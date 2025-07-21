@@ -636,11 +636,11 @@ namespace Garnet.server
             };
 
             // Encode expiration time and expiration option and pass them into the input object
-            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, arg1: encExpirationTail, arg2: encExpirationHead);
+            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
             var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 

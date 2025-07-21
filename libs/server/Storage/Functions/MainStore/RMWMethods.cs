@@ -578,12 +578,12 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                     var expiryExists = value.MetadataSize > 0;
 
-                    var (expirationInTicks, expireOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
+                    var expirationWithOption = new ExpirationWithOption(input.arg1);
 
                     // reset etag state that may have been initialized earlier
                     EtagState.ResetState(ref functionsState.etagState);
 
-                    if (!EvaluateExpireInPlace(expireOption, expiryExists, expirationInTicks, ref value, ref output))
+                    if (!EvaluateExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output))
                         return false;
 
                     // doesn't update etag, since it's only the metadata that was updated
@@ -808,7 +808,7 @@ namespace Garnet.server
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
-                        expirationInTicks = input.arg1;
+                        var expirationInTicks = input.arg1;
                         if (expirationInTicks == -1)
                         {
                             // there is existing metadata, but we want to clear it.
@@ -1175,9 +1175,9 @@ namespace Garnet.server
 
                     var expiryExists = oldValue.MetadataSize > 0;
 
-                    var (expirationInTicks, expireOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
+                    var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expirationInTicks, ref oldValue, ref newValue, ref output);
+                    EvaluateExpireCopyUpdate(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref oldValue, ref newValue, ref output);
                     break;
 
                 case RespCommand.PERSIST:
@@ -1351,7 +1351,7 @@ namespace Garnet.server
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        expirationInTicks = input.arg1;
+                        var expirationInTicks = input.arg1;
                         if (expirationInTicks == 0)
                         {
                             // We want to retain the old metadata

@@ -384,16 +384,16 @@ namespace Garnet.server
 
             DeleteExpiredItems();
 
-            var (expirationInTicks, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
+            var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
             writer.WriteArrayLength(input.parseState.Count);
 
             foreach (var item in input.parseState.Parameters)
             {
 #if NET9_0_OR_GREATER
-                var result = SetExpiration(item.ReadOnlySpan, expirationInTicks, expireOption);
+                var result = SetExpiration(item.ReadOnlySpan, expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
 #else
-                var result = SetExpiration(item.ToArray(), expirationInTicks, expireOption);
+                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
 #endif
                 writer.WriteInt32(result);
                 output.Header.result1++;

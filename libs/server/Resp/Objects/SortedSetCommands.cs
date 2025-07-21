@@ -1796,10 +1796,10 @@ namespace Garnet.server
             };
 
             // Encode expiration time and expiration option and pass them into the input object
-            var (encExpirationTail, encExpirationHead) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, encExpirationTail, encExpirationHead);
+            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, expirationWithOption.WordHead, expirationWithOption.WordTail);
 
             var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 

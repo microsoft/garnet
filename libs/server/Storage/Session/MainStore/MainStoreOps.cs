@@ -940,10 +940,9 @@ namespace Garnet.server
                 var header = new RespInputHeader(GarnetObjectType.Expire);
 
                 // Re-encode expiration and expiration option as two integers instead of a long
-                var (expirationInTicks, expirationOption) = ExpirationUtils.DecodeExpirationFromInt64(input.arg1);
-                var (tail, head) = ExpirationUtils.EncodeExpirationToTwoInt32(expirationInTicks, expirationOption);
+                var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-                var objInput = new ObjectInput(header, arg1: tail, arg2: head);
+                var objInput = new ObjectInput(header, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput(output);
@@ -1040,10 +1039,11 @@ namespace Garnet.server
                 _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
             };
 
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
+
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
-                var encodedExpiration = ExpirationUtils.EncodeExpirationToInt64(expirationTimeInTicks, expireOption);
-                var input = new RawStringInput(RespCommand.EXPIRE, arg1: encodedExpiration);
+                var input = new RawStringInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
                 var _key = key.SpanByte;
                 var status = context.RMW(ref _key, ref input, ref output);
@@ -1056,11 +1056,8 @@ namespace Garnet.server
             if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
                 !objectStoreBasicContext.IsNull)
             {
-                var (encodedExpirationHead, encodedExpirationTail) =
-                    ExpirationUtils.EncodeExpirationToTwoInt32(expirationTimeInTicks, expireOption);
-
                 var header = new RespInputHeader(GarnetObjectType.Expire);
-                var objInput = new ObjectInput(header, arg1: encodedExpirationHead, arg2: encodedExpirationTail);
+                var objInput = new ObjectInput(header, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
                 // Retry on object store
                 var objOutput = new GarnetObjectStoreOutput(output);

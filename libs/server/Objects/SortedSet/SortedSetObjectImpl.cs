@@ -897,14 +897,14 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            var (expirationInTicks, expireOption) = ExpirationUtils.DecodeExpirationFromTwoInt32(input.arg1, input.arg2);
+            var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteArrayLength(input.parseState.Count);
 
             foreach (var item in input.parseState.Parameters)
             {
-                var result = SetExpiration(item.ToArray(), expirationInTicks, expireOption);
+                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
