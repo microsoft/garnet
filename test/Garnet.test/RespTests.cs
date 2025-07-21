@@ -2544,6 +2544,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public void Test()
+        {
+            var now = DateTimeOffset.UtcNow;
+            var unixTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var ticks = ConvertUtils.UnixTimestampInMillisecondsToTicks(unixTime);
+            var enc = ExpirationUtils.EncodeExpirationToInt64(ticks, ExpireOption.GT);
+            var (enc1, enc2) = ExpirationUtils.EncodeExpirationToTwoInt32(ticks, ExpireOption.GT);
+            var (decTicks, decOption) = ExpirationUtils.DecodeExpirationFromInt64(enc);
+            var (decTicks1, decOption1) = ExpirationUtils.DecodeExpirationFromTwoInt32(enc1, enc2);
+            var dt = ConvertUtils.UnixTimeInMillisecondsFromTicks(decTicks);
+            var dto = DateTimeOffset.FromUnixTimeMilliseconds(dt);
+        }
+
+        [Test]
         [TestCase("EXPIRE")]
         [TestCase("PEXPIRE")]
         public void KeyExpireStringTest(string command)
