@@ -1338,9 +1338,9 @@ namespace Garnet.test.cluster
             }
         }
 
-        //[Test, Order(25)]
+        [Test, Order(25)]
         [Category("CLUSTER")]
-        [CancelAfter(30_000)]
+        [CancelAfter(60_000)]
         public async Task ReplicaSyncTaskFaultsRecoverAsync(CancellationToken cancellation)
         {
             // Ensure that a fault in ReplicaSyncTask (on the primary) doesn't leave a replica permanently desynced
@@ -1370,6 +1370,9 @@ namespace Garnet.test.cluster
             var primaryEndPoint = (IPEndPoint)context.endpoints[0];
             var replicaEndPoint = (IPEndPoint)context.endpoints[1];
 
+            var primaryNodeId = (string)context.clusterTestUtils.Execute(primaryEndPoint, "CLUSTER", ["MYID"]);
+            var replicaNodeId = (string)context.clusterTestUtils.Execute(replicaEndPoint, "CLUSTER", ["MYID"]);
+
             using var primaryInsertCancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
 
             var keyCount = 0;
@@ -1393,13 +1396,14 @@ namespace Garnet.test.cluster
                     cancellation
                 );
 
-            await Task.Delay(100, cancellation);
+            // Get some writes going while things are working
+            await Task.Delay(1_000, cancellation);
 
             // Force replica to continually fault
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Divergent_AOF_Stream);
 
             // Give it enough time to die horribly
-            await Task.Delay(100, cancellation);
+            await Task.Delay(1_000, cancellation);
 
             // Stop primary writes
             primaryInsertCancel.Cancel();
@@ -1411,7 +1415,7 @@ namespace Garnet.test.cluster
             // Wait for sync to catch up
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, cancellation: cancellation);
 
-            // Check that replica received all values
+            // Check that replica received all values, even those after the fault and recovery
             var readonlyRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "READONLY", []);
             ClassicAssert.AreEqual("OK", readonlyRes);
 

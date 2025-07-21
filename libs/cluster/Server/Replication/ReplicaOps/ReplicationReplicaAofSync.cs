@@ -31,6 +31,7 @@ namespace Garnet.cluster
         /// <param name="nextAddress"></param>
         public unsafe void ProcessPrimaryStream(byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
         {
+            replayFaulted = false;
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             try
@@ -95,7 +96,9 @@ namespace Garnet.cluster
                 if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {
                     // Synchronous replay
+                    replayInitiated = true;
                     Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    
                 }
                 else
                 {
@@ -106,6 +109,7 @@ namespace Garnet.cluster
                     // initialize it here and start background replay task
                     if (replayIterator == null)
                     {
+                        replayInitiated = true;
                         replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(
                             previousAddress,
                             long.MaxValue,
@@ -121,6 +125,9 @@ namespace Garnet.cluster
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
                 ResetReplayIterator();
+
+                replayFaulted = true;
+
                 throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
             }
         }

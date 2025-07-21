@@ -15,6 +15,9 @@ namespace Garnet.cluster
         CancellationTokenSource replicaReplayTaskCts;
         SingleWriterMultiReaderLock activeReplay;
 
+        bool replayInitiated;
+        bool replayFaulted;
+
         /// <summary>
         /// Reset background replay iterator
         /// </summary>
@@ -107,6 +110,8 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ReplicaReplayTask - terminating");
+                
+                replayFaulted = true;
             }
             finally
             {
