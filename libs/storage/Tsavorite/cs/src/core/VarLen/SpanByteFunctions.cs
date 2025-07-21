@@ -83,11 +83,11 @@ namespace Tsavorite.core
         /// Utility function for <see cref="SpanByte"/> copying, RMW version.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, long metadata = 0, int dstOffsetToCopyTo = 0)
+        public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             // See comments in upsertInfo overload of this function.
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref dst, dst.TotalSize);
-            var result = src.TrySafeCopyTo(ref dst, rmwInfo.FullValueLength, metadata, dstOffsetToCopyTo);
+            var result = src.TrySafeCopyTo(ref dst, rmwInfo.FullValueLength);
             rmwInfo.SetUsedValueLength(ref recordInfo, ref dst, dst.TotalSize);
             return result;
         }

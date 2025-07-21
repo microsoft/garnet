@@ -378,11 +378,11 @@ namespace Tsavorite.core
         /// Does not change length of destination.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void CopyTo(ref SpanByte dst, long metadata = 0, int dstOffsetToCopyTo = 0)
+        public void CopyTo(ref SpanByte dst, long metadata = 0)
         {
             dst.UnmarkExtraMetadata();
             dst.ExtraMetadata = metadata == 0 ? ExtraMetadata : metadata;
-            AsReadOnlySpan().CopyTo(dst.AsSpan(dstOffsetToCopyTo));
+            AsReadOnlySpan().CopyTo(dst.AsSpan());
         }
 
         /// <summary>
@@ -392,78 +392,21 @@ namespace Tsavorite.core
         /// <param name="metadata">Optional metadata to add to the destination</param>
         /// <param name="fullDestSize">The size available at the destination (e.g. dst.TotalSize or the log-space Value allocation size)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize, long metadata = 0, int dstOffsetToCopyTo = 0)
+        public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize, long metadata = 0)
         {
-            // Need to account for extra metadata if current value does not have any.
+            // If the incoming caller wants to addMetadata and the destination does not already have metadata, the new length needs to account for it.
             var addMetadata = metadata > 0 && MetadataSize == 0;
 
-            // check if the full allocated destination size can accommodate the new value + metadata + offset to copy to
             var newTotalSize = addMetadata ? TotalSize + sizeof(long) : TotalSize;
-            newTotalSize += dstOffsetToCopyTo;
-
             if (fullDestSize < newTotalSize)
                 return false;
 
             var newLength = addMetadata ? Length + sizeof(long) : Length;
-            // when copying "this" to dst, we basically skip "dstOffsetToCopyTo" bytes at the beginning of dst.
-            // hence, we need to add it to the new length we are asking for dst to have to be able to copy "this" into the Nth byte and onwards of dst.
-            newLength += dstOffsetToCopyTo;
 
-            if (dst.Length < newLength)
-            {
-                // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
-                dst.Length = newLength;
-                CopyTo(ref dst, metadata, dstOffsetToCopyTo);
-            }
-            else
-            {
-                // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
-                // This method will also zero out the extra space to retain log scan correctness.
-                dst.ShrinkSerializedLength(newLength);
-                CopyTo(ref dst, metadata, dstOffsetToCopyTo);
-                dst.Length = newLength;
-            }
-            return true;
-        }
+            dst.ShrinkSerializedLength(newLength);
+            dst.Length = newLength;
+            CopyTo(ref dst, metadata);
 
-        /// <summary>
-        /// Try to adjust itself (the pre-allocated <see cref="SpanByte"/>), checking if space permits in the <see cref="SpanByte"/> itself.
-        /// This method handles expansion and shrinking of the <see cref="SpanByte"/> as long as requested new length is under  fullSizeofthis.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySafeAdjustLength(int fullAllocatedSizeOfSelf, int sizeNeeded, long metadata = 0, int extraSpaceNeeded = 0)
-        {
-            // Need to account for extra metadata if current value does not have any.
-            var addMetadata = metadata > 0 && MetadataSize == 0;
-
-            // check if the full allocated destination size can accommodate the new value + metadata + offset to copy to.
-            // sizeNeeded includes header + payload + metadata of the new spanbyte we are trying to convert this guy to.
-            var newTotalSize = addMetadata ? sizeNeeded + sizeof(long) : sizeNeeded;
-            newTotalSize += extraSpaceNeeded;
-
-            // cannot expand self.
-            if (fullAllocatedSizeOfSelf < newTotalSize)
-                return false;
-
-            var newLength = addMetadata ? sizeNeeded + sizeof(long) : sizeNeeded;
-            // when copying "this" to dst, we basically skip "extraSpaceNeeded" bytes at the beginning of dst.
-            // hence, we need to add it to the new length we are asking for dst to have to be able to copy "this" into the Nth byte and onwards of dst.
-            newLength += extraSpaceNeeded;
-
-            if (Length < newLength)
-            {
-                // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
-                Length = newLength;
-            }
-            else
-            {
-                // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
-                // This method will also zero out the extra space to retain log scan correctness.
-                ShrinkSerializedLength(newLength);
-                Length = newLength;
-            }
-
-            // Call CopyTo: CopyTo(ref dst, metadata, dstOffsetToCopyTo) outside
             return true;
         }
 
@@ -482,6 +425,36 @@ namespace Tsavorite.core
                 Unsafe.InitBlockUnaligned(ToPointerWithMetadata() + newLength, 0, (uint)(Length - newLength));
                 Length = newLength;
             }
+        }
+
+        /// <summary>
+        /// Try to adjust itself (the pre-allocated <see cref="SpanByte"/>), checking if space permits in the <see cref="SpanByte"/> itself.
+        /// This method handles expansion and shrinking of the <see cref="SpanByte"/> as long as requested new length is under  fullSizeofthis.
+        /// </summary>
+        /// <param name="fullAllocatedSizeOfSelf">The true full allocated size of the <see cref="SpanByte"/> this includes padding used for alignment.</param>
+        /// <param name="payloadSize">The size needed for the new value payload, space for etag should be added here since Etag is part of the payload.</param>
+        /// <param name="addingMetadata">A boolean indicating whether the new request wants to add metadata.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySafeAdjustLength(int fullAllocatedSizeOfSelf, int payloadSize, bool addingMetadata = false)
+        {
+            // Metadata on a spanybyte is optional, so this method will only add size if the caller has requested it, and we don't already have it on the value SpanByte.
+            var addMetadata = addingMetadata && MetadataSize == 0;
+            // check if the full allocated destination size can accommodate the new value + metadata + offset to copy to.
+            var newPayloadAndMetadataSizeNeeded = addMetadata ? payloadSize + sizeof(long) : payloadSize;
+            // newTotalSize includes header + payload + metadata of the new spanbyte we are trying to convert this guy to.
+            var newTotalSize = newPayloadAndMetadataSizeNeeded + sizeof(int);
+            // cannot expand self past it's true allocated size
+            if (fullAllocatedSizeOfSelf < newTotalSize)
+            {
+                return false;
+            }
+            // If we need to shrink the below method will zero out the extra space to retain log scan correctness.
+            ShrinkSerializedLength(newPayloadAndMetadataSizeNeeded);
+            // If the size of payload + metadata being added is larger than current length, we need to expand.
+            // Since we have already verified there is enough extra value space to grow dst to store src, we can blindly adjust this length
+            Length = newPayloadAndMetadataSizeNeeded;
+            // Perform whatever memcpy logic outside now that the value spanbyte has been adjusted to the new needed size.
+            return true;
         }
 
         /// <summary>
