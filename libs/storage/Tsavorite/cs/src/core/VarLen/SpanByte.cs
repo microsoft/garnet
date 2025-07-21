@@ -427,6 +427,47 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Try to adjust itself (the pre-allocated <see cref="SpanByte"/>), checking if space permits in the <see cref="SpanByte"/> itself.
+        /// This method handles expansion and shrinking of the <see cref="SpanByte"/> as long as requested new length is under  fullSizeofthis.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySafeAdjustLength(int fullAllocatedSizeOfSelf, int sizeNeeded, long metadata = 0, int extraSpaceNeeded = 0)
+        {
+            // Need to account for extra metadata if current value does not have any.
+            var addMetadata = metadata > 0 && MetadataSize == 0;
+
+            // check if the full allocated destination size can accommodate the new value + metadata + offset to copy to.
+            // sizeNeeded includes header + payload + metadata of the new spanbyte we are trying to convert this guy to.
+            var newTotalSize = addMetadata ? sizeNeeded + sizeof(long) : sizeNeeded;
+            newTotalSize += extraSpaceNeeded;
+
+            // cannot expand self.
+            if (fullAllocatedSizeOfSelf < newTotalSize)
+                return false;
+
+            var newLength = addMetadata ? sizeNeeded + sizeof(long) : sizeNeeded;
+            // when copying "this" to dst, we basically skip "extraSpaceNeeded" bytes at the beginning of dst.
+            // hence, we need to add it to the new length we are asking for dst to have to be able to copy "this" into the Nth byte and onwards of dst.
+            newLength += extraSpaceNeeded;
+
+            if (Length < newLength)
+            {
+                // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
+                Length = newLength;
+            }
+            else
+            {
+                // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
+                // This method will also zero out the extra space to retain log scan correctness.
+                ShrinkSerializedLength(newLength);
+                Length = newLength;
+            }
+            
+            // Call CopyTo: CopyTo(ref dst, metadata, dstOffsetToCopyTo) outside
+            return true;
+        }
+
+        /// <summary>
         /// Shrink the length header of the in-place allocated buffer on
         /// Tsavorite hybrid log, pointed to by the given <see cref="SpanByte"/>.
         /// Zeroes out the extra space to retain log scan correctness.

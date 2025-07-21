@@ -81,7 +81,11 @@ namespace Garnet.server
             {
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
-                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
+
+                    var success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
+
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+
                     HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
                     *output.SpanByte.ToPointer() = 1;
                     break;
@@ -93,7 +97,10 @@ namespace Garnet.server
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
 
-                    value.ShrinkSerializedLength(length);
+                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, length);
+
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
 
@@ -102,7 +109,7 @@ namespace Garnet.server
                     int spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     var newInputValue = input.parseState.GetArgSliceByRef(0).SpanByte;
 
-                    var success = SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
+                    success = SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(
                         src: ref newInputValue,
                         dst: ref value,
                         rmwInfo: ref rmwInfo,
@@ -110,7 +117,7 @@ namespace Garnet.server
                         metadata: input.arg1,
                         dstOffsetToCopyTo: spaceForEtag);
 
-                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
 
                     long clientSentEtag = input.parseState.GetLong(1);
 
@@ -149,7 +156,7 @@ namespace Garnet.server
                         metadata: input.arg1,
                         dstOffsetToCopyTo: spaceForEtag);
 
-                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
 
                     if (spaceForEtag != 0)
                     {
@@ -174,7 +181,7 @@ namespace Garnet.server
                         metadata: input.arg1,
                         dstOffsetToCopyTo: spaceForEtag);
 
-                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
 
                     if (spaceForEtag != 0)
                     {
@@ -201,17 +208,19 @@ namespace Garnet.server
                 case RespCommand.SETBIT:
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
-
-                    value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
-
-                    // Always return 0 at initial updater because previous value was 0
+                    var numBytes = BitmapManager.Length(bOffset);
+                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, numBytes);
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
                     BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
+                    // Always return 0 at initial updater because previous value was 0
                     CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     break;
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
+                    numBytes = BitmapManager.LengthFromType(bitFieldArgs);
+                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, numBytes);
+                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
                     // Ensure new-record space is zero-init'd before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
                     value.AsSpan().Clear();
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
@@ -222,6 +231,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
+                    // TODO: Proceeed below!
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
                     if (offset > 0)
@@ -284,7 +294,8 @@ namespace Garnet.server
                             0 => 0,
                             _ => 8,
                         };
-
+                        
+                        value.TrySafeAdjustLength(rmwInfo.FullValueLength, functions.GetInitialLength(ref input), metadataSize);
                         value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
                         if (expiration > 0)
                             value.ExtraMetadata = expiration;

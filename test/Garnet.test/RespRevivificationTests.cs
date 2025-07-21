@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -14,6 +15,11 @@ namespace Garnet.test
     {
         GarnetServer server;
         Random r;
+
+        // 8 byte metadata + 1 byte value means 9 bytes in value from the below default args
+        string[] defaultInitialArgs = [
+            "SET", "foo", "b", "PX", "500"
+        ];
 
         [SetUp]
         public void Setup()
@@ -45,7 +51,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("OK", setViaRmw.ToString());
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSETNX);
+            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs);
         }
 
         [Test]
@@ -60,42 +66,67 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(res[1].IsNull);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSetIfGreater);
+            await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs);
         }
 
 
         [Test]
         public async Task RevivificationWithRMWWorksViaAppend()
         {
-            Func<IDatabase, Task> testRmwWorksViaSetIfGreater = async (db) =>
+            Func<IDatabase, Task> testRmwWorksViaAppend = async (db) =>
             {
                 // new value is below 12 bytes so it should reuse in initial update
                 var res = await db.ExecuteAsync("APPEND", "foo", "baraaaaaaaa");
                 ClassicAssert.AreEqual(11, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSetIfGreater);
+            await TestRevivifyAsync(testRmwWorksViaAppend, defaultInitialArgs);
+        }
+
+        // PFADD, PFMERGE
+
+        [Test]
+        public async Task RevivificationWithRMWWorksViaSetBit()
+        {
+            Func<IDatabase, Task> testRmwWorksViaSetBit = async (db) =>
+            {
+                // we need something that allocates 12 bytes internally in SETBIT
+                var res = await db.ExecuteAsync("SETBIT", "foo", 95, 1);
+                ClassicAssert.AreEqual(0, (int)res);
+            };
+
+            await TestRevivifyAsync(testRmwWorksViaSetBit, defaultInitialArgs);
+        }
+
+        [Test]
+        public async Task RevivificationWithRMWWorksViaBitfield()
+        {
+            Func<IDatabase, Task> testRmwWorksViaBitfield = async (db) =>
+            {
+                // we need something that allocates 12 bytes internally in BITFIELD
+                var res = await db.ExecuteAsync("BITFIELD", "foo", "INCRBY", "i64", "28", "1");
+                ClassicAssert.AreEqual(1, (int)res);
+            };
+
+            await TestRevivifyAsync(testRmwWorksViaBitfield, defaultInitialArgs);
         }
 
         // TODO: add more
 
-        private async Task TestRevivifyAsync(Func<IDatabase, Task> callbackFunc)
+        private async Task TestRevivifyAsync(Func<IDatabase, Task> callbackFunc, string[] initialSettingArgs)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            await db.ExecuteAsync("SET", "fooX", "baraaaaaaaaa");
-            // shrink, 8 byte metadata + 1 byte value means 9 bytes in value
-            await db.ExecuteAsync("SET", "foo", "b", "PX", 500);
+            await db.ExecuteAsync("SET", "foox", "bolognese");
+            await db.ExecuteAsync(initialSettingArgs[0], initialSettingArgs.Skip(1).ToArray());
 
             // wait for the key to be expired
-            await Task.Delay(500);
+            await Task.Delay(600);
 
-            // Trigger active expiration, to tombstone the above key
+            // ---- Trigger active expiration, to tombstone the above key ---
             var exec = await db.ExecuteAsync("EXPDELSCAN");
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
-
-            RedisResult[] res = (RedisResult[])exec;
 
             await callbackFunc(db);
 
