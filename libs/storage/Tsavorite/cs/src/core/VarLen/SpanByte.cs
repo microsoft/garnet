@@ -462,7 +462,7 @@ namespace Tsavorite.core
                 ShrinkSerializedLength(newLength);
                 Length = newLength;
             }
-            
+
             // Call CopyTo: CopyTo(ref dst, metadata, dstOffsetToCopyTo) outside
             return true;
         }
