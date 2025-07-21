@@ -88,7 +88,8 @@ namespace Tsavorite.core
             // See comments in upsertInfo overload of this function.
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref dst, dst.TotalSize);
             var result = src.TrySafeCopyTo(ref dst, rmwInfo.FullValueLength, metadata, dstOffsetToCopyTo);
-            rmwInfo.SetUsedValueLength(ref recordInfo, ref dst, dst.TotalSize);
+            // Setting the rmwInfo.SetUsedValueLength(ref recordInfo, ref dst, dst.TotalSize) is handled outside the caller of this method.
+            // This is different to how Upsert's DoSafeCopy works since RMW methods have more complex logic, and need flexibility.
             return result;
         }
 

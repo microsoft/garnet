@@ -296,7 +296,6 @@ namespace Garnet.server
                         };
 
                         value.TrySafeAdjustLength(rmwInfo.FullValueLength, functions.GetInitialLength(ref input), metadataSize);
-                        value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
                         if (expiration > 0)
                             value.ExtraMetadata = expiration;
 
@@ -314,7 +313,9 @@ namespace Garnet.server
 
                     // Copy input to value
                     var inputValue = input.parseState.GetArgSliceByRef(0);
-                    value.ShrinkSerializedLength(inputValue.Length);
+
+                    value.TrySafeAdjustLength(rmwInfo.FullValueLength, inputValue.Length, input.arg1);
+
                     value.ExtraMetadata = input.arg1;
                     inputValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
