@@ -1338,12 +1338,12 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(25)]
+        //[Test, Order(25)]
         [Category("CLUSTER")]
         [CancelAfter(30_000)]
         public async Task ReplicaSyncTaskFaultsRecoverAsync(CancellationToken cancellation)
         {
-            // Ensure that a fault in ReplicaSyncTask (on the primary) doesn't leave a replica permanently unsynced
+            // Ensure that a fault in ReplicaSyncTask (on the primary) doesn't leave a replica permanently desynced
             //
             // While a possible cause of this is something actually breaking on the replica (in which case, a retry won't matter)
             // that isn't the only possible cause

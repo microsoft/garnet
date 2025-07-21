@@ -35,7 +35,7 @@ namespace Garnet.cluster
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
-                if (!clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
                     return false;
 
                 // Wait for threads to agree configuration change of this node
