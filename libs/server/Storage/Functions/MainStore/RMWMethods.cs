@@ -294,7 +294,7 @@ namespace Garnet.server
                             0 => 0,
                             _ => 8,
                         };
-                        
+
                         value.TrySafeAdjustLength(rmwInfo.FullValueLength, functions.GetInitialLength(ref input), metadataSize);
                         value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
                         if (expiration > 0)
