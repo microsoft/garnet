@@ -57,14 +57,20 @@ function BuildAndCleanUpFiles {
 	$GarnetServer = "$basePath/main/GarnetServer/GarnetServer.csproj"
 	$GarnetWorker = "$basePath/hosting/Windows/Garnet.worker/Garnet.worker.csproj"
 
+	# Clean up destination in advance
+	if (Test-Path -Type Container $publishPath)
+	{
+		Remove-Item -Force -Recurse $publishPath
+	}
+
 	if ($publishFolder -eq "portable") {
 		dotnet publish $GarnetServer -p:PublishProfile="portable" -f:$framework @artifactArg -o "$publishPath"
 		# don't clean up all files for portable ... leave as is
 		return;
 	} elseif ($platform -eq "win-x64") {
 		$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/native_device.dll"
-		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based-readytorun" -f:$framework @artifactArg -o "$publishPath"
 		dotnet publish $GarnetWorker -r $publishFolder -p:SelfContained=false -p:PublishSingleFile=true -f:$framework @artifactArg -o "$publishPath/Service"
+		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based-readytorun" -f:$framework @artifactArg -o "$publishPath"
 	} else {
 		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based" -f:$framework @artifactArg -o "$publishPath"
 	}
@@ -75,6 +81,11 @@ function BuildAndCleanUpFiles {
 		Get-ChildItem -Path $publishPath -Filter '*.pdb' -Recurse | Where-Object { $_.Name -ne $excludeGarnetServerPDB } | Remove-Item -Force
 
 		# Copy proper native run time to publish directory
+		if (!(Test-Path $nativeRuntimePathFile))
+		{
+			throw "runtime $nativeRuntimePathFile for $publishFolder does not exist"
+		}
+
 		Copy-Item -Path $nativeRuntimePathFile -Destination $publishPath
 
 		if (Test-Path -Path $publishPath/Service) {
@@ -83,6 +94,9 @@ function BuildAndCleanUpFiles {
 		} elseif ($platform -eq "win-x64") {
 			Write-Host "Publish Path not found: $publishPath/Service"
 		}
+
+		# Delete the runtimes folder
+		Get-ChildItem -Path $publishPath -Filter 'runtimes' -Recurse | Remove-Item -Recurse -Force
 	} else {
 		Write-Host "Publish Path not found: $publishPath"
 	}
@@ -124,9 +138,6 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	BuildAndCleanUpFiles "portable" "win-x64" "net9.0"
 	BuildAndCleanUpFiles "win-arm64" "win-x64" "net9.0"
 	BuildAndCleanUpFiles "win-x64" "win-x64" "net9.0"
-
-	# Delete the runtimes folder
-	Get-ChildItem -Path $baseReleasePath -Filter 'runtimes' -Recurse -Directory | Remove-Item -Recurse -Force
 }
 
 if ($mode -eq 0 -or $mode -eq 2) {
