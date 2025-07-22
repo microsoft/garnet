@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -36,9 +37,14 @@ namespace Garnet.cluster
         public readonly ClusterProvider clusterProvider;
 
         /// <summary>
+        /// Flush count used to indicate a pending flush operation.
+        /// </summary>
+        int flushCount = 0;
+
+        /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
+        public ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             var opts = clusterProvider.serverOptions;
@@ -88,6 +94,31 @@ namespace Garnet.cluster
             clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
             numActiveTasks = 0;
             GossipSamplePercent = opts.GossipSamplePercent;
+
+            // Run Backround task
+            Task.Run(() => FlushTask());
+
+            async Task FlushTask()
+            {
+                try
+                {
+                    Interlocked.Increment(ref numActiveTasks);
+                    while (true)
+                    {
+                        if (ctsGossip.IsCancellationRequested)
+                            return;
+
+                        if (Interlocked.CompareExchange(ref flushCount, 0, 0) > 0)
+                            ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+
+                        await Task.Delay(gossipDelay, ctsGossip.Token).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numActiveTasks);
+                }
+            }
         }
 
         /// <summary>
@@ -118,11 +149,10 @@ namespace Garnet.cluster
         public void Start()
             => TryStartGossipTasks();
 
-        public void FlushConfig()
-        {
-            lock (this)
-                ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
-        }
+        /// <summary>
+        /// Flush current config to disk
+        /// </summary>
+        public void FlushConfig() => Interlocked.Increment(ref flushCount);
 
         /// <summary>
         /// Init local worker info
