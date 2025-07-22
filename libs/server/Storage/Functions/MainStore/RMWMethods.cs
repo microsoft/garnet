@@ -186,8 +186,6 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
-                    // Ensure new-record space is zero-init'd before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
-                    value.AsSpan().Clear(); // HK TODO: The above comment doesn't seem true as by this point revivification should have zeroed the value space.
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);

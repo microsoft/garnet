@@ -50,6 +50,7 @@ namespace Garnet.test
         [Test]
         public async Task RevivificationWithRmwWorksAsync()
         {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             Func<IDatabase, Task> testRmwWorksViaSETNX = async (db) =>
             {
                 // This should work since the key is tombstoned and we are reusing the tombstone record
@@ -60,12 +61,41 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("OK", setViaRmw.ToString());
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs);
+            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs, redis);
+        }
+
+        [Test]
+        public async Task RevivificationWithRmwWorksWhenNeedingShrinkingAndThenExpanding()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            Func<IDatabase, Task> testRmwWorksViaSETNX = async (db) =>
+            {
+                // This should work since the key is tombstoned and we are reusing the tombstone record
+                // try to reuse the tombstoned record since revivification is enabled
+                // much smaller value will the revivifiable record, will zero out the bytes before shrinking
+                var setViaRmw = await db.ExecuteAsync("SET", "foo", "mars", "NX");
+                ClassicAssert.AreEqual("OK", setViaRmw.ToString());
+            };
+
+            await TestRevivifyAsync(testRmwWorksViaSETNX, defaultInitialArgs, redis);
+
+            // now when the above record is shrunk, I will delete it and reuse it again
+            var db = redis.GetDatabase(0);
+
+            await db.KeyDeleteAsync("foo");
+
+            // now originally the key held a 1 byte value and 8 byte metadata, so inchain revivification of the exact same size should work
+            await db.ExecuteAsync("SETIFGREATER", "foo", "b", "1");
+
+            // check for revivification stats
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            ClassicAssert.IsTrue(stats.ToString().Contains("Successful In-Chain: 2"), "Expected in-chain revivification to happen the second time, but it did not.");
         }
 
         [Test]
         public async Task RevivificationWithRMWWorksViaSetIfGreater()
         {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             Func<IDatabase, Task> testRmwWorksViaSetIfGreater = async (db) =>
             {
 
@@ -75,13 +105,14 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(res[1].IsNull);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs);
+            await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs, redis);
         }
 
 
         [Test]
         public async Task RevivificationWithRMWWorksViaAppend()
         {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             Func<IDatabase, Task> testRmwWorksViaAppend = async (db) =>
             {
                 // new value is below 12 bytes so it should reuse in initial update
@@ -89,12 +120,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(11, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaAppend, defaultInitialArgs);
+            await TestRevivifyAsync(testRmwWorksViaAppend, defaultInitialArgs, redis);
         }
 
         [Test]
         public async Task RevivificationWithRMWWorksViaSetBit()
         {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             Func<IDatabase, Task> testRmwWorksViaSetBit = async (db) =>
             {
                 // we need something that allocates 12 bytes internally in SETBIT
@@ -102,12 +134,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(0, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaSetBit, defaultInitialArgs);
+            await TestRevivifyAsync(testRmwWorksViaSetBit, defaultInitialArgs, redis);
         }
 
         [Test]
         public async Task RevivificationWithRMWWorksViaBitfield()
         {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             Func<IDatabase, Task> testRmwWorksViaBitfield = async (db) =>
             {
                 // we need something that allocates 12 bytes internally in BITFIELD
@@ -115,12 +148,11 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, (int)res);
             };
 
-            await TestRevivifyAsync(testRmwWorksViaBitfield, defaultInitialArgs);
+            await TestRevivifyAsync(testRmwWorksViaBitfield, defaultInitialArgs, redis);
         }
 
-        private async Task TestRevivifyAsync(Func<IDatabase, Task> callbackFunc, string[] initialSettingArgs)
+        private async Task TestRevivifyAsync(Func<IDatabase, Task> callbackFunc, string[] initialSettingArgs, IConnectionMultiplexer redis)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             await db.ExecuteAsync("SET", "foox", "bolognese");

@@ -219,14 +219,17 @@ namespace Tsavorite.core
             var requiredValueLength = requiredSize - valueOffset;
             var minValueLength = requiredValueLength < recordLengths.usedValueLength ? requiredValueLength : recordLengths.usedValueLength;
 
+            // clears out the minimum space possible. So let's say we are shrinking our usage from 8 bytes to 3 bytes. This will clear only the bytes 4-8.
+            // if we are expanding this will not clear anything.
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, minValueLength, recordLengths.fullValueLength);
-            storeFunctions.DisposeRecord(ref key, ref recordValue, DisposeReason.RevivificationFreeList);
 
             srcRecordInfo.ClearTombstone();
 
-            SetExtraValueLength(ref recordValue, ref srcRecordInfo, recordLengths.usedValueLength, recordLengths.fullValueLength);
-
+            // for SpanBte, this will set the new length (payload + metdata).
             hlog.GetAndInitializeValue(physicalAddress, physicalAddress + requiredSize);
+
+            // potentiall sets filler, if the required value length is going to be under the full length by more than 4 bytes.
+            SetExtraValueLength(ref recordValue, ref srcRecordInfo, requiredValueLength, recordLengths.fullValueLength);
 
             return (true, hlog.GetValueLength(ref recordValue));
         }
