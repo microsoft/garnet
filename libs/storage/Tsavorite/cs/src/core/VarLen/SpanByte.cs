@@ -402,8 +402,8 @@ namespace Tsavorite.core
                 return false;
 
             var newLength = addMetadata ? Length + sizeof(long) : Length;
-
             dst.ShrinkSerializedLength(newLength);
+            // Note: If dst is shorter than src we have already verified there is enough extra value space to grow dst to store src.
             dst.Length = newLength;
             CopyTo(ref dst, metadata);
 
