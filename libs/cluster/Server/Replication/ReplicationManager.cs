@@ -81,8 +81,6 @@ namespace Garnet.cluster
         /// </summary>
         public RecoveryStatus currentRecoveryStatus;
 
-        private Task syncResumptionTask;
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public GarnetClusterCheckpointManager GetCkptManager(StoreType storeType)
         {
@@ -167,64 +165,6 @@ namespace Garnet.cluster
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
             replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
-
-            syncResumptionTask = CheckSyncLiveAsync();
-        }
-
-        private async Task CheckSyncLiveAsync()
-        {
-            // Force async
-            await Task.Yield();
-
-            while (!_disposed)
-            {
-                try
-                {
-                    await Task.Delay(1_000, ctsRepManager.Token);
-
-                    if (!clusterProvider.clusterManager.CurrentConfig.IsReplica)
-                    {
-                        continue;
-                    }
-
-                    if (replayInitiated && replayFaulted)
-                    {
-                        // todo: how much hell will break loose due to concurrent updates to cluster config here?
-
-                        var primaryId = clusterProvider.clusterManager.CurrentConfig.LocalNodePrimaryId;
-
-                        // If we're in this state then we've successfully joined the cluster at least once
-                        // but something caused replication to die
-                        //
-                        // Thus we need to attempt to recover
-
-                        logger.LogInformation("Attempting resync to {primaryId} after AOF replay failed", primaryId);
-
-                        ReadOnlySpan<byte> errorMessage;
-                        var success =
-                            clusterProvider.serverOptions.ReplicaDisklessSync ?
-                            clusterProvider.replicationManager.TryReplicateDisklessSync(null, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage) :
-                            clusterProvider.replicationManager.TryReplicateDiskbasedSync(null, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
-
-                        if (!success)
-                        {
-                            logger.LogWarning("Failed to resync to {primaryId} after AOF replay failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
-                        }
-                        else
-                        {
-                            await Task.Delay(30_000, ctsRepManager.Token);
-                        }
-                    }
-                }
-                catch (TaskCanceledException)
-                {
-                    // Ignored
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, $"During {nameof(CheckSyncLiveAsync)}");
-                }
-            }
         }
 
         /// <summary>
@@ -389,8 +329,6 @@ namespace Garnet.cluster
             aofTaskStore.Dispose();
             aofProcessor?.Dispose();
             networkPool?.Dispose();
-
-            syncResumptionTask?.Wait();
         }
 
         /// <summary>
