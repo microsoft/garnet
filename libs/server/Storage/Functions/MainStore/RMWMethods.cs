@@ -102,6 +102,8 @@ namespace Garnet.server
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
+                    value.ExtraMetadata = input.arg1;
+                    newInputValue.CopyTo(value.AsSpan(spaceForEtag));
                     long clientSentEtag = input.parseState.GetLong(1);
                     if (cmd == RespCommand.SETIFMATCH)
                         clientSentEtag++;
