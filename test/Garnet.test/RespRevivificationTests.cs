@@ -146,7 +146,7 @@ namespace Garnet.test
         {
             server.Dispose(false);
             SetupServerWithReviv(false);
-            
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -172,5 +172,8 @@ namespace Garnet.test
             var res = await db.StringGetAsync("michael");
             ClassicAssert.AreEqual("jordan23", res.ToString(), "Expected the value to be updated via RMW operation, but it was not.");
         }
+
+        // HK TODO: I need to run the test such that I can look at the exact record that has been revivified and make sure it follow the invariants needed by scan of hlog.
+        // I need to put it in my debugger and make sure that all bytes have been zero'd out, and etc.
     }
 }
