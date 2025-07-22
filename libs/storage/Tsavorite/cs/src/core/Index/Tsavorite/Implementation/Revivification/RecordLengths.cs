@@ -227,11 +227,13 @@ namespace Tsavorite.core
 
             // for SpanBte, this will set the new length (payload + metdata).
             hlog.GetAndInitializeValue(physicalAddress, physicalAddress + requiredSize);
+            // since the above sets the Length, we can use the below to get TotalSize which represents the UsedLength of a record
+            var newUsedValueLength = hlog.GetValueLength(ref recordValue);
 
-            // potentiall sets filler, if the required value length is going to be under the full length by more than 4 bytes.
-            SetExtraValueLength(ref recordValue, ref srcRecordInfo, requiredValueLength, recordLengths.fullValueLength);
+            // potentially sets filler, if the used value length is going to be under the full length by more than 4 bytes.
+            SetExtraValueLength(ref recordValue, ref srcRecordInfo, usedValueLength: newUsedValueLength, recordLengths.fullValueLength);
 
-            return (true, hlog.GetValueLength(ref recordValue));
+            return (true, newUsedValueLength);
         }
 
         #endregion TombstonedRecords
