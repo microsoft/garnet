@@ -48,7 +48,7 @@ param (
 function BuildAndCleanUpFiles {
 	param ($publishFolder, $platform, $framework)
 
-	$publishPath = "$destDir/bin/Release/$framework/publish/$publishFolder"
+	$publishPath = "$baseReleasePath/$framework/publish/$publishFolder"
 	$excludeGarnetServerPDB = 'GarnetServer.pdb'
 
 	# Native binary is different based on OS by default
@@ -83,9 +83,6 @@ function BuildAndCleanUpFiles {
 		} elseif ($platform -eq "win-x64") {
 			Write-Host "Publish Path not found: $publishPath/Service"
 		}
-
-		# Delete the runtimes folder
-		Get-ChildItem -Path $publishPath -Filter 'runtimes' -Recurse | Remove-Item -Recurse -Force
 	} else {
 		Write-Host "Publish Path not found: $publishPath"
 	}
@@ -106,6 +103,7 @@ if ($destDir -ne "") {
 } else {
 	$destDir = "$basePath/main/GarnetServer"
 }
+$baseReleasePath = "$destDir/bin/Release"
 
 if ($mode -eq 0 -or $mode -eq 1) {
 	Write-Host "** Publish ... **"
@@ -126,13 +124,16 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	BuildAndCleanUpFiles "portable" "win-x64" "net9.0"
 	BuildAndCleanUpFiles "win-arm64" "win-x64" "net9.0"
 	BuildAndCleanUpFiles "win-x64" "win-x64" "net9.0"
+
+	# Delete the runtimes folder
+	Get-ChildItem -Path $baseReleasePath -Filter 'runtimes' -Recurse -Directory | Remove-Item -Recurse -Force
 }
 
 if ($mode -eq 0 -or $mode -eq 2) {
 
 	# Make sure at publish folders are there as basic check files are actually published before trying to zip
-	$publishedFilesFolderNet8 = "$destDir/bin/Release/net8.0/publish"
-	$publishedFilesFolderNet9 = "$destDir/bin/Release/net9.0/publish"
+	$publishedFilesFolderNet8 = "$baseReleasePath/net8.0/publish"
+	$publishedFilesFolderNet9 = "$baseReleasePath/net9.0/publish"
 	
 	if (!(Test-Path $publishedFilesFolderNet8) -or !(Test-Path $publishedFilesFolderNet9)) {
 		Write-Error "$publishedFilesFolderNet8 or $publishedFilesFolderNet9 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
@@ -142,8 +143,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	# Create the directories - both net80 and net90 will be in the same zip file.
 	$directories = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "portable", "win-arm64", "win-x64")
 	$sourceFramework = @("net8.0", "net9.0")
-	$baseSourcePath = "$destDir/bin/Release"
-	$destinationPath = "$destDir/bin/Release/publish"
+	$destinationPath = "$baseReleasePath/publish"
 	$zipfiledestinationPath = "$destinationPath/output"
 
 	# Make the destination path where the compressed files will be
@@ -156,7 +156,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 
 	foreach ($dir in $directories) {
 		foreach ($version in $sourceFramework) {
-			$sourcePath = Join-Path -Path $baseSourcePath -ChildPath "$version/publish/$dir"
+			$sourcePath = Join-Path -Path $baseReleasePath -ChildPath "$version/publish/$dir"
 			$destDirPath = Join-Path -Path $destinationPath -ChildPath $dir
 			$destVersionPath = Join-Path -Path $destDirPath -ChildPath $version
 			
