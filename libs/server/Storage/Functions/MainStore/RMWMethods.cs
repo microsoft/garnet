@@ -81,7 +81,7 @@ namespace Garnet.server
             {
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
-                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input)); 
+                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
                     HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
                     *output.SpanByte.ToPointer() = 1;
                     break;
@@ -177,7 +177,6 @@ namespace Garnet.server
                 case RespCommand.SETBIT:
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
-                    var numBytes = BitmapManager.Length(bOffset);
                     value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
                     BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
                     // Always return 0 at initial updater because previous value was 0
@@ -254,7 +253,6 @@ namespace Garnet.server
                         };
 
                         value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
-
                         if (expiration > 0)
                             value.ExtraMetadata = expiration;
 

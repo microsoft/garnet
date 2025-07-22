@@ -428,36 +428,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to adjust itself (the pre-allocated <see cref="SpanByte"/>), checking if space permits in the <see cref="SpanByte"/> itself.
-        /// This method handles expansion and shrinking of the <see cref="SpanByte"/> as long as requested new length is under  fullSizeofthis.
-        /// </summary>
-        /// <param name="fullAllocatedSizeOfSelf">The true full allocated size of the <see cref="SpanByte"/> this includes padding used for alignment.</param>
-        /// <param name="payloadSize">The size needed for the new value payload, space for etag should be added here since Etag is part of the payload.</param>
-        /// <param name="addingMetadata">A boolean indicating whether the new request wants to add metadata.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySafeAdjustLength(int fullAllocatedSizeOfSelf, int payloadSize, bool addingMetadata = false)
-        {
-            // Metadata on a spanybyte is optional, so this method will only add size if the caller has requested it, and we don't already have it on the value SpanByte.
-            var addMetadata = addingMetadata && MetadataSize == 0;
-            // check if the full allocated destination size can accommodate the new value + metadata + offset to copy to.
-            var newPayloadAndMetadataSizeNeeded = addMetadata ? payloadSize + sizeof(long) : payloadSize;
-            // newTotalSize includes header + payload + metadata of the new spanbyte we are trying to convert this guy to.
-            var newTotalSize = newPayloadAndMetadataSizeNeeded + sizeof(int);
-            // cannot expand self past it's true allocated size
-            if (fullAllocatedSizeOfSelf < newTotalSize)
-            {
-                return false;
-            }
-            // If we need to shrink the below method will zero out the extra space to retain log scan correctness.
-            ShrinkSerializedLength(newPayloadAndMetadataSizeNeeded);
-            // If the size of payload + metadata being added is larger than current length, we need to expand.
-            // Since we have already verified there is enough extra value space to grow dst to store src, we can blindly adjust this length
-            Length = newPayloadAndMetadataSizeNeeded;
-            // Perform whatever memcpy logic outside now that the value spanbyte has been adjusted to the new needed size.
-            return true;
-        }
-
-        /// <summary>
         /// Utility to zero out an arbitrary span of bytes. 
         /// One use is to zero extra space after in-place update shrinks a value, to retain log scan correctness.
         /// </summary>
