@@ -285,7 +285,7 @@ namespace Tsavorite.core
                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
                         var (requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
                         (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions,
-                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
+                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths, stackCtx.recSrc.PhysicalAddress);
                     }
 
                     ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;

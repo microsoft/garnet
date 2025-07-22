@@ -26,9 +26,7 @@ namespace Garnet.test
         {
             r = new Random(335);
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            // Currently the issues are being caught in in-chain revivification. So we set the flag to use in-chain revivification only.
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true, useInChainRevivOnly: true);
-            server.Start();
+            SetupServerWithReviv(true);
         }
 
         [TearDown]
@@ -36,6 +34,17 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        private void SetupServerWithReviv(bool inChainOnly)
+        {
+            // Currently the issues are being caught in in-chain revivification. So we set the flag to use in-chain revivification only.
+            if (inChainOnly)
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true, useInChainRevivOnly: true);
+            else
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true, useReviv: true);
+
+            server.Start();
         }
 
         [Test]
@@ -83,8 +92,6 @@ namespace Garnet.test
             await TestRevivifyAsync(testRmwWorksViaAppend, defaultInitialArgs);
         }
 
-        // PFADD, PFMERGE
-
         [Test]
         public async Task RevivificationWithRMWWorksViaSetBit()
         {
@@ -111,8 +118,6 @@ namespace Garnet.test
             await TestRevivifyAsync(testRmwWorksViaBitfield, defaultInitialArgs);
         }
 
-        // TODO: add more
-
         private async Task TestRevivifyAsync(Func<IDatabase, Task> callbackFunc, string[] initialSettingArgs)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -133,6 +138,39 @@ namespace Garnet.test
             // check if revivification stat shows in-chain revivification happened.
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful In-Chain: 1"), "Expected in-chain revivification to happen, but it did not.");
+        }
+
+        // Below we test revivification via record pool when doing an RCU operation works via RMW.
+        [Test]
+        public async Task RevivificationWithRMWWorksForRecordPool()
+        {
+            server.Dispose(false);
+            SetupServerWithReviv(false);
+            
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            await db.ExecuteAsync("SET", "foo", "c", "PX", 500);
+            await db.ExecuteAsync("SET", "michael", "jordan");
+            await db.ExecuteAsync("SET", "johnny", "x", "PX", 500); // big record, that we need to make sure active exp picks up for revivification
+
+            await Task.Delay(600); // wait for the keys to expire
+
+            // ---- Trigger active expiration, to tombstone the above key ---
+            var exec = await db.ExecuteAsync("EXPDELSCAN");
+            // when deleting via above, are we potentially resetting the value and it's metadata and stuff?
+            ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
+
+            // attempt to do an RCU operation that will reuse the tombstoned record via Recordpool
+            // when we are doing RCU here what value is the allocator giving, is it from the record pool? what are the sections of it?
+            await db.ExecuteAsync("APPEND", "michael", "2323"); // need a record with atleast 8 bytes from record pool to RCU this bad boy
+
+            // confirm we did indeed use a reviv record
+            var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
+            ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected in-chain revivification to happen, but it did not.");
+
+            var res = await db.StringGetAsync("michael");
+            ClassicAssert.AreEqual("jordan23", res.ToString(), "Expected the value to be updated via RMW operation, but it was not.");
         }
     }
 }

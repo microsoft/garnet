@@ -411,7 +411,7 @@ namespace Garnet.test
             {
                 opts.UseRevivBinsPowerOf2 = true;
                 opts.RevivBinBestFitScanLimit = 0;
-                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivNumberOfBinsToSearch = int.MaxValue;
                 opts.RevivifiableFraction = 1;
                 opts.RevivInChainOnly = false;
                 opts.RevivBinRecordCounts = [];

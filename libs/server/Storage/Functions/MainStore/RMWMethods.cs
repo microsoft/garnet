@@ -81,8 +81,7 @@ namespace Garnet.server
             {
                 case RespCommand.PFADD:
                     var v = value.ToPointer();
-                    var success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, HyperLogLog.DefaultHLL.SparseInitialLength(ref input));
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+                    value.ShrinkSerializedLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input)); 
                     HyperLogLog.DefaultHLL.Init(ref input, v, value.Length);
                     *output.SpanByte.ToPointer() = 1;
                     break;
@@ -93,8 +92,7 @@ namespace Garnet.server
                     var length = sbSrcHLL.Length;
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, length);
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+                    value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
 
@@ -102,13 +100,9 @@ namespace Garnet.server
                 case RespCommand.SETIFMATCH:
                     int spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, newInputValue.Length + spaceForEtag, addingMetadata: input.arg1 != 0);
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
-                    value.ExtraMetadata = input.arg1;
-                    newInputValue.CopyTo(value.AsSpan(spaceForEtag));
-
+                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     long clientSentEtag = input.parseState.GetLong(1);
-
                     if (cmd == RespCommand.SETIFMATCH)
                         clientSentEtag++;
 
@@ -135,9 +129,8 @@ namespace Garnet.server
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
                     newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, newInputValue.Length + spaceForEtag, addingMetadata: metadataSize > 0);
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+                    metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
+                    value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
 
@@ -156,8 +149,7 @@ namespace Garnet.server
                     spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
                     // Copy input to value
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, setValue.Length + spaceForEtag, addingMetadata: value.MetadataSize > 0);
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+                    value.ShrinkSerializedLength(value.MetadataSize + setValue.Length + spaceForEtag);
                     setValue.CopyTo(value.AsSpan(spaceForEtag));
 
                     if (spaceForEtag != 0)
@@ -186,8 +178,7 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
                     var numBytes = BitmapManager.Length(bOffset);
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, numBytes);
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+                    value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
                     BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
                     // Always return 0 at initial updater because previous value was 0
                     CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
@@ -195,11 +186,9 @@ namespace Garnet.server
 
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    numBytes = BitmapManager.LengthFromType(bitFieldArgs);
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, numBytes);
-                    Debug.Assert(success, "Initial update should always be able to fit it's value into a record.");
+                    value.ShrinkSerializedLength(BitmapManager.LengthFromType(bitFieldArgs));
                     // Ensure new-record space is zero-init'd before we do any bit operations (e.g. it may have been revivified, which for efficiency does not clear old data)
-                    value.AsSpan().Clear();
+                    value.AsSpan().Clear(); // HK TODO: The above comment doesn't seem true as by this point revivification should have zeroed the value space.
                     var (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, value.ToPointer(), value.Length);
                     if (!overflow)
                         CopyRespNumber(bitfieldReturnValue, ref output);
@@ -208,7 +197,6 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.SETRANGE:
-                    // TODO: Proceeed below!
                     var offset = input.parseState.GetInt(0);
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
                     if (offset > 0)
@@ -223,8 +211,7 @@ namespace Garnet.server
 
                 case RespCommand.APPEND:
                     var appendValue = input.parseState.GetArgSliceByRef(0);
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, appendValue.Length);
-                    Debug.Assert(success, "Initial update should never not be able to fit it's value into a record.");
+                    value.ShrinkSerializedLength(appendValue.Length);
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
                     CopyValueLengthToOutput(ref value, ref output, 0);
                     break;
@@ -266,9 +253,7 @@ namespace Garnet.server
                             _ => 8,
                         };
 
-                        success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, functions.GetInitialLength(ref input), addingMetadata: metadataSize > 0);
-
-                        Debug.Assert(success, "initial update should always be able to fit it's value into a record.");
+                        value.ShrinkSerializedLength(metadataSize + functions.GetInitialLength(ref input));
 
                         if (expiration > 0)
                             value.ExtraMetadata = expiration;
@@ -287,11 +272,7 @@ namespace Garnet.server
 
                     // Copy input to value
                     var inputValue = input.parseState.GetArgSliceByRef(0);
-
-                    success = value.TrySafeAdjustLength(rmwInfo.FullValueLength, inputValue.Length, addingMetadata: input.arg1 != 0);
-
-                    Debug.Assert(success, "initial update should always be able to fit it's value into a record.");
-
+                    value.ShrinkSerializedLength(inputValue.Length);
                     value.ExtraMetadata = input.arg1;
                     inputValue.ReadOnlySpan.CopyTo(value.AsSpan());
 
@@ -337,15 +318,15 @@ namespace Garnet.server
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE, you must make sure you must reset etagState in FunctionState
         private bool InPlaceUpdaterWorker(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
+            RespCommand cmd = input.header.cmd;
             // Expired data
             if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
             {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
+                rmwInfo.Action = cmd is RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 recordInfo.ClearHasETag();
                 return false;
             }
 
-            RespCommand cmd = input.header.cmd;
             bool hadRecordPreMutation = recordInfo.ETag;
             bool shouldUpdateEtag = hadRecordPreMutation;
             if (shouldUpdateEtag)
@@ -826,15 +807,7 @@ namespace Garnet.server
 
                     return false;
                 case RespCommand.DELIFEXPIM:
-                    // Only if the key has expired, will we delete it.
-                    if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
-                    {
-                        // setting the action and returning false will tombstone this record
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        // reset etag state that may have been initialized earlier,
-                        EtagState.ResetState(ref functionsState.etagState);
-                        return false;
-                    }
+                    // this is the case where it isn't expired
                     shouldUpdateEtag = false;
                     break;
                 default:

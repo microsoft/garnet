@@ -233,7 +233,7 @@ namespace Tsavorite.core
                         // Input is not included in record-length calculations for Upsert
                         var (requiredSize, _, _) = hlog.GetRecordSize(ref key, ref value);
                         (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions,
-                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
+                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths, stackCtx.recSrc.PhysicalAddress);
                     }
 
                     ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
