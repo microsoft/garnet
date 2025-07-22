@@ -497,6 +497,16 @@ namespace Garnet.server
         public string ObjectStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "ObjectStore");
 
         /// <summary>
+        /// Seconds between attempts to re-establish replication between a Primary and Replica if the replication connection
+        /// has faulted.
+        /// 
+        /// 0 disables.
+        /// 
+        /// Attempts will only be made if Primary and Replica are exchanging GOSSIP messages.
+        /// </summary>
+        public int ClusterReplicationReestablishmentTimeout;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>

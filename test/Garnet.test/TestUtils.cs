@@ -483,7 +483,8 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false)
+            bool useNativeDeviceLinux = false,
+            int clusterReplicationReestablishmentTimeout = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -535,7 +536,8 @@ namespace Garnet.test
                     luaMemoryLimit: luaMemoryLimit,
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint,
                     luaTransactionMode: luaTransactionMode,
-                    useNativeDeviceLinux: useNativeDeviceLinux);
+                    useNativeDeviceLinux: useNativeDeviceLinux,
+                    clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -602,7 +604,8 @@ namespace Garnet.test
             string unixSocketPath = null,
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false)
+            bool useNativeDeviceLinux = false,
+            int clusterReplicationReestablishmentTimeout = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -715,6 +718,7 @@ namespace Garnet.test
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
                 UseNativeDeviceLinux = useNativeDeviceLinux,
+                ClusterReplicationReestablishmentTimeout = clusterReplicationReestablishmentTimeout,
             };
 
             if (lowMemory)

@@ -1340,7 +1340,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(25)]
         [Category("CLUSTER")]
-        //[CancelAfter(30_000)]
+        [CancelAfter(30_000)]
         public async Task ReplicaSyncTaskFaultsRecoverAsync(CancellationToken cancellation)
         {
             // Ensure that a fault in ReplicaSyncTask (on the primary) doesn't leave a replica permanently desynced
@@ -1357,7 +1357,7 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1, clusterReplicationReestablishmentTimeout: 1);
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 

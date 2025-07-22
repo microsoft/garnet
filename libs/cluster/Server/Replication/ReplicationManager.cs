@@ -40,6 +40,8 @@ namespace Garnet.cluster
         private SingleWriterMultiReaderLock recoverLock;
         private SingleWriterMultiReaderLock recoveryStateChangeLock;
 
+        private long lastEnsureReplicationAttempt;
+
         public bool IsRecovering => currentRecoveryStatus is not (RecoveryStatus.NoRecovery or RecoveryStatus.ReadRole);
 
         public bool CannotStreamAOF => IsRecovering && currentRecoveryStatus != RecoveryStatus.CheckpointRecoveredAtReplica;
@@ -174,17 +176,50 @@ namespace Garnet.cluster
         /// </summary>
         public void EnsureReplication(ClusterSession activeSession, IEnumerable<IClusterSession> allClusterSessions)
         {
-            // Do nothing if we're not a replica, OR if there's an active session for replication
-            if (!clusterProvider.clusterManager.CurrentConfig.IsReplica || allClusterSessions.Any(static x => x.IsReplicating))
+            var pollFrequency = clusterProvider.serverOptions.ClusterReplicationReestablishmentTimeout;
+
+            if (pollFrequency == 0)
+            {
+                // Disabled
+                return;
+            }
+
+            var oldLastEnsureReplicationAttempt = Volatile.Read(ref lastEnsureReplicationAttempt);
+
+            var now = Environment.TickCount64;
+            var sinceLastCheck = now - oldLastEnsureReplicationAttempt;
+
+            if (TimeSpan.FromMilliseconds(sinceLastCheck) < TimeSpan.FromSeconds(pollFrequency))
+            {
+                // Last attempt was too recent
+                return;
+            }
+
+            var primaryId = clusterProvider.clusterManager.CurrentConfig.LocalNodePrimaryId;
+
+            // We only care to take any action if we're a Replica the active session is also our Primary
+            if (!clusterProvider.clusterManager.CurrentConfig.IsReplica || activeSession.RemoteNodeId != primaryId)
             {
                 return;
             }
 
-            // todo: lock!
+            // If any session is actively replicating, we don't need to take any action
+            //
+            // Note that we can rely on this because, in the event a replication task on a Primary faults, we close
+            // the connection it has open to its Replica
+            if (allClusterSessions.Any(static x => x.IsReplicating))
+            {
+                return;
+            }
 
-            var primaryId = clusterProvider.clusterManager.CurrentConfig.LocalNodePrimaryId;
+            var newLastEnsureReplicationAttempt = Environment.TickCount64;
+            if (Interlocked.CompareExchange(ref lastEnsureReplicationAttempt, newLastEnsureReplicationAttempt, oldLastEnsureReplicationAttempt) != oldLastEnsureReplicationAttempt)
+            {
+                // Another attempt was made, somehow, so bail
+                return;
+            }
 
-            logger.LogInformation("Attempting resync to {primaryId} after AOF replay failed", primaryId);
+            logger.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
 
             ReadOnlySpan<byte> errorMessage;
             var success =
@@ -192,9 +227,13 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage) :
                     clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
 
-            if (!success)
+            if (success)
             {
-                logger.LogWarning("Failed to resync to {primaryId} after AOF replay failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+                logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
+            }
+            else
+            {
+                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
             }
         }
 
