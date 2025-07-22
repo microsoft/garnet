@@ -162,18 +162,16 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
             // attempt to do an RCU operation that will reuse the tombstoned record via Recordpool
-            // when we are doing RCU here what value is the allocator giving, is it from the record pool? what are the sections of it?
-            await db.ExecuteAsync("APPEND", "michael", "2323"); // need a record with atleast 8 bytes from record pool to RCU this bad boy
+            await db.ExecuteAsync("SETIFGREATER", "michael", "j", 23);
 
             // confirm we did indeed use a reviv record
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected in-chain revivification to happen, but it did not.");
 
-            var res = await db.StringGetAsync("michael");
-            ClassicAssert.AreEqual("jordan23", res.ToString(), "Expected the value to be updated via RMW operation, but it was not.");
-        }
+            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "michael");
 
-        // HK TODO: I need to run the test such that I can look at the exact record that has been revivified and make sure it follow the invariants needed by scan of hlog.
-        // I need to put it in my debugger and make sure that all bytes have been zero'd out, and etc.
+            ClassicAssert.AreEqual(23, (long)res[0], "Incorrect Etag.");
+            ClassicAssert.AreEqual("j", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+        }
     }
 }
