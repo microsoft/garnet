@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -165,6 +167,35 @@ namespace Garnet.cluster
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
             replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
+        }
+
+        /// <summary>
+        /// If this node is a Replica, ensures that a session engaged in replication exists from its paired primary.
+        /// </summary>
+        public void EnsureReplication(ClusterSession activeSession, IEnumerable<IClusterSession> allClusterSessions)
+        {
+            // Do nothing if we're not a replica, OR if there's an active session for replication
+            if (!clusterProvider.clusterManager.CurrentConfig.IsReplica || allClusterSessions.Any(static x => x.IsReplicating))
+            {
+                return;
+            }
+
+            // todo: lock!
+
+            var primaryId = clusterProvider.clusterManager.CurrentConfig.LocalNodePrimaryId;
+
+            logger.LogInformation("Attempting resync to {primaryId} after AOF replay failed", primaryId);
+
+            ReadOnlySpan<byte> errorMessage;
+            var success =
+                    clusterProvider.serverOptions.ReplicaDisklessSync ?
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
+
+            if (!success)
+            {
+                logger.LogWarning("Failed to resync to {primaryId} after AOF replay failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+            }
         }
 
         /// <summary>

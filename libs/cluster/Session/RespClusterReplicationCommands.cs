@@ -194,6 +194,8 @@ namespace Garnet.cluster
             }
             else
             {
+                IsReplicating = true;
+
                 clusterProvider.replicationManager.ProcessPrimaryStream(sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
