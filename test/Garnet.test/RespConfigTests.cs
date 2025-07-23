@@ -41,24 +41,24 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(true, "16g", "32g", "64g", "g4")]
-        [TestCase(true, "9gB", "28GB", "33G", "2gBB")]
-        [TestCase(false, "16m", "32m", "64m", "3bm")]
-        [TestCase(false, "5MB", "30M", "128mb", "44d")]
+        [TestCase(StoreType.Main, "16g", "32g", "64g", "g4")]
+        [TestCase(StoreType.Main, "9gB", "28GB", "33G", "2gBB")]
+        [TestCase(StoreType.Object, "16m", "32m", "64m", "3bm")]
+        [TestCase(StoreType.Object, "5MB", "30M", "128mb", "44d")]
 
-        public void ConfigSetMemorySizeTest(bool mainStore, string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
+        public void ConfigSetMemorySizeTest(StoreType storeType, string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var option = mainStore ? "memory" : "obj-log-memory";
-            var metricType = mainStore ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
-            var initMemorySize = mainStore ? memorySize : objectStoreLogMemorySize;
+            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
+            var metricType = storeType == StoreType.Main ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
+            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
 
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var bufferSize = ServerOptions.PreviousPowerOf2(currMemorySize);
             if (bufferSize != currMemorySize)
                 bufferSize *= 2;
-            var pageSize = mainStore ? 32L * 1024 * 1024 : 4 * 1024; // default page size
+            var pageSize = storeType == StoreType.Main ? 32L * 1024 * 1024 : 4 * 1024; // default page size
 
             // Check initial MinEPC before any changes
             var metrics = server.Metrics.GetInfoMetrics(metricType);
@@ -122,17 +122,17 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(true, "32m", "128m", "63m", "8d")]
-        [TestCase(true, "16mB", "256MB", "23m", "g8")]
-        [TestCase(false, "2m", "32m", "28m", "m9")]
-        [TestCase(false, "4Mb", "16mB", "129MB", "0.3gb")]
-        public void ConfigSetIndexSizeTest(bool mainStore, string smallerSize, string largerSize, string illegalSize, string malformedSize)
+        [TestCase(StoreType.Main, "32m", "128m", "63m", "8d")]
+        [TestCase(StoreType.Main, "16mB", "256MB", "23m", "g8")]
+        [TestCase(StoreType.Object, "2m", "32m", "28m", "m9")]
+        [TestCase(StoreType.Object, "4Mb", "16mB", "129MB", "0.3gb")]
+        public void ConfigSetIndexSizeTest(StoreType storeType, string smallerSize, string largerSize, string illegalSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var metricType = mainStore ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
-            var option = mainStore ? "index" : "obj-index";
-            var initIndexSize = mainStore ? indexSize : objectStoreIndexSize;
+            var metricType = storeType == StoreType.Main ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
+            var option = storeType == StoreType.Main ? "index" : "obj-index";
+            var initIndexSize = storeType == StoreType.Main ? indexSize : objectStoreIndexSize;
 
             // Check initial index size before any changes
             var currIndexSize = ServerOptions.ParseSize(initIndexSize, out _);
@@ -240,14 +240,14 @@ namespace Garnet.test
     }
 
     [TestFixture]
-    public class RespConfigLowMemoryTests
+    public class RespConfigMemoryUtilizationTests
     {
         GarnetServer server;
         private string memorySize = "3m";
-        private string indexSize = "3m";
+        private string indexSize = "4096";
         private string objectStoreLogMemorySize = "2500";
-        private string objectStoreHeapMemorySize = "3m";
-        private string objectStoreIndexSize = "8m";
+        private string objectStoreHeapMemorySize = "1m";
+        private string objectStoreIndexSize = "1024";
         private string pageSize = "1024";
 
         [SetUp]
@@ -273,41 +273,43 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(true, "1m", "4m")]
-        [TestCase(false, "1024", "4000")]
-        public void ConfigSetMemorySizeTest2(bool mainStore, string smallerSize, string largerSize)
+        [TestCase(StoreType.Main, "1m", "4m")]
+        [TestCase(StoreType.Main, "1024k", "4000k")]
+        [TestCase(StoreType.Object, "1024", "4000")]
+        [TestCase(StoreType.Object, "1024", "4096")]
+        public void ConfigSetMemorySizeUtilizationTest(StoreType storeType, string smallerSize, string largerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var option = mainStore ? "memory" : "obj-log-memory";
-            var initMemorySize = mainStore ? memorySize : objectStoreLogMemorySize;
+            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
+            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
 
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var server = redis.GetServer(TestUtils.EndPoint);
-            var info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
+            var info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
             var headAddress = info.HeadAddress;
-            ClassicAssert.AreEqual(mainStore ? 64 : 24, info.TailAddress);
+            ClassicAssert.AreEqual(storeType == StoreType.Main ? 64 : 24, info.TailAddress);
             
             var i = 0;
             var key = $"key{i++:00000}";
 
-            if (mainStore)
+            if (storeType == StoreType.Main)
                 _ = db.StringSet(key, new string('x', 512));
             else
                 _ = db.ListRightPush(key, [new("x")]);
 
-            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
+            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
             var recordSize = info.TailAddress - info.HeadAddress;
 
             // Insert records until head address moves
             while (info.HeadAddress == headAddress)
             {
                 key = $"key{i++:00000}";
-                if (mainStore)
+                if (storeType == StoreType.Main)
                     _ = db.StringSet(key, new string('x', 512));
                 else
                     _ = db.ListRightPush(key, [new("x")]);
-                info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
+                info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
             }
 
             // Verify that records were inserted up to the configured memory size limit
@@ -317,8 +319,8 @@ namespace Garnet.test
             var result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Verify that head address has moved forward accordingly
-            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
+            // Verify that memory is fully utilized
+            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
             currMemorySize = ServerOptions.ParseSize(smallerSize, out _);
             Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
 
@@ -329,20 +331,20 @@ namespace Garnet.test
             // Continue to insert records until new memory capacity is reached
             currMemorySize = ServerOptions.ParseSize(largerSize, out _);
             var remainingBuffer = currMemorySize - (info.TailAddress - info.HeadAddress);
-
+            
             while (remainingBuffer > recordSize)
             {
                 key = $"key{i++:00000}";
-                if (mainStore)
+                if (storeType == StoreType.Main)
                     _ = db.StringSet(key, new string('x', 512));
                 else
                     _ = db.ListRightPush(key, [new("x")]);
-                info = TestUtils.GetStoreAddressInfo(server, isObjectStore: !mainStore);
-                remainingBuffer = currMemorySize - (info.TailAddress - info.HeadAddress);
+                remainingBuffer -= recordSize;
             }
 
-            // Verify that head address has moved backward accordingly
-            //Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+            // Verify that memory is fully utilized
+            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
+            Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
         }
     }
 }

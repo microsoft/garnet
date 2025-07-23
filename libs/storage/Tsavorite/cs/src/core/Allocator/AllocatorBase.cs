@@ -715,7 +715,7 @@ namespace Tsavorite.core
             set
             {
                 minEmptyPageCount = value;
-                if (emptyPageCount < minEmptyPageCount)
+                if (emptyPageCount != minEmptyPageCount)
                 {
                     EmptyPageCount = minEmptyPageCount;
                 }
