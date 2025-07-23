@@ -278,7 +278,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
                     beginAddress,
-                    checkpointAofBeginAddress).WaitAsync(timeout, cts.Token);
+                    checkpointAofBeginAddress).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                 var syncFromAofAddress = long.Parse(resp);
 
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
@@ -441,7 +441,7 @@ namespace Garnet.cluster
                         }
                     }
 
-                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(timeout, cts.Token);
+                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
@@ -481,7 +481,7 @@ namespace Garnet.cluster
                         (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes);
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(timeout, cts.Token);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -492,7 +492,7 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).WaitAsync(timeout, cts.Token);
+                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -526,7 +526,7 @@ namespace Garnet.cluster
                         var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
                         var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes, segment);
 
-                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).WaitAsync(timeout, cts.Token);
+                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                         if (!resp.Equals("OK"))
                         {
                             logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -537,7 +537,7 @@ namespace Garnet.cluster
                         startAddress += readBytes;
                     }
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).WaitAsync(timeout, cts.Token);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
