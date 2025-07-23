@@ -44,5 +44,13 @@ namespace Garnet.server
         public void add_total_read_commands_processed(ulong count);
 
         public ulong get_total_read_commands_processed();
+
+        public void incr_total_transaction_commands_received(ulong count = 1);
+
+        public void incr_total_transaction_executed_successfully(ulong count = 1);
+
+        public ulong get_total_transaction_commands_received();
+
+        public ulong get_total_transaction_commands_executed_successfully();
     }
 }

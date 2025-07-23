@@ -47,9 +47,19 @@ namespace Garnet.server
 
         public void add_total_read_commands_processed(ulong count) { }
 
+        public void incr_total_transaction_commands_received(ulong count = 1) { }
+
+        public void incr_total_transaction_executed_successfully(ulong count = 1) { }
+
+        public void incr_total_transaction_transactions(ulong count = 1) { }
+
         public void incr_total_read_commands_processed(byte cmd) { }
 
         public ulong get_total_read_commands_processed() => 0;
+
+        public ulong get_total_transaction_commands_executed_successfully() => 0;
+
+        public ulong get_total_transaction_commands_received() => 0;
 
         public static void incr_total_number_resp_server_session_exceptions(ulong count) { }
 
@@ -107,9 +117,19 @@ namespace Garnet.server
         public ulong total_read_commands_processed;
 
         /// <summary>
+        /// Keep track of transaction commands received.
+        /// </summary>
+        public ulong total_transactions_commands_received;
+
+        /// <summary>
         /// Keep track of total number of exceptions triggered in try consume for all resp server sessions
         /// </summary>
         public ulong total_number_resp_server_session_exceptions;
+
+        /// <summary>
+        /// Keep track of total number of transactions that were executed successfully.
+        /// </summary>
+        public ulong total_transaction_commands_executed_successfully;
 
         /// <summary>
         /// GarnetSessionMetrics constructor
@@ -133,6 +153,8 @@ namespace Garnet.server
 
             add_total_write_commands_processed(add.get_total_write_commands_processed());
             add_total_read_commands_processed(add.get_total_read_commands_processed());
+            incr_total_transaction_commands_received(add.get_total_transaction_commands_received());
+            incr_total_transaction_executed_successfully(add.get_total_transaction_commands_executed_successfully());
 
             incr_total_number_resp_server_session_exceptions(add.get_total_number_resp_server_session_exceptions());
         }
@@ -151,6 +173,8 @@ namespace Garnet.server
             total_cluster_commands_processed = 0;
             total_write_commands_processed = 0;
             total_read_commands_processed = 0;
+            total_transactions_commands_received = 0;
+            total_transaction_commands_executed_successfully = 0;
             total_number_resp_server_session_exceptions = 0;
         }
 
@@ -267,11 +291,39 @@ namespace Garnet.server
         public void add_total_read_commands_processed(ulong count) => total_read_commands_processed += count;
 
         /// <summary>
+        /// Increment total_transactions_commands_received
+        /// </summary>
+        /// <param name="count"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void incr_total_transaction_commands_received(ulong count = 1) => total_transactions_commands_received += count;
+
+        /// <summary>
+        /// Increment total_transaction_commands_executed_successfully
+        /// </summary>
+        /// <param name="count"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void incr_total_transaction_executed_successfully(ulong count = 1) => total_transaction_commands_executed_successfully += count;
+
+        /// <summary>
         /// Get total_read_commands_processed
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ulong get_total_read_commands_processed() => total_read_commands_processed;
+
+        /// <summary>
+        /// Get total_transactions_commands_received
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ulong get_total_transaction_commands_received() => total_transactions_commands_received;
+
+        /// <summary>
+        /// Get total_transaction_commands_executed_successfully
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ulong get_total_transaction_commands_executed_successfully() => total_transaction_commands_executed_successfully;
 
         /// <summary>
         /// Increment total_number_resp_server_session_exceptions
