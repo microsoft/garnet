@@ -57,7 +57,7 @@ namespace Garnet.server
                 return null;
             }
 
-            var ret = GarnetServerOptions.ParseSize(MemoryLimit);
+            var ret = GarnetServerOptions.ParseSize(MemoryLimit, out _);
             if (ret is > int.MaxValue or < 1_024)
             {
                 logger?.LogWarning("Lua script memory limit is out of range [1K, 2GB] = {MemoryLimit} and will be ignored", MemoryLimit);
