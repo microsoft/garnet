@@ -376,9 +376,13 @@ namespace Garnet.server
 
         /// <summary>
         /// Set a timeout on a key.
+        /// EXPIRE key seconds [NX | XX | GT | LT]
+        /// PEXPIRE key milliseconds [NX | XX | GT | LT]
+        /// EXPIREAT key unix-time-seconds [NX | XX | GT | LT]
+        /// PEXPIREAT key unix-time-milliseconds [NX | XX | GT | LT]
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="command">Indicates which command to use, expire or pexpire.</param>
+        /// <param name="command">Indicates which command to use.</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
@@ -387,13 +391,19 @@ namespace Garnet.server
             var count = parseState.Count;
             if (count < 2 || count > 4)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIRE));
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetInt(1, out _))
+
+            if (!parseState.TryGetLong(1, out var expiration))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+
+            if (expiration < 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
             }
 
             var expireOption = ExpireOption.None;
@@ -434,82 +444,19 @@ namespace Garnet.server
                 }
             }
 
-            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
-            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
-
-            if (status == GarnetStatus.OK && timeoutSet)
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = command switch
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
-            }
+                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+            };
 
-            return true;
-        }
+            // Encode expiration time and expiration option and pass them into the input object
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-        /// <summary>
-        /// Set a timeout on a key based on unix timestamp
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="command">Indicates which command to use, expire or pexpire.</param>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        private bool NetworkEXPIREAT<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            var count = parseState.Count;
-            if (count < 2 || count > 4)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPIREAT));
-            }
-
-            var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetLong(1, out _))
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-            }
-
-            var expireOption = ExpireOption.None;
-
-            if (parseState.Count > 2)
-            {
-                if (!parseState.TryGetExpireOption(2, out expireOption))
-                {
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                }
-            }
-
-            if (parseState.Count > 3)
-            {
-                if (!parseState.TryGetExpireOption(3, out var additionExpireOption))
-                {
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(3)));
-                }
-
-                if (expireOption == ExpireOption.XX && (additionExpireOption == ExpireOption.GT || additionExpireOption == ExpireOption.LT))
-                {
-                    expireOption = ExpireOption.XX | additionExpireOption;
-                }
-                else if (expireOption == ExpireOption.GT && additionExpireOption == ExpireOption.XX)
-                {
-                    expireOption = ExpireOption.XXGT;
-                }
-                else if (expireOption == ExpireOption.LT && additionExpireOption == ExpireOption.XX)
-                {
-                    expireOption = ExpireOption.XXLT;
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteError("ERR NX and XX, GT or LT options at the same time are not compatible", ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-
-            var input = new RawStringInput(command, ref parseState, startIdx: 1, arg1: (byte)expireOption);
+            var input = new RawStringInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
             var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
 
             if (status == GarnetStatus.OK && timeoutSet)
