@@ -579,7 +579,7 @@ namespace Garnet.cluster
                 else
                     device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
             }
-            await semaphore.WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            await semaphore.WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).ConfigureAwait(false);
             return (pbuffer, (int)numBytesToRead);
         }
 
