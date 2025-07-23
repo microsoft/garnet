@@ -138,7 +138,7 @@ namespace Garnet.cluster
             }
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover))
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, upgradeLock: false))
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
@@ -212,28 +212,49 @@ namespace Garnet.cluster
                 return;
             }
 
-            var newLastEnsureReplicationAttempt = Environment.TickCount64;
-            if (Interlocked.CompareExchange(ref lastEnsureReplicationAttempt, newLastEnsureReplicationAttempt, oldLastEnsureReplicationAttempt) != oldLastEnsureReplicationAttempt)
+            // Now we're going to attempt to re-establish replication
+
+            // To avoid a TOCTOU issue, we need to prevent role change while we do this
+            if (!clusterProvider.PreventRoleChange())
             {
-                // Another attempt was made, somehow, so bail
                 return;
             }
 
-            logger.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
-
-            ReadOnlySpan<byte> errorMessage;
-            var success =
-                    clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage) :
-                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
-
-            if (success)
+            try
             {
-                logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
+                if (!clusterProvider.clusterManager.CurrentConfig.IsReplica || clusterProvider.clusterManager.CurrentConfig.LocalNodePrimaryId != primaryId)
+                {
+                    // This nodes replication state has changed since we decided to re-sync, bail
+                    return;
+                }
+
+                var newLastEnsureReplicationAttempt = Environment.TickCount64;
+                if (Interlocked.CompareExchange(ref lastEnsureReplicationAttempt, newLastEnsureReplicationAttempt, oldLastEnsureReplicationAttempt) != oldLastEnsureReplicationAttempt)
+                {
+                    // Another attempt was made, somehow, so bail
+                    return;
+                }
+
+                logger.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
+
+                ReadOnlySpan<byte> errorMessage;
+                var success =
+                        clusterProvider.serverOptions.ReplicaDisklessSync ?
+                        clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, out errorMessage) :
+                        clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, out errorMessage);
+
+                if (success)
+                {
+                    logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
+                }
+                else
+                {
+                    logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+                }
             }
-            else
+            finally
             {
-                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+                clusterProvider.AllowRoleChange();
             }
         }
 
@@ -287,9 +308,22 @@ namespace Garnet.cluster
         /// <summary>
         /// Acquire recovery and checkpoint locks to prevent checkpoints and parallel recovery tasks
         /// </summary>
-        /// <param name="nextRecoveryStatus"></param>
-        public bool BeginRecovery(RecoveryStatus nextRecoveryStatus)
+        /// <param name="nextRecoveryStatus">Status to transition to on success</param>
+        /// <param name="upgradeLock">If true, will attempt to upgrade a read lock to a write lock.  Assumes a prior successful call to <see cref="BeginRecovery(RecoveryStatus, bool)"/> with <see cref="RecoveryStatus.ReadRole"/>.</param>
+        public bool BeginRecovery(RecoveryStatus nextRecoveryStatus, bool upgradeLock)
         {
+            if (upgradeLock)
+            {
+                if (!recoverLock.TryUpgradeReadLock())
+                {
+                    return false;
+                }
+
+                currentRecoveryStatus = nextRecoveryStatus;
+                logger?.LogTrace("Upgraded recover lock [{recoverStatus}]", nextRecoveryStatus);
+                return true;
+            }
+
             if (currentRecoveryStatus != RecoveryStatus.NoRecovery)
             {
                 logger?.LogError("Error background recovering task has not completed [{recoverStatus}]", nextRecoveryStatus);
@@ -324,9 +358,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Release recovery and checkpoint locks
         /// </summary>
-        /// <param name="nextRecoveryStatus"></param>
-        public void EndRecovery(RecoveryStatus nextRecoveryStatus)
+        /// <param name="nextRecoveryStatus">State to transition to.</param>
+        /// <param name="downgradeLock">If true, downgrades the held write lock to a read lock instead of just releasing the write lock.</param>
+        public void EndRecovery(RecoveryStatus nextRecoveryStatus, bool downgradeLock)
         {
+            Debug.Assert(!downgradeLock || nextRecoveryStatus == RecoveryStatus.ReadRole, "Can only downgrade to a read lock for ReadRole status");
+
             logger?.LogTrace("{method} [{currentRecoveryStatus},{nextRecoveryStatus}]", nameof(EndRecovery), currentRecoveryStatus, nextRecoveryStatus);
 
             try
@@ -369,8 +406,15 @@ namespace Garnet.cluster
                         break;
                     case RecoveryStatus.ReadRole:
                         currentRecoveryStatus = nextRecoveryStatus;
-                        recoverLock.ReadUnlock();
-                        clusterProvider.storeWrapper.ResumeCheckpoints();
+                        if (downgradeLock)
+                        {
+                            recoverLock.DowngradeWriteLock();
+                        }
+                        else
+                        {
+                            recoverLock.ReadUnlock();
+                            clusterProvider.storeWrapper.ResumeCheckpoints();
+                        }
                         break;
                 }
             }
@@ -475,8 +519,8 @@ namespace Garnet.cluster
             if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    TryReplicateDisklessSync(null, null, background: false, force: true, tryAddReplica: false, out var errorMessage) :
-                    TryReplicateDiskbasedSync(null, null, background: false, force: false, tryAddReplica: false, out errorMessage);
+                    TryReplicateDisklessSync(null, null, background: false, force: true, tryAddReplica: false, upgradeLock: false, out var errorMessage) :
+                    TryReplicateDiskbasedSync(null, null, background: false, force: false, tryAddReplica: false, upgradeLock: false, out errorMessage);
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!success)
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));

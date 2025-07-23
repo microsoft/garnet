@@ -27,6 +27,7 @@ namespace Garnet.cluster
         /// <param name="background">If replication sync will run in the background.</param>
         /// <param name="force">Force adding this node as replica.</param>
         /// <param name="tryAddReplica">Execute try add replica.</param>
+        /// <param name="upgradeLock">If true, allows for a <see cref="RecoveryStatus.ReadRole"/> read lock to be upgraded to <see cref="RecoveryStatus.ClusterReplicate"/>.</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns>A boolean indicating whether replication initiation was successful.</returns>
         public bool TryReplicateDiskbasedSync(
@@ -35,6 +36,7 @@ namespace Garnet.cluster
             bool background,
             bool force,
             bool tryAddReplica,
+            bool upgradeLock,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
@@ -42,7 +44,7 @@ namespace Garnet.cluster
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force, upgradeLock, out errorMessage, logger: logger))
                     return false;
 
                 // Wait for threads to agree
@@ -52,12 +54,12 @@ namespace Garnet.cluster
                 if (background)
                 {
                     logger?.LogInformation("Initiating background checkpoint retrieval");
-                    _ = Task.Run(ReplicaSyncAttachTask);
+                    _ = Task.Run(() => ReplicaSyncAttachTask(upgradeLock));
                 }
                 else
                 {
                     logger?.LogInformation("Initiating foreground checkpoint retrieval");
-                    var resp = ReplicaSyncAttachTask().GetAwaiter().GetResult();
+                    var resp = ReplicaSyncAttachTask(upgradeLock).GetAwaiter().GetResult();
                     if (resp != null)
                     {
                         errorMessage = Encoding.ASCII.GetBytes(resp);
@@ -73,7 +75,7 @@ namespace Garnet.cluster
                 return false;
             }
 
-            async Task<string> ReplicaSyncAttachTask()
+            async Task<string> ReplicaSyncAttachTask(bool downgradeLock)
             {
                 Debug.Assert(IsRecovering);
                 GarnetClientSession gcs = null;
@@ -156,7 +158,14 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    EndRecovery(RecoveryStatus.NoRecovery);
+                    if (downgradeLock)
+                    {
+                        EndRecovery(RecoveryStatus.ReadRole, downgradeLock: true);
+                    }
+                    else
+                    {
+                        EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                    }
                     recvCheckpointHandler?.Dispose();
                     gcs?.Dispose();
                 }
@@ -357,7 +366,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
+                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica, downgradeLock: false);
             }
         }
     }
