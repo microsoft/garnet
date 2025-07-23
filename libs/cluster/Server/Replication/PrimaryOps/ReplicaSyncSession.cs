@@ -318,7 +318,11 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogCheckpointEntry(LogLevel.Error, "Error at attaching", localEntry);
+                if (localEntry != null)
+                    logger?.LogCheckpointEntry(LogLevel.Error, "Error at attaching", localEntry);
+                else
+                    logger?.LogError("Error at attaching: {ex}", ex.Message);
+
                 if (aofSyncTaskInfo != null) _ = clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
                 errorMsg = ex.Message;// this is error sent to remote client
                 return false;
@@ -327,7 +331,7 @@ namespace Garnet.cluster
             {
                 // At this point the replica has received the most recent checkpoint data
                 // and recovered from it so primary can release and delete it safely
-                localEntry.RemoveReader();
+                localEntry?.RemoveReader();
                 gcs.Dispose();
             }
             return true;

@@ -32,5 +32,9 @@ namespace Garnet.common
         /// Wait at migration slot driver right after acquiring the end scan range
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
+        /// <summary>
+        /// Failed to add AOF sync task due to unknown node
+        /// </summary>
+        Replication_Failed_To_AddAofSyncTask_UnknownNode,
     }
 }
