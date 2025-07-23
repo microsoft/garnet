@@ -96,6 +96,9 @@ function BuildAndCleanUpFiles {
 	}
 }
 
+# Stop on error
+$ErrorActionPreference = "Stop"
+
 # Get base path since paths can differ from machine to machine
 $string = $pwd.Path
 $position = $string.IndexOf(".azure")
@@ -117,9 +120,9 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	Write-Host "** Publish ... **"
 
 	# Clean up destination in advance
-	if (Test-Path -Type Container $baseReleasePath)
+	if (Test-Path -Type Container -LiteralPath $baseReleasePath)
 	{
-		Remove-Item -Force -Recurse $baseReleasePath
+		Remove-Item -Force -Recurse -LiteralPath $baseReleasePath
 	}
 
 	# Build, then clean up extra files not needed for publishing
