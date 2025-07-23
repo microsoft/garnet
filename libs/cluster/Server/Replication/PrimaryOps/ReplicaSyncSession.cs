@@ -479,7 +479,7 @@ namespace Garnet.cluster
                     var num_bytes = startAddress + batchSize < endAddress ?
                         batchSize :
                         (int)(endAddress - startAddress);
-                    var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes);
+                    var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes);
 
                     resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
@@ -524,7 +524,7 @@ namespace Garnet.cluster
                     while (startAddress < size)
                     {
                         var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
-                        var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes, segment);
+                        var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes, segment);
 
                         resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).WaitAsync(timeout, cts.Token).ConfigureAwait(false);
                         if (!resp.Equals("OK"))
@@ -560,7 +560,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="size"></param>
         /// <param name="segmentId"></param>
-        private unsafe (SectorAlignedMemory, int) ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
+        private async Task<(SectorAlignedMemory, int)> ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
         {
             bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
 
@@ -568,11 +568,14 @@ namespace Garnet.cluster
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
-            if (segmentId == -1)
-                device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
-            else
-                device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
-            semaphore.Wait(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            unsafe
+            {
+                if (segmentId == -1)
+                    device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+                else
+                    device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
+            }
+            await semaphore.WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
             return (pbuffer, (int)numBytesToRead);
         }
 
