@@ -57,20 +57,14 @@ function BuildAndCleanUpFiles {
 	$GarnetServer = "$basePath/main/GarnetServer/GarnetServer.csproj"
 	$GarnetWorker = "$basePath/hosting/Windows/Garnet.worker/Garnet.worker.csproj"
 
-	# Clean up destination in advance
-	if (Test-Path -Type Container $publishPath)
-	{
-		Remove-Item -Force -Recurse $publishPath
-	}
-
 	if ($publishFolder -eq "portable") {
 		dotnet publish $GarnetServer -p:PublishProfile="portable" -f:$framework @artifactArg -o "$publishPath"
 		# don't clean up all files for portable ... leave as is
 		return;
 	} elseif ($platform -eq "win-x64") {
 		$nativeRuntimePathFile = "$publishPath/runtimes/$platform/native/native_device.dll"
-		dotnet publish $GarnetWorker -r $publishFolder -p:SelfContained=false -p:PublishSingleFile=true -f:$framework @artifactArg -o "$publishPath/Service"
-		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based-readytorun" -f:$framework @artifactArg -o "$publishPath"
+		dotnet publish $GarnetWorker -r $publishFolder -p:SelfContained=false -p:PublishSingleFile=true -f:$framework -o "$publishPath/Service" @artifactArg
+		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based-readytorun" -f:$framework -o "$publishPath" @artifactArg
 	} else {
 		dotnet publish $GarnetServer -p:PublishProfile="$publishFolder-based" -f:$framework @artifactArg -o "$publishPath"
 	}
@@ -121,6 +115,12 @@ $baseReleasePath = "$destDir/bin/Release"
 
 if ($mode -eq 0 -or $mode -eq 1) {
 	Write-Host "** Publish ... **"
+
+	# Clean up destination in advance
+	if (Test-Path -Type Container $baseReleasePath)
+	{
+		Remove-Item -Force -Recurse $baseReleasePath
+	}
 
 	# Build, then clean up extra files not needed for publishing
 	BuildAndCleanUpFiles "linux-arm64" "linux-x64" "net8.0"
