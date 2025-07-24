@@ -40,7 +40,7 @@ namespace Garnet.server
             }
             else
             {
-                sessionMetrics?.incr_incr_total_transaction_execution_failed();
+                sessionMetrics?.incr_total_transaction_execution_failed();
                 // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
