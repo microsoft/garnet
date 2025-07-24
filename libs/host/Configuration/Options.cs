@@ -297,6 +297,10 @@ namespace Garnet
         [Option("cluster-timeout", Required = false, HelpText = "Cluster node timeout is the amount of seconds a node must be unreachable.")]
         public int ClusterTimeout { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("config-flush-frequency", Required = false, HelpText = "How frequently to flush config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms")]
+        public int ConfigFlushFrequency { get; set; }
+
         [Option("cluster-tls-client-target-host", Required = false, HelpText = "Name for the client target host when using TLS connections in cluster mode.")]
         public string ClusterTlsClientTargetHost { get; set; }
 
@@ -863,6 +867,7 @@ namespace Garnet
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
+                ConfigFlushFrequency = ConfigFlushFrequency,
                 EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
