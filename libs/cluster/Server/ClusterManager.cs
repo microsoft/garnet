@@ -187,6 +187,10 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Implements CLUSTER INFO command
+        /// </summary>
+        /// <returns></returns>
         public string GetInfo()
         {
             var current = CurrentConfig;
@@ -205,6 +209,11 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
+        /// <summary>
+        /// Return range of slots from provided array of slots
+        /// </summary>
+        /// <param name="slots"></param>
+        /// <returns></returns>
         public static string GetRange(int[] slots)
         {
             var range = "> ";
