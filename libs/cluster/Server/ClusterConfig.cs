@@ -1004,8 +1004,7 @@ namespace Garnet.cluster
                 if (senderSlotMap[i]._state != SlotState.STABLE)
                     continue;
 
-                // Process this slot information when sender is claimant of this slot or
-                // If the sender is a replica then we can update the slotMap on behalf of its primary (possible failover where old primary became replica)
+                // Skip processing this slot information when the sender is not the claimant of the slot and is a primary                
                 if (senderSlotMap[i]._workerId != 1 && senderConfig.IsPrimary)
                 {
                     var currentOwnerNodeId = workers[currentOwnerId].Nodeid;
@@ -1025,11 +1024,11 @@ namespace Garnet.cluster
 
                 if (senderConfig.IsPrimary)
                 {
-                    // Process this slot information when config epoch of original owner is greater than config epoch of sender
+                    // Sender is claimant of this node and is a primary, hence it can update the state of this slot, if its config epoch is higher than the old epoch.
                     if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                         continue;
                 }
-                else
+                else // Possibly multiple replicas may enter this but only the old primary should succeed in the event of a planned failover.
                 {
                     // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
                     // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,
