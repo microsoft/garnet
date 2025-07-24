@@ -31,8 +31,6 @@ namespace Garnet.server
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
-                sessionMetrics?.incr_total_transaction_executed_successfully();
-
                 // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
@@ -42,6 +40,7 @@ namespace Garnet.server
             }
             else
             {
+                sessionMetrics?.incr_incr_total_transaction_execution_failed();
                 // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);

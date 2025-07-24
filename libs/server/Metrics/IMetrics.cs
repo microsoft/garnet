@@ -47,10 +47,10 @@ namespace Garnet.server
 
         public void incr_total_transaction_commands_received(ulong count = 1);
 
-        public void incr_total_transaction_executed_successfully(ulong count = 1);
+        public void incr_total_transaction_execution_failed(ulong count = 1);
 
         public ulong get_total_transaction_commands_received();
 
-        public ulong get_total_transaction_commands_executed_successfully();
+        public ulong get_total_transaction_commands_execution_failed();
     }
 }

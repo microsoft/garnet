@@ -49,7 +49,7 @@ namespace Garnet.server
 
         public void incr_total_transaction_commands_received(ulong count = 1) { }
 
-        public void incr_total_transaction_executed_successfully(ulong count = 1) { }
+        public void incr_total_transaction_execution_failed(ulong count = 1) { }
 
         public void incr_total_transaction_transactions(ulong count = 1) { }
 
@@ -57,7 +57,7 @@ namespace Garnet.server
 
         public ulong get_total_read_commands_processed() => 0;
 
-        public ulong get_total_transaction_commands_executed_successfully() => 0;
+        public ulong get_total_transaction_commands_execution_failed() => 0;
 
         public ulong get_total_transaction_commands_received() => 0;
 
@@ -129,7 +129,7 @@ namespace Garnet.server
         /// <summary>
         /// Keep track of total number of transactions that were executed successfully.
         /// </summary>
-        public ulong total_transaction_commands_executed_successfully;
+        public ulong total_transaction_commands_execution_failed;
 
         /// <summary>
         /// GarnetSessionMetrics constructor
@@ -154,7 +154,7 @@ namespace Garnet.server
             add_total_write_commands_processed(add.get_total_write_commands_processed());
             add_total_read_commands_processed(add.get_total_read_commands_processed());
             incr_total_transaction_commands_received(add.get_total_transaction_commands_received());
-            incr_total_transaction_executed_successfully(add.get_total_transaction_commands_executed_successfully());
+            incr_total_transaction_execution_failed(add.get_total_transaction_commands_execution_failed());
 
             incr_total_number_resp_server_session_exceptions(add.get_total_number_resp_server_session_exceptions());
         }
@@ -174,7 +174,7 @@ namespace Garnet.server
             total_write_commands_processed = 0;
             total_read_commands_processed = 0;
             total_transactions_commands_received = 0;
-            total_transaction_commands_executed_successfully = 0;
+            total_transaction_commands_execution_failed = 0;
             total_number_resp_server_session_exceptions = 0;
         }
 
@@ -298,11 +298,11 @@ namespace Garnet.server
         public void incr_total_transaction_commands_received(ulong count = 1) => total_transactions_commands_received += count;
 
         /// <summary>
-        /// Increment total_transaction_commands_executed_successfully
+        /// Increment total_transaction_commands_execution_failed
         /// </summary>
         /// <param name="count"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void incr_total_transaction_executed_successfully(ulong count = 1) => total_transaction_commands_executed_successfully += count;
+        public void incr_total_transaction_execution_failed(ulong count = 1) => total_transaction_commands_execution_failed += count;
 
         /// <summary>
         /// Get total_read_commands_processed
@@ -319,11 +319,11 @@ namespace Garnet.server
         public ulong get_total_transaction_commands_received() => total_transactions_commands_received;
 
         /// <summary>
-        /// Get total_transaction_commands_executed_successfully
+        /// Get total_transaction_commands_execution_failed
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ulong get_total_transaction_commands_executed_successfully() => total_transaction_commands_executed_successfully;
+        public ulong get_total_transaction_commands_execution_failed() => total_transaction_commands_execution_failed;
 
         /// <summary>
         /// Increment total_number_resp_server_session_exceptions
