@@ -388,6 +388,10 @@ namespace Garnet.cluster
                                 recoverLock.WriteUnlock();
                                 clusterProvider.storeWrapper.ResumeCheckpoints();
                                 break;
+                            case RecoveryStatus.ReadRole:
+                                currentRecoveryStatus = nextRecoveryStatus;
+                                recoverLock.DowngradeWriteLock();
+                                break;
                             default:
                                 throw new GarnetException($"Invalid state change [{currentRecoveryStatus},{nextRecoveryStatus}]");
                         }
@@ -400,21 +404,23 @@ namespace Garnet.cluster
                                 recoverLock.WriteUnlock();
                                 clusterProvider.storeWrapper.ResumeCheckpoints();
                                 break;
+                            case RecoveryStatus.ReadRole:
+                                currentRecoveryStatus = nextRecoveryStatus;
+                                recoverLock.DowngradeWriteLock();
+                                break;
                             default:
                                 throw new GarnetException($"Invalid state change [{currentRecoveryStatus},{nextRecoveryStatus}]");
                         }
                         break;
                     case RecoveryStatus.ReadRole:
-                        currentRecoveryStatus = nextRecoveryStatus;
                         if (downgradeLock)
                         {
-                            recoverLock.DowngradeWriteLock();
+                            throw new GarnetException($"Cannot downgrade lock FROM a ReadRole [{currentRecoveryStatus}, {nextRecoveryStatus}]");
                         }
-                        else
-                        {
-                            recoverLock.ReadUnlock();
-                            clusterProvider.storeWrapper.ResumeCheckpoints();
-                        }
+
+                        currentRecoveryStatus = nextRecoveryStatus;
+                        recoverLock.ReadUnlock();
+                        clusterProvider.storeWrapper.ResumeCheckpoints();
                         break;
                 }
             }
