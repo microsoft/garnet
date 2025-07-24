@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -2769,6 +2770,490 @@ namespace Garnet.server
                 Debug.Assert(setInTable == len, "Didn't fill table with records");
 
                 constStrErrId = -1;
+                return true;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct Header
+        {
+            public int Endian;
+            public int Align;
+        }
+
+        internal enum Endian
+        {
+            BIG = 0,
+            LITTLE = 1,
+        }
+
+        internal static class Native
+        {
+            public static int Endian => BitConverter.IsLittleEndian ? 1 : 0; // Matches LITTLE = 1, BIG = 0
+        }
+
+        /// <summary>
+        /// Entry point for struct.pack from a Lua script.
+        /// </summary>
+        internal int StructPack(nint luaStatePtr)           
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+            if (numLuaArgs == 0 || !TryGetFormat(this, 1, out var format))
+            {
+                return LuaWrappedError(1, constStrs.BadArgPack);
+            }
+
+            scratchBufferBuilder.Reset();
+
+            // Parse format
+            int totalSize = 0;
+            int optIx = 0;
+            Header h = DefaultOptions();
+
+            while (optIx < format.Length)
+            {
+                char opt = format[optIx++];
+                int size = OptSize(opt, format, ref optIx);
+                int toAlign = GetToAlign(totalSize, h.Align, opt, size);
+                totalSize += toAlign;
+
+                while (toAlign-- > 0)
+                {
+                    AddAlignmentPadding(this);
+                }
+
+                switch (opt)
+                {
+                    case 'b': case 'B':
+                    case 'h': case 'H':
+                    case 'l': case 'L':
+                    case 'T':
+                    case 'i': case 'I':
+                        {
+                            if (!TryEncodeInteger(this, opt, 1, h, out var errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    case 'x':
+                        AddAlignmentPadding(this);
+                        break;
+
+                    case 'f':
+                        {
+                            if (!TryEncodeFloatingPoint(this, 1, h, out var errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    case 'd':
+                        {
+                            if (!TryEncodeDouble(this, 1, h, out var errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    case 'c':
+                    case 's':
+                        {
+                            if (!TryEncodeBytes(this, 1, opt, ref size, out var errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    default:
+                        ControlOptions(opt, format, ref h, ref optIx);
+                        break;
+                }
+
+                totalSize += size;
+            }
+
+            // After all encoding, stack should be empty
+            state.ExpectLuaStackEmpty();
+
+            var ret = scratchBufferBuilder.ViewFullArgSlice().ReadOnlySpan;
+            if (!state.TryPushBuffer(ret))
+            {
+                return LuaWrappedError(1, constStrs.OutOfMemory);
+            }
+
+            return 1;
+
+
+            // Helper functions
+
+            static bool TryGetFormat(LuaRunner self, int stackIndex, out string format)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
+
+                self.state.KnownStringToBuffer(stackIndex, out var data);
+                format = Encoding.UTF8.GetString(data);
+
+                self.state.Remove(stackIndex);
+                return string.IsNullOrEmpty(format);
+            }
+
+            static Header DefaultOptions()
+            {
+                return new Header
+                {
+                    // Check the system's native endianness
+                    Endian = BitConverter.IsLittleEndian ? (int)'<' : (int)'>',
+                    // No padding, pack data tightly
+                    Align = 1
+                };
+            }
+
+            static int OptSize(char opt, string format, ref int optIx)
+            {
+                const int MAXINTSIZE = 16;
+
+                switch (opt)
+                {
+                    case 'B':
+                    case 'b': return sizeof(byte);
+
+                    case 'H':
+                    case 'h': return sizeof(short);
+
+                    case 'L':
+                    case 'l': return sizeof(long);
+
+                    case 'T': return IntPtr.Size;
+
+                    case 'f': return sizeof(float);
+
+                    case 'd': return sizeof(double);
+
+                    case 'x': return 1;
+
+                    case 'c':
+                        return GetNum(format, ref optIx, 1);
+
+                    case 'i':
+                    case 'I':
+                        int sz = GetNum(format, ref optIx, sizeof(int));
+                        if (sz > MAXINTSIZE)
+                        {
+                            throw new ArgumentException($"integral size {sz} is larger than limit of {MAXINTSIZE}");
+                        }
+                        return sz;
+
+                    default:
+                        return 0;
+                }
+            }
+
+            static int GetNum(string format, ref int optIx, int defaultValue)
+            {
+                if (optIx >= format.Length || !char.IsDigit(format[optIx]))
+                    return defaultValue;
+
+                int result = 0;
+                while (optIx < format.Length && char.IsDigit(format[optIx]))
+                {
+                    int digit = format[optIx] - '0';
+                    if (result > (int.MaxValue / 10) || result * 10 > (int.MaxValue - digit))
+                        throw new OverflowException("integral size overflow");
+
+                    result = result * 10 + digit;
+                    optIx++;
+                }
+
+                return result;
+            }
+
+            static int GetToAlign(int len, int align, char opt, int size)
+            {
+                if (size == 0 || opt == 'c')
+                    return 0;
+
+                if (size > align)
+                    size = align;
+
+                return (size - (len & (size - 1))) & (size - 1);
+            }
+
+            static void AddAlignmentPadding(LuaRunner self)
+            {
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span;
+                into[0] = 0x00;
+                self.scratchBufferBuilder.MoveOffset(1);
+            }
+
+            static void ControlOptions(char opt, string format, ref Header h, ref int optIx)
+            {
+                const int MAXALIGN = 8;
+                switch (opt)
+                {
+                    case ' ':
+                        return;
+
+                    case '>':
+                        h.Endian = (int)Endian.BIG;
+                        return;
+
+                    case '<':
+                        h.Endian = (int)Endian.LITTLE;
+                        return;
+
+                    case '!':
+                        int a = GetNum(format, ref optIx, MAXALIGN);
+                        if (!IsPowerOfTwo(a))
+                        {
+                            throw new ArgumentException($"alignment {a} is not a power of 2");
+                        }
+                        h.Align = a;
+                        return;
+
+                    default:
+                        throw new ArgumentException($"invalid format option '{opt}'", nameof(opt));
+                }
+            }
+
+            static bool IsPowerOfTwo(int x)
+            {
+                return x > 0 && (x & (x - 1)) == 0;
+            }
+
+            static bool TryEncodeInteger(LuaRunner self, char opt, int stackIndex, Header h, out int constStrRegisteryIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+
+                var numRaw = self.state.CheckNumber(stackIndex);
+                var value = (long)numRaw;
+
+                switch (opt)
+                {
+                    case 'b':
+                    case 'B':
+                        self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span[0] = (byte)value;
+                        self.scratchBufferBuilder.MoveOffset(1);
+                        break;
+                    case 'h':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(2).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteInt16BigEndian(into[0..], (short)value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteInt16LittleEndian(into[0..], (short)value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(2);
+                            break;
+                        }
+                    case 'H':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(2).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteUInt16BigEndian(into[0..], (ushort)value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteUInt16LittleEndian(into[0..], (ushort)value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(3);
+                            break;
+                        }
+                    case 'l':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(4).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteUInt32BigEndian(into[0..], (uint)value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteUInt32LittleEndian(into[0..], (uint)value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(4);
+                            break;
+                        }
+                    case 'L':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(8).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteUInt64BigEndian(into[0..], (ulong)value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteUInt64LittleEndian(into[0..], (ulong)value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(9);
+                            break;
+                        }
+                    case 'T':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(8).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteInt64BigEndian(into[0..], value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteInt64LittleEndian(into[0..], value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(8);
+                            break;
+                        }
+                    case 'i':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(4).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteInt32BigEndian(into[0..], (int)value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteInt32LittleEndian(into[0..], (int)value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(4);
+                            break;
+                        }
+                    case 'I':
+                        {
+                            var into = self.scratchBufferBuilder.ViewRemainingArgSlice(4).Span;
+
+                            if (h.Endian == (int)Endian.BIG)
+                            {
+                                BinaryPrimitives.WriteInt32BigEndian(into[0..], (int)value);
+                            }
+                            else
+                            {
+                                BinaryPrimitives.WriteInt32LittleEndian(into[0..], (int)value);
+                            }
+
+                            self.scratchBufferBuilder.MoveOffset(4);
+                            break;
+                        }
+                    default:
+                        break;
+                }
+
+                self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
+            }
+
+            static bool TryEncodeFloatingPoint(LuaRunner self, int stackIndex, Header h, out int constStrRegisteryIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+
+                var value = self.state.CheckNumber(stackIndex);
+
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(4).Span;
+
+                if (h.Endian == Native.Endian) // header endian == native endian
+                {
+                    // If header endian matches native endian, pick the method that matches native order
+                    if (BitConverter.IsLittleEndian)
+                        BinaryPrimitives.WriteDoubleLittleEndian(into[0..], value);
+                    else
+                        BinaryPrimitives.WriteDoubleBigEndian(into[0..], value);
+                }
+                else
+                {
+                    // Endian mismatch: pick the opposite method to get the bytes in header's endian format
+                    if (BitConverter.IsLittleEndian)
+                        BinaryPrimitives.WriteDoubleBigEndian(into[0..], value);
+                    else
+                        BinaryPrimitives.WriteDoubleLittleEndian(into[0..], value);
+                }
+
+                self.scratchBufferBuilder.MoveOffset(4);
+                self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
+            }
+
+            static bool TryEncodeDouble(LuaRunner self, int stackIndex, Header h, out int constStrRegisteryIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+
+                var value = self.state.CheckNumber(stackIndex);
+
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(8).Span;
+
+                if (h.Endian == Native.Endian) // header endian == native endian
+                {
+                    // If header endian matches native endian, pick the method that matches native order
+                    if (BitConverter.IsLittleEndian)
+                        BinaryPrimitives.WriteDoubleLittleEndian(into[0..], value);
+                    else
+                        BinaryPrimitives.WriteDoubleBigEndian(into[0..], value);
+                }
+                else
+                {
+                    // Endian mismatch: pick the opposite method to get the bytes in header's endian format
+                    if (BitConverter.IsLittleEndian)
+                        BinaryPrimitives.WriteDoubleBigEndian(into[0..], value);
+                    else
+                        BinaryPrimitives.WriteDoubleLittleEndian(into[0..], value);
+                }
+
+                self.scratchBufferBuilder.MoveOffset(8);
+                self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
+                return true;
+            }
+            
+            static bool TryEncodeBytes(LuaRunner self, int stackIndex, char opt, ref int size, out int constStrRegisteryIndex)
+            {
+                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
+
+                self.state.KnownStringToBuffer(stackIndex, out var data);
+
+                int l = data.Length;
+
+                if (size == 0)
+                {
+                    size = l;
+                }
+
+                if (l < size)
+                {
+                    throw new ArgumentException($"string too short, expected at least {size} bytes but got {l}");
+                }
+
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(data.Length).Span;
+                data.CopyTo(into[0..]);
+                self.scratchBufferBuilder.MoveOffset(data.Length);
+
+                if (opt is 's')
+                {
+                    AddAlignmentPadding(self);
+                    size++;
+                }
+
+                self.state.Remove(stackIndex);
+
+                constStrRegisteryIndex = -1;
                 return true;
             }
         }
