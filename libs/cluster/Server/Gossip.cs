@@ -105,7 +105,7 @@ namespace Garnet.cluster
         {
             try
             {
-                if (acquireLock) activeMergeLock.WriteLock();
+                if (acquireLock) activeMergeLock.ReadLock();
                 if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
                 {
                     logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);
@@ -126,7 +126,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (acquireLock) activeMergeLock.WriteUnlock();
+                if (acquireLock) activeMergeLock.ReadUnlock();
             }
         }
 
