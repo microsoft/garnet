@@ -1652,6 +1652,24 @@ namespace Garnet.test.cluster
                 var takeOverRes2 = (string)context.clusterTestUtils.Execute(replica2, "CLUSTER", ["FAILOVER", "FORCE"]);
                 ClassicAssert.AreEqual("OK", takeOverRes1);
                 ClassicAssert.AreEqual("OK", takeOverRes2);
+
+                // Wait for roles to update
+                while (true)
+                {
+                    await Task.Delay(10, cancellation);
+
+                    if (context.clusterTestUtils.RoleCommand(replica1).Value != "master")
+                    {
+                        continue;
+                    }
+
+                    if (context.clusterTestUtils.RoleCommand(replica2).Value != "master")
+                    {
+                        continue;
+                    }
+
+                    break;
+                }
             }
 
             // Shutdown the (old) replicas
