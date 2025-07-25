@@ -1341,9 +1341,11 @@ namespace Garnet.test.cluster
         [Test, Order(25)]
         [Category("CLUSTER")]
         [CancelAfter(30_000)]
-        public async Task ReplicaSyncTaskFaultsRecoverAsync(CancellationToken cancellation)
+        [TestCase(ExceptionInjectionType.Divergent_AOF_Stream)]
+        [TestCase(ExceptionInjectionType.Aof_Sync_Task_Consume)]
+        public async Task ReplicaSyncTaskFaultsRecoverAsync(ExceptionInjectionType faultType, CancellationToken cancellation)
         {
-            // Ensure that a fault in ReplicaSyncTask (on the primary) doesn't leave a replica permanently desynced
+            // Ensure that a fault in ReplicaSyncTask (on the primary, sourced from either side) doesn't leave a replica permanently desynced
             //
             // While a possible cause of this is something actually breaking on the replica (in which case, a retry won't matter)
             // that isn't the only possible cause
@@ -1396,7 +1398,7 @@ namespace Garnet.test.cluster
             await Task.Delay(100, cancellation);
 
             // Force replica to continually fault
-            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Divergent_AOF_Stream);
+            ExceptionInjectionHelper.EnableException(faultType);
 
             // Give it enough time to die horribly
             await Task.Delay(100, cancellation);
@@ -1406,7 +1408,7 @@ namespace Garnet.test.cluster
             await continuallyWriteToPrimaryTask;
 
             // Resolve fault on replica
-            ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Divergent_AOF_Stream);
+            ExceptionInjectionHelper.DisableException(faultType);
 
             // Wait for sync to catch up
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, cancellation: cancellation);
@@ -1463,8 +1465,9 @@ namespace Garnet.test.cluster
         [TestCase(ExceptionInjectionType.None, false)]
         [TestCase(ExceptionInjectionType.Divergent_AOF_Stream, true)]
         [TestCase(ExceptionInjectionType.Divergent_AOF_Stream, false)]
-        // todo: fault on the primary side!
-        public async Task PrimaryUnavailableRecoveryAsync(ExceptionInjectionType injectFault, bool replicaFailoverBeforeShutdown, CancellationToken cancellation)
+        [TestCase(ExceptionInjectionType.Aof_Sync_Task_Consume, true)]
+        [TestCase(ExceptionInjectionType.Aof_Sync_Task_Consume, false)]
+        public async Task PrimaryUnavailableRecoveryAsync(ExceptionInjectionType faultType, bool replicaFailoverBeforeShutdown, CancellationToken cancellation)
         {
             // Case we're testing is where a Primary _and_ it's Replica die, but only the Replica comes back.
             //
@@ -1648,7 +1651,7 @@ namespace Garnet.test.cluster
                     );
 
                 // Wait for a bit, optionally injecting a fault
-                if (injectFault == ExceptionInjectionType.None)
+                if (faultType == ExceptionInjectionType.None)
                 {
                     await Task.Delay(10_000);
                 }
@@ -1658,11 +1661,11 @@ namespace Garnet.test.cluster
                     await Task.Delay(2_000);
 
                     // Things fail for a bit
-                    ExceptionInjectionHelper.EnableException(injectFault);
+                    ExceptionInjectionHelper.EnableException(faultType);
                     await Task.Delay(2_000);
 
                     // Things recover
-                    ExceptionInjectionHelper.DisableException(injectFault);
+                    ExceptionInjectionHelper.DisableException(faultType);
 
                     // Wait out the rest of the duration
                     await Task.Delay(6_000);

@@ -41,5 +41,9 @@ namespace Garnet.common
         /// AOF on replica has diverged from stream coming from primary.
         /// </summary>
         Divergent_AOF_Stream,
+        /// <summary>
+        /// Consume callback on ReplicaSyncTask faults.
+        /// </summary>
+        Aof_Sync_Task_Consume,
     }
 }
