@@ -147,6 +147,9 @@ namespace Garnet.cluster
             return true;
         }
 
+        /// <summary>
+        /// Close all connections
+        /// </summary>
         public void CloseAll()
         {
             try
@@ -155,7 +158,7 @@ namespace Garnet.cluster
 
                 if (_disposed) return;
 
-                for (int i = 0; i < numConnection; i++)
+                for (var i = 0; i < numConnection; i++)
                     connections[i].Dispose();
                 numConnection = 0;
                 Array.Clear(connections);

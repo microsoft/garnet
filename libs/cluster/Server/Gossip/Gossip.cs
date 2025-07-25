@@ -28,6 +28,10 @@ namespace Garnet.cluster
         readonly ConcurrentDictionary<string, long> workerBanList = new();
         public readonly CancellationTokenSource ctsGossip = new();
 
+        /// <summary>
+        /// Return worker ban list
+        /// </summary>
+        /// <returns></returns>
         public List<string> GetBanList()
         {
             var banlist = new List<string>();
@@ -43,6 +47,12 @@ namespace Garnet.cluster
             return banlist;
         }
 
+        /// <summary>
+        /// Get connection info to populate CLUSTER NODES
+        /// </summary>
+        /// <param name="nodeId"></param>
+        /// <param name="info"></param>
+        /// <returns></returns>
         public bool GetConnectionInfo(string nodeId, out ConnectionInfo info)
             => clusterConnectionStore.GetConnectionInfo(nodeId, out info);
 
@@ -67,8 +77,6 @@ namespace Garnet.cluster
             return primaryLinkStatus;
         }
 
-        static bool Expired(long expiry) => expiry < DateTimeOffset.UtcNow.Ticks;
-
         /// <summary>
         /// Pause merge config ops by setting numActiveMerge to MinValue.
         /// Called when FORGET op executes and waits until ongoing merge operations complete before executing FORGET
@@ -86,13 +94,14 @@ namespace Garnet.cluster
         /// </summary>
         void TryStartGossipTasks()
         {
-            // Start background task for gossip protocol
+            // Run one round of meet at start-up
             for (var i = 2; i <= CurrentConfig.NumWorkers; i++)
             {
                 var (address, port) = CurrentConfig.GetWorkerAddress((ushort)i);
                 RunMeetTask(address, port);
             }
 
+            // Startup gossip background task
             _ = Interlocked.Increment(ref numActiveTasks);
             _ = Task.Run(GossipMain);
         }
@@ -344,6 +353,9 @@ namespace Garnet.cluster
                         else // Remove worker from ban list
                             _ = workerBanList.TryRemove(nodeId, out var _);
                     }
+
+
+                    static bool Expired(long expiry) => expiry < DateTimeOffset.UtcNow.Ticks;
                 }
             }
 
