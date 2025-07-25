@@ -24,6 +24,7 @@ namespace Garnet.test.cluster
         public CredentialManager credManager;
         public string TestFolder;
         public GarnetServer[] nodes = null;
+        public GarnetServerOptions[] nodeOptions = null;
         public EndPointCollection endpoints;
         public TextWriter logTextWriter = TestContext.Progress;
         public ILoggerFactory loggerFactory;
@@ -56,6 +57,65 @@ namespace Garnet.test.cluster
             waiter = new ManualResetEventSlim();
             credManager = new CredentialManager();
         }
+
+        public void ShutdownNode(IPEndPoint endpoint)
+        {
+            for (var i = 0; i < endpoints.Count; i++)
+            {
+                if (endpoints[i] == endpoint)
+                {
+                    ShutdownNode(i);
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException($"Could not find node for {endpoint}");
+        }
+
+        public void ShutdownNode(int nodeIndex)
+        {
+            if (nodeIndex < 0 || nodeIndex >= nodes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(nodeIndex));
+            }
+
+            nodes[nodeIndex].Dispose();
+            nodes[nodeIndex] = null;
+        }
+
+        public void RestartNode(IPEndPoint endpoint)
+        {
+            for (var i = 0; i < endpoints.Count; i++)
+            {
+                if (endpoints[i] == endpoint)
+                {
+                    RestartNode(i);
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException($"Could not find node for {endpoint}");
+        }
+
+        public void RestartNode(int nodeIndex)
+        {
+            if (nodeIndex < 0 || nodeIndex >= nodes.Length)
+            {
+                throw new ArgumentOutOfRangeException(nameof(nodeIndex));
+            }
+
+            if (nodes[nodeIndex] != null)
+            {
+                ShutdownNode(nodeIndex);
+            }
+
+            // We're restarting, leave state unaltered
+            nodeOptions[nodeIndex].CleanClusterConfig = false;
+
+            nodes[nodeIndex] = new GarnetServer(nodeOptions[nodeIndex], loggerFactory);
+            nodes[nodeIndex].Start();
+        }
+
 
         public void TearDown()
         {
@@ -157,13 +217,19 @@ namespace Garnet.test.cluster
             bool useHostname = false,
             bool luaTransactionMode = false,
             bool useNativeDeviceLinux = false,
-            int clusterReplicationReestablishmentTimeout = 0)
+            int clusterReplicationReestablishmentTimeout = 0,
+            string aofSizeLimit = "",
+            int compactionFrequencySecs = 0,
+            LogCompactionType compactionType = LogCompactionType.Scan,
+            bool latencyMonitory = false,
+            int loggingFrequencySecs = 5,
+            int checkpointThrottleFlushDelayMs = 0)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
             endpoints = TestUtils.GetShardEndPoints(shards, useHostname ? IPAddress.Any : ipAddress, 7000);
 
-            nodes = TestUtils.CreateGarnetCluster(
+            (nodes, nodeOptions) = TestUtils.CreateGarnetCluster(
                 TestFolder,
                 disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
@@ -203,7 +269,13 @@ namespace Garnet.test.cluster
                 luaMemoryLimit: luaMemoryLimit,
                 luaTransactionMode: luaTransactionMode,
                 useNativeDeviceLinux: useNativeDeviceLinux,
-                clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout);
+                clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout,
+                aofSizeLimit: aofSizeLimit,
+                compactionFrequencySecs: compactionFrequencySecs,
+                compactionType: compactionType,
+                latencyMonitory: latencyMonitory,
+                loggingFrequencySecs: loggingFrequencySecs,
+                checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs);
 
             foreach (var node in nodes)
                 node.Start();

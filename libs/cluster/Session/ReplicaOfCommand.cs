@@ -71,8 +71,8 @@ namespace Garnet.cluster
                 }
 
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: false, out var errorMessage) :
-                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: false, out errorMessage);
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: false, allowReplicaResetOnFailure: true, out var errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: false, allowReplicaResetOnFailure: true, out errorMessage);
 
                 if (!success)
                 {

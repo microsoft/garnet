@@ -240,8 +240,8 @@ namespace Garnet.cluster
                 ReadOnlySpan<byte> errorMessage;
                 var success =
                         clusterProvider.serverOptions.ReplicaDisklessSync ?
-                        clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, out errorMessage) :
-                        clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, out errorMessage);
+                        clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true,  upgradeLock: true, allowReplicaResetOnFailure: false, out errorMessage) :
+                        clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, allowReplicaResetOnFailure: false, out errorMessage);
 
                 if (success)
                 {
@@ -525,8 +525,8 @@ namespace Garnet.cluster
             if (localNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && replicaOfNodeId != null)
             {
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    TryReplicateDisklessSync(null, null, background: false, force: true, tryAddReplica: false, upgradeLock: false, out var errorMessage) :
-                    TryReplicateDiskbasedSync(null, null, background: false, force: false, tryAddReplica: false, upgradeLock: false, out errorMessage);
+                    TryReplicateDisklessSync(null, null, background: false, force: true, tryAddReplica: false, upgradeLock: false, allowReplicaResetOnFailure: false, out var errorMessage) :
+                    TryReplicateDiskbasedSync(null, null, background: false, force: false, tryAddReplica: false, upgradeLock: false, allowReplicaResetOnFailure: false, out errorMessage);
                 // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!success)
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));

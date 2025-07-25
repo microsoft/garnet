@@ -9,6 +9,11 @@ namespace Garnet.common
     public enum ExceptionInjectionType
     {
         /// <summary>
+        /// Placeholder for "no fault"
+        /// </summary>
+        None = 0,
+
+        /// <summary>
         /// Network failure after GarnetServerTcp handler created
         /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,

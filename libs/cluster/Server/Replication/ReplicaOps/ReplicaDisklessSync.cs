@@ -29,6 +29,7 @@ namespace Garnet.cluster
             bool force,
             bool tryAddReplica,
             bool upgradeLock,
+            bool allowReplicaResetOnFailure,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
@@ -130,7 +131,12 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
-                    clusterProvider.clusterManager.TryResetReplica();
+
+                    if (allowReplicaResetOnFailure)
+                    {
+                        clusterProvider.clusterManager.TryResetReplica();
+                    }
+
                     return ex.Message;
                 }
                 finally
