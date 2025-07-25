@@ -1422,9 +1422,41 @@ namespace Garnet.test.cluster
             }
         }
 
-        // todo: test that Replicas come back AS Replicas after an ungraceful shutdown
-
         [Test, Order(26)]
+        [Category("CLUSTER")]
+        [CancelAfter(30_000)]
+        public async Task ReplicasRestartAsReplicasAsync(CancellationToken cancellation)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + primary_count * replica_count;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection(useTLS: true);
+            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            IPEndPoint primary = (IPEndPoint)context.endpoints[0];
+            IPEndPoint replica = (IPEndPoint)context.endpoints[1];
+
+            // Make sure role assignment is as expected
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
+
+            context.ShutdownNode(primary);
+            context.ShutdownNode(replica);
+
+            // Intentionally leaving primary offline
+            context.RestartNode(replica);
+
+            // Delay a bit for replication init tasks to fire off
+            await Task.Delay(100, cancellation);
+
+            // Make sure replica did not promote to Primary
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
+        }
+
+        [Test, Order(27)]
         [Category("CLUSTER")]
         [CancelAfter(30_000)]
         [TestCase(ExceptionInjectionType.None, true)]
