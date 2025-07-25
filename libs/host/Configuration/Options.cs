@@ -640,6 +640,10 @@ namespace Garnet
         [Option("expired-key-deletion-scan-freq", Required = false, HelpText = "Frequency of background scan for expired key deletion, in seconds")]
         public int ExpiredKeyDeletionScanFrequencySecs { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue, includeMin: true, isRequired: false)]
+        [Option("cluster-replication-reestablishment-timeout")]
+        public int ClusterReplicationReestablishmentTimeout { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -913,6 +917,7 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
+                ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
             };
         }
 

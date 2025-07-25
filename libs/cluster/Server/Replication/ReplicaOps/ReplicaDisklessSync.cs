@@ -28,6 +28,8 @@ namespace Garnet.cluster
             bool background,
             bool force,
             bool tryAddReplica,
+            bool upgradeLock,
+            bool allowReplicaResetOnFailure,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
@@ -35,16 +37,16 @@ namespace Garnet.cluster
             try
             {
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
-                if (!clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force, upgradeLock, out errorMessage, logger: logger))
                     return false;
 
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();
                 if (background)
-                    _ = Task.Run(() => TryBeginReplicaSync());
+                    _ = Task.Run(() => TryBeginReplicaSync(upgradeLock));
                 else
                 {
-                    var result = TryBeginReplicaSync().Result;
+                    var result = TryBeginReplicaSync(upgradeLock).Result;
                     if (result != null)
                     {
                         errorMessage = Encoding.ASCII.GetBytes(result);
@@ -58,7 +60,7 @@ namespace Garnet.cluster
             }
             return true;
 
-            async Task<string> TryBeginReplicaSync()
+            async Task<string> TryBeginReplicaSync(bool downgradeLock)
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 var disableObjects = clusterProvider.serverOptions.DisableObjects;
@@ -129,12 +131,24 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
-                    clusterProvider.clusterManager.TryResetReplica();
+
+                    if (allowReplicaResetOnFailure)
+                    {
+                        clusterProvider.clusterManager.TryResetReplica();
+                    }
+
                     return ex.Message;
                 }
                 finally
                 {
-                    EndRecovery(RecoveryStatus.NoRecovery);
+                    if (downgradeLock)
+                    {
+                        EndRecovery(RecoveryStatus.ReadRole, downgradeLock: true);
+                    }
+                    else
+                    {
+                        EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                    }
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
                 }
@@ -188,7 +202,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
+                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica, downgradeLock: false);
             }
         }
     }

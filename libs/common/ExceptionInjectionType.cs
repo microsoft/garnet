@@ -9,6 +9,11 @@ namespace Garnet.common
     public enum ExceptionInjectionType
     {
         /// <summary>
+        /// Placeholder for "no fault"
+        /// </summary>
+        None = 0,
+
+        /// <summary>
         /// Network failure after GarnetServerTcp handler created
         /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,
@@ -32,5 +37,13 @@ namespace Garnet.common
         /// Wait at migration slot driver right after acquiring the end scan range
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
+        /// <summary>
+        /// AOF on replica has diverged from stream coming from primary.
+        /// </summary>
+        Divergent_AOF_Stream,
+        /// <summary>
+        /// Consume callback on ReplicaSyncTask faults.
+        /// </summary>
+        Aof_Sync_Task_Consume,
     }
 }
