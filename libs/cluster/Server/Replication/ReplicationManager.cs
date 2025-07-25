@@ -240,7 +240,7 @@ namespace Garnet.cluster
                 ReadOnlySpan<byte> errorMessage;
                 var success =
                         clusterProvider.serverOptions.ReplicaDisklessSync ?
-                        clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true,  upgradeLock: true, allowReplicaResetOnFailure: false, out errorMessage) :
+                        clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, allowReplicaResetOnFailure: false, out errorMessage) :
                         clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, primaryId, background: false, force: true, tryAddReplica: true, upgradeLock: true, allowReplicaResetOnFailure: false, out errorMessage);
 
                 if (success)

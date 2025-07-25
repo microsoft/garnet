@@ -631,7 +631,7 @@ namespace Garnet.test
             LogCompactionType compactionType = LogCompactionType.Scan,
             bool latencyMonitory = false,
             int loggingFrequencySecs = 5,
-            int checkpointThrottleFlushDelayMs= 0)
+            int checkpointThrottleFlushDelayMs = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
