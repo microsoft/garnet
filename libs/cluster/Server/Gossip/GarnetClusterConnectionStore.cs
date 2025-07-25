@@ -4,6 +4,7 @@
 using System;
 using System.Net;
 using System.Security.Cryptography;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -42,7 +43,7 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 _disposed = true;
-                for (int i = 0; i < numConnection; i++)
+                for (var i = 0; i < numConnection; i++)
                     connections[i].Dispose();
                 numConnection = 0;
                 Array.Clear(connections);
@@ -54,27 +55,49 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Linear search of the array of connections without read-lock protection.
+        /// Caller responsible for locking.
+        /// </summary>
+        /// <param name="nodeId">Node-id to search for.</param>
+        /// <param name="conn">Connection object returned on success otherwise null.</param>
+        /// <returns>True if connection is found otherwise false.</returns>
+        private bool UnsafeGetConnection(string nodeId, out GarnetServerNode conn)
+        {
+            conn = null;
+            if (_disposed) return false;
+            for (var i = 0; i < numConnection; i++)
+            {
+                var _conn = connections[i];
+                if (_conn.NodeId.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
+                {
+                    conn = _conn;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private async Task AcquireWriteLockAsync()
+        {
+            while (!_lock.TryWriteLock())
+                await Task.Yield();
+        }
+
+        /// <summary>
         /// Add new GarnetServerNode to the connection store.
         /// </summary>
         /// <param name="conn">Connection object to add.</param>
         /// <returns>True on success, false otherwise</returns>
-        public bool AddConnection(GarnetServerNode conn)
+        public async Task<bool> AddConnection(GarnetServerNode conn)
         {
             try
             {
-                _lock.WriteLock();
+                await AcquireWriteLockAsync();
 
                 if (_disposed) return false;
 
-                // Iterate array of existing connections
-                for (int i = 0; i < numConnection; i++)
-                {
-                    var _conn = connections[i];
-                    if (_conn.NodeId.Equals(conn.NodeId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return false;
-                    }
-                }
+                // Check if connection exists
+                if (UnsafeGetConnection(conn.NodeId, out _)) return false;
 
                 if (numConnection == connections.Length)
                 {
@@ -101,33 +124,23 @@ namespace Garnet.cluster
         /// <param name="endpoint">The cluster node endpoint</param>
         /// <param name="tlsOptions"></param>
         /// <param name="nodeId"></param>
-        /// <param name="conn"></param>
         /// <param name="logger"></param>
-        /// <returns></returns>
-        public bool GetOrAdd(ClusterProvider clusterProvider, IPEndPoint endpoint, IGarnetTlsOptions tlsOptions, string nodeId, out GarnetServerNode conn, ILogger logger = null)
+        /// <returns>True if connection was added, false otherwise</returns>
+        public async Task<(bool, GarnetServerNode)> GetOrAdd(ClusterProvider clusterProvider, IPEndPoint endpoint, IGarnetTlsOptions tlsOptions, string nodeId, ILogger logger = null)
         {
-            conn = null;
+            GarnetServerNode conn = null;
             try
             {
-                _lock.WriteLock();
-                if (_disposed) return false;
+                await AcquireWriteLockAsync();
 
-                if (UnsafeGetConnection(nodeId, out conn)) return true;
+                if (_disposed) return (false, conn);
+
+                if (UnsafeGetConnection(nodeId, out conn)) return (false, conn);
 
                 conn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, logger: logger)
                 {
                     NodeId = nodeId
                 };
-
-                // Iterate array of existing connections
-                for (int i = 0; i < numConnection; i++)
-                {
-                    var _conn = connections[i];
-                    if (_conn.NodeId.Equals(conn.NodeId, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return false;
-                    }
-                }
 
                 if (numConnection == connections.Length)
                 {
@@ -144,33 +157,7 @@ namespace Garnet.cluster
                 _lock.WriteUnlock();
             }
 
-            return true;
-        }
-
-        /// <summary>
-        /// Close all connections
-        /// </summary>
-        public void CloseAll()
-        {
-            try
-            {
-                _lock.WriteLock();
-
-                if (_disposed) return;
-
-                for (var i = 0; i < numConnection; i++)
-                    connections[i].Dispose();
-                numConnection = 0;
-                Array.Clear(connections);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "GarnetConnectionStore.CloseAll");
-            }
-            finally
-            {
-                _lock.WriteUnlock();
-            }
+            return (true, conn);
         }
 
         /// <summary>
@@ -178,14 +165,14 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId">Node-id to search for.</param>
         /// <returns>True on successful removal of connection otherwise false.</returns>
-        public bool TryRemove(string nodeId)
+        public async Task<bool> TryRemoveConnection(string nodeId)
         {
             try
             {
-                _lock.WriteLock();
+                await AcquireWriteLockAsync();
 
                 if (_disposed) return false;
-                for (int i = 0; i < numConnection; i++)
+                for (var i = 0; i < numConnection; i++)
                 {
                     var _conn = connections[i];
                     if (nodeId.Equals(_conn.NodeId, StringComparison.OrdinalIgnoreCase))
@@ -215,26 +202,29 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Linear search of the array of connections without read-lock protection.
-        /// Caller responsible for locking.
+        /// Close all connections
         /// </summary>
-        /// <param name="nodeId">Node-id to search for.</param>
-        /// <param name="conn">Connection object returned on success otherwise null.</param>
-        /// <returns>True if connection is found otherwise false.</returns>
-        private bool UnsafeGetConnection(string nodeId, out GarnetServerNode conn)
+        public void CloseAll()
         {
-            conn = null;
-            if (_disposed) return false;
-            for (var i = 0; i < numConnection; i++)
+            try
             {
-                var _conn = connections[i];
-                if (_conn.NodeId.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
-                {
-                    conn = _conn;
-                    return true;
-                }
+                _lock.WriteLock();
+
+                if (_disposed) return;
+
+                for (var i = 0; i < numConnection; i++)
+                    connections[i].Dispose();
+                numConnection = 0;
+                Array.Clear(connections);
             }
-            return false;
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "GarnetConnectionStore.CloseAll");
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
         }
 
         /// <summary>
