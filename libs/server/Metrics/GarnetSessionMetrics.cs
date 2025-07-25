@@ -5,67 +5,6 @@ using System.Runtime.CompilerServices;
 
 namespace Garnet.server
 {
-    internal struct NullGarnetSessionMetrics : IMetrics
-    {
-        public void Add(IMetrics metrics) { }
-
-        public void Reset() { }
-
-        public void incr_total_net_input_bytes(ulong bytes) { }
-
-        public ulong get_total_net_input_bytes() => 0;
-
-        public void incr_total_net_output_bytes(ulong bytes) { }
-
-        public ulong get_total_net_output_bytes() => 0;
-
-        public void incr_total_commands_processed(ulong cmds) { }
-
-        public ulong get_total_commands_processed() => 0;
-
-        public void incr_total_pending(ulong count = 1) { }
-
-        public ulong get_total_pending() => 0;
-
-        public void incr_total_found(ulong count = 1) { }
-
-        public ulong get_total_found() => 0;
-
-        public void incr_total_notfound(ulong count = 1) { }
-
-        public ulong get_total_notfound() => 0;
-
-        public void incr_total_cluster_commands_processed(ulong count = 1) { }
-
-        public ulong get_total_cluster_commands_processed() => 0;
-
-        public void add_total_write_commands_processed(ulong count) { }
-
-        public void incr_total_write_commands_processed(byte cmd) { }
-
-        public ulong get_total_write_commands_processed() => 0;
-
-        public void add_total_read_commands_processed(ulong count) { }
-
-        public void incr_total_transaction_commands_received(ulong count = 1) { }
-
-        public void incr_total_transaction_execution_failed(ulong count = 1) { }
-
-        public void incr_total_transaction_transactions(ulong count = 1) { }
-
-        public void incr_total_read_commands_processed(byte cmd) { }
-
-        public ulong get_total_read_commands_processed() => 0;
-
-        public ulong get_total_transaction_commands_execution_failed() => 0;
-
-        public ulong get_total_transaction_commands_received() => 0;
-
-        public static void incr_total_number_resp_server_session_exceptions(ulong count) { }
-
-        public static ulong get_total_number_resp_server_session_exceptions() => 0;
-    }
-
     /// <summary>
     /// Performance Metrics Emitted from ServerSessionBase
     /// </summary>
