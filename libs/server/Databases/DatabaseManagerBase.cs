@@ -220,7 +220,7 @@ namespace Garnet.server
         {
             try
             {
-                DoCompaction(db);
+                DoCompaction(db, isFromCheckpoint: true, logger);
                 var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
                 var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
@@ -439,12 +439,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
         /// <param name="logger">Logger</param>
-        protected void DoCompaction(GarnetDatabase db, ILogger logger = null)
+        /// <param name="isFromCheckpoint">True if called from checkpointing, false if called from background task</param>
+        protected void DoCompaction(GarnetDatabase db, bool isFromCheckpoint = false, ILogger logger = null)
         {
             try
             {
-                // Periodic compaction -> no need to compact before checkpointing
-                if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
+                // If periodic compaction is enabled and this is called from checkpointing, skip compaction
+                if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
                 DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments,
                     StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
