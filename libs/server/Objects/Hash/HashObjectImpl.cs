@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -219,11 +218,11 @@ namespace Garnet.server
                     }
                     else
                     {
-                        hashValueRef = value.ToArray();
-
                         // Adjust the size to account for the new value replacing the old one.
                         this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
                                      Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+
+                        hashValueRef = value.ToArray();
                     }
 
                     // To persist the key, if it has an expiration
@@ -292,119 +291,143 @@ namespace Garnet.server
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
 
-            var valueExists = TryGetValue(key, out var value);
-            if (op == HashOperation.HINCRBY)
+            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
             {
-                if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
-                {
-                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                    return;
-                }
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
+            }
 
-                ReadOnlySpan<byte> resultBytes;
+            DeleteExpiredItems();
 
-                if (valueExists)
-                {
-                    if (!NumUtils.TryParse(value, out long result))
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
-                        return;
-                    }
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the hash dictionary is mutated.
+            ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
 
-                    result += incr;
-
-                    var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
-                    var success = Utf8Formatter.TryFormat(result, resultSpan, out int bytesWritten,
-                        format: default);
-                    Debug.Assert(success);
-
-                    resultSpan = resultSpan.Slice(0, bytesWritten);
-
-                    if (resultSpan.Length == value.Length)
-                    {
-                        // instead of allocating a new byte array of the same size, we can reuse the existing one
-                        resultSpan.CopyTo(value);
-                        DeleteExpiredItems();
-                        resultBytes = value;
-                    }
-                    else
-                    {
-                        var resultByteArray = resultSpan.ToArray();
-                        SetWithoutPersist(key, resultByteArray);
-                        resultBytes = resultByteArray;
-                    }
-                }
-                else
-                {
-                    var resultByteArray = incrSlice.SpanByte.ToByteArray();
-                    Add(key, resultByteArray);
-                    resultBytes = resultByteArray;
-                }
-
-                writer.WriteIntegerFromBytes(resultBytes);
+            if (!exists || IsExpired(key))
+            {
+                hashValueRef = incrSlice.ToArray();
+                UpdateSize(key, hashValueRef);
             }
             else
             {
-                if (!input.parseState.TryGetDouble(1, out var incr))
+                if (!NumUtils.TryParse(hashValueRef, out long result))
                 {
-                    writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
                     return;
                 }
 
-                if (double.IsInfinity(incr))
+                result += incr;
+
+                var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
+                var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
+                Debug.Assert(success);
+
+                formattedValue = formattedValue.Slice(0, bytesWritten);
+
+                if (formattedValue.Length == hashValueRef.Length)
                 {
-                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
-                    return;
-                }
-
-                ReadOnlySpan<byte> resultBytes;
-
-                if (valueExists)
-                {
-                    if (!NumUtils.TryParseWithInfinity(value, out var result))
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
-                        return;
-                    }
-
-                    if (double.IsInfinity(result))
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                        return;
-                    }
-
-                    result += incr;
-
-                    var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
-                    var success = result.TryFormat(resultSpan, out int bytesWritten,
-                        provider: CultureInfo.InvariantCulture);
-                    Debug.Assert(success);
-
-                    resultSpan = resultSpan.Slice(0, bytesWritten);
-
-                    if (resultSpan.Length == value.Length)
-                    {
-                        // instead of allocating a new byte array of the same size, we can reuse the existing one
-                        resultSpan.CopyTo(value);
-                        DeleteExpiredItems();
-                        resultBytes = value;
-                    }
-                    else
-                    {
-                        var resultByteArray = resultSpan.ToArray();
-                        SetWithoutPersist(key, resultByteArray);
-                        resultBytes = resultByteArray;
-                    }
+                    // instead of allocating a new byte array of the same size, we can reuse the existing one
+                    formattedValue.CopyTo(hashValueRef);
                 }
                 else
                 {
-                    var resultByteArray = incrSlice.SpanByte.ToByteArray();
-                    Add(key, resultByteArray);
-                    resultBytes = resultByteArray;
+                    // Adjust the size to account for the new value replacing the old one.
+                    this.Size += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
+                                 Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+
+                    hashValueRef = formattedValue.ToArray();
+                }
+            }
+
+            writer.WriteIntegerFromBytes(hashValueRef);
+
+            output.Header.result1 = 1;
+        }
+
+        [SkipLocalsInit] // avoid zeroing the stackalloc buffer
+        private void HashIncrementFloat(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        {
+            var op = input.header.HashOp;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            // This value is used to indicate partial command execution
+            output.Header.result1 = int.MinValue;
+
+            var key = GetByteSpanFromInput(ref input, 0);
+            var incrSlice = input.parseState.GetArgSliceByRef(1);
+
+            if (!input.parseState.TryGetDouble(1, out var incr))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                return;
+            }
+
+            if (double.IsInfinity(incr))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
+                return;
+            }
+
+            DeleteExpiredItems();
+
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the hash dictionary is mutated.
+            ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+            if (!exists || IsExpired(key))
+            {
+                hashValueRef = incrSlice.ToArray();
+                UpdateSize(key, hashValueRef);
+            }
+            else
+            {
+                if (!NumUtils.TryParseWithInfinity(hashValueRef, out var result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
+                    return;
                 }
 
-                writer.WriteBulkString(resultBytes);
+                if (double.IsInfinity(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    return;
+                }
+
+                result += incr;
+
+                var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
+                var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
+                Debug.Assert(success);
+
+                formattedValue = formattedValue.Slice(0, bytesWritten);
+
+                if (formattedValue.Length == hashValueRef.Length)
+                {
+                    // instead of allocating a new byte array of the same size, we can reuse the existing one
+                    formattedValue.CopyTo(hashValueRef);
+                }
+                else
+                {
+                    // Adjust the size to account for the new value replacing the old one.
+                    this.Size += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
+                                 Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+
+                    hashValueRef = formattedValue.ToArray();
+                }
             }
+
+            writer.WriteBulkString(hashValueRef);
 
             output.Header.result1 = 1;
         }
@@ -502,11 +525,11 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ByteSpan GetByteSpanFromInput(ref ObjectInput input, int index)
         {
-            return input.parseState.GetArgSliceByRef(index).SpanByte
+            return input.parseState.GetArgSliceByRef(index)
 #if NET9_0_OR_GREATER
-                .AsReadOnlySpan();
+                .ReadOnlySpan;
 #else
-                .ToByteArray();
+                .ToArray();
 #endif
         }
     }

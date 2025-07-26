@@ -243,7 +243,7 @@ namespace Garnet.server
                     HashIncrement(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HINCRBYFLOAT:
-                    HashIncrement(ref input, ref output, respProtocolVersion);
+                    HashIncrementFloat(ref input, ref output, respProtocolVersion);
                     break;
                 case HashOperation.HSETNX:
                     HashSet(ref input, ref output);
@@ -512,19 +512,6 @@ namespace Garnet.server
             Debug.Assert(success);
 
             UpdateSize(key, value);
-        }
-
-        private void SetWithoutPersist(ByteSpan key, byte[] value)
-        {
-            DeleteExpiredItems();
-#if NET9_0_OR_GREATER
-            hashSpanLookup[key] = value;
-#else
-            hash[key] = value;
-#endif
-            // Skip overhead as existing item is getting replaced.
-            this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
-                         Utility.RoundUp(value.Length, IntPtr.Size);
         }
 
         private ExpireResult SetExpiration(ByteSpan key, long expiration, ExpireOption expireOption)
