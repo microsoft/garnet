@@ -2792,10 +2792,147 @@ namespace Garnet.server
             public static int Endian => BitConverter.IsLittleEndian ? 1 : 0; // Matches LITTLE = 1, BIG = 0
         }
 
+        static bool TryGetFormat(LuaRunner self, int stackIndex, out string format)
+        {
+            format = string.Empty;
+            if (self.state.Type(stackIndex) != LuaType.String)
+            {
+                return false;
+            }
+
+            self.state.KnownStringToBuffer(stackIndex, out var data);
+            format = Encoding.UTF8.GetString(data);
+
+            self.state.Remove(stackIndex);
+            return true;
+        }
+
+        static Header DefaultOptions()
+        {
+            return new Header
+            {
+                // Check the system's native endianness
+                Endian = BitConverter.IsLittleEndian ? 1 : 0,
+                // No padding, pack data tightly
+                Align = 1
+            };
+        }
+
+        static int OptSize(LuaRunner self, char opt, string format, ref int optIx)
+        {
+            const int MAXINTSIZE = 16;
+
+            switch (opt)
+            {
+                case 'B':
+                case 'b': return sizeof(byte);
+
+                case 'H':
+                case 'h': return sizeof(short);
+
+                case 'L':
+                case 'l': return sizeof(long);
+
+                case 'T': return IntPtr.Size;
+
+                case 'f': return sizeof(float);
+
+                case 'd': return sizeof(double);
+
+                case 'x': return 1;
+
+                case 'c':
+                    return GetNum(format, ref optIx, 1);
+
+                case 'i':
+                case 'I':
+                    int sz = GetNum(format, ref optIx, sizeof(int));
+                    if (sz > MAXINTSIZE)
+                    {
+                        return self.LuaWrappedError(1, self.constStrs.BadArgPack);
+                    }
+                    return sz;
+
+                default:
+                    return 0;
+            }
+        }
+
+        static int GetNum(LuaRunner self, string format, ref int optIx, int defaultValue)
+        {
+            if (optIx >= format.Length || !char.IsDigit(format[optIx]))
+                return defaultValue;
+
+            int result = 0;
+            while (optIx < format.Length && char.IsDigit(format[optIx]))
+            {
+                int digit = format[optIx] - '0';
+                if (result > (int.MaxValue / 10) || result * 10 > (int.MaxValue - digit))
+                    // Integral size overflow
+                    return self.LuaWrappedError(1, self.constStrs.ErrBadArg);
+
+                result = result * 10 + digit;
+                optIx++;
+            }
+
+            return result;
+        }
+
+        static int GetToAlign(int len, int align, char opt, int size)
+        {
+            if (size == 0 || opt == 'c')
+                return 0;
+
+            if (size > align)
+                size = align;
+
+            return (size - (len & (size - 1))) & (size - 1);
+        }
+
+        static bool TryParseControlOptions(LuaRunner self, char opt, string format, ref Header h, ref int optIx, out int constStrRegisteryIndex)
+        {
+            const int MAXALIGN = 8;
+            switch (opt)
+            {
+                case ' ':
+                    constStrRegisteryIndex = -1;
+                    return true;
+
+                case '>':
+                    h.Endian = (int)Endian.BIG;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
+
+                case '<':
+                    h.Endian = (int)Endian.LITTLE;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
+
+                case '!':
+                    int a = GetNum(self, format, ref optIx, MAXALIGN);
+                    if (!BitOperations.IsPow2(a))
+                    {
+                        // Alignment {a} is not a power of 2
+                        constStrRegisteryIndex = self.LuaWrappedError(1, self.constStrs.ErrBadArg);
+                        return false;
+                    }
+                    h.Align = a;
+
+                    constStrRegisteryIndex = -1;
+                    return true;
+
+                default:
+                    constStrRegisteryIndex = self.LuaWrappedError(1, self.constStrs.ErrBadArg);
+                    return false;
+            }
+        }
+
         /// <summary>
         /// Entry point for struct.pack from a Lua script.
         /// </summary>
-        internal int StructPack(nint luaStatePtr)           
+        internal int StructPack(nint luaStatePtr)
         {
             state.CallFromLuaEntered(luaStatePtr);
 
@@ -2815,7 +2952,7 @@ namespace Garnet.server
             while (optIx < format.Length)
             {
                 char opt = format[optIx++];
-                int size = OptSize(opt, format, ref optIx);
+                int size = OptSize(this, opt, format, ref optIx);
                 int toAlign = GetToAlign(totalSize, h.Align, opt, size);
                 totalSize += toAlign;
 
@@ -2868,8 +3005,13 @@ namespace Garnet.server
                             break;
                         }
                     default:
-                        ControlOptions(opt, format, ref h, ref optIx);
-                        break;
+                        {
+                            if (!TryParseControlOptions(this, opt, format, ref h, ref optIx, out var errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
                 }
 
                 totalSize += size;
@@ -2888,139 +3030,11 @@ namespace Garnet.server
 
 
             // Helper functions
-
-            static bool TryGetFormat(LuaRunner self, int stackIndex, out string format)
-            {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
-
-                self.state.KnownStringToBuffer(stackIndex, out var data);
-                format = Encoding.UTF8.GetString(data);
-
-                self.state.Remove(stackIndex);
-                return string.IsNullOrEmpty(format);
-            }
-
-            static Header DefaultOptions()
-            {
-                return new Header
-                {
-                    // Check the system's native endianness
-                    Endian = BitConverter.IsLittleEndian ? (int)'<' : (int)'>',
-                    // No padding, pack data tightly
-                    Align = 1
-                };
-            }
-
-            static int OptSize(char opt, string format, ref int optIx)
-            {
-                const int MAXINTSIZE = 16;
-
-                switch (opt)
-                {
-                    case 'B':
-                    case 'b': return sizeof(byte);
-
-                    case 'H':
-                    case 'h': return sizeof(short);
-
-                    case 'L':
-                    case 'l': return sizeof(long);
-
-                    case 'T': return IntPtr.Size;
-
-                    case 'f': return sizeof(float);
-
-                    case 'd': return sizeof(double);
-
-                    case 'x': return 1;
-
-                    case 'c':
-                        return GetNum(format, ref optIx, 1);
-
-                    case 'i':
-                    case 'I':
-                        int sz = GetNum(format, ref optIx, sizeof(int));
-                        if (sz > MAXINTSIZE)
-                        {
-                            throw new ArgumentException($"integral size {sz} is larger than limit of {MAXINTSIZE}");
-                        }
-                        return sz;
-
-                    default:
-                        return 0;
-                }
-            }
-
-            static int GetNum(string format, ref int optIx, int defaultValue)
-            {
-                if (optIx >= format.Length || !char.IsDigit(format[optIx]))
-                    return defaultValue;
-
-                int result = 0;
-                while (optIx < format.Length && char.IsDigit(format[optIx]))
-                {
-                    int digit = format[optIx] - '0';
-                    if (result > (int.MaxValue / 10) || result * 10 > (int.MaxValue - digit))
-                        throw new OverflowException("integral size overflow");
-
-                    result = result * 10 + digit;
-                    optIx++;
-                }
-
-                return result;
-            }
-
-            static int GetToAlign(int len, int align, char opt, int size)
-            {
-                if (size == 0 || opt == 'c')
-                    return 0;
-
-                if (size > align)
-                    size = align;
-
-                return (size - (len & (size - 1))) & (size - 1);
-            }
-
             static void AddAlignmentPadding(LuaRunner self)
             {
                 var into = self.scratchBufferBuilder.ViewRemainingArgSlice(1).Span;
                 into[0] = 0x00;
                 self.scratchBufferBuilder.MoveOffset(1);
-            }
-
-            static void ControlOptions(char opt, string format, ref Header h, ref int optIx)
-            {
-                const int MAXALIGN = 8;
-                switch (opt)
-                {
-                    case ' ':
-                        return;
-
-                    case '>':
-                        h.Endian = (int)Endian.BIG;
-                        return;
-
-                    case '<':
-                        h.Endian = (int)Endian.LITTLE;
-                        return;
-
-                    case '!':
-                        int a = GetNum(format, ref optIx, MAXALIGN);
-                        if (!IsPowerOfTwo(a))
-                        {
-                            throw new ArgumentException($"alignment {a} is not a power of 2");
-                        }
-                        h.Align = a;
-                        return;
-
-                    default:
-                        throw new ArgumentException($"invalid format option '{opt}'", nameof(opt));
-                }
-            }
-
-            static bool IsPowerOfTwo(int x)
-            {
-                return x > 0 && (x & (x - 1)) == 0;
             }
 
             static bool TryEncodeInteger(LuaRunner self, char opt, int stackIndex, Header h, out int constStrRegisteryIndex)
@@ -3238,7 +3252,9 @@ namespace Garnet.server
 
                 if (l < size)
                 {
-                    throw new ArgumentException($"string too short, expected at least {size} bytes but got {l}");
+                    // string too short, expected at least {size} bytes but got {l}
+                    constStrRegisteryIndex = self.LuaWrappedError(1, self.constStrs.ErrBadArg);
+                    return false;
                 }
 
                 var into = self.scratchBufferBuilder.ViewRemainingArgSlice(data.Length).Span;
@@ -3256,6 +3272,312 @@ namespace Garnet.server
                 constStrRegisteryIndex = -1;
                 return true;
             }
+        }
+
+        /// <summary>
+        /// Entry point for struct.unpack from a Lua script.
+        /// </summary>
+        internal int StructUnpack(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+
+            if (numLuaArgs == 0 || !TryGetFormat(this, 1, out var format))
+            {
+                return LuaWrappedError(0, constStrs.BadArgPack);
+            }
+
+            state.KnownStringToBuffer(2, out var data);
+
+            int pos = 0;
+            if (numLuaArgs >= 3) // Only check if the 3rd argument is passed
+            {
+                if (state.Type(3) != LuaType.Number || state.CheckNumber(3) <= 0)
+                {
+                    return LuaWrappedError(0, constStrs.BadArgPack);
+                }
+                pos = (int)state.CheckNumber(3);
+                pos--;
+                // slice data to start from pos
+                data = data[pos..];
+            }                
+
+            int decodedCount = 0;
+            int optIx = 0;
+            Header h = DefaultOptions();
+
+            while (optIx < format.Length)
+            {
+                char opt = format[optIx++];
+                int size = OptSize(this,opt, format, ref optIx);
+                pos += GetToAlign(pos, h.Align, opt, size);
+
+                if (size > data.Length || pos > (data.Length - size))
+                {
+                    // Data string too short
+                    return LuaWrappedError(1, constStrs.ErrBadArg);
+                }
+
+                // Makes sure there’s enough stack space in Lua for result + pos.
+                if (!state.TryEnsureMinimumStackCapacity(2))
+                {
+                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                }
+
+                switch (opt)
+                {
+                    case 'b':
+                    case 'B':
+                    case 'h':
+                    case 'H':
+                    case 'l':
+                    case 'L':
+                    case 'T':
+                    case 'i':
+                    case 'I':
+                        {
+                            if (TryDecodeInteger(this, opt, h, size, ref data, ref decodedCount, out int errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }                        
+                    case 'x':
+                        break;
+                    case 'f':
+                        {
+                            if (TryDecodeFloatingPoint(this, h, size, ref data, ref decodedCount, out int errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    case 'd':
+                        {
+                            if (TryDecodeDouble(this, h, size, ref data, ref decodedCount, out int errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    case 'c':
+                        {
+                            if (TryDecodeCharacter(this, ref size, ref data, ref decodedCount, out int errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    case 's':
+                        {
+                            if (TryDecodeString(this, ref size, ref data, ref decodedCount, out int errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                    default:
+                        {
+                            if (!TryParseControlOptions(this, opt, format, ref h, ref optIx, out var errIndex))
+                            {
+                                return LuaWrappedError(1, errIndex);
+                            }
+                            break;
+                        }
+                }
+                pos += size;
+            }          
+
+
+            // Decode data according to format
+
+            return decodedCount;
+
+            // Helper functions
+            static bool TryDecodeInteger(LuaRunner self, char opt, Header h, int size, ref ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
+            {
+                ulong l = 0;
+                double result = 0;
+
+                if (h.Endian == 0) // Big-endian
+                {
+                    for (int i = 0; i < size; i++)
+                    {
+                        l <<= 8;
+                        l |= data[i];
+                    }
+                }
+                else // Little-endian
+                {
+                    for (int i = size - 1; i >= 0; i--)
+                    {
+                        l <<= 8;
+                        l |= data[i];
+                    }
+                }
+
+                // Lower case is signed
+                if (char.IsLower(opt))
+                {
+                    // Sign extension for negative values
+                    ulong mask = ~0UL << (size * 8 - 1);
+                    if ((l & mask) != 0)
+                    {
+                        l |= mask; // Extend the sign bit
+                        long signedValue = unchecked((long)l);
+                        result = (double)signedValue;
+                    }
+                    else
+                    {
+                        result = (double)(long)l;
+                    }
+                }
+                else
+                {
+                    result = (double)l;
+                }
+
+                self.state.PushNumber(result);
+                data = data[1..];
+                decodedCount++;
+
+                constStrErrId = -1;
+                return true;
+            }
+            
+            static bool TryDecodeFloatingPoint(LuaRunner self, Header h, int size, ref ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
+            {
+                float value = h.Endian == Native.Endian ? BinaryPrimitives.ReadSingleLittleEndian(data) : BinaryPrimitives.ReadSingleBigEndian(data);
+                self.state.PushNumber(value);
+                data = data[size..];
+                decodedCount++;
+
+                constStrErrId = -1;
+                return true;
+            }
+
+            static bool TryDecodeDouble(LuaRunner self, Header h, int size, ref ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
+            {
+                double value = h.Endian == Native.Endian ? BinaryPrimitives.ReadDoubleLittleEndian(data) : BinaryPrimitives.ReadDoubleBigEndian(data);
+                self.state.PushNumber(value);
+                data = data[size..];
+                decodedCount++;
+
+                constStrErrId = -1;
+                return true;
+            }
+
+            static bool TryDecodeCharacter(LuaRunner self, ref int size, ref ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
+            {
+                if (size == 0)
+                {
+                    if (decodedCount == 0 || self.state.Type(-1) == LuaType.Number)
+                    {
+                        // if c0, then get the size from the previous decoded number
+                        self.state.Pop(size);
+                    }
+                }
+
+                if (data.Length < size)
+                {
+                    // Data string too short
+                    constStrErrId = self.LuaWrappedError(1, self.constStrs.ErrBadArg);
+                    return false;
+                }
+
+                var str = data[..size];
+
+                if (!self.state.TryPushBuffer(str))
+                {
+                    constStrErrId = self.constStrs.OutOfMemory;
+                    return false;
+                }
+
+                data = data[size..];
+                decodedCount++;
+
+                constStrErrId = -1;
+                return true;
+            }
+
+            static bool TryDecodeString(LuaRunner self, ref int size, ref ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
+            {
+                int nullIndex = data.IndexOf((byte)0);
+                if (nullIndex == -1)
+                {
+                    // Unfinished string in data
+                    constStrErrId = self.LuaWrappedError(1, self.constStrs.ErrBadArg);
+                    return false;
+                }
+
+                size = nullIndex + 1; // Include null terminator counting size
+                var str = data[..(size -1)]; // Exclude null for pusfhing result
+
+                if (!self.state.TryPushBuffer(str))
+                {
+                    constStrErrId = self.LuaWrappedError(1, self.constStrs.OutOfMemory);
+                    return false;
+                }
+
+                data = data[size..];
+                decodedCount++;
+
+                constStrErrId = -1;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Entry point for struct.size from a Lua script.
+        /// </summary>
+        internal int StructSize(nint luaStatePtr)
+        {
+            state.CallFromLuaEntered(luaStatePtr);
+
+            var numLuaArgs = state.StackTop;
+            if (numLuaArgs == 0 || !TryGetFormat(this, 1, out var format))
+            {
+                return LuaWrappedError(1, constStrs.ErrBadArg);
+            }
+
+            scratchBufferBuilder.Reset();
+
+            // Parse format
+            int totalSize = 0;
+            int optIx = 0;
+            Header h = DefaultOptions();
+
+            while (optIx < format.Length)
+            {
+                char opt = format[optIx++];
+                int size = OptSize(this, opt, format, ref optIx);
+                int toAlign = GetToAlign(totalSize, h.Align, opt, size);
+                totalSize += toAlign;
+
+                if (opt == 's')
+                {
+                    return LuaWrappedError(1, constStrs.ErrBadArg);
+                }
+
+                if (opt == 'c' && size == 0)
+                {
+                    return LuaWrappedError(1, constStrs.ErrBadArg);
+                }
+
+                if (!char.IsLetterOrDigit(opt))
+                {
+                    if (!TryParseControlOptions(this, opt, format, ref h, ref optIx, out var errIndex))
+                    {
+                        return LuaWrappedError(1, errIndex);
+                    }
+                }
+
+                totalSize += size;
+            }
+
+            state.PushNumber(totalSize);
+            return 1;
         }
 
         /// <summary>
