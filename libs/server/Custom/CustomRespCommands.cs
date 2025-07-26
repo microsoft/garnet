@@ -25,6 +25,9 @@ namespace Garnet.server
 
             LatencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
+
+            sessionMetrics?.incr_total_transaction_commands_received();
+
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
@@ -37,6 +40,7 @@ namespace Garnet.server
             }
             else
             {
+                sessionMetrics?.incr_total_transaction_execution_failed();
                 // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
