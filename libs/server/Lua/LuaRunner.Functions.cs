@@ -2842,11 +2842,11 @@ namespace Garnet.server
                 case 'x': return 1;
 
                 case 'c':
-                    return GetNum(format, ref optIx, 1);
+                    return GetNum(self, format, ref optIx, 1);
 
                 case 'i':
                 case 'I':
-                    int sz = GetNum(format, ref optIx, sizeof(int));
+                    int sz = GetNum(self, format, ref optIx, sizeof(int));
                     if (sz > MAXINTSIZE)
                     {
                         return self.LuaWrappedError(1, self.constStrs.BadArgPack);
