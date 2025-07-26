@@ -345,9 +345,15 @@ namespace Garnet.server
             }
             else
             {
-                if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out double incr))
+                if (!input.parseState.TryGetDouble(1, out var incr))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    return;
+                }
+
+                if (double.IsInfinity(incr))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
                     return;
                 }
 
@@ -355,9 +361,15 @@ namespace Garnet.server
 
                 if (valueExists)
                 {
-                    if (!NumUtils.TryParse(value, out double result))
+                    if (!NumUtils.TryParseWithInfinity(value, out var result))
                     {
                         writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
+                        return;
+                    }
+
+                    if (double.IsInfinity(result))
+                    {
+                        writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
                         return;
                     }
 

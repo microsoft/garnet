@@ -248,7 +248,8 @@ namespace Garnet.test
             bool getSG = false,
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
-            bool enableModuleCommand = false,
+            ConnectionProtectionOption enableDebugCommand = ConnectionProtectionOption.Yes,
+            ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
             bool enableReadCache = false,
             bool enableObjectStoreReadCache = false,
@@ -267,7 +268,8 @@ namespace Garnet.test
             TextWriter logTo = null,
             bool enableCluster = false,
             int expiredKeyDeletionScanFrequencySecs = -1,
-            bool useReviv = false
+            bool useReviv = false,
+            bool useInChainRevivOnly = false
             )
         {
             if (useAzureStorage)
@@ -345,8 +347,8 @@ namespace Garnet.test
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths,
                 EnableCluster = enableCluster,
-                EnableDebugCommand = ConnectionProtectionOption.Yes,
-                EnableModuleCommand = enableModuleCommand ? ConnectionProtectionOption.Yes : ConnectionProtectionOption.No,
+                EnableDebugCommand = enableDebugCommand,
+                EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
@@ -409,12 +411,17 @@ namespace Garnet.test
             {
                 opts.UseRevivBinsPowerOf2 = true;
                 opts.RevivBinBestFitScanLimit = 0;
-                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivNumberOfBinsToSearch = int.MaxValue;
                 opts.RevivifiableFraction = 1;
                 opts.RevivInChainOnly = false;
                 opts.RevivBinRecordCounts = [];
                 opts.RevivBinRecordSizes = [];
                 opts.RevivObjBinRecordCount = 256;
+            }
+
+            if (useInChainRevivOnly)
+            {
+                opts.RevivInChainOnly = true;
             }
 
             return new GarnetServer(opts, loggerFactory);
@@ -481,7 +488,8 @@ namespace Garnet.test
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
             EndPoint clusterAnnounceEndpoint = null,
-            bool luaTransactionMode = false)
+            bool luaTransactionMode = false,
+            bool useNativeDeviceLinux = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -532,7 +540,8 @@ namespace Garnet.test
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint,
-                    luaTransactionMode: luaTransactionMode);
+                    luaTransactionMode: luaTransactionMode,
+                    useNativeDeviceLinux: useNativeDeviceLinux);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -598,7 +607,8 @@ namespace Garnet.test
             IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
             EndPoint clusterAnnounceEndpoint = null,
-            bool luaTransactionMode = false)
+            bool luaTransactionMode = false,
+            bool useNativeDeviceLinux = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -710,6 +720,7 @@ namespace Garnet.test
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
+                UseNativeDeviceLinux = useNativeDeviceLinux,
             };
 
             if (lowMemory)

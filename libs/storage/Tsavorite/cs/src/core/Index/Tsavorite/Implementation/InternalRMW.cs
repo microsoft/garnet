@@ -285,7 +285,7 @@ namespace Tsavorite.core
                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
                         var (requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
                         (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions,
-                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
+                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths, stackCtx.recSrc.PhysicalAddress);
                     }
 
                     ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
@@ -295,7 +295,8 @@ namespace Tsavorite.core
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically). OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
                         stats.inChainSuccesses++;
                         return true;
                     }
@@ -545,6 +546,7 @@ namespace Tsavorite.core
                             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
                         goto RetryNow;
                     }
+                    addTombstone = newRecordInfo.Tombstone;
                     goto DoCAS;
                 }
                 else
@@ -572,7 +574,8 @@ namespace Tsavorite.core
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
+                    if (!addTombstone)
+                        sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
                 }
                 else
                 {

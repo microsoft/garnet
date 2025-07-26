@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -104,10 +104,13 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                var errorMessage = new Win32Exception((int)errorCode).Message;
-                logger?.LogError("[Replica] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
+                logger?.LogError("[ReceiveCheckpointHandler] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             writeCheckpointSemaphore.Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 }
