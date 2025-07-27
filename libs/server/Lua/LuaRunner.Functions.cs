@@ -3288,7 +3288,8 @@ namespace Garnet.server
                 return LuaWrappedError(0, constStrs.BadArgPack);
             }
 
-            state.KnownStringToBuffer(2, out var data);
+            // Use stackIndex 1 become when try get format, it also removes format from the lus stack
+            state.KnownStringToBuffer(1, out var data);
 
             int pos = 0;
             if (numLuaArgs >= 3) // Only check if the 3rd argument is passed
@@ -3337,7 +3338,7 @@ namespace Garnet.server
                     case 'i':
                     case 'I':
                         {
-                            if (TryDecodeInteger(this, opt, h, size, ref data, ref decodedCount, out int errIndex))
+                            if (!TryDecodeInteger(this, opt, h, size, ref data, ref decodedCount, out int errIndex))
                             {
                                 return LuaWrappedError(1, errIndex);
                             }
@@ -3347,7 +3348,7 @@ namespace Garnet.server
                         break;
                     case 'f':
                         {
-                            if (TryDecodeFloatingPoint(this, h, size, ref data, ref decodedCount, out int errIndex))
+                            if (!TryDecodeFloatingPoint(this, h, size, ref data, ref decodedCount, out int errIndex))
                             {
                                 return LuaWrappedError(1, errIndex);
                             }
@@ -3355,7 +3356,7 @@ namespace Garnet.server
                         }
                     case 'd':
                         {
-                            if (TryDecodeDouble(this, h, size, ref data, ref decodedCount, out int errIndex))
+                            if (!TryDecodeDouble(this, h, size, ref data, ref decodedCount, out int errIndex))
                             {
                                 return LuaWrappedError(1, errIndex);
                             }
@@ -3363,7 +3364,7 @@ namespace Garnet.server
                         }
                     case 'c':
                         {
-                            if (TryDecodeCharacter(this, ref size, ref data, ref decodedCount, out int errIndex))
+                            if (!TryDecodeCharacter(this, ref size, ref data, ref decodedCount, out int errIndex))
                             {
                                 return LuaWrappedError(1, errIndex);
                             }
@@ -3371,7 +3372,7 @@ namespace Garnet.server
                         }
                     case 's':
                         {
-                            if (TryDecodeString(this, ref size, ref data, ref decodedCount, out int errIndex))
+                            if (!TryDecodeString(this, ref size, ref data, ref decodedCount, out int errIndex))
                             {
                                 return LuaWrappedError(1, errIndex);
                             }
