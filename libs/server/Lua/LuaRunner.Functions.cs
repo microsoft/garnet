@@ -3080,7 +3080,7 @@ namespace Garnet.server
                                 BinaryPrimitives.WriteUInt16LittleEndian(into[0..], (ushort)value);
                             }
 
-                            self.scratchBufferBuilder.MoveOffset(3);
+                            self.scratchBufferBuilder.MoveOffset(2);
                             break;
                         }
                     case 'l':
@@ -3112,7 +3112,7 @@ namespace Garnet.server
                                 BinaryPrimitives.WriteUInt64LittleEndian(into[0..], (ulong)value);
                             }
 
-                            self.scratchBufferBuilder.MoveOffset(9);
+                            self.scratchBufferBuilder.MoveOffset(8);
                             break;
                         }
                     case 'T':
@@ -4688,6 +4688,54 @@ namespace Garnet.server
             try
             {
                 return CallbackContext.CMsgPackUnpack(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for calls to struct.pack.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int StructPack(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.StructPack(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for calls to struct.unpack.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int StructUnpack(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.StructUnpack(luaState);
+            }
+            catch (Exception e)
+            {
+                return FailOnException(e);
+            }
+        }
+
+        /// <summary>
+        /// Entry point for calls to struct.size.
+        /// </summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        internal static int StructSize(nint luaState)
+        {
+            try
+            {
+                return CallbackContext.StructSize(luaState);
             }
             catch (Exception e)
             {
