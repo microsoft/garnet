@@ -344,6 +344,9 @@ namespace Tsavorite.core
         public IHeapObject ValueObject => diskLogRecord.ValueObject;
 
         /// <inheritdoc/>
+        public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
+
+        /// <inheritdoc/>
         public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
 
         /// <inheritdoc/>
@@ -368,8 +371,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRecordFieldInfo() => new()
         {
-            KeyDataSize = Key.Length,
-            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+            KeySize = Key.Length,
+            ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
             ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration

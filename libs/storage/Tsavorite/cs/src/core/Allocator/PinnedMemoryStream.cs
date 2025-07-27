@@ -169,11 +169,5 @@ namespace Tsavorite.core
         /// <summary>Writes a byte at the next streamBuffer position and advances the position</summary>
         public override unsafe void WriteByte(byte value)
             => streamBuffer.Write(new ReadOnlySpan<byte>(&value, 1));
-
-        /// <summary>Clears the value length offset, which is used to "back up" and update the length of the value due to chunking.</summary>
-        public void ClearValueLengthOffset() => streamBuffer.ClearSerializedValueLengthOffset();
-
-        /// <summary>Sets the value length offset, which is used to "back up" and update the length of the value due to chunking.</summary>
-        public void SetValueLengthOffset(int offset) => streamBuffer.SetSerializedValueLengthOffset(offset);
     }
 }

@@ -75,7 +75,7 @@ namespace Tsavorite.core
             => throw new NotImplementedException("IHeapObject value) is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input)
         where TSourceLogRecord : ISourceLogRecord
-            => new() { KeyDataSize = key.Length, ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
+            => new() { KeySize = key.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
 
         /// <summary>
         /// No reads during compaction

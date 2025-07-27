@@ -338,8 +338,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => new()
         {
-            KeyDataSize = Key.Length,
-            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+            KeySize = Key.Length,
+            ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
             ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
@@ -434,14 +434,15 @@ namespace Tsavorite.core
                 keyBuffer = default;
                 DirectCopyRecordBytes(logRecord.physicalAddress, logRecord.ActualRecordSize, bufferPool, ref recordOrValueBuffer);
 
+                var (keyLength, valueLength, offsetToKeyStart) = GetInlineKeyAndValueSizes(logRecord.IndicatorAddress);
                 var fieldInfo = new SerializedFieldInfo()
                 {
                     recordInfo = logRecord.Info,
-                    offsetToKeyStart = (int)(logRecord.KeyAddress - logRecord.physicalAddress),
-                    keyLength = logRecord.Key.Length,
-                    valueLength = logRecord.ValueSpan.Length,
+                    offsetToKeyStart = offsetToKeyStart,
+                    keyLength = keyLength,
+                    valueLength = valueLength,
                     optionalLength = logRecord.OptionalLength,
-                    isChunkedValue = false, // there's no object
+                    isChunkedValue = false, // It's inline, so there's no object
                     isComplete = true
                 };
 
@@ -611,7 +612,7 @@ namespace Tsavorite.core
                 valueLength = srcLogRecord.ValueObject.SerializedSize;
             }
 
-            var indicatorByte = CreateIndicatorByte(srcLogRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
+            var indicatorByte = ConstructIndicatorByte(srcLogRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
 
             var recordSize = RecordInfo.GetLength()
                 + 1 // indicator byte
@@ -698,8 +699,10 @@ namespace Tsavorite.core
 
             // Set the indicator and lengths
             *ptr++ = indicatorByte;
-            WriteVarByteLength(key.Length, keyLengthByteCount, ref ptr);
-            WriteVarByteLength(valueLength, valueLengthByteCount, ref ptr);
+            WriteVarbyteLength(key.Length, keyLengthByteCount, ptr);
+            ptr += keyLengthByteCount;
+            WriteVarbyteLength(valueLength, valueLengthByteCount, ptr);
+            ptr += valueLengthByteCount;
 
             // Copy the key but not the value; the caller does that.
             key.CopyTo(new Span<byte>(ptr, key.Length));

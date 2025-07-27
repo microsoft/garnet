@@ -215,7 +215,7 @@ namespace Tsavorite.core
 
         private void WriteIndicatorByteAndLengths(int keyLength, long valueLength, bool isChunked = false)
         {
-            var indicatorByte = CreateIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
+            var indicatorByte = ConstructIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
             if (isChunked)
             {
                 SetChunkedValueIndicator(ref indicatorByte);
@@ -224,8 +224,10 @@ namespace Tsavorite.core
 
             var ptr = BufferPointer + currentPosition;
             *ptr++ = indicatorByte;
-            WriteVarByteLength(keyLength, keyByteCount, ref ptr);
-            WriteVarByteLength(valueLength, valueByteCount, ref ptr);
+            WriteVarbyteLength(keyLength, keyByteCount, ptr);
+            ptr += keyByteCount;
+            WriteVarbyteLength(valueLength, valueByteCount, ptr);
+            ptr += valueByteCount;
             currentPosition += (int)(ptr - (BufferPointer + currentPosition));
         }
 

@@ -123,25 +123,24 @@ namespace Tsavorite.core
             if (!stackCtx.hei.TryElide())
                 return (false, false);
 
-            return (true, TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref logRecord));
+            return (true, TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref logRecord));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
+        private bool TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, long logicalAddress, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
-            Debug.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
+            Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TryTransferToFreeList");
+
+            // If its address is not revivifiable, just leave it orphaned and invalid; the caller will Dispose with its own DisposeReason.
+            if (logicalAddress < GetMinRevivifiableAddress())
+                return false;
 
             // Dispose any existing key and value. We do this as soon as we have elided so objects are released for GC as early as possible.
             DisposeRecord(ref logRecord, DisposeReason.RevivificationFreeList);
 
-            // Now that we've Disposed the record, see if its address is revivifiable. If not, just leave it orphaned and invalid.
-            if (stackCtx.recSrc.LogicalAddress < GetMinRevivifiableAddress())
-                return false;
-
-            return RevivificationManager.TryAdd(stackCtx.recSrc.LogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
+            return RevivificationManager.TryAdd(logicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]      // Do not try to inline this, to keep TryAllocateRecord lean

@@ -42,7 +42,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, in RecordSizeInfo _) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+        public readonly void InitializeValue(long physicalAddress, in RecordSizeInfo _, ref LogRecord newLogRecord)
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

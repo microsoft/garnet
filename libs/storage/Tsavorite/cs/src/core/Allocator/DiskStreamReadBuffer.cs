@@ -41,7 +41,7 @@ namespace Tsavorite.core
             {
                 this.bufferPool = bufferPool ?? throw new ArgumentNullException(nameof(bufferPool));
                 this.fixedPageSize = fixedPageSize;
-                maxInlineKeyLength = -1;
+                maxInlineKeyLength = LogSettings.kMaxInlineKeySize;     // Note: We throw an exception if it exceeds this but include it here for consistency
                 maxInlineValueLength = -1;
                 this.sectorSize = sectorSize;
                 this.unalignedRecordStartOffset = unalignedRecordStartOffset;
@@ -397,7 +397,7 @@ namespace Tsavorite.core
 
                     keyBuffer = readParams.bufferPool.Get(keyLength);
                     valueOverflow.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.Span);
-                    valueOverflow.IncreaseOffsetFromStart(keyLength);
+                    valueOverflow.AdjustOffsetFromStart(keyLength);
 
                     if (optionalLength > 0)
                         valueOverflow.ExtractOptionals(recordInfo, (int)(keyLength + valueLength), out eTag, out expiration);

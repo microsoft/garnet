@@ -134,13 +134,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(ValueStruct) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(ValueStruct) };
+            => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+            => new() { KeySize = key.Length, ValueSize = value.Length };
     }
 
     public class FunctionsCompaction : SessionFunctionsBase<InputStruct, OutputStruct, int>
@@ -204,13 +204,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(ValueStruct) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(ValueStruct) };
+            => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+            => new() { KeySize = key.Length, ValueSize = value.Length };
     }
 
     public class FunctionsCopyOnWrite : SessionFunctionsBase<InputStruct, OutputStruct, Empty>
@@ -288,13 +288,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref InputStruct input)
-            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(ValueStruct) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(ValueStruct) };
+            => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+            => new() { KeySize = key.Length, ValueSize = value.Length };
     }
 
     public class SimpleLongSimpleFunctions : SessionFunctionsBase<long, long, Empty>
@@ -354,12 +354,12 @@ namespace Tsavorite.test
 
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref long input)
-            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(long) };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(long) };
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref long input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(long) };
+            => new() { KeySize = key.Length, ValueSize = sizeof(long) };
         /// <inheritdoc/>
         public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref long input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+            => new() { KeySize = key.Length, ValueSize = value.Length };
     }
 }

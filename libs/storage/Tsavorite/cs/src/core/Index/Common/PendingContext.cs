@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -45,9 +46,11 @@ namespace Tsavorite.core
 
             // operationFlags values
             internal ushort operationFlags;
+#pragma warning disable IDE1006 // Naming Styles
             internal const ushort kNoOpFlags = 0;
             internal const ushort kIsNoKey = 0x0001;
             internal const ushort kIsReadAtAddress = 0x0002;
+#pragma warning restore IDE1006 // Naming Styles
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
 
@@ -125,6 +128,8 @@ namespace Tsavorite.core
             /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> into the local <see cref="DiskLogRecord"/> for Pending operations, e.g. CopyToTail.
             /// </summary>
             /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
+            /// <param name="bufferPool"></param>
+            /// <param name="transferIfPossible">Transfer allocations instead of deep-copying, if possible</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, bool transferIfPossible)
                 where TSourceLogRecord : ISourceLogRecord
@@ -180,7 +185,7 @@ namespace Tsavorite.core
             public readonly bool IsPinnedKey => diskLogRecord.IsPinnedKey;
 
             /// <inheritdoc/>
-            public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
+            public readonly byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
 
             /// <inheritdoc/>
             public readonly unsafe Span<byte> ValueSpan => diskLogRecord.ValueSpan;
@@ -189,7 +194,10 @@ namespace Tsavorite.core
             public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
 
             /// <inheritdoc/>
-            public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+            public readonly bool IsPinnedValue => diskLogRecord.IsPinnedValue;
+
+            /// <inheritdoc/>
+            public readonly byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
 
             /// <inheritdoc/>
             public readonly long ETag => diskLogRecord.ETag;
@@ -201,20 +209,20 @@ namespace Tsavorite.core
             public readonly bool IsMemoryLogRecord => false;
 
             /// <inheritdoc/>
-            public unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a PendingContext to a memory LogRecord.");
+            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a PendingContext to a memory LogRecord.");
 
             /// <inheritdoc/>
             public readonly bool IsDiskLogRecord => true;
 
             /// <inheritdoc/>
-            public unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
+            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public readonly RecordFieldInfo GetRecordFieldInfo() => new()
                 {
-                    KeyDataSize = Key.Length,
-                    ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+                    KeySize = Key.Length,
+                    ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
                     ValueIsObject = Info.ValueIsObject,
                     HasETag = Info.HasETag,
                     HasExpiration = Info.HasExpiration

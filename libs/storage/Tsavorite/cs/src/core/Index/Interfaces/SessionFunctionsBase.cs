@@ -115,14 +115,14 @@ namespace Tsavorite.core
             => throw new NotImplementedException("GetRMWInitialFieldInfo requires knowledge of TInput");
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length, ValueIsObject = false };
+            => new() { KeySize = key.Length, ValueSize = value.Length, ValueIsObject = false };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input)
-            => new () { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new () { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord
-            => new() { KeyDataSize = key.Length, ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
+            => new() { KeySize = key.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject };
 
         /// <inheritdoc/>
         public virtual void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }

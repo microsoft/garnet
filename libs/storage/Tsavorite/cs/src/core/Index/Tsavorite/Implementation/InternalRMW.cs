@@ -410,7 +410,7 @@ namespace Tsavorite.core
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, in sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
                 return status;
 
             var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
@@ -420,8 +420,7 @@ namespace Tsavorite.core
 
             rmwInfo.Address = newLogicalAddress;
 
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo);
-            newLogRecord.SetFillerLength(allocatedSize);
+            hlog.InitializeValue(newPhysicalAddress, in sizeInfo, ref newLogRecord);
 
             if (!doingCU)
             {
@@ -455,10 +454,9 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
                     // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails.
-                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
-                        stackCtx.ClearNewRecord();
-                    else
-                        stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                    stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                    if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
+                        DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
                     return OperationStatus.CANCELED;
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
@@ -483,10 +481,9 @@ namespace Tsavorite.core
                             return status;
 
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
-                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
-                            stackCtx.ClearNewRecord();
-                        else
-                            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                        stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                        if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
+                            DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
                         goto RetryNow;
                     }
                     goto DoCAS;
@@ -560,7 +557,7 @@ namespace Tsavorite.core
                         // If we're here we have MainLogSrc srcLogRecord must be a memory LogRecord.
                         ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref inMemoryLogRecord);
                         else
                             DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
                     }

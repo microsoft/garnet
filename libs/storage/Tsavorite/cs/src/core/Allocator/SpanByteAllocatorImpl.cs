@@ -9,6 +9,7 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
     using static LogAddress;
 
@@ -81,7 +82,7 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new LogRecord(physicalAddress);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize: int.MaxValue, objectIdMap: null);
@@ -89,13 +90,10 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo)
+        public void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
         {
-            // Value is always inline in the SpanByteAllocator
-            var valueAddress = LogRecord.GetValueAddress(physicalAddress);
-
             LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-            _ = LogField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
+            sizeInfo.SetValueInlineLength(physicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -158,8 +156,8 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
-                    KeyDataSize = key.Length,
-                    ValueDataSize = 0, // No payload for the default value
+                    KeySize = key.Length,
+                    ValueSize = 0, // No payload for the default value
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -170,19 +168,20 @@ namespace Tsavorite.core
 
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            // For SpanByteAllocator, we are always inline.
+            // For SpanByteAllocator, we are always inline. Keys are limited to 3 bytes though, to make the Varbyte indicator word assignment atomic.
             // Key
             sizeInfo.KeyIsInline = true;
-            var keySize = sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize;
+            var keySize = sizeInfo.FieldInfo.KeySize;
+            if (keySize > LogSettings.kMaxInlineKeySize)
+                throw new TsavoriteException($"Max inline key size is {LogSettings.kMaxInlineKeySize}");
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
             sizeInfo.ValueIsInline = true;
-            var valueSize = sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize;
+            var valueSize = sizeInfo.FieldInfo.ValueSize;
 
             // Record
-            sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
-            sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
+            sizeInfo.CalculateSizes(keySize, valueSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

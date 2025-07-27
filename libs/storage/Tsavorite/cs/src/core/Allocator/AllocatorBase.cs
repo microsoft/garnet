@@ -69,7 +69,7 @@ namespace Tsavorite.core
         /// <summary>Segment buffer size</summary>
         protected readonly int SegmentBufferSize;
 
-        protected readonly int maxInlineKeySize = int.MaxValue;
+        protected readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
 
         protected readonly int maxInlineValueSize = int.MaxValue;
 
@@ -393,7 +393,7 @@ namespace Tsavorite.core
             if (key.Length <= maxInlineKeySize)
             {
                 logRecord.InfoRef.SetKeyIsInline();
-                keySpan = LogField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
+                keySpan = LogField.SetInlineDataLength(logRecord.physicalAddress, key.Length, isKey: true);
             }
             else
             {
@@ -401,7 +401,9 @@ namespace Tsavorite.core
 
                 // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
                 logRecord.InfoRef.ClearKeyIsInline();
-                keySpan = LogField.SetOverflowAllocation(logRecord.KeyAddress, key.Length, objectIdMap);
+                var overflow = new OverflowByteArray(GC.AllocateUninitializedArray<byte>(key.Length), 0, 0);
+                LogField.SetOverflowAllocation(logRecord.physicalAddress, overflow, objectIdMap, isKey: true);
+                keySpan = overflow.Span;
             }
             key.CopyTo(keySpan);
         }

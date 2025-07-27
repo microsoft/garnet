@@ -28,13 +28,19 @@ namespace Tsavorite.core
         internal readonly Span<byte> Span => Data.AsSpan().Slice(Offset, Length);
 
         internal OverflowByteArray(byte[] data) => Data = data;
+        internal OverflowByteArray(byte[] data, int startOffset, int endOffset)
+        {
+            Data = data;
+            Unsafe.As<byte, ushort>(ref Data[0]) = (ushort)startOffset;
+            Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]) = (ushort)endOffset;
+        }
 
         /// <summary>Increase the offset from the start, e.g. after having extracted the key that was read in the same IO operation as the value.</summary>
         /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/>> array field, only its contents.</remarks>
-        internal readonly void IncreaseOffsetFromStart(int increment) => Unsafe.As<byte, ushort>(ref Data[0]) += (ushort)increment;
+        internal readonly void AdjustOffsetFromStart(int increment) => Unsafe.As<byte, ushort>(ref Data[0]) += (ushort)increment;
         /// <summary>Increase the offset from the end, e.g. after having extracted the optionals that were read in the same IO operation as the value.</summary>
         /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/>> array field, only its contents.</remarks>
-        internal readonly void IncreaseOffsetFromEnd(int increment) => Unsafe.As<byte, ushort>(ref Data[2]) += (ushort)increment;
+        internal readonly void AdjustOffsetFromEnd(int increment) => Unsafe.As<byte, ushort>(ref Data[2]) += (ushort)increment;
 
         internal OverflowByteArray(int length, int startOffset, int endOffset)
         {
@@ -68,7 +74,7 @@ namespace Tsavorite.core
                 expiration = Unsafe.As<byte, long>(ref Span.Slice(valueLength + optionalOffset, LogRecord.ExpirationSize)[0]);
                 optionalOffset += LogRecord.ExpirationSize;
             }
-            IncreaseOffsetFromEnd(optionalOffset);
+            AdjustOffsetFromEnd(optionalOffset);
         }
 
         internal static ReadOnlySpan<byte> AsReadOnlySpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).ReadOnlySpan;

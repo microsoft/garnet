@@ -67,8 +67,7 @@ namespace Tsavorite.core
             for (var ii = 0; ii < BufferSize; ii++)
                 values[ii] = new();
 
-            // For LogField conversions between inline and heap fields, we assume the inline field size prefix is the same size as objectId size
-            Debug.Assert(LogField.InlineLengthPrefixSize == ObjectIdMap.ObjectIdSize, "InlineLengthPrefixSize must be equal to ObjectIdMap.ObjectIdSize");
+            Debug.Assert(ObjectIdMap.ObjectIdSize == sizeof(int), "InlineLengthPrefixSize must be equal to ObjectIdMap.ObjectIdSize");
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -133,14 +132,13 @@ namespace Tsavorite.core
         public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo)
+        public static void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
         {
-            var valueAddress = LogRecord.GetValueAddress(physicalAddress);
             if (sizeInfo.ValueIsInline)
             {
                 // Set the actual length indicator for inline.
                 LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-                _ = LogField.SetInlineDataLength(valueAddress, sizeInfo.FieldInfo.ValueDataSize);
+                sizeInfo.SetValueInlineLength(physicalAddress);
             }
             else
             {
@@ -150,9 +148,12 @@ namespace Tsavorite.core
                 if (sizeInfo.ValueIsObject)
                     LogRecord.GetInfoRef(physicalAddress).SetValueIsObject();
 
-                // Either an IHeapObject or a byte[]
-                *LogRecord.GetValueObjectIdAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+                // Either an IHeapObject or an overflow byte[]; either way, it's an object, and the length is already set.
+                Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.InvalidObjectId, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
+                sizeInfo.SetValueInlineLength(physicalAddress);
+                *(int*)sizeInfo.GetValueAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
             }
+            newLogRecord.SetFillerLength(in sizeInfo);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -215,8 +216,8 @@ namespace Tsavorite.core
             {
                 FieldInfo = new()
                 {
-                    KeyDataSize = key.Length,
-                    ValueDataSize = 0,      // This will be inline, and with the length prefix and possible space when rounding up to kRecordAlignment, allows the possibility revivification can reuse the record for a Heap Field
+                    KeySize = key.Length,
+                    ValueSize = 0,      // This will be inline, and with the length prefix and possible space when rounding up to kRecordAlignment, allows the possibility revivification can reuse the record for a Heap Field
                     HasETag = false,
                     HasExpiration = false
                 }
@@ -228,18 +229,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeySize <= maxInlineKeySize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSpanSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record
-            sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
-            sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
+            sizeInfo.CalculateSizes(keySize, valueSize);
         }
 
         /// <summary>

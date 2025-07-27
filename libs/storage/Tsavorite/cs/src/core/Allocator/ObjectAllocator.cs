@@ -46,7 +46,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo) => ObjectAllocatorImpl<TStoreFunctions>.InitializeValue(physicalAddress, in sizeInfo);
+        public readonly void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+            => ObjectAllocatorImpl<TStoreFunctions>.InitializeValue(physicalAddress, in sizeInfo, ref newLogRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

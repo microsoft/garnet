@@ -19,7 +19,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// The size after which a key (should be rare) or value is handled as an out-of-line allocation when reading from disk.
-        /// Must be less than DiskReadBufferSize / 2 and a sector multiple.
+        /// Must be less than DiskReadBufferSize / 2 and a sector multiple, so it is separate from (and less than) <see cref="LogSettings.kMaxInlineKeySize"/>.
         /// </summary>
         internal const int DiskReadForceOverflowSize = 1 * 1024 * 1024;
 

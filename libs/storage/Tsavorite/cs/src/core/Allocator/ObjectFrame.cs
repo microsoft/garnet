@@ -31,7 +31,7 @@ namespace Tsavorite.core
 
         public ref RecordInfo GetInfo(long frameNumber, long offset)
         {
-            return ref frame[frameNumber][offset].Info;
+            return ref frame[frameNumber][offset].InfoRef;
         }
 
         public ref DiskLogRecord[] GetPage(long frameNumber)

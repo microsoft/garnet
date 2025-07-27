@@ -19,7 +19,8 @@ namespace Tsavorite.core
         /// <summary>Initialize the value to span the address range.</summary>
         /// <param name="physicalAddress">The start of the record (address of its <see cref="RecordInfo"/>).</param>
         /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>
-        void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo);
+        /// <param name="newLogRecord">The new log record being initialized</param>
+        void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord);
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)

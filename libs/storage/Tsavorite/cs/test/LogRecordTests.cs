@@ -59,18 +59,18 @@ namespace Tsavorite.test.LogRecordTests
         void UpdateRecordSizeInfo(ref RecordSizeInfo sizeInfo, int keySize = -1, int valueSize = -1)
         {
             if (keySize > 0)
-                sizeInfo.FieldInfo.KeyDataSize = keySize;
+                sizeInfo.FieldInfo.KeySize = keySize;
             if (valueSize > 0)
-                sizeInfo.FieldInfo.ValueDataSize = valueSize;
+                sizeInfo.FieldInfo.ValueSize = valueSize;
 
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeySize <= maxInlineKeySize;
+            keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Value
             sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= maxInlineValueSize;
-            valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= maxInlineValueSize;
+            valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Record
             sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
@@ -93,7 +93,7 @@ namespace Tsavorite.test.LogRecordTests
 
             // Shrink
             var offset = 12;
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
@@ -104,7 +104,7 @@ namespace Tsavorite.test.LogRecordTests
 
             // Grow within range
             offset = 6;
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
@@ -115,11 +115,11 @@ namespace Tsavorite.test.LogRecordTests
 
             // Grow beyond range
             offset = -10;
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.False);
 
             // Restore to original
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
@@ -267,7 +267,7 @@ namespace Tsavorite.test.LogRecordTests
                 var valueDataSize = (1 << (ii * 8)) + 42;         // TODO: test long values
                 var valueObject = new TestLargeObjectValue(valueDataSize);
                 Array.Fill(valueObject.value, (byte)ii);
-                sizeInfo.FieldInfo.ValueDataSize = ObjectIdMap.ObjectIdSize;
+                sizeInfo.FieldInfo.ValueSize = ObjectIdMap.ObjectIdSize;
                 sizeInfo.FieldInfo.ValueIsObject = true;
                 UpdateRecordSizeInfo(ref sizeInfo);
                 Assert.That(logRecord.TrySetValueObject(valueObject, in sizeInfo), Is.True);
@@ -343,8 +343,8 @@ namespace Tsavorite.test.LogRecordTests
         {
             sizeInfo.FieldInfo = new()
             {
-                KeyDataSize = initialKeyLen,
-                ValueDataSize = initialValueLen,
+                KeySize = initialKeyLen,
+                ValueSize = initialValueLen,
                 HasETag = true,
                 HasExpiration = true
             };
@@ -411,7 +411,7 @@ namespace Tsavorite.test.LogRecordTests
 
         private void ConvertToOverflow(Span<byte> overflowValue, ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLengthAddress, long expectedFillerLength, long eTag, long expiration, int offset)
         {
-            sizeInfo.FieldInfo.ValueDataSize = overflowValue.Length;
+            sizeInfo.FieldInfo.ValueSize = overflowValue.Length;
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 
@@ -431,7 +431,7 @@ namespace Tsavorite.test.LogRecordTests
 
         private void ConvertToObject(ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLengthAddress, long expectedFillerLength, long eTag, long expiration, int offset)
         {
-            sizeInfo.FieldInfo.ValueDataSize = ObjectIdMap.ObjectIdSize;
+            sizeInfo.FieldInfo.ValueSize = ObjectIdMap.ObjectIdSize;
             sizeInfo.FieldInfo.ValueIsObject = true;
             UpdateRecordSizeInfo(ref sizeInfo);
 
@@ -452,7 +452,7 @@ namespace Tsavorite.test.LogRecordTests
 
         private void RestoreToOriginal(Span<byte> value, ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLengthAddress, long expectedFillerLength, long eTag, long expiration)
         {
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen;
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 

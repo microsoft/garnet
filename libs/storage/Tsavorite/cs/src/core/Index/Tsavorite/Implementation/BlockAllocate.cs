@@ -45,7 +45,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                                       ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, in RecordSizeInfo sizeInfo, AllocateOptions options,
+                                                       ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
@@ -58,7 +58,7 @@ namespace Tsavorite.core
             if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
                     && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
             {
-                new LogRecord(newPhysicalAddress).PrepareForRevivification(in sizeInfo, allocatedSize);
+                new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
                 return true;
             }
             if (RevivificationManager.UseFreeRecordPool)
@@ -73,7 +73,7 @@ namespace Tsavorite.core
                 }
                 if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, in sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
                 {
-                    new LogRecord(newPhysicalAddress).PrepareForRevivification(in sizeInfo, allocatedSize);
+                    new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
                     return true;
                 }
             }
@@ -100,6 +100,8 @@ namespace Tsavorite.core
                         // so revivification can read the record size.
                         var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
                         logRecord.InitializeForReuse(in sizeInfo);
+
+                        // Call RevivificationManager.TryAdd() directly, as here we've done InitializeForReuse of a new record so don't want DisposeRecord.
                         if (RevivificationManager.TryAdd(newLogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             continue;
                     }
