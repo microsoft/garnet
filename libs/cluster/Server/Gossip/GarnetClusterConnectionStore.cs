@@ -42,16 +42,24 @@ namespace Garnet.cluster
             try
             {
                 _lock.WriteLock();
+                UnsafeDisposeConnections();
                 _disposed = true;
-                for (var i = 0; i < numConnection; i++)
-                    connections[i].Dispose();
-                numConnection = 0;
-                Array.Clear(connections);
             }
             finally
             {
                 _lock.WriteUnlock();
             }
+        }
+
+        /// <summary>
+        /// Dispose connections
+        /// </summary>
+        private void UnsafeDisposeConnections()
+        {
+            for (var i = 0; i < numConnection; i++)
+                connections[i].Dispose();
+            numConnection = 0;
+            Array.Clear(connections);
         }
 
         /// <summary>
@@ -209,13 +217,8 @@ namespace Garnet.cluster
             try
             {
                 _lock.WriteLock();
-
                 if (_disposed) return;
-
-                for (var i = 0; i < numConnection; i++)
-                    connections[i].Dispose();
-                numConnection = 0;
-                Array.Clear(connections);
+                UnsafeDisposeConnections();
             }
             catch (Exception ex)
             {
