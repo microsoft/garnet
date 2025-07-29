@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -2970,6 +2971,76 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+
+        ReadOnlySpan<byte> GetCommand(out bool success)
+        {
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
+            {
+                success = false;
+                return default;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
+            {
+                success = false;
+                return default;
+            }
+
+            if (*(ushort*)ptr != CrLf)
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            var result = new ReadOnlySpan<byte>(recvBufferPtr + readHead, length);
+            readHead += length + 2;
+            success = true;
+
+            return result;
+        }
+
+        ReadOnlySpan<byte> GetUpperCaseCommand(out bool success)
+        {
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
+            {
+                success = false;
+                return default;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
+            {
+                success = false;
+                return default;
+            }
+
+            if (*(ushort*)ptr != CrLf)
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
+            readHead += length + 2;
+            success = true;
+
+            AsciiUtils.ToUpperInPlace(result);
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
