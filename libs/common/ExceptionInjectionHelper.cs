@@ -76,7 +76,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="exceptionType"></param>
         /// <returns></returns>
-        public static async Task WaitOnCondition(ExceptionInjectionType exceptionType)
+        public static async Task WaitOnSet(ExceptionInjectionType exceptionType)
         {
             var flag = ExceptionInjectionTypes[(int)exceptionType];
             if (flag)
@@ -84,6 +84,21 @@ namespace Garnet.common
                 // Reset and wait to signaled to go forward
                 ExceptionInjectionTypes[(int)exceptionType] = false;
                 while (!ExceptionInjectionTypes[(int)exceptionType])
+                    await Task.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Wait on clear condition
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static async Task WaitOnClear(ExceptionInjectionType exceptionType)
+        {
+            var flag = ExceptionInjectionTypes[(int)exceptionType];
+            if (flag)
+            {
+                while (ExceptionInjectionTypes[(int)exceptionType])
                     await Task.Yield();
             }
         }

@@ -378,7 +378,7 @@ namespace Garnet.cluster
 
 #if DEBUG
                 // Only on Debug mode
-                await ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+                await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
 #endif
 
                 // Calculate the minimum start address covered by this checkpoint
