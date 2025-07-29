@@ -452,6 +452,10 @@ namespace Garnet
         public int ReplicaDisklessSyncDelay { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-attach-timeout", Required = false, HelpText = "Timeout in seconds for replication attach operation.")]
+        public int ReplicaAttachTimeout { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-sync-timeout", Required = false, HelpText = "Timeout in seconds for replication sync operations.")]
         public int ReplicaSyncTimeout { get; set; }
 
@@ -890,6 +894,7 @@ namespace Garnet
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
                 ReplicaSyncTimeout = ReplicaSyncTimeout,
+                ReplicaAttachTimeout = ReplicaAttachTimeout,
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
