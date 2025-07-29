@@ -1462,7 +1462,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(27)]
         [Category("CLUSTER")]
-        //[CancelAfter(30_000)]
+        [CancelAfter(30_000)]
         [TestCase(ExceptionInjectionType.None, true)]
         [TestCase(ExceptionInjectionType.None, false)]
         [TestCase(ExceptionInjectionType.Divergent_AOF_Stream, true)]
