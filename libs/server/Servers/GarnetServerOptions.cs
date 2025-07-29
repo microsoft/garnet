@@ -443,7 +443,7 @@ namespace Garnet.server
         public ConnectionProtectionOption EnableDebugCommand;
 
         /// <summary>
-        /// Enables the DEBUG command
+        /// Enables parsing inline commands
         /// </summary>
         public ConnectionProtectionOption EnableInlineCommands;
 
