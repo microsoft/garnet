@@ -63,7 +63,7 @@ namespace Garnet.server
 
             // It's a quoted context, so we need to check for escapes.
 
-            // To short for escaping
+            // Too short for escaping
             if (slice.Length <= 3)
             {
                 return new ArgSlice(slice.ptr + 1, slice.Length - 2);
