@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -10,7 +12,8 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [TestFixture]
+    [TestFixture(false)]
+    [TestFixture(true)]
     public class RespConfigTests
     {
         GarnetServer server;
@@ -19,6 +22,12 @@ namespace Garnet.test
         private string objectStoreLogMemorySize = "17m";
         private string objectStoreHeapMemorySize = "32m";
         private string objectStoreIndexSize = "8m";
+        private bool useReviv;
+
+        public RespConfigTests(bool useReviv)
+        {
+            this.useReviv = useReviv;
+        }
 
         [SetUp]
         public void Setup()
@@ -29,7 +38,8 @@ namespace Garnet.test
                 indexSize: indexSize,
                 objectStoreLogMemorySize: objectStoreLogMemorySize,
                 objectStoreIndexSize: objectStoreIndexSize,
-                objectStoreHeapMemorySize: objectStoreHeapMemorySize);
+                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
+                useReviv: useReviv);
             server.Start();
         }
 
@@ -239,29 +249,37 @@ namespace Garnet.test
         }
     }
 
-    [TestFixture]
-    public class RespConfigMemoryUtilizationTests
+    [TestFixture(false)]
+    //[TestFixture(true)]
+    public class RespConfigUtilizationTests
     {
         GarnetServer server;
         private string memorySize = "3m";
-        private string indexSize = "4096";
+        private string indexSize = "1m";
         private string objectStoreLogMemorySize = "2500";
         private string objectStoreHeapMemorySize = "1m";
         private string objectStoreIndexSize = "1024";
         private string pageSize = "1024";
+        private bool useReviv;
+
+        public RespConfigUtilizationTests(bool useReviv)
+        {
+            this.useReviv = useReviv;
+        }
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+            server = TestUtils.CreateGarnetServer(null,
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
                 objectStoreLogMemorySize: objectStoreLogMemorySize,
                 objectStoreIndexSize: objectStoreIndexSize,
                 objectStoreHeapMemorySize: objectStoreHeapMemorySize,
-                lowMemory: true);
+                lowMemory: true,
+                useReviv: useReviv);
             server.Start();
         }
 
@@ -285,42 +303,47 @@ namespace Garnet.test
             var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
 
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
-            var server = redis.GetServer(TestUtils.EndPoint);
-            var info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
-            var headAddress = info.HeadAddress;
+            var garnetServer = redis.GetServer(TestUtils.EndPoint);
+            var info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
             ClassicAssert.AreEqual(storeType == StoreType.Main ? 64 : 24, info.TailAddress);
             
             var i = 0;
             var key = $"key{i++:00000}";
+            var val = new RedisValue(new string('x', storeType == StoreType.Main ? 512 - 32 : 1));
 
             if (storeType == StoreType.Main)
-                _ = db.StringSet(key, new string('x', 512));
+                _ = db.StringSet(key, val);
             else
-                _ = db.ListRightPush(key, [new("x")]);
+                _ = db.ListRightPush(key, [val]);
 
-            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
+            info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
             var recordSize = info.TailAddress - info.HeadAddress;
 
             // Insert records until head address moves
-            while (info.HeadAddress == headAddress)
+            var prevHead = info.HeadAddress;
+            var prevTail = info.TailAddress;
+            while (info.HeadAddress == prevHead)
             {
                 key = $"key{i++:00000}";
                 if (storeType == StoreType.Main)
-                    _ = db.StringSet(key, new string('x', 512));
+                    _ = db.StringSet(key, val);
                 else
-                    _ = db.ListRightPush(key, [new("x")]);
-                info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
+                    _ = db.ListRightPush(key, [val]);
+
+                prevHead = info.HeadAddress;
+                prevTail = info.TailAddress;
+                info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
             }
 
             // Verify that records were inserted up to the configured memory size limit
-            Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+            Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(recordSize));
 
             // Try to set memory size to a smaller value than current
             var result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
             // Verify that memory is fully utilized
-            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
+            info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
             currMemorySize = ServerOptions.ParseSize(smallerSize, out _);
             Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
 
@@ -328,23 +351,128 @@ namespace Garnet.test
             result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Continue to insert records until new memory capacity is reached
             currMemorySize = ServerOptions.ParseSize(largerSize, out _);
-            var remainingBuffer = currMemorySize - (info.TailAddress - info.HeadAddress);
-            
-            while (remainingBuffer > recordSize)
+
+            // Continue to insert records until new memory capacity is reached
+            prevHead = info.HeadAddress;
+            prevTail = info.TailAddress;
+            while (info.HeadAddress == prevHead)
             {
                 key = $"key{i++:00000}";
                 if (storeType == StoreType.Main)
-                    _ = db.StringSet(key, new string('x', 512));
+                    _ = db.StringSet(key, val);
                 else
-                    _ = db.ListRightPush(key, [new("x")]);
-                remainingBuffer -= recordSize;
+                    _ = db.ListRightPush(key, [val]);
+
+                prevHead = info.HeadAddress;
+                prevTail = info.TailAddress;
+                info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
             }
 
             // Verify that memory is fully utilized
-            info = TestUtils.GetStoreAddressInfo(server, isObjectStore: storeType == StoreType.Object);
-            Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+            Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(recordSize));
+        }
+
+        [Test]
+        [TestCase(StoreType.Main, "1m", "4m")]
+        [TestCase(StoreType.Main, "1024k", "4000k")]
+        [TestCase(StoreType.Object, "1024", "4000")]
+        [TestCase(StoreType.Object, "1024", "4096")]
+        public void ConfigSetMemorySizeRecoveryTest(StoreType storeType, string smallerSize, string largerSize)
+        {
+            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
+            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
+
+            var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                var garnetServer = redis.GetServer(TestUtils.EndPoint);
+                var info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                ClassicAssert.AreEqual(storeType == StoreType.Main ? 64 : 24, info.TailAddress);
+
+                var i = 0;
+                var key = $"key{i++:00000}";
+                var val = new RedisValue(new string('x', storeType == StoreType.Main ? 512 - 32 : 1));
+
+                if (storeType == StoreType.Main)
+                    _ = db.StringSet(key, val);
+                else
+                    _ = db.ListRightPush(key, [val]);
+
+                info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                var recordSize = info.TailAddress - info.HeadAddress;
+
+                // Insert records until head address moves
+                var prevHead = info.HeadAddress;
+                var prevTail = info.TailAddress;
+                while (info.HeadAddress == prevHead)
+                {
+                    key = $"key{i++:00000}";
+                    if (storeType == StoreType.Main)
+                        _ = db.StringSet(key, val);
+                    else
+                        _ = db.ListRightPush(key, [val]);
+
+                    prevHead = info.HeadAddress;
+                    prevTail = info.TailAddress;
+                    info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                }
+
+                // Verify that records were inserted up to the configured memory size limit
+                Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(recordSize));
+
+                ClassicAssert.IsFalse(db.KeyExists($"key00000"));
+                ClassicAssert.IsTrue(db.KeyExists($"key00001"));
+
+                // Try to set memory size to a smaller value than current
+                var result = db.Execute("CONFIG", "SET", option, smallerSize);
+                ClassicAssert.AreEqual("OK", result.ToString());
+
+                garnetServer.Save(SaveType.BackgroundSave);
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                var garnetServer = redis.GetServer(TestUtils.EndPoint);
+
+                // Verify that memory is fully utilized
+                var info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                currMemorySize = ServerOptions.ParseSize(smallerSize, out _);
+                //Assert.That(currMemorySize - (info.TailAddress - info.HeadAddress), Is.LessThanOrEqualTo(recordSize));
+
+                // Try to set memory size to a larger value than current
+                var result = db.Execute("CONFIG", "SET", option, largerSize);
+                ClassicAssert.AreEqual("OK", result.ToString());
+
+                currMemorySize = ServerOptions.ParseSize(largerSize, out _);
+
+                // Continue to insert records until new memory capacity is reached
+                var prevHead = info.HeadAddress;
+                var prevTail = info.TailAddress;
+                //while (info.HeadAddress == prevHead)
+                //{
+                //    key = $"key{i++:00000}";
+                //    if (storeType == StoreType.Main)
+                //        _ = db.StringSet(key, val);
+                //    else
+                //        _ = db.ListRightPush(key, [val]);
+
+                //    prevHead = info.HeadAddress;
+                //    prevTail = info.TailAddress;
+                //    info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
+                //}
+
+                //// Verify that memory is fully utilized
+                //Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(recordSize));
+            }
         }
     }
 }
