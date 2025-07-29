@@ -16,14 +16,13 @@ namespace Tsavorite.test
     internal class ObjectInlineTests
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
-        private IDevice log, objlog;
+        private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.obj.log"), deleteOnClose: true);
 
             store = new(new()
             {
@@ -44,8 +43,6 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            objlog?.Dispose();
-            objlog = null;
             DeleteDirectory(MethodTestDir);
         }
 

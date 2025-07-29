@@ -384,32 +384,6 @@ namespace Tsavorite.core
 
         #endregion abstract and virtual methods
 
-        #region LogRecord functions
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord, int maxInlineKeySize, ObjectIdMap objectIdMap)
-        {
-            Span<byte> keySpan;
-            if (key.Length <= maxInlineKeySize)
-            {
-                logRecord.InfoRef.SetKeyIsInline();
-                keySpan = LogField.SetInlineDataLength(logRecord.physicalAddress, key.Length, isKey: true);
-            }
-            else
-            {
-                Debug.Assert(objectIdMap is not null, "Inconsistent setting of maxInlineKeySize with null objectIdMap");
-
-                // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
-                logRecord.InfoRef.ClearKeyIsInline();
-                var overflow = new OverflowByteArray(GC.AllocateUninitializedArray<byte>(key.Length), 0, 0);
-                LogField.SetOverflowAllocation(logRecord.physicalAddress, overflow, objectIdMap, isKey: true);
-                keySpan = overflow.Span;
-            }
-            key.CopyTo(keySpan);
-        }
-
-        #endregion LogRecord functions
-
         private protected void VerifyCompatibleSectorSize(IDevice device)
         {
             if (sectorSize % device.SectorSize != 0)
@@ -1825,7 +1799,7 @@ namespace Tsavorite.core
         /// Read pages from specified device
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(TODO xxx, // This won't work with expando; the expansion will be much more than a page, and more than we have memory budget for
+        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
@@ -1836,6 +1810,7 @@ namespace Tsavorite.core
                                         long devicePageOffset = 0,
                                         IDevice device = null, IDevice objectLogDevice = null)
         {
+            TODO xxx; // This won't work with expando; the expansion will be much more than a page, and more than we have memory budget for
             var usedDevice = device ?? this.device;
 
             ArraySegment<byte> dataSegment = new ArraySegment<byte>(new byte[PageSize]);

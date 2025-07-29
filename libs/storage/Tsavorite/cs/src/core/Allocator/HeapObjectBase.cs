@@ -44,7 +44,7 @@ namespace Tsavorite.core
         public long SerializedSize { get => sizes.Serialized; set => sizes.Serialized = value; }
 
         /// <inheritdoc />
-        public bool SerializedSizeIsExact { get => sizes.SerializedIsExact; }
+        public bool SerializedSizeIsExact { get => sizes.SerializedIsExact; internal set => sizes.SerializedIsExact = value; }
 
         /// <summary>Combination of object sizes for memory and disk.</summary>
         public ObjectSizes sizes;
@@ -140,6 +140,7 @@ namespace Tsavorite.core
             Debug.Assert(ReferenceEquals(this, srcLogRecord.ValueObject), $"{GetCurrentMethodName()} must be called on the Source LogRecord's ValueObject.");
             Debug.Assert(dstLogRecord.Info.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
             Debug.Assert(dstLogRecord.Info.IsInNewVersion, $"{GetCurrentMethodName()} must only be called when taking a checkpoint.");
+            _ = dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject.Clone());
 
             // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
             // of the object during a checkpoint while the (v+1) version of the record may modify the shallow-copied internal structures.

@@ -420,7 +420,7 @@ namespace Tsavorite.core
 
             rmwInfo.Address = newLogicalAddress;
 
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo, ref newLogRecord);
+            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
 
             if (!doingCU)
             {

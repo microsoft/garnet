@@ -36,7 +36,7 @@ namespace Tsavorite.core
             var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, hlogBase, newLogicalAddress, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             stackCtx.SetNewRecord(newLogicalAddress);
 
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo, ref newLogRecord);
+            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.

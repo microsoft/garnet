@@ -300,7 +300,7 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo, ref newLogRecord);
+            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
 
             // Type arg specification is needed because we don't pass TContext
             var success = TValueSelector.InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(

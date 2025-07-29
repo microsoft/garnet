@@ -127,31 +127,31 @@ namespace Tsavorite.core
         internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize, GetObjectIdMap(logicalAddress));
+        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => logRecord.SerializeKey(key, maxInlineKeySize, GetObjectIdMap(logicalAddress));
 
         public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+        public static void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
         {
             if (sizeInfo.ValueIsInline)
             {
                 // Set the actual length indicator for inline.
-                LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-                sizeInfo.SetValueInlineLength(physicalAddress);
+                newLogRecord.InfoRef.SetValueIsInline();
+                sizeInfo.SetValueInlineLength(newLogRecord.physicalAddress);
             }
             else
             {
                 // If it's a revivified record, it may have ValueIsInline set, so clear that.
-                LogRecord.GetInfoRef(physicalAddress).ClearValueIsInline();
+                newLogRecord.InfoRef.ClearValueIsInline();
 
                 if (sizeInfo.ValueIsObject)
-                    LogRecord.GetInfoRef(physicalAddress).SetValueIsObject();
+                    newLogRecord.InfoRef.SetValueIsObject();
 
                 // Either an IHeapObject or an overflow byte[]; either way, it's an object, and the length is already set.
                 Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.InvalidObjectId, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
-                sizeInfo.SetValueInlineLength(physicalAddress);
-                *(int*)sizeInfo.GetValueAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+                sizeInfo.SetValueInlineLength(newLogRecord.physicalAddress);
+                *(int*)sizeInfo.GetValueAddress(newLogRecord.physicalAddress) = ObjectIdMap.InvalidObjectId;
             }
             newLogRecord.SetFillerLength(in sizeInfo);
         }
@@ -303,17 +303,17 @@ namespace Tsavorite.core
 
         internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
-        protected override void TruncateUntilAddress(long toAddress)    // TODO: ObjectAllocator specifics if any
+        protected override void TruncateUntilAddress(long toAddress)    // TODO READ_WRITE: ObjectAllocator specifics if any
         {
             base.TruncateUntilAddress(toAddress);
         }
 
-        protected override void TruncateUntilAddressBlocking(long toAddress)    // TODO: ObjectAllocator specifics if any
+        protected override void TruncateUntilAddressBlocking(long toAddress)    // TODO READ_WRITE: ObjectAllocator specifics if any
         {
             base.TruncateUntilAddressBlocking(toAddress);
         }
 
-        protected override void RemoveSegment(int segment)    // TODO: ObjectAllocator specifics if any
+        protected override void RemoveSegment(int segment)    // TODO READ_WRITE: ObjectAllocator specifics if any
         {
             base.RemoveSegment(segment);
         }

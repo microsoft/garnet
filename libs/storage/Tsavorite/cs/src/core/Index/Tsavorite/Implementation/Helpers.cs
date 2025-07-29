@@ -26,7 +26,7 @@ namespace Tsavorite.core
             ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
-            log._wrapper.SerializeKey(key, logicalAddress, ref logRecord);
+            log._wrapper.SerializeKey(key, ref logRecord);
             return logRecord;
         }
 

@@ -588,12 +588,14 @@ namespace Tsavorite.core
             // TODO: For multi-buffer, consider using two buffers, with the next one being read from disk on a background thread while the foreground thread processes the current one in parallel.
             // This could simply hold the CountdownEvent for the "disk read in progress" buffer and Wait() on it when DoDeserialize() is ready for the next buffer.
             valueObjectSerializer.Deserialize(out var valueObject);
-            OnDeserializeComplete(out eTag, out expiration);
+            OnDeserializeComplete(valueObject, out eTag, out expiration);
             return valueObject;
         }
 
-        void OnDeserializeComplete(out long eTag, out long expiration)
+        void OnDeserializeComplete(IHeapObject valueObject, out long eTag, out long expiration)
         {
+            valueObject.SerializedSize = Length;
+
             // Extract optionals if they are present. This assumes currentPosition has been correctly set to the first byte after value data.
             ExtractOptionals(currentPosition, out eTag, out expiration);
         }

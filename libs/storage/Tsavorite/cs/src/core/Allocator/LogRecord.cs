@@ -847,6 +847,28 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = allocatedSize;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly unsafe void SerializeKey(ReadOnlySpan<byte> key, int maxInlineKeySize, ObjectIdMap objectIdMap)
+        {
+            Span<byte> keySpan;
+            if (key.Length <= maxInlineKeySize)
+            {
+                InfoRef.SetKeyIsInline();
+                keySpan = LogField.SetInlineDataLength(physicalAddress, key.Length, isKey: true);
+            }
+            else
+            {
+                Debug.Assert(objectIdMap is not null, "Inconsistent setting of maxInlineKeySize with null objectIdMap");
+
+                // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
+                InfoRef.ClearKeyIsInline();
+                var overflow = new OverflowByteArray(GC.AllocateUninitializedArray<byte>(key.Length), 0, 0);
+                LogField.SetOverflowAllocation(physicalAddress, overflow, objectIdMap, isKey: true);
+                keySpan = overflow.Span;
+            }
+            key.CopyTo(keySpan);
+        }
+
         public override readonly string ToString()
         {
             if (physicalAddress == 0)

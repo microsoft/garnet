@@ -1,14 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using static TestUtils;
+
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
@@ -16,14 +18,13 @@ namespace Tsavorite.test
     internal class ObjectTests
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
-        private IDevice log, objlog;
+        private IDevice log;
 
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.obj.log"), deleteOnClose: true);
 
             store = new(new()
             {
@@ -44,8 +45,6 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            objlog?.Dispose();
-            objlog = null;
             DeleteDirectory(MethodTestDir);
         }
 
@@ -93,8 +92,7 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(input2.value, output.value.value);
         }
 
-#if LOGRECORD_TODO
-        [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteRead()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
@@ -106,7 +104,6 @@ namespace Tsavorite.test
                 var key = SpanByte.FromPinnedVariable(ref key1Struct);
                 var value = new TestObjectValue { value = i };
                 _ = bContext.Upsert(key, value, Empty.Default);
-                // store.ShiftReadOnlyAddress(store.LogTailAddress);
             }
 
             TestObjectKey key2Struct = new() { key = 23 };
@@ -164,13 +161,89 @@ namespace Tsavorite.test
                     (status, output) = bContext.GetSinglePendingResult();
                 else
                 {
-                    if (i < 100 || i >= 1900)
+                    if (i is < 100 or >= 1900)
                         ClassicAssert.AreEqual(value.value + 1, output.value.value);
                     else
                         ClassicAssert.AreEqual(value.value, output.value.value);
                 }
             }
         }
-#endif // LOGRECORD_TODO
+
+        public enum SerializedSizeMode { SerSizeExact, SerSizeInexact };
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void ObjectDiskWriteReadObject([Values] SerializedSizeMode serSizeMode)
+        {
+            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var valueSize = IStreamBuffer.DiskWriteBufferSize / 2;
+            const int numRec = 5;
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var key1Struct = new TestObjectKey { key = ii };
+                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var value = new TestLargeObjectValue (valueSize * (ii + 1), serializedSizeIsExact: serSizeMode == SerializedSizeMode.SerSizeExact);
+                new Span<byte>(value.value).Fill(0x42);
+                _ = bContext.Upsert(key, value, Empty.Default);
+            }
+
+            store.Log.FlushAndEvict(wait: true);
+
+            TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var output = new TestLargeObjectOutput();
+                var keyStruct = new TestObjectKey { key = ii };
+                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+
+                var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                if (status.IsPending)
+                    (status, output) = bContext.GetSinglePendingResult();
+
+                Assert.That(output.value.value.Length, Is.EqualTo(valueSize * (ii + 1)));
+                foreach (var element in new ReadOnlySpan<byte>(output.value.value))
+                    Assert.That(element, Is.EqualTo(0x42));
+            }
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void ObjectDiskWriteReadOverflow()
+        {
+            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var valueSize = IStreamBuffer.DiskWriteBufferSize / 2;
+            const int numRec = 5;
+            var valueBuffer = new byte[valueSize * numRec];
+            new Span<byte>(valueBuffer).Fill(0x42);
+
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var key1Struct = new TestObjectKey { key = ii };
+                var key = SpanByte.FromPinnedVariable(ref key1Struct);
+                var value = new ReadOnlySpan<byte>(valueBuffer).Slice(0, valueSize * (ii + 1));
+                _ = bContext.Upsert(key, value, Empty.Default);
+            }
+
+            store.Log.FlushAndEvict(wait: true);
+
+            TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow };
+
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var output = new TestLargeObjectOutput();
+                var keyStruct = new TestObjectKey { key = ii };
+                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                
+                var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                if (status.IsPending)
+                    (status, output) = bContext.GetSinglePendingResult();
+
+                Assert.That(output.value.value.Length, Is.EqualTo(valueSize * (ii + 1)));
+                Assert.That(new ReadOnlySpan<byte>(output.value.value).SequenceEqual(new ReadOnlySpan<byte>(valueBuffer).Slice(0, output.value.value.Length)));
+            }
+        }
     }
 }

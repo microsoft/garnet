@@ -219,7 +219,7 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo, ref newLogRecord);
+            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
 
             if (!sessionFunctions.InitialDeleter(ref newLogRecord, ref deleteInfo))
             {

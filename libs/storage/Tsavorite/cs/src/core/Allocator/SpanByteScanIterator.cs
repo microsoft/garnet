@@ -284,7 +284,6 @@ namespace Tsavorite.core
         {
             var availableBytes = hlogBase.PageSize - (int)(currentAddress & hlogBase.PageSizeMask);
             allocatedSize = 0;
-            SerializedFieldInfo fieldInfo = default;
 
             if (currentAddress >= headAddress || assumeInMemory)
             {
@@ -295,7 +294,7 @@ namespace Tsavorite.core
             }
 
             physicalAddress = frame.GetPhysicalAddress(currentPage, hlogBase.GetOffsetOnPage(currentAddress));
-            if (!DiskLogRecord.GetSerializedLength(physicalAddress, availableBytes, out fieldInfo))
+            if (!DiskLogRecord.GetSerializedLength(physicalAddress, availableBytes, out var fieldInfo))
                 return false;
             allocatedSize = fieldInfo.SerializedLength;
             return true;

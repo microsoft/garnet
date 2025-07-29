@@ -85,15 +85,15 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => SerializeKey(key, logicalAddress, ref logRecord, maxInlineKeySize: int.MaxValue, objectIdMap: null);
+        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => logRecord.SerializeKey(key, maxInlineKeySize: LogSettings.kMaxInlineKeySize, objectIdMap: null);
 
         public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+        public static void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
         {
-            LogRecord.GetInfoRef(physicalAddress).SetValueIsInline();
-            sizeInfo.SetValueInlineLength(physicalAddress);
+            newLogRecord.InfoRef.SetValueIsInline();
+            sizeInfo.SetValueInlineLength(newLogRecord.physicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
