@@ -497,7 +497,8 @@ namespace Garnet.test
             bool latencyMonitory = false,
             int metricSamplingFrequencySecs = 0,
             int loggingFrequencySecs = 5,
-            int checkpointThrottleFlushDelayMs = 0)
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -557,7 +558,8 @@ namespace Garnet.test
                     compactionType: compactionType,
                     latencyMonitory: latencyMonitory,
                     loggingFrequencySecs: loggingFrequencySecs,
-                    checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs);
+                    checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
+                    clusterReplicaResumeWithData: clusterReplicaResumeWithData);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -631,7 +633,8 @@ namespace Garnet.test
             LogCompactionType compactionType = LogCompactionType.Scan,
             bool latencyMonitory = false,
             int loggingFrequencySecs = 5,
-            int checkpointThrottleFlushDelayMs = 0)
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -751,6 +754,7 @@ namespace Garnet.test
                 LatencyMonitor = latencyMonitory,
                 LoggingFrequency = loggingFrequencySecs,
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
+                ClusterReplicaResumeWithData = clusterReplicaResumeWithData
             };
 
             if (lowMemory)

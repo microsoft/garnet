@@ -461,11 +461,15 @@ namespace Garnet.cluster
             switch (nodeRole)
             {
                 case NodeRole.PRIMARY:
-                    PrimaryRecover();
+                    RecoverCheckpointAndAOF();
                     break;
                 case NodeRole.REPLICA:
-                    // We will instead recover as part of TryConnectToPrimary instead
-                    // ReplicaRecover();
+                    // If configured, load from disk - otherwise wait to connect with a Primary
+                    if (clusterProvider.serverOptions.ClusterReplicaResumeWithData)
+                    {
+                        RecoverCheckpointAndAOF();
+                    }
+
                     break;
                 default:
                     logger?.LogError("Not valid role for node {nodeRole}", nodeRole);
@@ -474,9 +478,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Primary recover
+        /// Recover whatever is available from <see cref="storeWrapper"/>.
         /// </summary>
-        private void PrimaryRecover()
+        private void RecoverCheckpointAndAOF()
         {
             storeWrapper.RecoverCheckpoint();
             storeWrapper.RecoverAOF();
@@ -492,7 +496,7 @@ namespace Garnet.cluster
 
             // First recover and then load latest checkpoint info in-memory
             if (!InitializeCheckpointStore())
-                logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(PrimaryRecover));
+                logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(RecoverCheckpointAndAOF));
         }
 
         /// <summary>

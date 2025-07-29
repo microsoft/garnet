@@ -223,7 +223,8 @@ namespace Garnet.test.cluster
             LogCompactionType compactionType = LogCompactionType.Scan,
             bool latencyMonitory = false,
             int loggingFrequencySecs = 5,
-            int checkpointThrottleFlushDelayMs = 0)
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -275,7 +276,8 @@ namespace Garnet.test.cluster
                 compactionType: compactionType,
                 latencyMonitory: latencyMonitory,
                 loggingFrequencySecs: loggingFrequencySecs,
-                checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs);
+                checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
+                clusterReplicaResumeWithData: clusterReplicaResumeWithData);
 
             foreach (var node in nodes)
                 node.Start();

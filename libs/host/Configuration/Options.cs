@@ -644,6 +644,9 @@ namespace Garnet
         [Option("cluster-replication-reestablishment-timeout")]
         public int ClusterReplicationReestablishmentTimeout { get; set; }
 
+        [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
+        public bool ClusterReplicaResumeWithData { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -918,6 +921,7 @@ namespace Garnet
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
+                ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
             };
         }
 

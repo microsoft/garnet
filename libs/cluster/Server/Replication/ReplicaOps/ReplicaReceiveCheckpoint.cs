@@ -82,6 +82,26 @@ namespace Garnet.cluster
                 GarnetClientSession gcs = null;
                 try
                 {
+                    // Immediately try to connect to a primary, so we FAIL
+                    // before resetting our local data
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    var (address, port) = current.GetLocalNodePrimaryAddress();
+
+                    if (address == null || port == -1)
+                    {
+                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
+                        logger?.LogError("{msg}", errorMsg);
+                        return errorMsg;
+                    }
+                    gcs = new(
+                        new IPEndPoint(IPAddress.Parse(address), port),
+                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: clusterProvider.ClusterUsername,
+                        authPassword: clusterProvider.ClusterPassword);
+                    gcs.Connect();
+
                     // Resetting here to decide later when to sync from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
 
@@ -112,24 +132,7 @@ namespace Garnet.cluster
                     //
                     // Replica waits for retrieval to complete before moving forward to recovery
                     //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
-                    var current = clusterProvider.clusterManager.CurrentConfig;
-                    var (address, port) = current.GetLocalNodePrimaryAddress();
-
-                    if (address == null || port == -1)
-                    {
-                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
-                        logger?.LogError("{msg}", errorMsg);
-                        return errorMsg;
-                    }
-                    gcs = new(
-                        new IPEndPoint(IPAddress.Parse(address), port),
-                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
-                        clusterProvider.replicationManager.GetNetworkPool,
-                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                        authUsername: clusterProvider.ClusterUsername,
-                        authPassword: clusterProvider.ClusterPassword);
                     recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                    gcs.Connect();
 
                     var nodeId = current.LocalNodeId;
                     cEntry = GetLatestCheckpointEntryFromDisk();

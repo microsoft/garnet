@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -1460,7 +1462,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(27)]
         [Category("CLUSTER")]
-        [CancelAfter(30_000)]
+        //[CancelAfter(30_000)]
         [TestCase(ExceptionInjectionType.None, true)]
         [TestCase(ExceptionInjectionType.None, false)]
         [TestCase(ExceptionInjectionType.Divergent_AOF_Stream, true)]
@@ -1513,7 +1515,8 @@ namespace Garnet.test.cluster
                 luaMemoryMode: LuaMemoryManagementMode.Tracked,
                 luaTransactionMode: true,
                 luaMemoryLimit: "2M",
-                clusterReplicationReestablishmentTimeout: 1
+                clusterReplicationReestablishmentTimeout: 1,
+                clusterReplicaResumeWithData: true
             );
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -1533,9 +1536,9 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica2).Value);
 
             // Populate both shards
-            var writtenToPrimary1 = new Dictionary<string, string>();
-            var writtenToPrimary2 = new Dictionary<string, string>();
-            using (var writeTaskCancel = new CancellationTokenSource())
+            var writtenToPrimary1 = new ConcurrentDictionary<string, string>();
+            var writtenToPrimary2 = new ConcurrentDictionary<string, string>();
+            using (var writeTaskCancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
             {
                 var uniquePrefix = Guid.NewGuid();
 
@@ -1575,7 +1578,8 @@ namespace Garnet.test.cluster
                                     // Ignore, cancellation or throwing should both just be powered through
                                 }
                             }
-                        }
+                        },
+                        cancellation
                     );
 
                 var writeToPrimary2Task =
@@ -1615,7 +1619,8 @@ namespace Garnet.test.cluster
                                     // Ignore, cancellation or throwing should both just be powered through
                                 }
                             }
-                        }
+                        },
+                        cancellation
                     );
 
                 // Simulate out of band checkpointing
@@ -1631,10 +1636,14 @@ namespace Garnet.test.cluster
                                     {
                                         _ = await node.Store.CommitAOFAsync(writeTaskCancel.Token);
                                     }
-                                    catch
+                                    catch (TaskCanceledException)
                                     {
                                         // Cancel is fine
                                         break;
+                                    }
+                                    catch
+                                    {
+                                        // Ignore everything else
                                     }
                                 }
 
@@ -1647,32 +1656,82 @@ namespace Garnet.test.cluster
                                     continue;
                                 }
                             }
-                        }
+                        },
+                        cancellation
                     );
 
                 // Wait for a bit, optionally injecting a fault
                 if (faultType == ExceptionInjectionType.None)
                 {
-                    await Task.Delay(10_000);
+                    await Task.Delay(10_000, cancellation);
                 }
                 else
                 {
+                    var timer = Stopwatch.StartNew();
+
                     // Things start fine
-                    await Task.Delay(2_000);
+                    await Task.Delay(1_000, cancellation);
+
+                    // Wait for something to get replicated
+                    var replica1Happened = false;
+                    var replica2Happened = false;
+                    do
+                    {
+                        if (!replica1Happened)
+                        {
+                            var readonlyRes = (string)context.clusterTestUtils.Execute(replica1, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyRes);
+
+                            foreach (var kv in writtenToPrimary1)
+                            {
+                                var val = (string)context.clusterTestUtils.Execute(replica1, "GET", [kv.Key]);
+                                if (val == kv.Value)
+                                {
+                                    replica1Happened = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!replica2Happened)
+                        {
+                            var readonlyRes = (string)context.clusterTestUtils.Execute(replica2, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyRes);
+
+                            foreach (var kv in writtenToPrimary2)
+                            {
+                                var val = (string)context.clusterTestUtils.Execute(replica2, "GET", [kv.Key]);
+                                if (val == kv.Value)
+                                {
+                                    replica2Happened = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        await Task.Delay(100, cancellation);
+                    } while (!replica1Happened || !replica2Happened);
 
                     // Things fail for a bit
                     ExceptionInjectionHelper.EnableException(faultType);
-                    await Task.Delay(2_000);
+                    await Task.Delay(2_000, cancellation);
 
                     // Things recover
                     ExceptionInjectionHelper.DisableException(faultType);
 
+                    timer.Stop();
+
                     // Wait out the rest of the duration
-                    await Task.Delay(6_000);
+                    if (timer.ElapsedMilliseconds < 10_000)
+                    {
+                        await Task.Delay((int)(10_000 - timer.ElapsedMilliseconds), cancellation);
+                    }
                 }
 
+                // Stop writing
                 writeTaskCancel.Cancel();
 
+                // Wait for all our writes and checkpoints to spin down
                 await Task.WhenAll(writeToPrimary1Task, writeToPrimary2Task, checkpointTask);
             }
 
@@ -1680,31 +1739,10 @@ namespace Garnet.test.cluster
             context.ShutdownNode(primary1);
             context.ShutdownNode(primary2);
 
+            // Sometimes we can intervene post-Primary crash but pre-Replica crash, simulate that
             if (replicaFailoverBeforeShutdown)
             {
-                // Promote the replicas
-                var takeOverRes1 = (string)context.clusterTestUtils.Execute(replica1, "CLUSTER", ["FAILOVER", "FORCE"]);
-                var takeOverRes2 = (string)context.clusterTestUtils.Execute(replica2, "CLUSTER", ["FAILOVER", "FORCE"]);
-                ClassicAssert.AreEqual("OK", takeOverRes1);
-                ClassicAssert.AreEqual("OK", takeOverRes2);
-
-                // Wait for roles to update
-                while (true)
-                {
-                    await Task.Delay(10, cancellation);
-
-                    if (context.clusterTestUtils.RoleCommand(replica1).Value != "master")
-                    {
-                        continue;
-                    }
-
-                    if (context.clusterTestUtils.RoleCommand(replica2).Value != "master")
-                    {
-                        continue;
-                    }
-
-                    break;
-                }
+                await UpgradeReplicasAsync(context, replica1, replica2, cancellation);
             }
 
             // Shutdown the (old) replicas
@@ -1715,13 +1753,10 @@ namespace Garnet.test.cluster
             context.RestartNode(replica1);
             context.RestartNode(replica2);
 
+            // If we didn't promte pre-crash, promote now that Replicas came back
             if (!replicaFailoverBeforeShutdown)
             {
-                // Promote the replicas
-                var takeOverRes1 = (string)context.clusterTestUtils.Execute(replica1, "CLUSTER", ["FAILOVER", "FORCE"]);
-                var takeOverRes2 = (string)context.clusterTestUtils.Execute(replica2, "CLUSTER", ["FAILOVER", "FORCE"]);
-                ClassicAssert.AreEqual("OK", takeOverRes1);
-                ClassicAssert.AreEqual("OK", takeOverRes2);
+                await UpgradeReplicasAsync(context, replica1, replica2, cancellation);
             }
 
             // Confirm that at least some of the data is available on each Replica
@@ -1748,8 +1783,35 @@ namespace Garnet.test.cluster
             }
 
             // Something, ANYTHING, made it
-            ClassicAssert.IsTrue(onReplica1 > 0);
-            ClassicAssert.IsTrue(onReplica2 > 0);
+            ClassicAssert.IsTrue(onReplica1 > 0, $"Nothing made it to replica 1, should have been up to {writtenToPrimary1.Count} values");
+            ClassicAssert.IsTrue(onReplica2 > 0, $"Nothing made it to replica 2, should have been up to {writtenToPrimary2.Count} values");
+
+            static async Task UpgradeReplicasAsync(ClusterTestContext context, IPEndPoint replica1, IPEndPoint replica2, CancellationToken cancellation)
+            {
+                // Promote the replicas, if no primary is coming back
+                var takeOverRes1 = (string)context.clusterTestUtils.Execute(replica1, "CLUSTER", ["FAILOVER", "FORCE"]);
+                var takeOverRes2 = (string)context.clusterTestUtils.Execute(replica2, "CLUSTER", ["FAILOVER", "FORCE"]);
+                ClassicAssert.AreEqual("OK", takeOverRes1);
+                ClassicAssert.AreEqual("OK", takeOverRes2);
+
+                // Wait for roles to update
+                while (true)
+                {
+                    await Task.Delay(10, cancellation);
+
+                    if (context.clusterTestUtils.RoleCommand(replica1).Value != "master")
+                    {
+                        continue;
+                    }
+
+                    if (context.clusterTestUtils.RoleCommand(replica2).Value != "master")
+                    {
+                        continue;
+                    }
+
+                    break;
+                }
+            }
         }
     }
 }

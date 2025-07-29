@@ -507,6 +507,12 @@ namespace Garnet.server
         public int ClusterReplicationReestablishmentTimeout;
 
         /// <summary>
+        /// If true, a Cluster Replica will load any AOF/Checkpoint data from disk when it starts
+        /// and NOT dump it's data until a Primary connects.
+        /// </summary>
+        public bool ClusterReplicaResumeWithData;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>
