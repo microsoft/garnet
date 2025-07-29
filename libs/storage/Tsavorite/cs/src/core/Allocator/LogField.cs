@@ -224,6 +224,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Utility function to get the inline length of a Span field; this is either the datalength if the field is inline, or <see cref="ObjectIdMap.ObjectIdSize"/>
+        /// for Overflow or Object.
+        /// </summary>
+        internal static int GetInlineDataLength(long physicalAddress, bool isKey)
+        {
+            _ = GetFieldPtr(physicalAddress + RecordInfo.GetLength(), isKey, out _ /*lengthPtr*/, out var _ /*lengthBytes*/, out var length);
+            return (int)length;
+        }
+
+        /// <summary>
         /// Utility function to set the inline length of a Span field and return a <see cref="Span{_byte_}"/> to the data start (which may be an inline byte stream or a byte[]).
         /// </summary>
         internal static Span<byte> SetInlineDataLength(long physicalAddress, int newLength, bool isKey)

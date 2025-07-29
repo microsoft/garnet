@@ -222,7 +222,7 @@ namespace Tsavorite.test.Revivification
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
             ClassicAssert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key.ToShortString()}");
-            var recordInfo = LogRecord.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
+            var recordInfo = LogRecord.GetInfo(store.hlogBase.GetPhysicalAddress(stackCtx.hei.Address));
             ClassicAssert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }
 
@@ -524,7 +524,7 @@ namespace Tsavorite.test.Revivification
                 // If an overflow logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of ObjectIdMap.ObjectIdSize,
                 // and we'll call LogField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
                 if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
-                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, LogField.GetTotalSizeOfInlineField(logRecord.ValueAddress));
+                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, LogField.GetInlineDataLength(logRecord.physicalAddress, isKey: false));
                 if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
                 else

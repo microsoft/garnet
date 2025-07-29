@@ -127,7 +127,7 @@ namespace Tsavorite.core
                         LogRecord logRecord = default;
                         if (entry.IsReadCache)
                         {
-                            if (entry.Address >= readCacheBase.HeadAddress)
+                            if (entry.Address >= readcacheBase.HeadAddress)
                                 logRecord = readcache.CreateLogRecord(entry.Address);
                         }
                         else if (entry.Address >= hlogBase.HeadAddress)
@@ -247,7 +247,7 @@ namespace Tsavorite.core
                 LogRecord logRecord;
                 if (IsReadCache(logicalAddress))
                 {
-                    if (logicalAddress < readCacheBase.HeadAddress)
+                    if (logicalAddress < readcacheBase.HeadAddress)
                         break;
                     logRecord = new LogRecord(readcache.GetPhysicalAddress(logicalAddress));
                 }

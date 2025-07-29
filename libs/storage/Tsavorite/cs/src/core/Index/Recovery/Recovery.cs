@@ -670,7 +670,7 @@ namespace Tsavorite.core
             for (var page = beg; page < end; page++)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(page);
-                if (hlog.IsAllocated(pageIndex))
+                if (hlogBase.IsAllocated(pageIndex))
                 {
                     recoveryStatus.WaitFlush(pageIndex);
                     hlogBase.EvictPage(page);
@@ -702,7 +702,7 @@ namespace Tsavorite.core
             for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.IsSizeBeyondLimit(); p++)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(p);
-                if (hlog.IsAllocated(pageIndex))
+                if (hlogBase.IsAllocated(pageIndex))
                 {
                     recoveryStatus.WaitFlush(pageIndex);
                     hlogBase.EvictPage(p);
@@ -757,7 +757,7 @@ namespace Tsavorite.core
             for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.IsSizeBeyondLimit(); p++)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(p);
-                if (hlog.IsAllocated(pageIndex))
+                if (hlogBase.IsAllocated(pageIndex))
                 {
                     await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken);
                     hlogBase.EvictPage(p);
@@ -868,7 +868,7 @@ namespace Tsavorite.core
         {
             var startLogicalAddress = hlog.GetStartLogicalAddressOfPage(page);
             var endLogicalAddress = hlog.GetStartLogicalAddressOfPage(page + 1);
-            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+            var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
             if (recoverFromAddress >= endLogicalAddress)
                 return false;
@@ -931,7 +931,7 @@ namespace Tsavorite.core
                     else
                     {
                         recoveryStatus.WaitFlush(pageIndex);
-                        if (!hlog.IsAllocated(pageIndex))
+                        if (!hlogBase.IsAllocated(pageIndex))
                             hlog.AllocatePage(pageIndex);
                         else
                             hlog.ClearPage(pageIndex);
@@ -973,7 +973,7 @@ namespace Tsavorite.core
                     else
                     {
                         await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken).ConfigureAwait(false);
-                        if (!hlog.IsAllocated(pageIndex))
+                        if (!hlogBase.IsAllocated(pageIndex))
                             hlog.AllocatePage(pageIndex);
                         else
                             hlog.ClearPage(pageIndex);
@@ -1063,7 +1063,7 @@ namespace Tsavorite.core
 
                 var pageFromAddress = 0L;
                 var pageUntilAddress = hlogBase.GetPageSize();
-                var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+                var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
 
                 if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
@@ -1082,7 +1082,7 @@ namespace Tsavorite.core
         {
             var startLogicalAddress = hlog.GetStartLogicalAddressOfPage(page);
             var endLogicalAddress = hlog.GetStartLogicalAddressOfPage(page + 1);
-            var physicalAddress = hlog.GetPhysicalAddress(startLogicalAddress);
+            var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
             // no need to clear locks for records that will not end up in main memory
             if (options.headAddress >= endLogicalAddress) return;
@@ -1255,7 +1255,7 @@ namespace Tsavorite.core
                 ((headAddress == untilAddress) && (GetOffsetOnPage(headAddress) == 0)) // Empty in-memory page
                 )
             {
-                if (!_wrapper.IsAllocated(GetPageIndexForAddress(headAddress)))
+                if (!IsAllocated(GetPageIndexForAddress(headAddress)))
                     _wrapper.AllocatePage(GetPageIndexForAddress(headAddress));
             }
             else
@@ -1301,7 +1301,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);    TODO xx; // Replace this
+                _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);    TODO(); // Replace this
                 result.freeBuffer1.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);

@@ -22,7 +22,7 @@ namespace Tsavorite.core
 
         readonly int Offset => Unsafe.As<byte, ushort>(ref Data[0]);
 
-        readonly int Length => Data.Length - Offset - Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
+        internal readonly int Length => Data.Length - Offset - Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
 
         internal readonly ReadOnlySpan<byte> ReadOnlySpan => Data.AsSpan().Slice(Offset, Length);
         internal readonly Span<byte> Span => Data.AsSpan().Slice(Offset, Length);

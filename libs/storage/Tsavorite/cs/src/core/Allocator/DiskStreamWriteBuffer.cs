@@ -9,7 +9,9 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static VarbyteLengthUtility;
+    using static LogAddress;
 
     internal unsafe class DiskStreamWriteBuffer : IStreamBuffer
     {
@@ -94,23 +96,29 @@ namespace Tsavorite.core
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Flushing must only be done under control of the Write() methods, due to possible Value length adjustments.");
 
         /// <inheritdoc/>
-        public void Write(in LogRecord logRecord)
+        public void Write(in LogRecord logRecord, long diskTailOffset)
         {
             // Initialize to not track the value length position (not serializing an object, or we know its exact length up-front so are not doing chunk chaining)
             valueLengthPosition = NoPosition;
             keyEndSectorCapPosition = NoPosition;
             expectedSerializedLength = 0;
 
+            // Everything writes the RecordInfo first. Update to on-disk address if it's not done already (the OnPagesClosed thread may have already done it).
+            var tempInfo = logRecord.Info;
+            if (IsOnDisk(tempInfo.PreviousAddress))
+                Debug.Assert(tempInfo.Equals(logRecord.Info), "Unexpected conflicting update when updating address to on-disk");
+            else
+                tempInfo.PreviousAddress = SetIsOnDisk(tempInfo.PreviousAddress + diskTailOffset);
+            Write(new ReadOnlySpan<byte>(&tempInfo, RecordInfo.GetLength()));
+
             // If the record is inline, we can just write it directly; the indicator bytes will be correct.
             if (logRecord.Info.RecordIsInline)
             {
-                Write(logRecord.AsReadOnlySpan());
+                Write(logRecord.AsReadOnlySpan().Slice(RecordInfo.GetLength()));
                 return;
             }
 
-            // Everything writes the RecordInfo first. Because the record is not inline, we cannot just write the indicator bytes directly.
-            Write(logRecord.RecordInfoSpan);
-
+            // The in-memory record is not inline, so we must form the indicator bytes for the inline disk image (expanding Overflow and Object).
             ReadOnlySpan<byte> keySpan = logRecord.Key, valueSpan = logRecord.ValueSpan;
 
             if (!logRecord.Info.ValueIsObject)
@@ -416,13 +424,14 @@ namespace Tsavorite.core
             // TODO: For multi-buffer, consider using two buffers, a full one being flushed to disk on a background thread while the foreground thread populates the next one in parallel.
             // This could simply hold the CountdownEvent for the "disk write in progress" buffer and Wait() on it when DoSerialize() has filled the next buffer.
             valueObjectSerializer.Serialize(valueObject);
-            OnSerializeComplete();
+            OnSerializeComplete(valueObject);
         }
 
-        void OnSerializeComplete()
+        void OnSerializeComplete(IHeapObject valueObject)
         {
             // Update value length with the continuation bit NOT set. This may set it to zero if we did not have any more data in the object after the last buffer flush.
             UpdateValueLength(IStreamBuffer.NoValueChunkContinuationBit);
+            valueObject.SerializedSize = Length;
 
             if (valueLengthPosition == NoPosition)
             {

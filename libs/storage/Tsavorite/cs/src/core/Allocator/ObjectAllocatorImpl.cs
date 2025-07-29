@@ -19,10 +19,6 @@ namespace Tsavorite.core
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, ObjectAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
     {
-        /// <summary>Circular buffer definition, in parallel with <see cref="values"/></summary>
-        /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
-        long* pagePointers;
-
         /// <summary>For each in-memory page of this allocator we have an <see cref="ObjectIdMap"/> for keys that are too large to fit inline into the main log
         /// and become overflow byte[], or are Object values; this is needed to root the objects for GC.</summary>
         internal struct ObjectPage
@@ -34,18 +30,18 @@ namespace Tsavorite.core
             internal readonly void Clear() => objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
         }
 
+        /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
         internal ObjectPage[] values;
 
         /// <summary>
-        /// Offset of expanded IO tail on the disk for Flush. This is added to .PreviousAddress for all records being flushed.
-        /// It leads <see cref="ClosedDiskTailOffset"/>, which is recalculated after we arrive at <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosed(long)"/>.
+        /// Offset of expanded IO tail on the disk for Flush. This is added to .PreviousAddress for all records being flushed. It leads <see cref="ClosedDiskTailOffset"/>.
         /// </summary>
         long FlushedDiskTailOffset;
 
         /// <summary>
         /// Offset of expanded IO tail on the disk for Close. When we arrive at <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosed(long)"/>
-        /// this is used to calculate the offset for each .PreviousAddress in the in-memory log that references the page being closed, so it can be patched up
-        /// to the on-disk address for that record.
+        /// this is used to calculate the offset for each .PreviousAddress in the in-memory log that references the record(s) being closed, so it can be patched up
+        /// to the on-disk address for that record by <see cref="PatchExpandedAddresses"/>.
         /// </summary>
         long ClosedDiskTailOffset;
 
@@ -58,10 +54,6 @@ namespace Tsavorite.core
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, isObjectAllocator: true)
         {
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
-
-            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
-            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
-            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
 
             values = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
@@ -274,34 +266,51 @@ namespace Tsavorite.core
             var localValues = Interlocked.Exchange(ref values, null);
             if (localValues != null)
             {
-                base.Dispose();
                 freePagePool.Dispose();
                 foreach (var value in localValues)
                     value.Clear();
-
-                if (pagePointers is not null)
-                {
-                    for (var ii = 0; ii < BufferSize; ii++)
-                    {
-                        if (pagePointers[ii] != 0)
-                            NativeMemory.AlignedFree((void*)pagePointers[ii]);
-                    }
-                    NativeMemory.AlignedFree((void*)pagePointers);
-                    pagePointers = null;
-                }
+                base.Dispose();
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPhysicalAddress(long logicalAddress)
+        internal override void PatchExpandedAddresses(long closeStartAddress, long closeEndAddress, TsavoriteBase storeBase)
         {
-            // Index of page within the circular buffer, and offset on the page
-            var pageIndex = GetPageIndexForAddress(logicalAddress);
-            var offset = GetOffsetOnPage(logicalAddress);
-            return *(pagePointers + pageIndex) + offset;
-        }
+            // Scan forward to process each closing LogRecord and advance to the next one.
+            for (var closeAddress = closeStartAddress; closeAddress < closeEndAddress; /* incremented in loop*/)
+            {
+                // Get the key from the logRecord being closed, and use that to get to the start of the tag chain.
+                var closeLogRecord = CreateLogRecord(closeAddress);
+                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(closeLogRecord.Key));
+                if (!storeBase.FindTag(ref hei))
+                    continue;
 
-        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
+                // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
+                for (var scanAddress = hei.entry.Address; scanAddress >= closeAddress; /*incremented in loop*/)
+                {
+                    // Use GetPhysicalAddress() directly here for speed (we're just updating RecordInfo so don't need the overhead of an ObjectIdMap lookup)
+                    var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
+                    if (logRecord.Info.PreviousAddress == closeAddress)
+                    {
+                        logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
+                        break;
+                    }
+                    if (logRecord.Info.PreviousAddress < closeAddress)
+                    {
+                        Debug.Fail("We should have found closeAddress");
+                        break;
+                    }
+                    scanAddress += logRecord.GetInlineRecordSizes().allocatedSize;
+                }
+
+                // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
+                // as we saved it in the object's.SerializedSize (and we ignore SerializedSizeIsExact because we know it hasn't changed) or, if it's
+                // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
+                ClosedDiskTailOffset += closeLogRecord.CalculateExpansion();
+
+                // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
+                closeAddress += closeLogRecord.GetInlineRecordSizes().allocatedSize;
+            }
+        }
 
         protected override void TruncateUntilAddress(long toAddress)    // TODO READ_WRITE: ObjectAllocator specifics if any
         {
@@ -453,6 +462,8 @@ namespace Tsavorite.core
                 for (var physicalAddress = (long)srcBuffer.aligned_pointer + startOffset; physicalAddress < endPhysicalAddress; /* incremented in loop */)
                 {
                     var logRecord = new LogRecord(physicalAddress, localObjectIdMap);
+
+                    // Use allocatedSize here because that is what LogicalAddress is based on.
                     var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
 
                     // Do not write Invalid records or v+1 records (e.g. during a checkpoint).
@@ -462,11 +473,11 @@ namespace Tsavorite.core
                         continue;
                     }
 
-                    // Update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
                     logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
-
                     var prevPosition = pinnedMemoryStream.Position;
-                    diskBuffer.Write(in logRecord);
+
+                    // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
+                    diskBuffer.Write(in logRecord, FlushedDiskTailOffset);
                     var streamRecordSize = RoundUp(pinnedMemoryStream.Position, Constants.kRecordAlignment) - prevPosition;
                     Debug.Assert(streamRecordSize >= logRecordSize, $"Serialized size of record {streamRecordSize} is less than expected record size {logRecordSize}.");
 

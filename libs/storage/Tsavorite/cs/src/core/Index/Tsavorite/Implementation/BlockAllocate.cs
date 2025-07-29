@@ -84,7 +84,7 @@ namespace Tsavorite.core
                 if (!TryBlockAllocate(hlogBase, sizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
-                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                newPhysicalAddress = hlogBase.GetPhysicalAddress(newLogicalAddress);
 
                 // If allocation had to flush and did it inline, then the epoch was refreshed and we need to check for address safety.
                 if (VerifyInMemoryAddresses(ref stackCtx))
@@ -135,9 +135,9 @@ namespace Tsavorite.core
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             while (true)
             {
-                if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(readcacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
-                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+                newPhysicalAddress = readcacheBase.GetPhysicalAddress(newLogicalAddress);
 
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
@@ -193,7 +193,7 @@ namespace Tsavorite.core
                 goto Fail;
             }
 
-            newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            newPhysicalAddress = hlogBase.GetPhysicalAddress(newLogicalAddress);
             var newLogRecord = new LogRecord(newPhysicalAddress);
 
             allocatedSize = newLogRecord.GetInlineRecordSizes().allocatedSize;

@@ -29,7 +29,7 @@ namespace Tsavorite.core
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out _))
                 return false;
-            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readcacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress);
 
             // Even though readcache records are immutable, we have to initialize the lengths

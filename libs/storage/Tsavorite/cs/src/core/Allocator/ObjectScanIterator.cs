@@ -71,7 +71,7 @@ namespace Tsavorite.core
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
             Debug.Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
 
-            TODO xx; // See comments in SnapToLogicalAddressBoundary regarding on-disk/physical address
+            TODO(); // See comments in SnapToLogicalAddressBoundary regarding on-disk/physical address
 
             if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                 return false;
@@ -91,7 +91,7 @@ namespace Tsavorite.core
 
         private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
-            TODO xx; // This needs to transition from physical-address to in-memory when it gets above HA equivalent.. and needs to keep checking that bc we may drop below HA when we release the epoch
+            TODO(); // This needs to transition from physical-address to in-memory when it gets above HA equivalent.. and needs to keep checking that bc we may drop below HA when we release the epoch
 
             if (diskLogRecord.IsSet)
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
@@ -160,7 +160,7 @@ namespace Tsavorite.core
             }
             else
             {
-                TODO xx; // SnapToLogicalAddressBoundary(): This won't work for OA; we don't have a known "start of page".
+                TODO();  // SnapToLogicalAddressBoundary(): This won't work for OA; we don't have a known "start of page".
                          // May need to just accept physicalAddress as is; perhaps add a checksum in the upper bits of the returned cursor
 
                 while (totalSizes <= offset)

@@ -40,10 +40,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetPhysicalAddress(long logicalAddress) => _this.GetPhysicalAddress(logicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
             => SpanByteAllocatorImpl<TStoreFunctions>.InitializeValue(in sizeInfo, ref newLogRecord);
 
@@ -88,10 +84,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void AllocatePage(int pageIndex) => _this.AllocatePage(pageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool IsAllocated(int pageIndex) => _this.IsAllocated(pageIndex);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -18,14 +18,8 @@ namespace Tsavorite.core
         /// <summary>Get first valid logical address on <paramref name="page"/></summary>
         long GetFirstValidLogicalAddressOnPage(long page);
 
-        /// <summary>Get physical address from <paramref name="logicalAddress"/></summary>
-        long GetPhysicalAddress(long logicalAddress);
-
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);
-
-        /// <summary>Whether the page at <paramref name="pageIndex"/> is allocated</summary>
-        bool IsAllocated(int pageIndex);
 
         /// <summary>
         /// Populate the page at <paramref name="destinationPageIndex"/> from the <paramref name="src"/> pointer, which has <paramref name="required_bytes"/> bytes.

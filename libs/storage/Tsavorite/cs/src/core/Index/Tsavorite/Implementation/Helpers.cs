@@ -26,7 +26,7 @@ namespace Tsavorite.core
             ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
             recordInfo.WriteInfo(inNewVersion, previousAddress);
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
-            log._wrapper.SerializeKey(key, ref logRecord);
+            log._wrapper.SerializeKey(key, logicalAddress, ref logRecord);
             return logRecord;
         }
 
@@ -79,7 +79,7 @@ namespace Tsavorite.core
             // If the record is in memory, check if it has the new version bit set
             if (entry.Address < hlogBase.HeadAddress)
                 return false;
-            return LogRecord.GetInfo(hlog.GetPhysicalAddress(entry.Address)).IsInNewVersion;
+            return LogRecord.GetInfo(hlogBase.GetPhysicalAddress(entry.Address)).IsInNewVersion;
         }
 
         // Can only elide the record if it is the tail of the tag chain (i.e. is the record in the hash bucket entry) and its
@@ -176,8 +176,8 @@ namespace Tsavorite.core
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a newly-inserted record.
-            var localLog = IsReadCache(logicalAddress) ? readcache : hlog;
-            LogRecord.GetInfoRef(localLog.GetPhysicalAddress(logicalAddress)).SetInvalid();
+            var localLogBase = IsReadCache(logicalAddress) ? readcacheBase : hlogBase;
+            LogRecord.GetInfoRef(localLogBase.GetPhysicalAddress(logicalAddress)).SetInvalid();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -229,7 +229,7 @@ namespace Tsavorite.core
                 return false;
 
             // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.HeadAddress)
+            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
                 return true;
 
             // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,

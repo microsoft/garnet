@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -17,7 +18,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
+    public abstract unsafe partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -84,6 +85,10 @@ namespace Tsavorite.core
 
         /// <summary>ReadOnlyAddress offset from tail (currently page-aligned)</summary>
         protected long ReadOnlyAddressLagOffset;
+
+        /// <summary>Circular buffer definition</summary>
+        /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
+        protected long* pagePointers;
 
         #endregion
 
@@ -188,6 +193,9 @@ namespace Tsavorite.core
 
         /// <summary>If set, this is a function to call to determine whether the object size tracker reports maximum memory size has been exceeded.</summary>
         public Func<bool> IsSizeBeyondLimit;
+
+        /// <summary>The TsavoriteBase implemention. Currently used for hash table lookup for PatchExpandedAddresses.</summary>
+        internal TsavoriteBase storeBase;
         #endregion
 
         #region Abstract and virtual methods
@@ -253,7 +261,7 @@ namespace Tsavorite.core
                             continue;
 
                         var logicalAddress = GetStartLogicalAddressOfPage(p);
-                        var physicalAddress = _wrapper.GetPhysicalAddress(logicalAddress);
+                        var physicalAddress = GetPhysicalAddress(logicalAddress);
 
                         var endLogicalAddress = logicalAddress + PageSize;
                         if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
@@ -370,6 +378,17 @@ namespace Tsavorite.core
         public virtual void Dispose()
         {
             disposed = true;
+
+            if (pagePointers is not null)
+            {
+                for (var ii = 0; ii < BufferSize; ii++)
+                {
+                    if (pagePointers[ii] != 0)
+                        NativeMemory.AlignedFree((void*)pagePointers[ii]);
+                }
+                NativeMemory.AlignedFree((void*)pagePointers);
+                pagePointers = null;
+            }
 
             if (ownedEpoch)
                 epoch.Dispose();
@@ -615,7 +634,22 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Page size must be at least of device sector size ({sectorSize} bytes). Set PageSizeBits accordingly.");
 
             AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
+
+            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
+            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
+            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetPhysicalAddress(long logicalAddress)
+        {
+            // Index of page within the circular buffer, and offset on the page.
+            var pageIndex = GetPageIndexForAddress(logicalAddress);
+            var offset = GetOffsetOnPage(logicalAddress);
+            return *(pagePointers + pageIndex) + offset;
+        }
+
+        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
@@ -689,12 +723,12 @@ namespace Tsavorite.core
             {
                 long tailPage = GetPage(firstValidAddress);
                 int tailPageIndex = GetPageIndexForPage(tailPage);
-                if (!_wrapper.IsAllocated(tailPageIndex))
+                if (!IsAllocated(tailPageIndex))
                     _wrapper.AllocatePage(tailPageIndex);
 
                 // Allocate next page as well
                 int nextPageIndex = GetPageIndexForPage(tailPage + 1);
-                if (!_wrapper.IsAllocated(nextPageIndex))
+                if (!IsAllocated(nextPageIndex))
                     _wrapper.AllocatePage(nextPageIndex);
             }
 
@@ -702,7 +736,7 @@ namespace Tsavorite.core
             {
                 for (int pageIndex = 0; pageIndex < BufferSize; pageIndex++)
                 {
-                    if (!_wrapper.IsAllocated(pageIndex))
+                    if (!IsAllocated(pageIndex))
                         _wrapper.AllocatePage(pageIndex);
                 }
             }
@@ -814,7 +848,7 @@ namespace Tsavorite.core
                     break;
                 }
                 // Offset is being adjusted by overflow thread, spin-wait
-                Thread.Yield();
+                _ = Thread.Yield();
                 local = TailPageOffset;
             }
             return GetStartLogicalAddressOfPage(local.Page) | (uint)local.Offset;
@@ -886,18 +920,18 @@ namespace Tsavorite.core
             try
             {
                 // Allocate this page, if needed
-                if (!_wrapper.IsAllocated(pageIndex % BufferSize))
+                if (!IsAllocated(pageIndex % BufferSize))
                     _wrapper.AllocatePage(pageIndex % BufferSize);
 
                 // Allocate next page in advance, if needed
-                if (!_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
+                if (!IsAllocated((pageIndex + 1) % BufferSize))
                     _wrapper.AllocatePage((pageIndex + 1) % BufferSize);
             }
             catch
             {
                 // Reset to previous tail
                 localTailPageOffset.PageAndOffset -= numSlots;
-                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                 throw;
             }
         }
@@ -954,21 +988,21 @@ namespace Tsavorite.core
             var shiftAddress = GetStartLogicalAddressOfPage(pageIndex);
             var tailAddress = GetTailAddress();
 
-            long desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
+            var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
             if (desiredReadOnlyAddress > tailAddress)
                 desiredReadOnlyAddress = tailAddress;
-            ShiftReadOnlyAddress(desiredReadOnlyAddress);
+            _ = ShiftReadOnlyAddress(desiredReadOnlyAddress);
 
-            long desiredHeadAddress = shiftAddress - HeadAddressLagOffset;
+            var desiredHeadAddress = shiftAddress - HeadAddressLagOffset;
             if (desiredHeadAddress > tailAddress)
                 desiredHeadAddress = tailAddress;
-            ShiftHeadAddress(desiredHeadAddress);
+            _ = ShiftHeadAddress(desiredHeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots)
         {
-            int pageIndex = localTailPageOffset.Page + 1;
+            var pageIndex = localTailPageOffset.Page + 1;
 
             // This thread is trying to allocate at an offset past where one or more previous threads
             // already overflowed; exit and allow the first overflow thread to proceed. Do not try to remove
@@ -988,7 +1022,7 @@ namespace Tsavorite.core
             {
                 // Reset to previous tail so that next attempt can retry
                 localTailPageOffset.PageAndOffset -= numSlots;
-                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
 
                 // Shift only after TailPageOffset is reset to a valid state
                 IssueShiftAddress(pageIndex);
@@ -1005,7 +1039,7 @@ namespace Tsavorite.core
             {
                 // Reset to previous tail so that next attempt can retry
                 localTailPageOffset.PageAndOffset -= numSlots;
-                Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
 
                 // Shift only after TailPageOffset is reset to a valid state
                 IssueShiftAddress(pageIndex);
@@ -1014,7 +1048,7 @@ namespace Tsavorite.core
             }
 
             // Allocate next page and set new tail
-            if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
+            if (!IsAllocated(pageIndex % BufferSize) || !IsAllocated((pageIndex + 1) % BufferSize))
                 AllocatePagesWithException(pageIndex, localTailPageOffset, numSlots);
 
             localTailPageOffset.Page++;
@@ -1069,6 +1103,7 @@ namespace Tsavorite.core
 
         /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
         /// <param name="numSlots">Number of slots to allocate</param>
+        /// <param name="logicalAddress">Returned address, or RETRY_LATER (if 0) indicator</param>
         /// <returns>The allocated logical address, or 0 in case of inability to allocate</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryAllocateRetryNow(int numSlots, out long logicalAddress)
@@ -1200,7 +1235,7 @@ namespace Tsavorite.core
         /// </summary>
         private void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
         {
-            if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out long oldSafeReadOnlyAddress))
+            if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out var oldSafeReadOnlyAddress))
             {
                 // Debug.WriteLine("SafeReadOnly shifted from {0:X} to {1:X}", oldSafeReadOnlyAddress, newSafeReadOnlyAddress);
                 if (OnReadOnlyObserver != null)
@@ -1223,7 +1258,7 @@ namespace Tsavorite.core
                 // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
                 while (true)
                 {
-                    long _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
+                    var _ongoingCloseUntilAddress = OngoingCloseUntilAddress;
 
                     // If we are closing in the middle of an ongoing OPCWorker loop, exit.
                     if (_ongoingCloseUntilAddress >= newSafeHeadAddress)
@@ -1259,6 +1294,7 @@ namespace Tsavorite.core
                 if (EvictCallback is not null)
                     EvictCallback(closeStartAddress, closeEndAddress);
 
+                // Process a page (possibly fragment) at a time.
                 for (long closePageAddress = GetAddressOfStartOfPage(closeStartAddress); closePageAddress < closeEndAddress; closePageAddress += PageSize)
                 {
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
@@ -1273,6 +1309,9 @@ namespace Tsavorite.core
                     if (IsNullDevice)
                         _ = MonotonicUpdate(ref BeginAddress, end, out _);
 
+                    // If this is OA, we need to patch up .PreviousAddress pointers to records in [closeStartAddress, closeEndAddress].
+                    PatchExpandedAddresses(closeStartAddress, closeEndAddress, storeBase);
+
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
                         _wrapper.FreePage((int)GetPage(closePageAddress));
@@ -1286,6 +1325,14 @@ namespace Tsavorite.core
                 _ = Thread.Yield();
             }
         }
+
+        /// <summary>
+        /// Overridden by ObjectAllocator
+        /// </summary>
+        /// <param name="closeStartAddress">First address on page that is closing</param>
+        /// <param name="closeEndAddress">Last address on page that is closing</param>
+        /// <param name="storeBase">The store base, for hash table lookups</param>
+        internal virtual void PatchExpandedAddresses(long closeStartAddress, long closeEndAddress, TsavoriteBase storeBase) { }
 
         private void DebugPrintAddresses()
         {
@@ -1443,12 +1490,12 @@ namespace Tsavorite.core
 
             // Allocate current page if necessary
             var pageIndex = TailPageOffset.Page % BufferSize;
-            if (!_wrapper.IsAllocated(pageIndex))
+            if (!IsAllocated(pageIndex))
                 _wrapper.AllocatePage(pageIndex);
 
             // Allocate next page as well - this is an invariant in the allocator!
             var nextPageIndex = (pageIndex + 1) % BufferSize;
-            if (!_wrapper.IsAllocated(nextPageIndex))
+            if (!IsAllocated(nextPageIndex))
                 _wrapper.AllocatePage(nextPageIndex);
 
             BeginAddress = beginAddress;
@@ -1557,7 +1604,7 @@ namespace Tsavorite.core
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 var pageIndex = (int)(readPage % BufferSize);
-                if (!_wrapper.IsAllocated(pageIndex))
+                if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
                 else
                     _wrapper.ClearPage(readPage);
@@ -1810,7 +1857,7 @@ namespace Tsavorite.core
                                         long devicePageOffset = 0,
                                         IDevice device = null, IDevice objectLogDevice = null)
         {
-            TODO xxx; // This won't work with expando; the expansion will be much more than a page, and more than we have memory budget for
+            TODO(); // This won't work with expando; the expansion will be much more than a page, and more than we have memory budget for
             var usedDevice = device ?? this.device;
 
             ArraySegment<byte> dataSegment = new ArraySegment<byte>(new byte[PageSize]);
@@ -2010,7 +2057,7 @@ namespace Tsavorite.core
 
                     if (flushWidth > 0)
                     {
-                        var physicalAddress = _wrapper.GetPhysicalAddress(startAddress);
+                        var physicalAddress = GetPhysicalAddress(startAddress);
                         var endPhysicalAddress = physicalAddress + flushWidth;
 
                         while (physicalAddress < endPhysicalAddress)

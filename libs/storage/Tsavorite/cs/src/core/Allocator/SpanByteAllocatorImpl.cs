@@ -10,27 +10,18 @@ using System.Threading;
 namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using static Utility;
     using static LogAddress;
 
     // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
     {
-        /// <summary>Circular buffer definition</summary>
-        /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
-        long* pagePointers;
-
         private OverflowPool<PageUnit<Empty>> freePagePool;
 
         public SpanByteAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, SpanByteAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
-
-            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
-            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
-            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -201,32 +192,10 @@ namespace Tsavorite.core
             var localFreePagePool = Interlocked.Exchange(ref freePagePool, null);
             if (localFreePagePool != null)
             {
-                base.Dispose();
                 localFreePagePool.Dispose();
-
-                if (pagePointers is not null)
-                {
-                    for (var ii = 0; ii < BufferSize; ii++)
-                    {
-                        if (pagePointers[ii] != 0)
-                            NativeMemory.AlignedFree((void*)pagePointers[ii]);
-                    }
-                    NativeMemory.AlignedFree((void*)pagePointers);
-                    pagePointers = null;
-                }
+                base.Dispose();
             }
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPhysicalAddress(long logicalAddress)
-        {
-            // Index of page within the circular buffer, and offset on the page. TODO move this (and pagePointers) to AllocatorBase)
-            var pageIndex = GetPageIndexForAddress(logicalAddress);
-            var offset = GetOffsetOnPage(logicalAddress);
-            return *(pagePointers + pageIndex) + offset;
-        }
-
-        internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
         protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
             => WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),

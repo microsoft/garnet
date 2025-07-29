@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class SpanByteScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
+    public sealed unsafe class SpanByteScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -299,6 +299,66 @@ namespace Tsavorite.core
             allocatedSize = fieldInfo.SerializedLength;
             return true;
         }
+
+        #region ISourceLogRecord
+        /// <inheritdoc/>
+        public ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
+        /// <inheritdoc/>
+        public RecordInfo Info => diskLogRecord.Info;
+
+        /// <inheritdoc/>
+        public bool IsSet => diskLogRecord.IsSet;
+
+        /// <inheritdoc/>
+        public ReadOnlySpan<byte> Key => diskLogRecord.Key;
+
+        /// <inheritdoc/>
+        public bool IsPinnedKey => diskLogRecord.IsPinnedKey;
+
+        /// <inheritdoc/>
+        public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
+
+        /// <inheritdoc/>
+        public Span<byte> ValueSpan => diskLogRecord.ValueSpan;
+
+        /// <inheritdoc/>
+        public IHeapObject ValueObject => diskLogRecord.ValueObject;
+
+        /// <inheritdoc/>
+        public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
+
+        /// <inheritdoc/>
+        public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+
+        /// <inheritdoc/>
+        public long ETag => diskLogRecord.ETag;
+
+        /// <inheritdoc/>
+        public long Expiration => diskLogRecord.Expiration;
+
+        /// <inheritdoc/>
+        public bool IsMemoryLogRecord => false;
+
+        /// <inheritdoc/>
+        public unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a RecordScanIterator to a memory LogRecord.");
+
+        /// <inheritdoc/>
+        public bool IsDiskLogRecord => true;
+
+        /// <inheritdoc/>
+        public unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public RecordFieldInfo GetRecordFieldInfo() => new()
+        {
+            KeySize = Key.Length,
+            ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+            ValueIsObject = Info.ValueIsObject,
+            HasETag = Info.HasETag,
+            HasExpiration = Info.HasExpiration
+        };
+        #endregion // ISourceLogRecord
 
         /// <summary>
         /// Dispose iterator

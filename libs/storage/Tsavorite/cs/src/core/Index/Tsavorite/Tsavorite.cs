@@ -23,7 +23,7 @@ namespace Tsavorite.core
         internal readonly TAllocator hlog;
         internal readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         internal readonly TAllocator readcache;
-        internal readonly AllocatorBase<TStoreFunctions, TAllocator> readCacheBase;
+        internal readonly AllocatorBase<TStoreFunctions, TAllocator> readcacheBase;
 
         internal readonly TStoreFunctions storeFunctions;
 
@@ -139,8 +139,8 @@ namespace Tsavorite.core
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
-                readCacheBase = readcache.GetBase<TAllocator>();
-                readCacheBase.Initialize();
+                readcacheBase = readcache.GetBase<TAllocator>();
+                readcacheBase.Initialize();
                 ReadCache = new(this, readcache);
             }
 
@@ -619,7 +619,7 @@ namespace Tsavorite.core
         {
             Free();
             hlogBase.Dispose();
-            readCacheBase?.Dispose();
+            readcacheBase?.Dispose();
             LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
@@ -690,7 +690,7 @@ namespace Tsavorite.core
                         if (x.Tentative)
                             ++total_entries_with_tentative_bit_set;
 
-                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (x.Address >= readCacheBase.HeadAddress)))
+                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (x.Address >= readcacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");

@@ -869,6 +869,49 @@ namespace Tsavorite.core
             key.CopyTo(keySpan);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly long CalculateExpansion()
+        {
+            // If the record is inline there's nothing to do.
+            if (Info.RecordIsInline)
+                return 0L;
+
+            // Get the number of length bytes we have now.
+            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValueOrHasFiller*/) = DeconstructIndicatorByte(IndicatorByte);
+            int keyLengthByteGrowth = 0, valueLengthByteGrowth = 0, keyLengthGrowth = 0;
+            long valueLengthGrowth = 0;
+
+            if (Info.KeyIsOverflow)
+            {
+                var keyLength = Key.Length;
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                keyLengthByteGrowth = GetByteCount(keyLength) - keyLengthBytes;
+                keyLengthGrowth = objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Length - ObjectIdMap.ObjectIdSize;
+            }
+
+            if (Info.ValueIsOverflow)
+            {
+                var valueLength = ValueSpan.Length;
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                valueLengthByteGrowth = GetByteCount(valueLength) - valueLengthBytes;
+                keyLengthGrowth = objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Length - ObjectIdMap.ObjectIdSize;
+            }
+            else
+            {
+                // This assumes we know SerializedSize is exact, such as after Flush(), so we disregard SerializeSizeIsExact.
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var serializedSize = objectIdMap.GetHeapObject(*(int*)dataAddress).SerializedSize;
+                valueLengthByteGrowth = GetByteCount(serializedSize) - valueLengthBytes;
+                valueLengthGrowth = serializedSize - ObjectIdMap.ObjectIdSize;
+            }
+
+            // The actual expansion is relative to allocatedSize (that is what LogicalAddresses are based on).
+            var growth = keyLengthByteGrowth + keyLengthGrowth + valueLengthByteGrowth + valueLengthGrowth;
+            var expansion = RoundUp(growth, Constants.kRecordAlignment) - GetInlineRecordSizes().allocatedSize;
+            Debug.Assert((expansion & (Constants.kRecordAlignment - 1)) == 0, $"Unaligned record expansion {expansion}");
+            return expansion;
+        }
+
         public override readonly string ToString()
         {
             if (physicalAddress == 0)

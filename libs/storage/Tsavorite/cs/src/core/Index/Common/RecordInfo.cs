@@ -3,6 +3,7 @@
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -88,6 +89,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal RecordInfo FromWord(long word) => new RecordInfo() { word = word };
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool IsClosedWord(long word) => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -132,6 +136,31 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Update this record's PreviousAddress to point on-disk
+        /// </summary>
+        /// <param name="diskTailOffset">The cumulative offset from record expansion to be added to PreviousAddress</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UpdateToOnDiskAddress(long diskTailOffset)
+        {
+            while (true)
+            {
+                var expected_info = this;
+                if (IsOnDisk(expected_info.PreviousAddress))
+                    return;
+                var new_info = expected_info;
+                new_info.PreviousAddress = SetIsOnDisk(new_info.PreviousAddress + diskTailOffset);
+                var result_info = FromWord(Interlocked.CompareExchange(ref word, new_info.word, expected_info.word));
+                if (expected_info.word == result_info.word)
+                    return;
+
+                // If this fails due to .PreviousAddress changes it should be due to the OnPagesClosed thread having done the update.
+                // In that case, verify the values match. This record may be in the mutable region so may have other changes to the RecordInfo.
+                Debug.Assert(result_info.PreviousAddress == expected_info.PreviousAddress || result_info.PreviousAddress == new_info.PreviousAddress,
+                            "Unexpected PreviousAddress change encountered when updating PreviousAddress to on-disk");
+            }
+        }
+
+        /// <summary>
         /// Try to reset the modified bit of the RecordInfo
         /// </summary>
         /// <returns>Whether the modified bit was reset successfully</returns>
@@ -166,6 +195,8 @@ namespace Tsavorite.core
         }
 
         public readonly bool IsNull => word == 0;
+
+        public readonly bool Equals(RecordInfo other) => this.word == other.word;
 
         public readonly bool Tombstone
         {
