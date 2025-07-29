@@ -67,6 +67,9 @@ However, telnet does not decode the responses, you'll see the raw RESP serializa
 On Windows, telnet defaults to localecho off, you won't see your typing until after first command is sent.
 Alternatively, you can type Ctrl-] followed by Enter, and telnet will start echoing.
 
+Note: By default, Garnet enables inline command parsing only for local connections.
+The 'EnableInlineCommands' configuration option can disable it or enable for remote connections too.
+
 ```bash
     telnet localhost 6379
 ```
