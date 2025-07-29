@@ -1202,43 +1202,6 @@ namespace Garnet.server
             return result;
         }
 
-        public ArgSlice GetCommandAsArgSlice(out bool success)
-        {
-            if (bytesRead - readHead < 6)
-            {
-                success = false;
-                return default;
-            }
-
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
-            {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
-            {
-                success = false;
-                return default;
-            }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
-
-            var result = new ArgSlice(recvBufferPtr + readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
-
-            readHead += 2 + psize + 2;
-            success = true;
-            return result;
-        }
-
         /// <summary>
         /// Attempt to kill this session.
         ///
