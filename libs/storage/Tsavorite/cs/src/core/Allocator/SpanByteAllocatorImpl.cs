@@ -45,7 +45,6 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
-                // TODO resize the values[index] arrays smaller if they are above a certain point
                 return;
             }
 
@@ -220,7 +219,7 @@ namespace Tsavorite.core
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
@@ -272,6 +271,57 @@ namespace Tsavorite.core
             using var iter = new SpanByteScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
                     includeSealedRecords: false, assumeInMemory: true, logger: logger);
             observer?.OnNext(iter);
+        }
+
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
+                                        long readPageStart,
+                                        int numPages,
+                                        long untilAddress,
+                                        DeviceIOCompletionCallback callback,
+                                        TContext context,
+                                        BlittableFrame frame,
+                                        out CountdownEvent completed,
+                                        long devicePageOffset = 0,
+                                        IDevice device = null
+                                        )
+        {
+            var usedDevice = device ?? this.device;
+
+            completed = new CountdownEvent(numPages);
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            {
+                int pageIndex = (int)(readPage % frame.frameSize);
+                if (frame.frame[pageIndex] == null)
+                    frame.Allocate(pageIndex);
+                else
+                    frame.Clear(pageIndex);
+
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    frame = frame
+                };
+
+                var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                var readLength = (uint)AlignedPageSizeBytes;
+                var adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
+            }
         }
     }
 }

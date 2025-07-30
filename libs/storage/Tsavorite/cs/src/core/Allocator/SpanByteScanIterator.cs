@@ -217,8 +217,8 @@ namespace Tsavorite.core
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // We know we have the full record, so create the DiskLogRecord on the fly.
-                        diskLogRecord.CopyFrom(physicalAddress, );
-                        nextAddress = currentAddress + diskLogRecord.GetSerializedLength(); // GetNext()
+                        _ = DiskLogRecord.TryCreateFromPinnedPointer(physicalAddress, (int)recordSize, out diskLogRecord);
+                        nextAddress = currentAddress + (int)recordSize;
                     }
                 }
                 finally
@@ -282,7 +282,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool GetPhysicalAddressAndAllocatedSize(long currentAddress, long headAddress, long currentPage, out long physicalAddress, out long allocatedSize)
         {
-            var availableBytes = hlogBase.PageSize - (int)(currentAddress & hlogBase.PageSizeMask);
+            var availableBytes = hlogBase.PageSize - (int)hlogBase.GetOffsetOnPage(currentAddress);
             allocatedSize = 0;
 
             if (currentAddress >= headAddress || assumeInMemory)
@@ -371,8 +371,8 @@ namespace Tsavorite.core
         }
 
         internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
-                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
+                long devicePageOffset = 0, IDevice device = null, CancellationTokenSource cts = null)
+            => (hlogBase as SpanByteAllocatorImpl<TStoreFunctions>).AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
@@ -384,12 +384,7 @@ namespace Tsavorite.core
                 result.cts?.Cancel();
             }
 
-            if (result.freeBuffer1 != null)
-            {
-                hlogBase.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
-                result.freeBuffer1.Return();
-                result.freeBuffer1 = null;
-            }
+            Debug.Assert(result.freeBuffer1 == null, "Unexpected freeBuffer1");
 
             if (errorCode == 0)
                 result.handle?.Signal();

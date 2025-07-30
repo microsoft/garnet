@@ -5,11 +5,9 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
-using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
@@ -312,21 +310,6 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void TruncateUntilAddress(long toAddress)    // TODO READ_WRITE: ObjectAllocator specifics if any
-        {
-            base.TruncateUntilAddress(toAddress);
-        }
-
-        protected override void TruncateUntilAddressBlocking(long toAddress)    // TODO READ_WRITE: ObjectAllocator specifics if any
-        {
-            base.TruncateUntilAddressBlocking(toAddress);
-        }
-
-        protected override void RemoveSegment(int segment)    // TODO READ_WRITE: ObjectAllocator specifics if any
-        {
-            base.RemoveSegment(segment);
-        }
-
         internal void ClearPage(long page, int offset)
         {
             // This is called during recovery, not as part of normal operations, so there is no need to walk pages starting at offset to Free() ObjectIds
@@ -340,14 +323,6 @@ namespace Tsavorite.core
             // Close segments
             var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
             var nextCloseSegment = (page + 1) >> (LogSegmentSizeBits - LogPageSizeBits);
-
-#if READ_WRITE
-            if (thisCloseSegment != nextCloseSegment)
-            {
-                // We are clearing the last page in current segment
-                segmentOffsets[thisCloseSegment % SegmentBufferSize] = 0;
-            }
-#endif // READ_WRITE
 
             // If all pages are being used (i.e. EmptyPageCount == 0), nothing to re-utilize by adding
             // to overflow pool.
@@ -495,7 +470,7 @@ namespace Tsavorite.core
 
         protected override void ReadAsync<TContext>(
             ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
-            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
         {
 #if READ_WRITE
             asyncResult.freeBuffer1 = bufferPool.Get((int)aligned_read_length);
@@ -521,235 +496,6 @@ namespace Tsavorite.core
                     aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
 #endif // READ_WRITE
         }
-
-
-        /// <summary>
-        /// IOCompletion callback for page flush
-        /// </summary>
-        /// <param name="errorCode"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="context"></param>
-        private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, object context)
-        {
-            if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncFlushPartialObjectLogCallback)} error: {{errorCode}}", errorCode);
-
-            // Signal the event so the waiter can continue
-            var result = (PageAsyncFlushResult<TContext>)context;
-            _ = result.done.Set();
-        }
-
-        private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
-        {
-#if READ_WRITE
-            if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);
-
-            var result = (PageAsyncReadResult<TContext>)context;
-
-            AllocatorRecord[] src;
-
-            // We are reading into a frame
-            if (result.frame != null)
-            {
-                var frame = (GenericFrame)result.frame;
-                src = frame.GetPage(result.page % frame.frameSize);
-            }
-            else
-                src = values[result.page % BufferSize];
-
-
-            // Deserialize all objects until untilptr
-            if (result.resumePtr < result.untilPtr)
-            {
-                MemoryStream ms = new(result.freeBuffer2.buffer);
-                ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
-                Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
-                ms.Dispose();
-
-                result.freeBuffer2.Return();
-                result.freeBuffer2 = null;
-                result.resumePtr = result.untilPtr;
-            }
-
-            // If we have processed entire page, return
-            if (result.untilPtr >= result.maxPtr)
-            {
-                result.Free();
-
-                // Call the "real" page read callback
-                result.callback(errorCode, numBytes, context);
-                return;
-            }
-
-            // We will now be able to process all records until (but not including) untilPtr
-            GetObjectInfo(result.freeBuffer1.GetValidPointer(), ref result.untilPtr, result.maxPtr, objectBlockSize, out long startptr, out long alignedLength);
-
-            // Object log fragment should be aligned by construction
-            Debug.Assert(startptr % sectorSize == 0);
-            Debug.Assert(alignedLength % sectorSize == 0);
-
-            if (alignedLength > int.MaxValue)
-                throw new TsavoriteException("Unable to read object page, total size greater than 2GB: " + alignedLength);
-
-            var objBuffer = bufferPool.Get((int)alignedLength);
-            result.freeBuffer2 = objBuffer;
-
-            // Request objects from objlog
-            result.objlogDevice.ReadAsync(
-                (int)((result.page - result.offset) >> (LogSegmentSizeBits - LogPageSizeBits)),
-                (ulong)startptr,
-                (IntPtr)objBuffer.aligned_pointer, (uint)alignedLength, AsyncReadPageWithObjectsCallback<TContext>, result);
-#endif // READ_WRITE
-        }
-
-        #region Page handlers for objects
-        /// <summary>
-        /// Deseialize part of page from stream
-        /// </summary>
-        /// <param name="raw"></param>
-        /// <param name="ptr">From pointer</param>
-        /// <param name="untilptr">Until pointer</param>
-        /// <param name="stream">Stream</param>
-        public void Deserialize(byte* raw, long ptr, long untilptr, Stream stream)
-        {
-#if READ_WRITE
-AllocatorRecord[] src, 
-            long streamStartPos = stream.Position;
-            long start_addr = -1;
-            int start_offset = -1, end_offset = -1;
-
-            var keySerializer = KeyHasObjects() ? _storeFunctions.BeginDeserializeKey(stream) : null;
-            var valueSerializer = ValueHasObjects() ? _storeFunctions.BeginDeserializeValue(stream) : null;
-
-            while (ptr < untilptr)
-            {
-                ref var record = ref Unsafe.AsRef<AllocatorRecord>(raw + ptr);
-                src[ptr / RecordSize].info = record.info;
-                if (start_offset == -1)
-                    start_offset = (int)(ptr / RecordSize);
-
-                end_offset = (int)(ptr / RecordSize) + 1;
-
-                if (!record.info.Invalid)
-                {
-                    if (KeyHasObjects())
-                    {
-                        var key_addr = GetKeyAddressInfo((long)raw + ptr);
-                        if (start_addr == -1) start_addr = key_addr->Address & ~((long)sectorSize - 1);
-                        if (stream.Position != streamStartPos + key_addr->Address - start_addr)
-                            _ = stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
-
-                        keySerializer.Deserialize(out src[ptr / RecordSize].key);
-                    }
-                    else
-                        src[ptr / RecordSize].key = record.key;
-
-                    if (!record.info.Tombstone)
-                    {
-                        if (ValueHasObjects())
-                        {
-                            var value_addr = GetValueAddressInfo((long)raw + ptr);
-                            if (start_addr == -1) start_addr = value_addr->Address & ~((long)sectorSize - 1);
-                            if (stream.Position != streamStartPos + value_addr->Address - start_addr)
-                                stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
-
-                            valueSerializer.Deserialize(out src[ptr / RecordSize].value);
-                        }
-                        else
-                            src[ptr / RecordSize].value = record.value;
-                    }
-                }
-                ptr += GetRecordSize(ptr).Item2;
-            }
-            if (KeyHasObjects())
-                keySerializer.EndDeserialize();
-            if (ValueHasObjects())
-                valueSerializer.EndDeserialize();
-
-            if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
-            {
-                using var iter = new MemoryPageScanIterator(src, start_offset, end_offset, -1, RecordSize);
-                OnDeserializationObserver.OnNext(iter);
-            }
-#endif // READ_WRITE
-        }
-
-        /// <summary>
-        /// Get location and range of object log addresses for specified log page
-        /// </summary>
-        /// <param name="raw"></param>
-        /// <param name="ptr"></param>
-        /// <param name="untilptr"></param>
-        /// <param name="objectBlockSize"></param>
-        /// <param name="startptr"></param>
-        /// <param name="size"></param>
-        public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
-        {
-#if READ_WRITE
-            var minObjAddress = long.MaxValue;
-            var maxObjAddress = long.MinValue;
-            var done = false;
-
-            while (!done && (ptr < untilptr))
-            {
-                ref var record = ref Unsafe.AsRef<AllocatorRecord>(raw + ptr);
-
-                if (!record.info.Invalid)
-                {
-                    if (KeyHasObjects())
-                    {
-                        var key_addr = GetKeyAddressInfo((long)raw + ptr);
-                        var addr = key_addr->Address;
-
-                        if (addr < minObjAddress) minObjAddress = addr;
-                        addr += key_addr->Size;
-                        if (addr > maxObjAddress) maxObjAddress = addr;
-
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                            done = true;
-                    }
-
-
-                    if (ValueHasObjects() && !record.info.Tombstone)
-                    {
-                        var value_addr = GetValueAddressInfo((long)raw + ptr);
-                        var addr = value_addr->Address;
-
-                        if (addr < minObjAddress) minObjAddress = addr;
-                        addr += value_addr->Size;
-                        if (addr > maxObjAddress) maxObjAddress = addr;
-
-                        // If object pointer is greater than kObjectSize from starting object pointer
-                        if (minObjAddress != long.MaxValue && (addr - minObjAddress > objectBlockSize))
-                            done = true;
-                    }
-                }
-                ptr += GetRecordSize(ptr).allocatedSize;
-            }
-
-            // Handle the case where no objects are to be written
-            if (minObjAddress == long.MaxValue && maxObjAddress == long.MinValue)
-            {
-                minObjAddress = 0;
-                maxObjAddress = 0;
-            }
-
-            // Align start pointer for retrieval
-            minObjAddress &= ~((long)sectorSize - 1);
-
-            // Align max address as well
-            maxObjAddress = (maxObjAddress + (sectorSize - 1)) & ~((long)sectorSize - 1);
-
-            startptr = minObjAddress;
-            size = maxObjAddress - minObjAddress;
-#else
-            startptr = 0;
-            size = 0;
-#endif // READ_WRITE
-        }
-        #endregion
 
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {
@@ -858,9 +604,61 @@ AllocatorRecord[] src,
 #endif // READ_WRITE
         }
 
+        /// <summary>
+        /// Read pages from specified device
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
+                                        long readPageStart,
+                                        int numPages,
+                                        long untilAddress,
+                                        DeviceIOCompletionCallback callback,
+                                        TContext context,
+                                        ObjectFrame frame,
+                                        out CountdownEvent completed,
+                                        long devicePageOffset = 0,
+                                        IDevice device = null)
+        {
+            var usedDevice = device ?? this.device;
+
+            completed = new CountdownEvent(numPages);
+            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            {
+                int pageIndex = (int)(readPage % frame.frameSize);
+                if (frame.GetPage(pageIndex) == null)
+                    frame.Allocate(pageIndex);
+                else
+                    frame.Clear(pageIndex);
+
+                var asyncResult = new PageAsyncReadResult<TContext>()
+                {
+                    page = readPage,
+                    context = context,
+                    handle = completed,
+                    maxPtr = PageSize,
+                    frame = frame,
+                };
+
+                var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+                var readLength = (uint)AlignedPageSizeBytes;
+                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
+
+                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+                {
+                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                    asyncResult.maxPtr = readLength;
+                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
+                }
+
+                if (device != null)
+                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice);
+            }
+        }
+
         internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            throw new TsavoriteException("Incremental snapshots not supported with generic allocator");
+            throw new TsavoriteException("Incremental snapshots not supported with generic allocator"); // TODO READ_WRITE
         }
     }
 }

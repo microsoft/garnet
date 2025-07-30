@@ -392,8 +392,8 @@ namespace Tsavorite.core
         }
 
         internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
-                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
+                long devicePageOffset = 0, IDevice device = null, CancellationTokenSource cts = null)
+            => (hlogBase as ObjectAllocatorImpl<TStoreFunctions>).AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {

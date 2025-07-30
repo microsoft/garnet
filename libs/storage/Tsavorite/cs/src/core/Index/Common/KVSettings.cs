@@ -27,11 +27,6 @@ namespace Tsavorite.core
         public IDevice LogDevice;
 
         /// <summary>
-        /// Device used for serialized heap objects in hybrid log
-        /// </summary>
-        public IDevice ObjectLogDevice;
-
-        /// <summary>
         /// Size of a page, in bytes
         /// </summary>
         public long PageSize = 1 << 25;

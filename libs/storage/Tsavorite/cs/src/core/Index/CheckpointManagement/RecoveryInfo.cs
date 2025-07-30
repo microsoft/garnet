@@ -282,7 +282,6 @@ namespace Tsavorite.core
     {
         public HybridLogRecoveryInfo info;
         public IDevice snapshotFileDevice;
-        public IDevice snapshotFileObjectLogDevice;
         public IDevice deltaFileDevice;
         public DeltaLog deltaLog;
         public SemaphoreSlim flushedSemaphore;
@@ -297,7 +296,6 @@ namespace Tsavorite.core
         public void Dispose()
         {
             snapshotFileDevice?.Dispose();
-            snapshotFileObjectLogDevice?.Dispose();
             deltaLog?.Dispose();
             deltaFileDevice?.Dispose();
             this = default;
@@ -308,7 +306,6 @@ namespace Tsavorite.core
             // Ownership transfer of handles across struct copies
             var dest = this;
             dest.snapshotFileDevice = default;
-            dest.snapshotFileObjectLogDevice = default;
             deltaLog = default;
             deltaFileDevice = default;
             return dest;

@@ -38,10 +38,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.snapshotFinalLogicalAddress = store._hybridLogCheckpoint.info.finalLogicalAddress;
                     store._hybridLogCheckpoint.snapshotFileDevice =
                         store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice =
-                        store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetSegmentSize());
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
                     store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
@@ -64,7 +61,6 @@ namespace Tsavorite.core
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
                         store._hybridLogCheckpoint.info.startLogicalAddress,
                         store._hybridLogCheckpoint.snapshotFileDevice,
-                        store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         out store._hybridLogCheckpoint.flushedSemaphore,
                         store.ThrottleCheckpointFlushDelayMs);
                     if (store._hybridLogCheckpoint.flushedSemaphore != null)

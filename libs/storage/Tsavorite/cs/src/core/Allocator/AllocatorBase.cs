@@ -214,7 +214,7 @@ namespace Tsavorite.core
         protected abstract void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, long fuzzyStartLogicalAddress);
 
         /// <summary>Read page from device (async)</summary>
-        protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
+        protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device);
 
         /// <summary>Write page to device (async)</summary>
         protected abstract void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
@@ -635,9 +635,12 @@ namespace Tsavorite.core
 
             AlignedPageSizeBytes = RoundUp(PageSize, sectorSize);
 
-            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
-            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
-            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
+            if (BufferSize > 0)
+            {
+                var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
+                pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
+                NativeMemory.Clear(pagePointers, bufferSizeInBytes);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1582,8 +1585,8 @@ namespace Tsavorite.core
                                 DeviceIOCompletionCallback callback,
                                 TContext context,
                                 long devicePageOffset = 0,
-                                IDevice logDevice = null, IDevice objectLogDevice = null)
-            => AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
+                                IDevice logDevice = null)
+            => AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice);
 
         /// <summary>Read pages from specified device</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1595,10 +1598,9 @@ namespace Tsavorite.core
                                         TContext context,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
+                                        IDevice device = null)
         {
             var usedDevice = device ?? this.device;
-            IDevice usedObjlogDevice = objectLogDevice;
 
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
@@ -1632,7 +1634,7 @@ namespace Tsavorite.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice);
             }
         }
 
@@ -1773,11 +1775,10 @@ namespace Tsavorite.core
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
@@ -1840,60 +1841,6 @@ namespace Tsavorite.core
             // Convert to absolute address as we're going to disk
             fromLogicalAddress = AbsoluteAddress(fromLogicalAddress);
             AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
-        }
-
-        /// <summary>
-        /// Read pages from specified device
-        /// </summary>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
-                                        long readPageStart,
-                                        int numPages,
-                                        long untilAddress,
-                                        DeviceIOCompletionCallback callback,
-                                        TContext context,
-                                        BlittableFrame frame,
-                                        out CountdownEvent completed,
-                                        long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
-        {
-            TODO(); // This won't work with expando; the expansion will be much more than a page, and more than we have memory budget for
-            var usedDevice = device ?? this.device;
-
-            ArraySegment<byte> dataSegment = new ArraySegment<byte>(new byte[PageSize]);
-
-            completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
-            {
-                int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
-                    frame.Allocate(pageIndex);
-                else
-                    frame.Clear(pageIndex);
-
-                var asyncResult = new PageAsyncReadResult<TContext>()
-                {
-                    page = readPage,
-                    context = context,
-                    handle = completed,
-                    frame = frame
-                };
-
-                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
-                uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
-
-                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-                {
-                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-                }
-
-                if (device != null)
-                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
-
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
-            }
         }
 
         private protected void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)

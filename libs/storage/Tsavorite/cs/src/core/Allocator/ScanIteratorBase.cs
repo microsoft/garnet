@@ -207,13 +207,13 @@ namespace Tsavorite.core
                         {
                             epoch.BumpCurrentEpoch(() =>
                             {
-                                AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                                AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, device: null, loadCTSs[nextFrame]);
                                 loadedPages[nextFrame] = pageEndAddress; // Record that the load of the next page has completed
                             });
                         }
                         else
                         {
-                            AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                            AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, device: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress; // Record that the load of the next page has completed
                         }
                     }
@@ -257,7 +257,7 @@ namespace Tsavorite.core
         }
 
         internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
-                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
+                long devicePageOffset = 0, IDevice device = null, CancellationTokenSource cts = null);
 
         /// <summary>
         /// Wait for the current frame to complete loading

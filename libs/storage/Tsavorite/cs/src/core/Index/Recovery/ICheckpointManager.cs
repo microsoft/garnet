@@ -15,7 +15,6 @@ namespace Tsavorite.core
     ///   GetIndexDevice (for index checkpoints) ->
     ///   InitializeLogCheckpoint (for log checkpoints) ->
     ///   GetSnapshotLogDevice (for log checkpoints in snapshot mode) ->
-    ///   GetSnapshotObjectLogDevice (for log checkpoints in snapshot mode with objects) ->
     ///   CommitLogCheckpoint (for log checkpoints) ->
     ///   CommitIndexCheckpoint (for index checkpoints) ->
     /// 
@@ -24,7 +23,6 @@ namespace Tsavorite.core
     ///   GetLogCommitMetadata ->
     ///   GetIndexDevice ->
     ///   GetSnapshotLogDevice (for recovery in snapshot mode) ->
-    ///   GetSnapshotObjectLogDevice (for recovery in snapshot mode with objects)
     /// 
     /// Provided devices will be closed directly by Tsavorite when done.
     /// </summary>
@@ -143,13 +141,6 @@ namespace Tsavorite.core
         /// <param name="token"></param>
         /// <returns></returns>
         IDevice GetSnapshotLogDevice(Guid token);
-
-        /// <summary>
-        /// Provide device to store snapshot of object log (required only for snapshot checkpoints)
-        /// </summary>
-        /// <param name="token"></param>
-        /// <returns></returns>
-        IDevice GetSnapshotObjectLogDevice(Guid token);
 
         /// <summary>
         /// Provide device to store incremental (delta) snapshot of log (required only for incremental snapshot checkpoints)

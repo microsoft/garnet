@@ -24,7 +24,6 @@ namespace Tsavorite.core
 
         public IDevice recoveryDevice;
         public long recoveryDevicePageOffset;
-        public IDevice objectLogRecoveryDevice;
 
         // These are circular buffers of 'capacity' size; the indexing wraps due to hlog.GetPageIndexForPage().
         public ReadStatus[] readStatus;
@@ -116,7 +115,6 @@ namespace Tsavorite.core
         internal void Dispose()
         {
             recoveryDevice.Dispose();
-            objectLogRecoveryDevice.Dispose();
         }
     }
 
@@ -689,7 +687,7 @@ namespace Tsavorite.core
             hlogBase.AsyncReadPagesFromDevice(page, numPagesToRead, endAddress,
                                           hlogBase.AsyncReadPagesCallbackForRecovery,
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                                          recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
+                                          recoveryStatus.recoveryDevice);
         }
 
         private long FreePagesToLimitHeapMemory(RecoveryStatus recoveryStatus, long page)
@@ -1026,14 +1024,11 @@ namespace Tsavorite.core
             // By default first page has one extra record
             capacity = hlogBase.GetCapacityNumPages();
             var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
-            var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(guid);
 
             recoveryDevice.Initialize(hlogBase.GetSegmentSize());
-            objectLogRecoveryDevice.Initialize(-1);
             recoveryStatus = new RecoveryStatus(capacity, hlogBase.MinEmptyPageCount, endPage, untilAddress, CheckpointType.Snapshot)
             {
                 recoveryDevice = recoveryDevice,
-                objectLogRecoveryDevice = objectLogRecoveryDevice,
                 recoveryDevicePageOffset = snapshotStartPage,
                 snapshotEndPage = snapshotEndPage
             };

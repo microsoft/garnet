@@ -632,8 +632,9 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+                long devicePageOffset = 0, IDevice device = null, CancellationTokenSource cts = null)
+            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, cts);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
@@ -702,7 +703,7 @@ namespace Tsavorite.core
 
             if (info.CommitNum == commitNum)
                 return true;
-            // User wants any commie
+            // User wants any commit
             if (commitNum == -1)
                 return foundCommit;
             // requested commit not found
@@ -710,16 +711,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Retrieve physical address of next iterator value
-        /// (under epoch protection if it is from main page buffer)
+        /// Retrieve physical address of next iterator value (under epoch protection if it is from main page buffer)
         /// </summary>
-        /// <param name="physicalAddress"></param>
-        /// <param name="entryLength"></param>
-        /// <param name="currentAddress"></param>
-        /// <param name="outNextAddress"></param>
-        /// <param name="commitRecord"></param>
-        /// <param name="onFrame"></param>
-        /// <returns></returns>
         private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord, out bool onFrame)
         {
             while (true)

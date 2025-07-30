@@ -359,12 +359,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public IDevice GetSnapshotObjectLogDevice(Guid token)
-        {
-            return deviceFactory.Get(checkpointNamingScheme.ObjectLogSnapshot(token));
-        }
-
-        /// <inheritdoc />
         public IDevice GetDeltaLogDevice(Guid token)
         {
             return deviceFactory.Get(checkpointNamingScheme.DeltaLog(token));
