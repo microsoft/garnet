@@ -5,7 +5,9 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+#if DEBUG
 using Garnet.common;
+#endif
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
