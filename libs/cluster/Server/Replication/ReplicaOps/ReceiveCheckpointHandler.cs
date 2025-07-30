@@ -76,7 +76,7 @@ namespace Garnet.cluster
             WriteInto(writeIntoCkptDevice, (ulong)startAddress, data, data.Length, segmentId);
 
 #if DEBUG
-            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).GetAwaiter().GetResult();
+            ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).GetAwaiter().GetResult();
 #endif
         }
 
@@ -111,11 +111,6 @@ namespace Garnet.cluster
                     device.WriteAsync((IntPtr)pbuffer.aligned_pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
 
                 _ = writeCheckpointSemaphore.Wait(replicaSyncTimeout, cts.Token);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, $"{nameof(ReceiveCheckpointHandler)}.WriteInto");
-                throw new Exception(ex.Message);
             }
             finally
             {

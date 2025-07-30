@@ -483,7 +483,7 @@ namespace Garnet.cluster
                     var num_bytes = startAddress + batchSize < endAddress ?
                         batchSize :
                         (int)(endAddress - startAddress);
-                    var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes);
+                    var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
 
                     resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
@@ -528,9 +528,10 @@ namespace Garnet.cluster
                     while (startAddress < size)
                     {
                         var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
-                        var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes, segment);
+                        var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes, segment).ConfigureAwait(false);
 
-                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).
+                            WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
                         if (!resp.Equals("OK"))
                         {
                             logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
