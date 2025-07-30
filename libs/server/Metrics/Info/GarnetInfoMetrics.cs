@@ -211,7 +211,9 @@ namespace Garnet.server
                     new("total_cluster_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_cluster_commands_processed().ToString()),
                     new("total_write_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_write_commands_processed().ToString()),
                     new("total_read_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_read_commands_processed().ToString()),
-                    new("total_number_resp_server_session_exceptions", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_number_resp_server_session_exceptions().ToString())
+                    new("total_number_resp_server_session_exceptions", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_number_resp_server_session_exceptions().ToString()),
+                    new("total_transaction_commands_received", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_received().ToString()),
+                    new("total_transaction_commands_execution_failed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_execution_failed().ToString()),
                 ];
 
             if (clusterEnabled)

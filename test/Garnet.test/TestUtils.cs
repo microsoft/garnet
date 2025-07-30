@@ -270,7 +270,8 @@ namespace Garnet.test
             TextWriter logTo = null,
             bool enableCluster = false,
             int expiredKeyDeletionScanFrequencySecs = -1,
-            bool useReviv = false
+            bool useReviv = false,
+            bool useInChainRevivOnly = false
             )
         {
             if (useAzureStorage)
@@ -424,12 +425,17 @@ namespace Garnet.test
             {
                 opts.UseRevivBinsPowerOf2 = true;
                 opts.RevivBinBestFitScanLimit = 0;
-                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivNumberOfBinsToSearch = int.MaxValue;
                 opts.RevivifiableFraction = 1;
                 opts.RevivInChainOnly = false;
                 opts.RevivBinRecordCounts = [];
                 opts.RevivBinRecordSizes = [];
                 opts.RevivObjBinRecordCount = 256;
+            }
+
+            if (useInChainRevivOnly)
+            {
+                opts.RevivInChainOnly = true;
             }
 
             return new GarnetServer(opts, loggerFactory);
