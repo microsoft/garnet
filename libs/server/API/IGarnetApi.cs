@@ -1206,6 +1206,36 @@ namespace Garnet.server
         GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error);
 
         #endregion
+
+        #region VectorSet Methods
+
+        // TODO: Span-ish types are very inconsistent here, think about them maybe?
+
+        /// <summary>
+        /// Adds to (and may create) a vector set with the given parameters.
+        /// </summary>
+        GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result);
+
+        /// <summary>
+        /// Perform a similarity search given a vector and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetValueSimilarity(SpanByte key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
+
+        /// <summary>
+        /// Perform a similarity search given an element already in the vector set and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
+
+        /// <summary>
+        /// Fetch the embedding of a given element in a Vector set.
+        /// </summary>
+        GarnetStatus VectorEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances);
+
+        #endregion
     }
 
     /// <summary>

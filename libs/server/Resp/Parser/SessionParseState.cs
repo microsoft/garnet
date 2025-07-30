@@ -163,21 +163,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Initialize the parse state with a given set of arguments
-        /// </summary>
-        /// <param name="args">Set of arguments to initialize buffer with</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(ArgSlice[] args)
-        {
-            Initialize(args.Length);
-
-            for (var i = 0; i < args.Length; i++)
-            {
-                *(bufferPtr + i) = args[i];
-            }
-        }
-
-        /// <summary>
         /// Limit access to the argument buffer to start at a specified index.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
@@ -430,6 +415,17 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadDouble(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value, canBeInfinite);
+        }
+
+        /// <summary>
+        /// Try to get double argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadFloat(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value, canBeInfinite);
         }
 
         /// <summary>

@@ -118,6 +118,9 @@ namespace Garnet.server
                     value.CopyTo(dst.Memory.Memory.Span);
                     break;
 
+                case RespCommand.VADD:
+                case RespCommand.VSIM:
+                case RespCommand.VEMB:
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)

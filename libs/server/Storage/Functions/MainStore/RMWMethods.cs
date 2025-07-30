@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -272,6 +273,20 @@ namespace Garnet.server
 
                     // Copy value to output
                     CopyTo(ref value, ref output, functionsState.memoryPool);
+                    break;
+                case RespCommand.VADD:
+                    {
+                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                        // Values is here, skipping during index creation
+                        // Element is here, skipping during index creation
+                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(4).Span);
+                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(5).Span);
+                        // Attributes is here, skipping during index creation
+                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(7).Span);
+
+                        VectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
+                    }
                     break;
             }
 
@@ -780,6 +795,8 @@ namespace Garnet.server
                     // this is the case where it isn't expired
                     shouldUpdateEtag = false;
                     break;
+                case RespCommand.VADD: // Adding to an existing VectorSet is modeled as a read operations, so this is a no-op
+                    return true;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {

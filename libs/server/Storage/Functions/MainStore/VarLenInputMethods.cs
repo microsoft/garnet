@@ -113,6 +113,9 @@ namespace Garnet.server
                     ndigits = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
 
                     return sizeof(int) + ndigits;
+                case RespCommand.VADD:
+                    return sizeof(int) + VectorManager.IndexSizeBytes;
+
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {

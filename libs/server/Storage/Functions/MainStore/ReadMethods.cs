@@ -137,7 +137,6 @@ namespace Garnet.server
                 return true;
             }
 
-
             if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);
             else

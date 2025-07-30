@@ -529,4 +529,15 @@ namespace Garnet.server
         [FieldOffset(0)]
         public int result1;
     }
+
+    /// <summary>
+    /// Header for Garnet Main Store inputs but for Vector element r/w/d ops
+    /// </summary>
+    public struct VectorInput : IStoreInput
+    {
+        public int SerializedLength => throw new NotImplementedException();
+
+        public unsafe int CopyTo(byte* dest, int length) => throw new NotImplementedException();
+        public unsafe int DeserializeFrom(byte* src) => throw new NotImplementedException();
+    }
 }

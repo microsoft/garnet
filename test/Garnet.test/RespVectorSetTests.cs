@@ -1,0 +1,116 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System.Linq;
+using NUnit.Framework;
+using NUnit.Framework.Legacy;
+using StackExchange.Redis;
+
+namespace Garnet.test
+{
+    [TestFixture]
+    public class RespVectorSetTests
+    {
+        GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public void VADD()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", "def", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // TODO: exact duplicates - what does Redis do?
+        }
+
+        [Test]
+        public void VEMB()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+
+            var res2 = (string[])db.Execute("VEMB", ["foo", "abc"]);
+            ClassicAssert.AreEqual(4, res2.Length);
+            ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res2[0]));
+            ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res2[1]));
+            ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res2[2]));
+            ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res2[3]));
+
+            var res3 = (string[])db.Execute("VEMB", ["foo", "def"]);
+            ClassicAssert.AreEqual(0, res3.Length);
+        }
+
+        [Test]
+        public void VectorElementOpacity()
+        {
+            // Check that we can't touch an element with GET despite it also being in the main store
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = (string)db.StringGet("abc");
+            ClassicAssert.IsNull(res2);
+
+            var res3 = db.KeyDelete("abc");
+            ClassicAssert.IsFalse(res3);
+
+            var res4 = db.StringSet("abc", "def", when: When.NotExists);
+            ClassicAssert.IsTrue(res4);
+        }
+
+        // TODO: Test that gets on vector sets also fail
+
+        [Test]
+        public void VSIM()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", "def", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            var res3 = (string[])db.Execute("VSIM", ["foo", "VALUES", "4", "2.1", "2.2", "2.3", "2.4", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res3.Length);
+            ClassicAssert.IsTrue(res3.Contains("abc"));
+            ClassicAssert.IsTrue(res3.Contains("def"));
+
+            var res4 = (string[])db.Execute("VSIM", ["foo", "ELE", "abc", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res4.Length);
+            ClassicAssert.IsTrue(res4.Contains("abc"));
+            ClassicAssert.IsTrue(res4.Contains("def"));
+
+            // TODO: WITHSCORES
+            // TODO: WITHATTRIBS
+        }
+    }
+}

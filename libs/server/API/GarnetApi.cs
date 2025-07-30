@@ -21,19 +21,22 @@ namespace Garnet.server
     /// <summary>
     /// Garnet API implementation
     /// </summary>
-    public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
+    public partial struct GarnetApi<TContext, TObjectContext, TVectorContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        where TVectorContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
         TObjectContext objectContext;
+        TVectorContext vectorContext;
 
-        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext)
+        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext, TVectorContext vectorContext)
         {
             this.storageSession = storageSession;
             this.context = context;
             this.objectContext = objectContext;
+            this.vectorContext = vectorContext;
         }
 
         #region WATCH
@@ -479,6 +482,26 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
+        #endregion
+
+        #region VectorSet commands
+
+        /// <inheritdoc />
+        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
+        => storageSession.VectorSetAdd(key, reduceDims, values, element, quantizer, buildExplorationFactor, attributes, numLinks, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus VectorSetValueSimilarity(SpanByte key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        => storageSession.VectorSetValueSimilarity(key, values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        => storageSession.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        => storageSession.VectorEmbedding(key, element, ref outputDistances);
+
         #endregion
     }
 }
