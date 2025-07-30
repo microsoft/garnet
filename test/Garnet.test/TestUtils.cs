@@ -238,6 +238,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
+            string objectStorePageSize = default,
             string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
@@ -370,6 +371,9 @@ namespace Garnet.test
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
+
+            if (!string.IsNullOrEmpty(objectStorePageSize))
+                opts.ObjectStorePageSize = objectStorePageSize;
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;

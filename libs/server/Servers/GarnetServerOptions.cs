@@ -589,7 +589,7 @@ namespace Garnet.server
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
             kvSettings.MinEmptyPageCount = storeEmptyPageCount;
 
-            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.MemorySize;
+            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.PageSize;
             if (storeEmptyPageCount == 0)
                 logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
             else
