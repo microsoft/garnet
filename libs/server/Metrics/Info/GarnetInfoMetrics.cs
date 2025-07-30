@@ -68,13 +68,14 @@ namespace Garnet.server
 
             var disableObj = storeWrapper.serverOptions.DisableObjects;
 
-            var object_store_index_size = disableObj ? -1L : 0L;
-            var object_store_log_memory_size = disableObj ? -1L : 0L;
-            var object_store_read_cache_log_memory_size = disableObj ? -1L : 0L;
-            var object_store_heap_memory_target_size = disableObj ? -1L : 0L;
-            var object_store_heap_memory_size = disableObj ? -1L : 0L;
-            var object_store_read_cache_heap_memory_size = disableObj ? -1L : 0L;
-            var total_object_store_size = disableObj ? -1L : 0L;
+            var initialSize = storeWrapper.serverOptions.DisableObjects ? -1L : 0L;
+            var object_store_index_size = initialSize;
+            var object_store_log_memory_size = initialSize;
+            var object_store_read_cache_log_memory_size = initialSize;
+            var object_store_heap_memory_target_size = initialSize;
+            var object_store_heap_memory_size = initialSize;
+            var object_store_read_cache_heap_memory_size = initialSize;
+            var total_object_store_size = initialSize;
 
             var enableAof = storeWrapper.serverOptions.EnableAOF;
             var aof_log_memory_size = enableAof ? 0 : -1L;

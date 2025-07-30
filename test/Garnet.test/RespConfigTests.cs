@@ -76,9 +76,7 @@ namespace Garnet.test
             var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
 
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
-            var bufferSize = ServerOptions.PreviousPowerOf2(currMemorySize);
-            if (bufferSize != currMemorySize)
-                bufferSize *= 2;
+            var bufferSize = ServerOptions.NextPowerOf2(currMemorySize);
             var pageSize = storeType == StoreType.Main ? 32L * 1024 * 1024 : 4 * 1024; // default page size
 
             // Check initial MinEPC before any changes

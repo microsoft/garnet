@@ -257,9 +257,7 @@ namespace Garnet.server
                 return;
 
             // Calculate the buffer size based on the configured memory size
-            var adjConfMemorySize = ServerOptions.PreviousPowerOf2(confMemorySize);
-            if (confMemorySize != adjConfMemorySize)
-                confMemorySize = adjConfMemorySize * 2;
+            confMemorySize = ServerOptions.NextPowerOf2(confMemorySize);
 
             // If the new memory size is greater than the configured memory size, return an error
             if (newMemorySize > confMemorySize)
