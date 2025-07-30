@@ -285,7 +285,7 @@ namespace Garnet.test
         private string memorySize = "3m";
         private string indexSize = "1m";
         private string objectStoreLogMemorySize = "2500";
-        private string objectStoreHeapMemorySize = "8192";
+        private string objectStoreHeapMemorySize = "1m";
         private string objectStoreIndexSize = "2048";
         private string pageSize = "1024";
         private bool useReviv;
@@ -299,7 +299,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(null,
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
@@ -307,7 +307,8 @@ namespace Garnet.test
                 objectStoreLogMemorySize: objectStoreLogMemorySize,
                 objectStoreIndexSize: objectStoreIndexSize,
                 objectStoreHeapMemorySize: objectStoreHeapMemorySize,
-                useReviv: useReviv);
+                useReviv: useReviv,
+                useLogNullDevice: true);
             server.Start();
         }
 
@@ -516,7 +517,7 @@ namespace Garnet.test
 
             // Restart server with initial memory size and recover data
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(null,
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 memorySize: memorySize,
                 indexSize: indexSize,
                 pageSize: pageSize,
@@ -525,7 +526,8 @@ namespace Garnet.test
                 objectStoreIndexSize: objectStoreIndexSize,
                 objectStoreHeapMemorySize: objectStoreHeapMemorySize,
                 useReviv: useReviv,
-                tryRecover: true);
+                tryRecover: true,
+                useLogNullDevice: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -533,7 +535,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
 
                 // Find the smallest key index that still exists in the server
-                var c = lastIdxSecondRound;
+                var c = lastIdxSecondRound + 1;
                 while (c > 0)
                 {
                     if (!db.KeyExists($"key{--c:00000}"))

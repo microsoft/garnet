@@ -271,16 +271,17 @@ namespace Garnet.test
             bool enableCluster = false,
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
-            bool useInChainRevivOnly = false
+            bool useInChainRevivOnly = false,
+            bool useLogNullDevice = false
             )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            var logDir = logCheckpointDir;
-            if (useAzureStorage)
+            var logDir = useLogNullDevice ? null : logCheckpointDir;
+            if (useAzureStorage && !useLogNullDevice)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
             if (useAzureStorage)
@@ -314,7 +315,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                EnableStorageTier = logCheckpointDir != null,
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 EndPoints = endpoints ?? ([EndPoint]),
