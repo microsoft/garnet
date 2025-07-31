@@ -545,30 +545,13 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
         /// <param name="key">The key for which to set the expiration time.</param>
-        /// <param name="expireAt">The expiration time in ticks.</param>
-        /// <param name="isMilliseconds">Indicates whether the expiration time is in milliseconds.</param>
-        /// <param name="expireOption">The expiration option to use.</param>
         /// <param name="input">The input object containing the operation details.</param>
         /// <param name="output">The output footer object to store the result.</param>
         /// <param name="objectContext">The object context for the operation.</param>
         /// <returns>The status of the operation.</returns>
-        public GarnetStatus HashExpire<TObjectContext>(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
+        public GarnetStatus HashExpire<TObjectContext>(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            var expireAtUtc = isMilliseconds ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expireAt) : ConvertUtils.UnixTimestampInSecondsToTicks(expireAt);
-            var expiryLength = NumUtils.CountDigits(expireAtUtc);
-            var expirySlice = scratchBufferBuilder.CreateArgSlice(expiryLength);
-            var expirySpan = expirySlice.Span;
-            NumUtils.WriteInt64(expireAtUtc, expirySpan);
-
-            parseState.Initialize(1 + input.parseState.Count);
-            parseState.SetArgument(0, expirySlice);
-            parseState.SetArguments(1, input.parseState.Parameters);
-
-            var innerInput = new ObjectInput(input.header, ref parseState, startIdx: 0, arg1: (int)expireOption);
-
-            return RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
-        }
+            => RMWObjectStoreOperationWithOutput(key.ToArray(), ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the time-to-live (TTL) of a hash key.
