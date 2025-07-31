@@ -2837,14 +2837,14 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-//            var res = (RedisResult[])db.ScriptEvaluate(@"
-//    local a, b, c = pcall(function()
-//    return struct.unpack('HH', '\x01\x00\x02\x00')
-//end)
+            var res = (RedisResult[])db.ScriptEvaluate(@"
+    local a, b, c = pcall(function()
+    return struct.unpack('HH', '\x01\x00\x02\x00')
+end)
 
-//return { a, b, c }
-//");
-//            ClassicAssert.True(res.Select(x => (int)x).SequenceEqual([1, 2, 5]));
+return { a, b, c }
+");
+            ClassicAssert.True(res.Select(x => (int)x).SequenceEqual([1, 2, 5]));
 
             var unpackHRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\x01\x00\x02\x00') }");
             ClassicAssert.True(unpackHRes.SequenceEqual([1, 2, 5]));
