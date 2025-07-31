@@ -894,7 +894,7 @@ namespace Garnet.server
             var numLuaArgs = state.StackTop;
             if (numLuaArgs == 0 || !TryGetFormat(this, 1, out var format))
             {
-                return LuaWrappedError(0, constStrs.BadArgLoadString);
+                return LuaWrappedError(1, constStrs.BadArgLoadString);
             }
 
             scratchBufferBuilder.Reset();
@@ -910,7 +910,7 @@ namespace Garnet.server
 
                 if (!TryGetOptSize(this, opt, format, ref optIx, out int size, out var errOptSizeIndex))
                 {
-                    return LuaWrappedError(0, errOptSizeIndex);
+                    return LuaWrappedError(1, errOptSizeIndex);
                 }
 
                 int toAlign = GetToAlign(totalSize, h.Align, opt, size);
@@ -918,19 +918,19 @@ namespace Garnet.server
 
                 if (opt == 's')
                 {
-                    return LuaWrappedError(0, constStrs.BadArgLoadString);
+                    return LuaWrappedError(1, constStrs.BadArgLoadString);
                 }
 
                 if (opt == 'c' && size == 0)
                 {
-                    return LuaWrappedError(0, constStrs.BadArgLoadString);
+                    return LuaWrappedError(1, constStrs.BadArgLoadString);
                 }
 
                 if (!char.IsLetterOrDigit(opt))
                 {
                     if (!TryParseControlOptions(this, opt, format, ref h, ref optIx, out var errIndex))
                     {
-                        return LuaWrappedError(0, errIndex);
+                        return LuaWrappedError(1, errIndex);
                     }
                 }
 
