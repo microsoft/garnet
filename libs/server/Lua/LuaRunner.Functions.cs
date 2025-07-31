@@ -2803,6 +2803,7 @@ namespace Garnet.server
             self.state.KnownStringToBuffer(stackIndex, out var data);
             format = Encoding.UTF8.GetString(data);
 
+            self.state.Remove(stackIndex);
             return true;
         }
 
@@ -2995,7 +2996,6 @@ namespace Garnet.server
                 return LuaWrappedError(1, constStrs.BadArgPack);
             }
 
-            state.Remove(1);
             scratchBufferBuilder.Reset();
 
             // Parse format
@@ -3347,25 +3347,26 @@ namespace Garnet.server
                 return LuaWrappedError(0, constStrs.BadArgUnpack);
             }
 
-            state.KnownStringToBuffer(2, out var data);
+            // Remove input arg from lua stack as reading, so stack index is still 1
+            state.KnownStringToBuffer(1, out var data);
+            state.Remove(1);
 
             int pos = 0;
             int dataLen = data.Length; // Note don't use data.Length in the following code, since data will be truncated as reading, so the data.Length will be chaning.
             if (numLuaArgs >= 3) // Only check if the 3rd argument is passed
             {
-                if (state.Type(3) != LuaType.Number || state.CheckNumber(3) <= 0)
+                if (state.Type(1) != LuaType.Number || state.CheckNumber(1) <= 0)
                 {
                     return LuaWrappedError(0, constStrs.BadArgUnpack);
                 }
-                pos = (int)state.CheckNumber(3);
+                pos = (int)state.CheckNumber(1);
+                state.Remove(1);
                 
                 if (pos < 1) {
                     // Offset must be 1 or greater
                     return LuaWrappedError(0, constStrs.BadArgUnpack);
                 }
                 pos--; // Lua indexes are 1-based
-                // slice data to start from pos
-                // data = data[pos..];
             }                
 
             int decodedCount = 0;
@@ -3462,8 +3463,13 @@ namespace Garnet.server
             // Next position
             state.PushInteger(pos + 1);
 
-            // Decode data according to format, including pos so add one
-            return (decodedCount + 1);
+            // Error and count for error_wrapper_rvar
+            state.PushNil();
+            state.PushInteger(decodedCount + 1);
+            state.Rotate(2, 2);
+
+            // Decode data according to format, including pos
+            return (decodedCount + 3);
 
             // Helper functions
             static bool TryDecodeInteger(LuaRunner self, char opt, Header h, int size, int pos, ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)

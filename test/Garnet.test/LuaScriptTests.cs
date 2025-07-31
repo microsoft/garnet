@@ -2794,6 +2794,42 @@ return cjson.encode(nested)");
                 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ulong 6
                 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31              // "value" + null-terminated
              }));
+
+            //var packIBCRes = (byte[])db.ScriptEvaluate("return struct.pack('i4sBc0', 42, 'test', true, 'done')");
+            //ClassicAssert.True(packIBCRes.SequenceEqual(new byte[] {
+            //    0x2A, 0x00, 0x00, 0x00,             // int32: 42
+            //    0x74, 0x65, 0x73, 0x74,             // 4-byte string: "test"
+            //    0x01,                               // boolean true as byte
+            //    0x64, 0x6F, 0x6E, 0x65, 0x00        // "done" null-terminated
+            //}));
+
+            var packDLHRes = (byte[])db.ScriptEvaluate("return struct.pack('dLh', 1.5, 0x12345678ABCDEF00, 256)");
+            ClassicAssert.True(packDLHRes.SequenceEqual(new byte[] {
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x3F, // double 1.5 (little-endian)
+                0x00, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12, // ulong 0x12345678ABCDEF00
+                0x00, 0x01                                     // int16: 256
+            }));
+
+            //var packPCC0Res = (byte[])db.ScriptEvaluate("return struct.pack('Pcc0', 'hello', 'A', 'B')");
+            //ClassicAssert.True(packPCC0Res.SequenceEqual(new byte[] {
+            //    0x05,                         // Pascal-length: 5
+            //    0x68, 0x65, 0x6C, 0x6C, 0x6F, // "hello"
+            //    0x41,                         // 'A'
+            //    0x42, 0x00                    // 'B', null terminator
+            //}));
+
+            var packIHRes = (byte[])db.ScriptEvaluate("return struct.pack('>ih', 0x01020304, 0x0506)");
+            ClassicAssert.True(packIHRes.SequenceEqual(new byte[] {
+                0x01, 0x02, 0x03, 0x04, // int32 big-endian
+                0x05, 0x06              // int16 big-endian
+            }));
+
+            //var packFEDC0Res = (byte[])db.ScriptEvaluate("return struct.pack('fdc0', 3.14, 2.71828, 'Z')");
+            //ClassicAssert.True(packFEDC0Res.SequenceEqual(new byte[] {
+            //    0xC3, 0xF5, 0x48, 0x40,             // float 3.14
+            //    0x18, 0x2D, 0x44, 0x54, 0xFB, 0x21, 0x09, 0x40, // double 2.71828
+            //    0x5A, 0x00                          // "Z" null-terminated
+            //}));
         }
 
         [Test]
