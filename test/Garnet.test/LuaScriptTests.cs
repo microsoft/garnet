@@ -2795,13 +2795,13 @@ return cjson.encode(nested)");
                 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31              // "value" + null-terminated
              }));
 
-            //var packIBCRes = (byte[])db.ScriptEvaluate("return struct.pack('i4sBc0', 42, 'test', true, 'done')");
-            //ClassicAssert.True(packIBCRes.SequenceEqual(new byte[] {
-            //    0x2A, 0x00, 0x00, 0x00,             // int32: 42
-            //    0x74, 0x65, 0x73, 0x74,             // 4-byte string: "test"
-            //    0x01,                               // boolean true as byte
-            //    0x64, 0x6F, 0x6E, 0x65, 0x00        // "done" null-terminated
-            //}));
+            var packIBCRes = (byte[])db.ScriptEvaluate("return struct.pack('i4sBc0', 42, 'test', 0x01, 'done')");
+            ClassicAssert.True(packIBCRes.SequenceEqual(new byte[] {
+                0x2A, 0x00, 0x00, 0x00,
+                0x74, 0x65, 0x73, 0x74, 0x00,
+                0x01,
+                0x64, 0x6F, 0x6E, 0x65
+            }));
 
             var packDLHRes = (byte[])db.ScriptEvaluate("return struct.pack('dLh', 1.5, 0x12345678ABCDEF00, 256)");
             ClassicAssert.True(packDLHRes.SequenceEqual(new byte[] {
@@ -2810,13 +2810,12 @@ return cjson.encode(nested)");
                 0x00, 0x01                                     // int16: 256
             }));
 
-            //var packPCC0Res = (byte[])db.ScriptEvaluate("return struct.pack('Pcc0', 'hello', 'A', 'B')");
-            //ClassicAssert.True(packPCC0Res.SequenceEqual(new byte[] {
-            //    0x05,                         // Pascal-length: 5
-            //    0x68, 0x65, 0x6C, 0x6C, 0x6F, // "hello"
-            //    0x41,                         // 'A'
-            //    0x42, 0x00                    // 'B', null terminator
-            //}));
+            var packCC0Res = (byte[])db.ScriptEvaluate("return struct.pack('scc0', 'hello', 'A', 'B')");
+            ClassicAssert.True(packCC0Res.SequenceEqual(new byte[] {
+                0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x00,
+                0x41,
+                0x42
+            }));
 
             var packIHRes = (byte[])db.ScriptEvaluate("return struct.pack('>ih', 0x01020304, 0x0506)");
             ClassicAssert.True(packIHRes.SequenceEqual(new byte[] {
@@ -2824,12 +2823,12 @@ return cjson.encode(nested)");
                 0x05, 0x06              // int16 big-endian
             }));
 
-            //var packFEDC0Res = (byte[])db.ScriptEvaluate("return struct.pack('fdc0', 3.14, 2.71828, 'Z')");
-            //ClassicAssert.True(packFEDC0Res.SequenceEqual(new byte[] {
-            //    0xC3, 0xF5, 0x48, 0x40,             // float 3.14
-            //    0x18, 0x2D, 0x44, 0x54, 0xFB, 0x21, 0x09, 0x40, // double 2.71828
-            //    0x5A, 0x00                          // "Z" null-terminated
-            //}));
+            var packFEDC0Res = (byte[])db.ScriptEvaluate("return struct.pack('fdc0', 3.14, 2.71828, 'Z')");
+            ClassicAssert.True(packFEDC0Res.SequenceEqual(new byte[] {
+                0xC3, 0xF5, 0x48, 0x40,             // float 3.14
+                0x90, 0xF7, 0xAA, 0x95, 0x09, 0xBF, 0x05, 0x40, // double 2.71828
+                0x5A                            // "Z"
+            }));
         }
 
         [Test]
@@ -2873,15 +2872,6 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res = (RedisResult[])db.ScriptEvaluate(@"
-    local a, b, c = pcall(function()
-    return struct.unpack('HH', '\x01\x00\x02\x00')
-end)
-
-return { a, b, c }
-");
-            ClassicAssert.True(res.Select(x => (int)x).SequenceEqual([1, 2, 5]));
-
             var unpackHRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\\x01\\x00\\x02\\x00') }");
             ClassicAssert.True(unpackHRes.SequenceEqual([1, 2, 5]));
 
@@ -2889,76 +2879,88 @@ return { a, b, c }
             ClassicAssert.AreEqual("hello", (string)unpackCharactersRes[0]);
 
             var unpackBigEndianRes = (int[])db.ScriptEvaluate("return { struct.unpack('>hB', '\\x34\\x12\\x56') }");
-            ClassicAssert.True(unpackBigEndianRes.SequenceEqual([0x1234, 0x56, 4]));
+            ClassicAssert.True(unpackBigEndianRes.SequenceEqual([0x3412, 0x56, 4]));
 
             var unpackLittleEndianRes = (int[])db.ScriptEvaluate("return { struct.unpack('<hB', '\\x34\\x12\\x56') }");
             ClassicAssert.True(unpackLittleEndianRes.SequenceEqual([0x1234, 0x56, 4]));
 
-            var unpackAlignmentRes = (int[])db.ScriptEvaluate("return { struct.unpack('!4c1i', '\\x5A\\x00\\x00\\x00\\x44\\x33\\x22\\x11') }");
-            ClassicAssert.True(unpackAlignmentRes.SequenceEqual(['Z', 0x11223344]));
+            var unpackAlignmentRes = db.ScriptEvaluate("return { struct.unpack('!4c1i', '\\x5A\\x00\\x00\\x00\\x44\\x33\\x22\\x11') }");
+            ClassicAssert.AreEqual("Z", (string)unpackAlignmentRes[0]);
+            ClassicAssert.AreEqual(0x11223344, (long)unpackAlignmentRes[1]);
+            ClassicAssert.AreEqual(9, (long)unpackAlignmentRes[2]);
 
             var unpackPaddingRes = (int[])db.ScriptEvaluate("return { struct.unpack('BxB', '\\x12\\x00\\x34') }");
-            ClassicAssert.True(unpackPaddingRes.SequenceEqual([0x12, 0x34]));
+            ClassicAssert.True(unpackPaddingRes.SequenceEqual([0x12, 0x34, 4]));
 
-            var unpackSignedByteRes = (int[])db.ScriptEvaluate("return { struct.unpack('b', '\xFE') }");
-            ClassicAssert.True(unpackSignedByteRes.SequenceEqual([-2]));
+            var unpackSignedByteRes = (int[])db.ScriptEvaluate("return { struct.unpack('b', '\\xFE') }");
+            ClassicAssert.True(unpackSignedByteRes.SequenceEqual([-2, 2]));
 
-            var unpackUnsignedByteRes = (int[])db.ScriptEvaluate("return { struct.unpack('B', '\xE1') }");
-            ClassicAssert.True(unpackUnsignedByteRes.SequenceEqual([225]));
+            var unpackUnsignedByteRes = (int[])db.ScriptEvaluate("return { struct.unpack('B', '\\xE1') }");
+            ClassicAssert.True(unpackUnsignedByteRes.SequenceEqual([225, 2]));
 
             var unpackSignedShortRes = (int[])db.ScriptEvaluate("return { struct.unpack('h', '\\xC7\\xCF') }");
-            ClassicAssert.True(unpackSignedShortRes.SequenceEqual([-12345]));
+            ClassicAssert.True(unpackSignedShortRes.SequenceEqual([-12345, 3]));
 
             var unpackUnsignedShortRes = (int[])db.ScriptEvaluate("return { struct.unpack('H', '\\x31\\xD4') }");
-            ClassicAssert.True(unpackUnsignedShortRes.SequenceEqual([54321]));
+            ClassicAssert.True(unpackUnsignedShortRes.SequenceEqual([54321, 3]));
 
             var unpackSignedLongRes = (int[])db.ScriptEvaluate("return { struct.unpack('l', '\\x60\\x79\\xFE\\xFF\\xFF\\xFF\\xFF\\xFF') }");
-            ClassicAssert.True(unpackSignedLongRes.SequenceEqual([-100000]));
+            ClassicAssert.True(unpackSignedLongRes.SequenceEqual([-100000, 9]));
             
             var unpackUnsignedLongRes = (int[])db.ScriptEvaluate("return { struct.unpack('L', '\\xA0\\x86\\x01\\x00\\x00\\x00\\x00\\x00') }");
-            ClassicAssert.True(unpackUnsignedLongRes.SequenceEqual([100000]));
+            ClassicAssert.True(unpackUnsignedLongRes.SequenceEqual([100000, 9]));
 
             var unpackSizeTRes = (int[])db.ScriptEvaluate("return { struct.unpack('T', '\\xD2\\x04\\x00\\x00\\x00\\x00\\x00\\x00') }");
-            ClassicAssert.True(unpackSizeTRes.SequenceEqual([1234]));
+            ClassicAssert.True(unpackSizeTRes.SequenceEqual([1234, 9]));
 
             var unpackSignedIntRes = (int[])db.ScriptEvaluate("return { struct.unpack('i4', '\\x9D\\xFF\\xFF\\xFF') }");
-            ClassicAssert.True(unpackSignedIntRes.SequenceEqual([-99]));
+            ClassicAssert.True(unpackSignedIntRes.SequenceEqual([-99, 5]));
 
             var unpackUnsignedIntRes = (int[])db.ScriptEvaluate("return { struct.unpack('I2', '\\x00\\x02') }");
-            ClassicAssert.True(unpackUnsignedIntRes.SequenceEqual([512]));
+            ClassicAssert.True(unpackUnsignedIntRes.SequenceEqual([512, 3]));
 
             var unpackRes = (int[])db.ScriptEvaluate("return { struct.unpack('>hB', '\\x12\\x34\\x56') }");
-            ClassicAssert.True(unpackRes.SequenceEqual([0x1234, 0x56]));
+            ClassicAssert.True(unpackRes.SequenceEqual([0x1234, 0x56, 4]));
 
-            var unpackZeroTerminatedStringRes = db.ScriptEvaluate("return { struct.unpack('c0', 'dynamic') }");
-            ClassicAssert.AreEqual("dynamic", (string)unpackCharactersRes[0]);
+            var unpackZeroTerminatedStringRes = db.ScriptEvaluate("return { struct.unpack('Bc0', '\\x07dynamic') }");
+            ClassicAssert.AreEqual("dynamic", (string)unpackZeroTerminatedStringRes[0]);
 
             var unpackNullTerminatedStringRes = db.ScriptEvaluate("return { struct.unpack('s', 'hi\\0') }");
-            ClassicAssert.AreEqual("hi", (string)unpackCharactersRes[0]);
+            ClassicAssert.AreEqual("hi", (string)unpackNullTerminatedStringRes[0]);
 
-            var unpackFloatRes = db.ScriptEvaluate("return { struct.unpack('f', '\\xC3\\xF5\\x48\\x40') }");
-            ClassicAssert.AreEqual(3.14f, (double)unpackFloatRes[0]);
+            var unpackFloatRes = db.ScriptEvaluate("return tostring(struct.unpack('f', '\\xC3\\xF5\\x48\\x40'))");
+            ClassicAssert.AreEqual(3.14f, float.Parse((string)unpackFloatRes));
 
-            var unpackDoubleRes = db.ScriptEvaluate("return { struct.unpack('d', '\\x1F\\x85\\xEB\\x51\\xB8\\x1E\\x09\\x40') }");
-            ClassicAssert.AreEqual(3.14d, (double)unpackDoubleRes[0]);
+            var unpackDoubleRes = db.ScriptEvaluate("return tostring(struct.unpack('d', '\\x1F\\x85\\xEB\\x51\\xB8\\x1E\\x09\\x40'))");
+            ClassicAssert.AreEqual(3.14d, double.Parse((string)unpackDoubleRes));
 
             var unpackSpaceRes = (int[])db.ScriptEvaluate("return { struct.unpack('B B', '\\x01\\x02') }");
-            ClassicAssert.True(unpackSpaceRes.SequenceEqual([1, 2]));
+            ClassicAssert.True(unpackSpaceRes.SequenceEqual([1, 2, 3]));
 
-            //// Complex cases
-            //var data = new byte[] {
-            //    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // double 0.0
-            //    0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ulong 6
-            //    0x76, 0x61, 0x6C, 0x75, 0x65, 0x31              // 'v' 'a' 'l' 'u' 'e' '1'
-            //};
-            //var unpackABIRes = db.ScriptEvaluate("return { struct.unpack('dLc0', data) }");
-            //ClassicAssert.AreEqual(0.0d, (double)unpackABIRes[0]);
-            //ClassicAssert.AreEqual(6, (long)unpackABIRes[1]);
-            //ClassicAssert.AreEqual("value1", (string)unpackABIRes[2]);
+            // Complex cases
+            var unpackABIRes = db.ScriptEvaluate("return { struct.unpack('dLc0', '\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x06\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x76\\x61\\x6C\\x75\\x65\\x31') }");
+            ClassicAssert.AreEqual(0.0d, (double)unpackABIRes[0]);
+            ClassicAssert.AreEqual("value1", (string)unpackABIRes[1]);
+            ClassicAssert.AreEqual(23, (int)unpackABIRes[2]);
 
+            // test pos
+            var unpackPosRes = (int[])db.ScriptEvaluate("return { struct.unpack('B B', '\\x01\\x02\\x03\\x04', 3) }");
+            ClassicAssert.True(unpackPosRes.SequenceEqual([3, 4, 5]));
 
-            // TODO: test pos works with valid value
-            // TODO: test c0 to get size from previous value
+            var unpackSCRes = db.ScriptEvaluate("return { struct.unpack('sc4', 'size\\x00dynamic') }");
+            ClassicAssert.AreEqual("size", (string)unpackSCRes[0]);
+            ClassicAssert.AreEqual("dyna", (string)unpackSCRes[1]);
+            ClassicAssert.AreEqual(10, (long)unpackSCRes[2]);
+
+            var unpackZHRes = db.ScriptEvaluate("return { struct.unpack('sH', 'hello\\x00\\x34\\x12') }");
+            ClassicAssert.AreEqual("hello", (string)unpackZHRes[0]);
+            ClassicAssert.AreEqual(0x1234, (long)unpackZHRes[1]);
+            ClassicAssert.AreEqual(9, (long)unpackZHRes[2]);
+
+            var unpackHBRes = (RedisResult[])db.ScriptEvaluate("return { struct.unpack('<hB', '\\xFE\\xFF\\x7F') }");
+            ClassicAssert.AreEqual(-2, (long)unpackHBRes[0]);
+            ClassicAssert.AreEqual(127, (long)unpackHBRes[1]);
+            ClassicAssert.AreEqual(4, (long)unpackHBRes[2]);
         }
 
         [Test]
@@ -3002,6 +3004,18 @@ return { a, b, c }
             // Invalid Third argument
             var excArgTooShort = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c4', '\\x41\\x42')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excArgTooShort.Message);
+
+            // Missing character size
+            var excMissingCharacterSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('c0', 'dynamic')"));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excMissingCharacterSize.Message);
+
+            // Invalid character size
+            var excInvalidCharacterZeroSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('sc0', 'size\\x00dynamic')"));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excInvalidCharacterZeroSize.Message);
+
+            // Invalid character size
+            var excInvalidCharacterSizeDouble = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('dc0', '\\x1F\\x85\\xEB\\x51\\xB8\\x1E\\x09\\x40dynamic')"));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excInvalidCharacterSizeDouble.Message);
 
             // Invalid String without terminator
             var excBadString = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello')"));

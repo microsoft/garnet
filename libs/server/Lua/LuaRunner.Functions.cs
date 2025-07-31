@@ -3352,7 +3352,7 @@ namespace Garnet.server
             state.Remove(1);
 
             int pos = 0;
-            int dataLen = data.Length; // Note don't use data.Length in the following code, since data will be truncated as reading, so the data.Length will be chaning.
+            int dataLen = data.Length;
             if (numLuaArgs >= 3) // Only check if the 3rd argument is passed
             {
                 if (state.Type(1) != LuaType.Number || state.CheckNumber(1) <= 0)
@@ -3466,10 +3466,10 @@ namespace Garnet.server
             // Error and count for error_wrapper_rvar
             state.PushNil();
             state.PushInteger(decodedCount + 1);
-            state.Rotate(2, 2);
+            state.Rotate(1, 2);
 
             // Decode data according to format, including pos
-            return (decodedCount + 3);
+            return decodedCount + 3;
 
             // Helper functions
             static bool TryDecodeInteger(LuaRunner self, char opt, Header h, int size, int pos, ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
@@ -3552,17 +3552,24 @@ namespace Garnet.server
 
                 if (size == 0)
                 {
-                    if (decodedCount == 0 || self.state.Type(-1) == LuaType.Number)
+                    int previousArgIndex = self.state.StackTop;
+
+                    // if c0, then get the size from the previous decoded number
+                    if (decodedCount == 0 || self.state.Type(previousArgIndex) != LuaType.Number 
+                        || !Int32.TryParse(self.state.CheckNumber(previousArgIndex).ToString(), out size))
                     {
-                        // if c0, then get the size from the previous decoded number
-                        self.state.Pop(size);
+                        constStrErrId = self.constStrs.BadArgUnpack;
+                        return false;
                     }
+
+                    self.state.Remove(previousArgIndex);
+                    decodedCount--;
                 }
 
                 if (slice.Length < size)
                 {
                     // Data string too short
-                    constStrErrId = self.constStrs.ErrBadArg;
+                    constStrErrId = self.constStrs.BadArgUnpack;
                     return false;
                 }
 
@@ -3593,7 +3600,7 @@ namespace Garnet.server
                 }
 
                 size = nullIndex + 1; // Include null terminator counting size
-                var str = slice[..(size -1)]; // Exclude null for pusfhing result
+                var str = slice[..(size -1)]; // Exclude null for pushing result
 
                 if (!self.state.TryPushBuffer(str))
                 {
