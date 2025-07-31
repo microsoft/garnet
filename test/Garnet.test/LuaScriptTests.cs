@@ -2846,7 +2846,7 @@ return { a, b, c }
 ");
             ClassicAssert.True(res.Select(x => (int)x).SequenceEqual([1, 2, 5]));
 
-            var unpackHRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\x01\x00\x02\x00') }");
+            var unpackHRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\\x01\\x00\\x02\\x00') }");
             ClassicAssert.True(unpackHRes.SequenceEqual([1, 2, 5]));
 
             var unpackCharactersRes = db.ScriptEvaluate("return { struct.unpack('c5', 'hello') }");
