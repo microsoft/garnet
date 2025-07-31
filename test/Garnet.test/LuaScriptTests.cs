@@ -2837,11 +2837,26 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var unpackBigEndianRes = (int[])db.ScriptEvaluate("return { struct.unpack('>hB', '\\x12\\x34\\x56') }");
-            ClassicAssert.True(unpackBigEndianRes.SequenceEqual([0x1234, 0x56]));
+//            var res = (RedisResult[])db.ScriptEvaluate(@"
+//    local a, b, c = pcall(function()
+//    return struct.unpack('HH', '\x01\x00\x02\x00')
+//end)
+
+//return { a, b, c }
+//");
+//            ClassicAssert.True(res.Select(x => (int)x).SequenceEqual([1, 2, 5]));
+
+            var unpackHRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\x01\x00\x02\x00') }");
+            ClassicAssert.True(unpackHRes.SequenceEqual([1, 2, 5]));
+
+            var unpackCharactersRes = db.ScriptEvaluate("return { struct.unpack('c5', 'hello') }");
+            ClassicAssert.AreEqual("hello", (string)unpackCharactersRes[0]);
+
+            var unpackBigEndianRes = (int[])db.ScriptEvaluate("return { struct.unpack('>hB', '\\x34\\x12\\x56') }");
+            ClassicAssert.True(unpackBigEndianRes.SequenceEqual([0x1234, 0x56, 4]));
 
             var unpackLittleEndianRes = (int[])db.ScriptEvaluate("return { struct.unpack('<hB', '\\x34\\x12\\x56') }");
-            ClassicAssert.True(unpackLittleEndianRes.SequenceEqual([0x1234, 0x56]));
+            ClassicAssert.True(unpackLittleEndianRes.SequenceEqual([0x1234, 0x56, 4]));
 
             var unpackAlignmentRes = (int[])db.ScriptEvaluate("return { struct.unpack('!4c1i', '\\x5A\\x00\\x00\\x00\\x44\\x33\\x22\\x11') }");
             ClassicAssert.True(unpackAlignmentRes.SequenceEqual(['Z', 0x11223344]));
@@ -2879,9 +2894,6 @@ return cjson.encode(nested)");
             var unpackRes = (int[])db.ScriptEvaluate("return { struct.unpack('>hB', '\\x12\\x34\\x56') }");
             ClassicAssert.True(unpackRes.SequenceEqual([0x1234, 0x56]));
 
-            var unpackCharactersRes = db.ScriptEvaluate("return { struct.unpack('c5', 'hello') }");
-            ClassicAssert.AreEqual("hello", (string)unpackCharactersRes[0]);
-
             var unpackZeroTerminatedStringRes = db.ScriptEvaluate("return { struct.unpack('c0', 'dynamic') }");
             ClassicAssert.AreEqual("dynamic", (string)unpackCharactersRes[0]);
 
@@ -2907,6 +2919,10 @@ return cjson.encode(nested)");
             //ClassicAssert.AreEqual(0.0d, (double)unpackABIRes[0]);
             //ClassicAssert.AreEqual(6, (long)unpackABIRes[1]);
             //ClassicAssert.AreEqual("value1", (string)unpackABIRes[2]);
+
+
+            // TODO: test pos works with valid value
+            // TODO: test c0 to get size from previous value
         }
 
         [Test]
@@ -2954,6 +2970,10 @@ return cjson.encode(nested)");
             // Invalid String without terminator
             var excBadString = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excBadString.Message);
+
+            // Third pos has to be greater than 0
+            var unpackBadPosRes = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello', 0)"));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", unpackBadPosRes.Message);
         }
 
         [Test]
