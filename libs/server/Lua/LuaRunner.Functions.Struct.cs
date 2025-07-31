@@ -309,7 +309,7 @@ namespace Garnet.server
 
                     case 'f':
                         {
-                            if (!TryEncodeFloat(this, size, 1, h, out var errIndex))
+                            if (!TryEncodeSingle(this, size, 1, h, out var errIndex))
                             {
                                 return LuaWrappedError(1, errIndex);
                             }
@@ -500,7 +500,7 @@ namespace Garnet.server
                 return true;
             }
 
-            static bool TryEncodeFloat(LuaRunner self, int size, int stackIndex, Header h, out int constStrRegisteryIndex)
+            static bool TryEncodeSingle(LuaRunner self, int size, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
                 Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
@@ -688,7 +688,7 @@ namespace Garnet.server
                         break;
                     case 'f':
                         {
-                            if (!TryDecodeFloat(this, h, size, pos, data, ref decodedCount, out int errIndex))
+                            if (!TryDecodeSingle(this, h, size, pos, data, ref decodedCount, out int errIndex))
                             {
                                 return LuaWrappedError(0, errIndex);
                             }
@@ -794,7 +794,7 @@ namespace Garnet.server
                 return true;
             }
 
-            static bool TryDecodeFloat(LuaRunner self, Header h, int size, int pos, ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
+            static bool TryDecodeSingle(LuaRunner self, Header h, int size, int pos, ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
             {
                 var slice = data.Slice(pos);
                 float value = h.Endian == Native.Endian ? BinaryPrimitives.ReadSingleLittleEndian(slice) : BinaryPrimitives.ReadSingleBigEndian(slice);
