@@ -74,17 +74,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => logRecord.SerializeKey(key, maxInlineKeySize: LogSettings.kMaxInlineKeySize, objectIdMap: null);
-
         public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
-        {
-            newLogRecord.InfoRef.SetValueIsInline();
-            sizeInfo.SetValueInlineLength(newLogRecord.physicalAddress);
-        }
+        public static void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
+            => logRecord.InitializeRecord(key, in sizeInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
@@ -166,7 +160,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"Max inline key size is {LogSettings.kMaxInlineKeySize}");
 
             // Value
-            sizeInfo.MaxInlineValueSpanSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
+            sizeInfo.MaxInlineValueSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator
             sizeInfo.ValueIsInline = true;
             var valueSize = sizeInfo.FieldInfo.ValueSize;
 

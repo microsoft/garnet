@@ -25,7 +25,7 @@ namespace Tsavorite.core
         public bool ValueIsInline;
 
         /// <summary>Varbyte indicator byte; see <see cref="VarbyteLengthUtility"/>.</summary>
-        public byte IndicatorByte;
+        public long IndicatorWord;
 
         /// <summary>Number of bytes in key length; see <see cref="VarbyteLengthUtility"/>.</summary>
         public int KeyLengthBytes;
@@ -49,7 +49,7 @@ namespace Tsavorite.core
         public readonly int InlineValueSize => ValueIsInline ? FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
-        public int MaxInlineValueSpanSize { readonly get; internal set; }
+        public int MaxInlineValueSize { readonly get; internal set; }
 
         /// <summary>The inline size of the record (in the main log). If Key and/or Value are overflow (or value is Object),
         /// then their contribution to inline length is just <see cref="ObjectIdMap.ObjectIdSize"/>.</summary>
@@ -74,10 +74,10 @@ namespace Tsavorite.core
         {
             // Varbyte lengths. Add optionalSize to the effective value size when calculating valueLengthBytes so the value can grow if optionals are removed
             // (otherwise the filler-related calculations would require additional logic to constrain value size to the # of bytes we calculate here).
-            IndicatorByte = ConstructIndicatorByte(keySize, valueSize + OptionalSize, out KeyLengthBytes, out ValueLengthBytes);
-            var numVarbytes = 1 + KeyLengthBytes + ValueLengthBytes;
+            IndicatorWord = ConstructInlineVarbyteLengthWord(keySize, valueSize, hasFillerBit: 0, out KeyLengthBytes, out ValueLengthBytes);
 
             // Record
+            var numVarbytes = 1 + KeyLengthBytes + ValueLengthBytes;
             ActualInlineRecordSize = RecordInfo.GetLength() + numVarbytes + keySize + valueSize + OptionalSize;
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
         }
@@ -92,7 +92,12 @@ namespace Tsavorite.core
         internal readonly unsafe void SetValueInlineLength(long recordPhysicalAddress)
             => WriteVarbyteLength(FieldInfo.ValueSize, ValueLengthBytes, (byte*)(recordPhysicalAddress + RecordInfo.GetLength() + 1 + KeyLengthBytes));
 
-        /// <summary>Gets the value address in the record.</summary>
+        /// <summary>Gets the Key address in the record.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly unsafe long GetKeyAddress(long recordPhysicalAddress)
+            => recordPhysicalAddress + RecordInfo.GetLength() + 1 + KeyLengthBytes + ValueLengthBytes;
+
+        /// <summary>Gets the Value address in the record.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly unsafe long GetValueAddress(long recordPhysicalAddress)
             => recordPhysicalAddress + RecordInfo.GetLength() + 1 + KeyLengthBytes + ValueLengthBytes + FieldInfo.KeySize;

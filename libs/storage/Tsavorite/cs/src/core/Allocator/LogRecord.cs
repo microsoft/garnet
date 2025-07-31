@@ -185,6 +185,71 @@ namespace Tsavorite.core
         }
         #endregion // ISourceLogRecord
 
+        /// <summary>
+        /// Initialize record for <see cref="ObjectAllocator{TStoreFunctions}"/>--includes Overflow option for Key and Overflow and Object option for Value
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        {
+            // Set varbyte lengths
+            *(long*)IndicatorAddress = sizeInfo.IndicatorWord;
+
+            // Serialize Key
+            if (sizeInfo.KeyIsInline)
+            {
+                InfoRef.SetKeyIsInline();
+                key.CopyTo(new Span<byte>((byte*)sizeInfo.GetKeyAddress(physicalAddress), sizeInfo.FieldInfo.KeySize));
+            }
+            else
+            {
+                Debug.Assert(objectIdMap is not null, "Inconsistent setting of maxInlineKeySize with null objectIdMap");
+
+                // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
+                InfoRef.ClearKeyIsInline();
+                var overflow = new OverflowByteArray(key.Length, startOffset: 0, endOffset: 0, zeroInit: false);
+                LogField.SetOverflowAllocation(physicalAddress, overflow, objectIdMap, isKey: true);
+                key.CopyTo(overflow.Span);
+            }
+
+            // Initialize Value metadata
+            if (sizeInfo.ValueIsInline)
+                InfoRef.SetValueIsInline();
+            else
+            {
+                // If it's a revivified record, it may have ValueIsInline set, so clear that if it's not an object (SetValueIsObject clears it).
+                if (sizeInfo.ValueIsObject)
+                {
+                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.InvalidObjectId, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
+                    InfoRef.SetValueIsObject();
+                }
+                else
+                    InfoRef.ClearValueIsInline();
+
+                *(int*)sizeInfo.GetValueAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+            }
+
+            // The rest is considered filler
+            InitializeFillerLength(in sizeInfo);
+        }
+
+        /// <summary>
+        /// Initialize record for <see cref="SpanByteAllocator{TStoreFunctions}"/>--does not include Overflow/Object options so is streamlined
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo)
+        {
+            // Set varbyte lengths
+            *(long*)IndicatorAddress = sizeInfo.IndicatorWord;
+
+            InfoRef.SetKeyAndValueInline();
+
+            // Serialize Key
+            key.CopyTo(new Span<byte>((byte*)sizeInfo.GetKeyAddress(physicalAddress), sizeInfo.FieldInfo.KeySize));
+
+            // The rest is considered filler
+            InitializeFillerLength(in sizeInfo);
+        }
+
         /// <summary>A ref to the record header</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ref RecordInfo GetInfoRef(long physicalAddress) => ref *(RecordInfo*)physicalAddress;
@@ -237,6 +302,13 @@ namespace Tsavorite.core
             Info.SetValueIsOverflow();
         }
 
+        internal static ReadOnlySpan<byte> GetInlineKey(long physicalAddress)
+        {
+            Debug.Assert((*(RecordInfo*)physicalAddress).KeyIsInline, "Key must be inline");
+            var (length, dataAddress) = GetKeyFieldInfo(physicalAddress + RecordInfo.GetLength());
+            return new((byte*)dataAddress, length);
+        }
+
         /// <summary>The actual size of the main-log (inline) portion of the record; for in-memory records it does not include filler length.</summary>
         public readonly int ActualRecordSize
         {
@@ -271,15 +343,15 @@ namespace Tsavorite.core
             var oldInlineValueSize = ReadVarbyteLength(valueLengthBytes, (byte*)(IndicatorAddress + 1 + keyLengthBytes));
             var newInlineValueSize = sizeInfo.InlineValueSize;
 
+            // We don't need to change the size if value size hasn't changed (ignore optionalSize changes; we're not changing the data for that, only shifting them).
+            // For this quick check, just check for inline differences; we'll examine overflow size changes and conversions later.
+            if (Info.RecordIsInline && sizeInfo.KeyIsInline && sizeInfo.ValueIsInline && oldInlineValueSize == newInlineValueSize)
+                return true;
+
             // Growth and fillerLen may be negative if shrinking.
             var inlineValueGrowth = (int)(newInlineValueSize - oldInlineValueSize);
             var oldOptionalSize = OptionalLength;
             var newOptionalSize = sizeInfo.OptionalSize;
-
-            // We may not need to change the size. Determination of "is overflow" is done entirely by the Value size, so if the sizes haven't changed
-            // then the inline vs. overflow won't have.
-            if (oldInlineValueSize == newInlineValueSize && oldOptionalSize == newOptionalSize && Info.ValueIsObject == sizeInfo.FieldInfo.ValueIsObject)
-                return true;
 
             var optionalStartAddress = sizeInfo.GetValueAddress(physicalAddress) + oldInlineValueSize;
             var fillerLenAddress = optionalStartAddress + oldOptionalSize;
@@ -290,7 +362,7 @@ namespace Tsavorite.core
             // new value (including whether it is overflow) and the existing optionals, and success is based on whether that can fit into the allocated
             // record space. We do not change the presence of optionals h ere; we just ensure there is enough for the larger of (current optionals,
             // new optionals) and a later operation will actually read/update the optional(s), including setting/clearing the flag(s).
-            if (fillerLen < inlineValueGrowth + (newOptionalSize > oldOptionalSize ? newOptionalSize : oldOptionalSize))
+            if (fillerLen < inlineValueGrowth + (newOptionalSize - oldOptionalSize))
                 return false;
 
             // Update record part 1: Set varbyte value length to the full length of the value, including filler but NOT optionalSize (which is calculated
@@ -376,9 +448,9 @@ namespace Tsavorite.core
             // can't change both RecordInfo and the varbyte word atomically. Therefore we must zeroinit from the end of the current "filler
             // space" (either the address, if it was within the less-than-FillerLengthSize bytes at the end of the record, or the end of the
             // int value) if we have shrunk the value.
-            fillerLen -= inlineValueGrowth;
+            fillerLen -= inlineValueGrowth;                                     // optional data is unchanged even if newOptionalSize != oldOptionalSize
             var hasFillerBit = 0L;
-            var newFillerLenAddress = optionalStartAddress + oldOptionalSize;
+            var newFillerLenAddress = optionalStartAddress + oldOptionalSize;   // optional data is unchanged even if newOptionalSize != oldOptionalSize
             var endOfNewFillerSpace = newFillerLenAddress;
             if (fillerLen >= FillerLengthSize)
             {
@@ -400,7 +472,7 @@ namespace Tsavorite.core
             UpdateInlineVarbyteLengthWord(IndicatorAddress, keyLengthBytes, valueLengthBytes, newInlineValueSize, hasFillerBit);
 
             Debug.Assert(Info.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
-            Debug.Assert(!Info.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSpanSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSpanSize}");
+            Debug.Assert(!Info.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSize}");
             return true;
         }
 
@@ -507,19 +579,18 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SetFillerLength(in RecordSizeInfo sizeInfo)
+        public readonly void InitializeFillerLength(in RecordSizeInfo sizeInfo)
         {
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
-            // Therefore optionals (ETag, Expiration) are not considered here.
-            var valueAddress = sizeInfo.GetValueAddress(physicalAddress);
-            var fillerAddress = valueAddress + sizeInfo.GetValueInlineLength(physicalAddress);
-            var usedSize = (int)(fillerAddress - physicalAddress);
+            // Therefore optional (ETag, Expiration) space is considered filler here.
+            Debug.Assert(!Info.HasOptionalFields, "Expected no optional flags in RecordInfo in InitializeFillerLength");
+            var usedSize = sizeInfo.ActualInlineRecordSize - sizeInfo.OptionalSize;
             var fillerSize = sizeInfo.AllocatedInlineRecordSize - usedSize;
 
             if (fillerSize >= FillerLengthSize)
             {
                 SetHasFiller(IndicatorAddress); // must do this first, for zero-init
-                *(int*)fillerAddress = fillerSize;
+                *(int*)(physicalAddress + usedSize) = fillerSize;
             }
         }
 
@@ -845,28 +916,6 @@ namespace Tsavorite.core
             // Finally, set the new record layout and update sizeInfo.
             *(long*)IndicatorAddress = ConstructInlineVarbyteLengthWord(keyLengthBytes, keyLength, valueLengthBytes, valueLength, hasFillerBit);
             sizeInfo.AllocatedInlineRecordSize = allocatedSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe void SerializeKey(ReadOnlySpan<byte> key, int maxInlineKeySize, ObjectIdMap objectIdMap)
-        {
-            Span<byte> keySpan;
-            if (key.Length <= maxInlineKeySize)
-            {
-                InfoRef.SetKeyIsInline();
-                keySpan = LogField.SetInlineDataLength(physicalAddress, key.Length, isKey: true);
-            }
-            else
-            {
-                Debug.Assert(objectIdMap is not null, "Inconsistent setting of maxInlineKeySize with null objectIdMap");
-
-                // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
-                InfoRef.ClearKeyIsInline();
-                var overflow = new OverflowByteArray(GC.AllocateUninitializedArray<byte>(key.Length), 0, 0);
-                LogField.SetOverflowAllocation(physicalAddress, overflow, objectIdMap, isKey: true);
-                keySpan = overflow.Span;
-            }
-            key.CopyTo(keySpan);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

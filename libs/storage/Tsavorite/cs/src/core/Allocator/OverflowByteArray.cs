@@ -15,22 +15,29 @@ namespace Tsavorite.core
         /// The maximum offset from start or end allowed by our 2-byte offsets.
         /// </summary>
         internal const int MaxInternalOffset = 64 * 1024;
+        internal const int PrefixSize = 2 * sizeof(ushort);
 
         internal readonly byte[] Data { get; init; }
 
         internal readonly bool IsEmpty => Data is null;
 
-        readonly int Offset => Unsafe.As<byte, ushort>(ref Data[0]);
+        readonly int Offset => Unsafe.As<byte, ushort>(ref Data[0]) + PrefixSize;
 
         internal readonly int Length => Data.Length - Offset - Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
 
         internal readonly ReadOnlySpan<byte> ReadOnlySpan => Data.AsSpan().Slice(Offset, Length);
         internal readonly Span<byte> Span => Data.AsSpan().Slice(Offset, Length);
 
+        /// <summary>Construct an <see cref="OverflowByteArray"/> from a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/>.</summary>
         internal OverflowByteArray(byte[] data) => Data = data;
-        internal OverflowByteArray(byte[] data, int startOffset, int endOffset)
+
+        internal OverflowByteArray(int length, int startOffset, int endOffset, bool zeroInit)
         {
-            Data = data;
+            Debug.Assert(startOffset <= ushort.MaxValue, "startOffset must be less than or equal to ushort.MaxValue");
+            Debug.Assert(endOffset <= ushort.MaxValue, "endOffset must be less than or equal to ushort.MaxValue");
+            Data = !zeroInit 
+                ? GC.AllocateUninitializedArray<byte>(length) 
+                : (new byte[length + (sizeof(ushort) * 2)]);
             Unsafe.As<byte, ushort>(ref Data[0]) = (ushort)startOffset;
             Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]) = (ushort)endOffset;
         }
@@ -41,15 +48,6 @@ namespace Tsavorite.core
         /// <summary>Increase the offset from the end, e.g. after having extracted the optionals that were read in the same IO operation as the value.</summary>
         /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/>> array field, only its contents.</remarks>
         internal readonly void AdjustOffsetFromEnd(int increment) => Unsafe.As<byte, ushort>(ref Data[2]) += (ushort)increment;
-
-        internal OverflowByteArray(int length, int startOffset, int endOffset)
-        {
-            Debug.Assert(startOffset <= ushort.MaxValue, "startOffset must be less than or equal to ushort.MaxValue");
-            Debug.Assert(endOffset <= ushort.MaxValue, "endOffset must be less than or equal to ushort.MaxValue");
-            Data = new byte[length + (sizeof(ushort) * 2)];
-            Unsafe.As<byte, ushort>(ref Data[0]) = (ushort)startOffset;
-            Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]) = (ushort)endOffset;
-        }
 
         internal readonly void SetOffsets(int offsetFromStart, int offsetFromEnd)
         {
@@ -77,7 +75,10 @@ namespace Tsavorite.core
             AdjustOffsetFromEnd(optionalOffset);
         }
 
+        /// <summary>Get the <see cref="ReadOnlySpan{_byte_}"/> of a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/> constructor.</summary>
         internal static ReadOnlySpan<byte> AsReadOnlySpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).ReadOnlySpan;
+
+        /// <summary>Get the <see cref="Span{_byte_}"/> of a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/> constructor.</summary>
         internal static Span<byte> AsSpan(object value) => new OverflowByteArray(Unsafe.As<byte[]>(value)).Span;
     }
 }

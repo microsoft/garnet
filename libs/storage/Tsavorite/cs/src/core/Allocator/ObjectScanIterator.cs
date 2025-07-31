@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
+//#define READ_WRITE
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -71,7 +73,7 @@ namespace Tsavorite.core
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
             Debug.Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
 
-            TODO(); // See comments in SnapToLogicalAddressBoundary regarding on-disk/physical address
+#if READ_WRITE // See comments in SnapToLogicalAddressBoundary regarding on-disk/physical address
 
             if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                 return false;
@@ -86,12 +88,13 @@ namespace Tsavorite.core
                 epoch?.Suspend();
                 throw;
             }
+#endif // READ_WRITE
             return true;
         }
 
         private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
-            TODO(); // This needs to transition from physical-address to in-memory when it gets above HA equivalent.. and needs to keep checking that bc we may drop below HA when we release the epoch
+#if READ_WRITE // This needs to transition from physical-address to in-memory when it gets above HA equivalent.. and needs to keep checking that bc we may drop below HA when we release the epoch
 
             if (diskLogRecord.IsSet)
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
@@ -103,6 +106,9 @@ namespace Tsavorite.core
 
             // Success; acquire the epoch. Caller will suspend the epoch as needed.
             epoch?.Resume();
+#else
+            stopAddress = 0;
+#endif  // READ_WRITE
             return true;
         }
 
@@ -160,8 +166,8 @@ namespace Tsavorite.core
             }
             else
             {
-                TODO();  // SnapToLogicalAddressBoundary(): This won't work for OA; we don't have a known "start of page".
-                         // May need to just accept physicalAddress as is; perhaps add a checksum in the upper bits of the returned cursor
+#if READ_WRITE  // SnapToLogicalAddressBoundary(): This won't work for OA; we don't have a known "start of page".
+                // May need to just accept physicalAddress as is; perhaps add a checksum in the upper bits of the returned cursor
 
                 while (totalSizes <= offset)
                 {
@@ -171,6 +177,7 @@ namespace Tsavorite.core
                     totalSizes += allocatedSize;
                     physicalAddress += allocatedSize;
                 }
+#endif // READ_WRITE
             }
 
             return logicalAddress += totalSizes - offset;
@@ -241,11 +248,13 @@ namespace Tsavorite.core
                     }
                     else
                     {
+#if READ_WRITE
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         diskLogRecord = new(physicalAddress);
                         if (diskLogRecord.Info.ValueIsObject)
                             _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
                         nextAddress = currentAddress + diskLogRecord.GetSerializedLength(); // GetNext()
+#endif // READ_WRITE
                     }
                 }
                 finally
@@ -299,9 +308,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
         {
+#if READ_WRITE
             if (currentAddress >= headAddress || assumeInMemory)
                 return hlogBase._wrapper.CreateLogRecord(currentAddress).physicalAddress;
             return frame.GetPhysicalAddress(currentPage, offset);
+#else
+            return 0;
+#endif // READ_WRITE
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -314,9 +327,13 @@ namespace Tsavorite.core
                 return logRecord.physicalAddress;
             }
 
+#if READ_WRITE
             long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
             allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();   // GetPhysicalAddressAndAllocatedSize()
             return physicalAddress;
+#else 
+            return allocatedSize = 0;
+#endif // READ_WRITE
         }
 
         #region ISourceLogRecord
@@ -405,10 +422,12 @@ namespace Tsavorite.core
                 result.cts?.Cancel();
             }
 
+#if READ_WRITE
             // Deserialize valueObject in frame (if present)
             var diskLogRecord = new DiskLogRecord(frame.GetPhysicalAddress(result.page, offset: 0));
             if (diskLogRecord.Info.ValueIsObject)
                 _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
+#endif // READ_WRITE
 
             if (errorCode == 0)
                 _ = result.handle?.Signal();

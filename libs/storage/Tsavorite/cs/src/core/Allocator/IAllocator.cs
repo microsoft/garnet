@@ -16,10 +16,12 @@ namespace Tsavorite.core
         AllocatorBase<TStoreFunctions, TAllocator> GetBase<TAllocator>()
             where TAllocator : IAllocator<TStoreFunctions>;
 
-        /// <summary>Initialize the value to span the address range.</summary>
+        /// <summary>Initialize the varbyte lengths to key length and a value that spans the address range, and the serialize the key into the record.</summary>
+        /// <param name="key">The key to be copied into the record</param>
+        /// <param name="logicalAddress">The logical address of the new record</param>
         /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>
-        /// <param name="newLogRecord">The new log record being initialized</param>
-        void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord);
+        /// <param name="logRecord">The new log record being initialized</param>
+        void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord);
 
         /// <summary>Get copy destination size for RMW, taking Input into account</summary>
         RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
@@ -55,9 +57,6 @@ namespace Tsavorite.core
 
         /// <summary>Mark the page that contains <paramref name="logicalAddress"/> as dirty atomically</summary>
         void MarkPageAtomic(long logicalAddress, long version);
-
-        /// <summary>Serialize key to log</summary>
-        void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord);
 
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="logicalAddress"/></summary>
         LogRecord CreateLogRecord(long logicalAddress);

@@ -331,6 +331,8 @@ namespace Tsavorite.core
         public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
         public void SetValueIsOverflow() => word &= ~(kValueIsInlineBitMask | kValueIsObjectBitMask);
 
+        public void SetKeyAndValueInline() => word = (word & ~kValueIsObjectBitMask) | kKeyIsInlineBitMask | kValueIsInlineBitMask;
+
         public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

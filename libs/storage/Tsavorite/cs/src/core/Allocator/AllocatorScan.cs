@@ -166,7 +166,7 @@ namespace Tsavorite.core
             if (completionEvent.request.logicalAddress < BeginAddress)
                 return false;
 
-            var diskLogRecord = new DiskLogRecord(ref completionEvent.request);
+            ref var diskLogRecord = ref completionEvent.request.diskLogRecord;
             diskLogRecord.InfoRef.ClearBitsForDiskImages();
             stop = !scanFunctions.Reader(in diskLogRecord, new RecordMetadata(completionEvent.request.logicalAddress), numRecords, out _);
             logicalAddress = diskLogRecord.Info.PreviousAddress;

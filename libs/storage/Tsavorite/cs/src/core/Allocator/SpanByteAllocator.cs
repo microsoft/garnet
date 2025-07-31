@@ -40,8 +40,8 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
-            => SpanByteAllocatorImpl<TStoreFunctions>.InitializeValue(in sizeInfo, ref newLogRecord);
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+            => SpanByteAllocatorImpl<TStoreFunctions>.InitializeRecord(key, logicalAddress, in sizeInfo, ref newLogRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -107,10 +107,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

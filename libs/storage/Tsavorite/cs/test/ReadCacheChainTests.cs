@@ -206,8 +206,8 @@ namespace Tsavorite.test.ReadCacheTests
             ClassicAssert.IsTrue(tagExists);
 
             isReadCache = entry.IsReadCache;
-            var log = isReadCache ? store.readcache : store.hlog;
-            var pa = log.GetPhysicalAddress(entry.Address);
+            var logBase = isReadCache ? store.readcacheBase : store.hlogBase;
+            var pa = logBase.GetPhysicalAddress(entry.Address);
             recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;
 
@@ -221,13 +221,12 @@ namespace Tsavorite.test.ReadCacheTests
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            var log = isReadCache ? store.readcache : store.hlog;
             var info = LogRecord.GetInfo(physicalAddress);
             var la = info.PreviousAddress;
 
             isReadCache = IsReadCache(la);
-            log = isReadCache ? store.readcache : store.hlog;
-            var pa = log.GetPhysicalAddress(la);
+            var logBase = isReadCache ? store.readcacheBase : store.hlogBase;
+            var pa = logBase.GetPhysicalAddress(la);
             recordKey = PinnedSpanByte.FromPinnedSpan(LogRecord.GetInlineKey(pa));  // Must return PinnedSpanByte to avoid scope issues with ReadOnlySpan
             invalid = LogRecord.GetInfo(pa).Invalid;
             return (la, pa);

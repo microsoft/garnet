@@ -410,17 +410,15 @@ namespace Tsavorite.core
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.elideSourceRecord)
                 newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
             rmwInfo.Address = newLogicalAddress;
-
-            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
 
             if (!doingCU)
             {

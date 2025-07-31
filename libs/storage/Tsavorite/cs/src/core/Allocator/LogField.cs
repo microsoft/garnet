@@ -45,7 +45,7 @@ namespace Tsavorite.core
             // First copy the data
             var oldLength = sizeInfo.GetValueInlineLength(physicalAddress);
             var newLength = sizeInfo.FieldInfo.ValueSize;
-            var overflow = new OverflowByteArray(GC.AllocateUninitializedArray<byte>(newLength), startOffset: 0, endOffset: 0);
+            var overflow = new OverflowByteArray(newLength, startOffset: 0, endOffset: 0, zeroInit: false);
             var copyLength = oldLength < newLength ? oldLength : newLength;
             var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
 
@@ -74,7 +74,7 @@ namespace Tsavorite.core
         internal static Span<byte> ConvertHeapObjectToOverflow(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsObject);
-            var overflow = new OverflowByteArray(GC.AllocateUninitializedArray<byte>(sizeInfo.FieldInfo.ValueSize), startOffset: 0, endOffset: 0);
+            var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
 
             var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
             var objectId = *(int*)fieldAddress;
@@ -234,16 +234,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Utility function to set the inline length of a Span field and return a <see cref="Span{_byte_}"/> to the data start (which may be an inline byte stream or a byte[]).
-        /// </summary>
-        internal static Span<byte> SetInlineDataLength(long physicalAddress, int newLength, bool isKey)
-        {
-            var fieldPtr = GetFieldPtr(physicalAddress + RecordInfo.GetLength(), isKey, out var lengthPtr, out var lengthBytes, out _ /*length*/);
-            WriteVarbyteLength(newLength, lengthBytes, lengthPtr);
-            return new Span<byte>(fieldPtr, newLength);
-        }
-
-        /// <summary>
         /// Reallocate a Span field that is overflow, e.g. to make the overflow allocation larger. Shrinkage is done in-place (the caller decides if the
         /// shrinkage is sufficient (given available space in the record) to convert the field in-place to inline.
         /// </summary>
@@ -267,7 +257,7 @@ namespace Tsavorite.core
                     return oldSpan;
 
                 // AllocateUninitialized and copy, and zeroinit any remainder
-                newOverflow = new(GC.AllocateUninitializedArray<byte>(newLength), startOffset: 0, endOffset: 0);
+                newOverflow = new(newLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 var copyLength = oldSpan.Length < newLength ? oldSpan.Length : newLength;
 
                 oldOverflow.Span.Slice(0, copyLength).CopyTo(newOverflow.Span);
@@ -277,7 +267,7 @@ namespace Tsavorite.core
             else
             {
                 // Allocate; nothing to copy, so allocate with zero initialization
-                newOverflow = new(GC.AllocateUninitializedArray<byte>(newLength), startOffset: 0, endOffset: 0);
+                newOverflow = new(newLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 objectId = objectIdMap.Allocate();
                 *(int*)fieldAddress = objectId;
             }

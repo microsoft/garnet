@@ -284,10 +284,10 @@ namespace Tsavorite.core
                 elideSourceRecord = stackCtx.recSrc.HasMainLogSrc && CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info)
             };
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.elideSourceRecord)
                 newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -299,8 +299,6 @@ namespace Tsavorite.core
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
             };
-
-            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
 
             // Type arg specification is needed because we don't pass TContext
             var success = TValueSelector.InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(

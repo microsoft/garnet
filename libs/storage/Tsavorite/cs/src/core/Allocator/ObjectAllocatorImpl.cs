@@ -43,9 +43,6 @@ namespace Tsavorite.core
         /// </summary>
         long ClosedDiskTailOffset;
 
-        // Size of object chunks being written to storage
-        private readonly int objectBlockSize = 100 * (1 << 20);
-
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
@@ -116,35 +113,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => logRecord.SerializeKey(key, maxInlineKeySize, GetObjectIdMap(logicalAddress));
-
         public override void Initialize() => Initialize(FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void InitializeValue(in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
-        {
-            if (sizeInfo.ValueIsInline)
-            {
-                // Set the actual length indicator for inline.
-                newLogRecord.InfoRef.SetValueIsInline();
-                sizeInfo.SetValueInlineLength(newLogRecord.physicalAddress);
-            }
-            else
-            {
-                // If it's a revivified record, it may have ValueIsInline set, so clear that.
-                newLogRecord.InfoRef.ClearValueIsInline();
-
-                if (sizeInfo.ValueIsObject)
-                    newLogRecord.InfoRef.SetValueIsObject();
-
-                // Either an IHeapObject or an overflow byte[]; either way, it's an object, and the length is already set.
-                Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.InvalidObjectId, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
-                sizeInfo.SetValueInlineLength(newLogRecord.physicalAddress);
-                *(int*)sizeInfo.GetValueAddress(newLogRecord.physicalAddress) = ObjectIdMap.InvalidObjectId;
-            }
-            newLogRecord.SetFillerLength(in sizeInfo);
-        }
+        public void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
+            => logRecord.InitializeRecord(key, in sizeInfo, GetObjectIdMap(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)
@@ -225,8 +198,8 @@ namespace Tsavorite.core
             var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
-            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSpanSize;
+            sizeInfo.MaxInlineValueSize = maxInlineValueSize;
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize;
             var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record

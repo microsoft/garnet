@@ -1088,7 +1088,7 @@ namespace Tsavorite.core
             while (pointer < untilLogicalAddressInPage)
             {
                 long recordStart = physicalAddress + pointer;
-
+#if READ_WRITE
                 // DiskLogRecord ctor calls ClearBitsForDiskImages(), and then we use its size to move to the next record.
                 var diskLogRecord = new DiskLogRecord(recordStart);
 
@@ -1100,6 +1100,7 @@ namespace Tsavorite.core
                     Debug.Assert(size <= hlogBase.GetPageSize());   // TODO: This will likely exceed pagesize for large objects. Make sure we don't need this limitation
                     pointer += size;
                 }
+#endif // READ_WRITE
             }
         }
 
@@ -1116,11 +1117,14 @@ namespace Tsavorite.core
             var touched = false;
 
             var pointer = default(long);
+#if READ_WRITE
             var recordStart = default(long);
+#endif // READ_WRITE
 
             pointer = fromLogicalAddressInPage;
             while (pointer < untilLogicalAddressInPage)
             {
+#if READ_WRITE
                 recordStart = pagePhysicalAddress + pointer;
                 var diskLogRecord = new DiskLogRecord(recordStart);
                 ref RecordInfo info = ref diskLogRecord.InfoRef;
@@ -1160,6 +1164,7 @@ namespace Tsavorite.core
                     }
                 }
                 pointer += diskLogRecord.GetSerializedLength(); // RecoverFromPage()
+#endif // READ_WRITE
             }
 
             return touched;
@@ -1294,11 +1299,13 @@ namespace Tsavorite.core
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
 
+#if READ_WRITE
             if (result.freeBuffer1 != null)
             {
                 _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);    TODO(); // Replace this
                 result.freeBuffer1.Return();
             }
+#endif // READ_WRITE
             int pageIndex = GetPageIndexForPage(result.page);
             if (errorCode != 0)
                 result.context.SignalReadError(pageIndex);

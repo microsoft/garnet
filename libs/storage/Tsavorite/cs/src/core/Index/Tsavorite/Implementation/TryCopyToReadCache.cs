@@ -27,13 +27,11 @@ namespace Tsavorite.core
             var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out _))
+            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _ /*status*/))
                 return false;
-            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readcacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
-            stackCtx.SetNewRecord(newLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readcacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
 
-            // Even though readcache records are immutable, we have to initialize the lengths
-            readcache.InitializeValue(in sizeInfo, ref newLogRecord);
+            stackCtx.SetNewRecord(newLogicalAddress);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).

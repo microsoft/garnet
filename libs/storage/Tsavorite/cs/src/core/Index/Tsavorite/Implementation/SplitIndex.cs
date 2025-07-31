@@ -249,13 +249,13 @@ namespace Tsavorite.core
                 {
                     if (logicalAddress < readcacheBase.HeadAddress)
                         break;
-                    logRecord = new LogRecord(readcache.GetPhysicalAddress(logicalAddress));
+                    logRecord = new LogRecord(readcacheBase.GetPhysicalAddress(logicalAddress));
                 }
                 else
                 {
                     if (logicalAddress < hlogBase.HeadAddress)
                         break;
-                    logRecord = new LogRecord(hlog.GetPhysicalAddress(logicalAddress));
+                    logRecord = new LogRecord(hlogBase.GetPhysicalAddress(logicalAddress));
                 }
 
                 var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);

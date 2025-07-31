@@ -459,7 +459,7 @@ namespace Tsavorite.core
         {
             var (alignedOffset, startPadding) = readParams.GetAlignedReadStart(offsetToFieldStart);
             var (alignedBytesToRead, endPadding) = readParams.GetAlignedBytesToRead(unalignedBytesToRead + startPadding);
-            var keyOverflow = new OverflowByteArray(unalignedBytesToRead, startPadding, endPadding);
+            var keyOverflow = new OverflowByteArray(unalignedBytesToRead, startPadding, endPadding, zeroInit: false);
             fixed (byte* ptr = keyOverflow.Span)
             {
                 // If a CountdownEvent was passed in, we're part of a multi-IO operation; otherwise, just create one for a single IO and wait for it here.

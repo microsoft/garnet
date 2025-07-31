@@ -82,8 +82,7 @@ namespace Tsavorite.test
                     // After being freed, the slot in the objectVector should be cleared (so objects are freed as early as possible).
                     var objectId = tid * MultiLevelPageArray.ChapterSize + page;
                     map.Free(objectId);
-                    if (map.Get(objectId) is not null)
-                        Assert.Fail("map.Get(objectId) should be null after Free() pt 1");
+                    Assert.That(map.GetHeapObject(objectId), Is.Null, "map.GetHeapObject(objectId) should be null after Free() pt 1");
                 }
             }
 
@@ -115,8 +114,7 @@ namespace Tsavorite.test
                         Assert.Fail("objectId should be less than allocatedCount");
 
                     // Make sure the slot in the objectVector is still cleared.
-                    if (map.Get(objectId) is not null)
-                        Assert.Fail("map.Get(objectId) should be null after Free() pt 2");
+                    Assert.That(map.GetHeapObject(objectId), Is.NaN, "map.Get(objectId) should be null after Free() pt 2");
                 }
             }
 

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -22,7 +21,6 @@ namespace Tsavorite.test.LogRecordTests
     {
         long nativePointer;
         ObjectIdMap objectIdMap;
-        MemoryPool<byte> memoryPool;
         SpanByteAndMemory sbamOutput;
 
 #pragma warning disable IDE1006 // Naming Styles
@@ -61,7 +59,6 @@ namespace Tsavorite.test.LogRecordTests
                 nativePointer = IntPtr.Zero;
             }
             sbamOutput.Dispose();
-            memoryPool = null;
             DeleteDirectory(MethodTestDir);
         }
 
@@ -77,7 +74,7 @@ namespace Tsavorite.test.LogRecordTests
             keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
-            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
+            sizeInfo.MaxInlineValueSize = maxInlineValueSize;
             sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= maxInlineValueSize;
             valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
@@ -105,14 +102,12 @@ namespace Tsavorite.test.LogRecordTests
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out int keyLengthBytes, out int valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(1));
             Assert.That(valueLengthBytes, Is.EqualTo(1));
-            Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 8;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(2));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(2));
-            Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             // Test 2-3 byte valueLengthByte boundary with 2-keyLengthByte key
@@ -121,7 +116,6 @@ namespace Tsavorite.test.LogRecordTests
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(2));
             Assert.That(valueLengthBytes, Is.EqualTo(2));
-            Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 16;
@@ -134,26 +128,27 @@ namespace Tsavorite.test.LogRecordTests
             inputKeyLength = inputValueLength = 1 << 24 - 1;
             Assert.That(GetByteCount(1 << 24 - 1), Is.EqualTo(3));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
-            Assert.That(keyLengthBytes, Is.EqualTo(2));
-            Assert.That(valueLengthBytes, Is.EqualTo(2));
+            Assert.That(keyLengthBytes, Is.EqualTo(3));
+            Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 24;
             Assert.That(GetByteCount(1 << 24), Is.EqualTo(4));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
-            Assert.That(valueLengthBytes, Is.EqualTo(3));
+            Assert.That(valueLengthBytes, Is.EqualTo(4));
             VerifyKeyAndValue();
 
-            // Test max ValueLength with 2-keyLengthByte key
+            // Test max ValueLength
             inputValueLength = int.MaxValue;
             Assert.That(GetByteCount(int.MaxValue), Is.EqualTo(4));
-            Assert.That(valueLengthBytes, Is.EqualTo(3));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            Assert.That(valueLengthBytes, Is.EqualTo(4));
             VerifyKeyAndValue();
 
             void VerifyKeyAndValue()
             {
                 keyPtr = GetFieldPtr(indicatorAddress, isKey: true, out var keyLengthPtr, out var outputKeyLengthBytes, out var outputKeyLength);
-                valuePtr = GetFieldPtr(indicatorAddress, isKey: true, out var valueLengthPtr, out var outputValueLengthBytes, out var outputValueLength);
+                valuePtr = GetFieldPtr(indicatorAddress, isKey: false, out var valueLengthPtr, out var outputValueLengthBytes, out var outputValueLength);
                 Assert.That(outputKeyLengthBytes, Is.EqualTo(keyLengthBytes));
                 Assert.That(outputKeyLength, Is.EqualTo(inputKeyLength));
                 Assert.That(outputValueLength, Is.EqualTo(inputValueLength));
@@ -280,6 +275,20 @@ namespace Tsavorite.test.LogRecordTests
             RestoreToOriginal(value, ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration);
         }
 
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void CopyDiskLogRecordToLogRecord()
+        {
+            Assert.Ignore("TODO CopyDiskLogRecordToLogRecord");
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void SerializeToMemoryPool()
+        {
+            Assert.Ignore("TODO SerializeToMemoryPool");
+        }
+
         private void InitializeRecord(Span<byte> key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLengthAddress, out long expectedFillerLength, out long eTag, out long expiration)
         {
             sizeInfo.FieldInfo = new()
@@ -300,20 +309,10 @@ namespace Tsavorite.test.LogRecordTests
             long recordEndAddress = nativePointer + sizeInfo.AllocatedInlineRecordSize;
 
             logRecord = new LogRecord(nativePointer, objectIdMap) { InfoRef = default };
-            logRecord.InfoRef.SetKeyIsInline();
-            logRecord.InfoRef.SetValueIsInline();
-
-            // SerializeKey
-            var keySpan = LogField.SetInlineDataLength(logRecord.physicalAddress, key.Length, isKey: true);
-            key.CopyTo(keySpan);
-            _ = LogField.SetInlineDataLength(logRecord.physicalAddress, value.Length, isKey: false);
+            logRecord.InitializeRecord(key, in sizeInfo);
 
             // InitializeValue
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(initialValueLen));
-
-            // FillerLength is set after initialization of Value field, and must be done before actually setting the ValueSpan
-            // (it ignores optionals as it's called before they're set up).
-            logRecord.SetFillerLength(in sizeInfo);
 
             expectedFillerLengthAddress = logRecord.physicalAddress + RecordInfo.GetLength() + initialVarbyteSize + key.Length + value.Length;  // no OptionalsLength
             expectedFillerLength = recordEndAddress - expectedFillerLengthAddress;

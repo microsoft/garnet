@@ -204,10 +204,10 @@ namespace Tsavorite.core
             };
 
             // We know the existing record cannot be elided; it must point to a valid record; otherwise InternalDelete would have returned NOTFOUND.
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             newLogRecord.InfoRef.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 
@@ -218,8 +218,6 @@ namespace Tsavorite.core
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
             };
-
-            hlog.InitializeValue(in sizeInfo, ref newLogRecord);
 
             if (!sessionFunctions.InitialDeleter(ref newLogRecord, ref deleteInfo))
             {

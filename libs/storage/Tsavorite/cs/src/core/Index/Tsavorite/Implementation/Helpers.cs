@@ -21,12 +21,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static LogRecord WriteNewRecordInfo(ReadOnlySpan<byte> key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress, bool inNewVersion, long previousAddress)
+        static LogRecord WriteNewRecordInfo(ReadOnlySpan<byte> key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress,
+            in RecordSizeInfo sizeInfo, bool inNewVersion, long previousAddress)
         {
-            ref var recordInfo = ref LogRecord.GetInfoRef(physicalAddress);
-            recordInfo.WriteInfo(inNewVersion, previousAddress);
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
-            log._wrapper.SerializeKey(key, logicalAddress, ref logRecord);
+            logRecord.InfoRef.WriteInfo(inNewVersion, previousAddress);
+            log._wrapper.InitializeRecord(key, logicalAddress, in sizeInfo, ref logRecord);
             return logRecord;
         }
 

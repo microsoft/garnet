@@ -57,30 +57,26 @@ namespace Tsavorite.core
         /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>
         internal static long GetVersion(byte indicatorByte) => (indicatorByte & kVersionBitMask) >> 6;
 
-        /// <summary>
-        /// Read var-length bytes. This assumes it comes after the <see cref="RecordInfo"/> header so there is enough space to "back up" safely by sizeof(long).
-        /// It backs up into the <see cref="RecordInfo"/> instead of going forward as a long "word" because this way it can apply to both in-memory and on-disk
-        /// (where lengths may themselves be "long", unlike in-memory).
-        /// </summary>
+        /// <summary>Read var-length bytes at the given location.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long ReadVarbyteLength(int numBytes, byte* ptrToFirstByte)
         {
-            var valueMask = (long)(ulong.MaxValue >> ((sizeof(ulong) - numBytes) * 8));
-            var startPtr = (long*)(ptrToFirstByte + numBytes - sizeof(long));
-            return *startPtr & valueMask;
+            long value = 0;
+            for (var ii = 0; ii < numBytes; ii++)
+                value |= (long)*(ptrToFirstByte + ii) << (ii * 8);
+            return value;
         }
 
-        /// <summary>
-        /// Read var-length bytes. This assumes it comes after the <see cref="RecordInfo"/> header so there is enough space to "back up" safely by sizeof(long).
-        /// It backs up into the <see cref="RecordInfo"/> instead of going forward as a long "word" because this way it can apply to both in-memory and on-disk
-        /// (where lengths may themselves be "long", unlike in-memory).
-        /// </summary>
+        /// <summary>Write var-length bytes at the given location.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void WriteVarbyteLength(long value, int numBytes, byte* ptrToFirstByte)
         {
-            var valueMask = (long)(ulong.MaxValue >> ((sizeof(ulong) - numBytes) * 8));
-            var startPtr = (long*)(ptrToFirstByte + numBytes - sizeof(long));
-            *startPtr = (*startPtr & ~valueMask) | (value & valueMask);
+            for (var ii = 0; ii < numBytes; ii++)
+            {
+                *(ptrToFirstByte + ii) = (byte)(value & 0xFF);
+                value >>= 8;
+            }
+            Debug.Assert(value == 0, "len too short");
         }
 
         internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
@@ -185,7 +181,7 @@ namespace Tsavorite.core
                 lengthPtr = ptr;
                 lengthBytes = keyLengthBytes;
                 length = keyLength;
-                return ptr + keyLengthBytes;
+                return ptr + keyLengthBytes + valueLengthBytes;
             }
 
             // Move past the key length bytes; the next bytes are valueLength. Read those, then skip over the key bytes to get the value data pointer.
@@ -279,7 +275,7 @@ namespace Tsavorite.core
             var word = *(long*)indicatorAddress & ~kHasFillerBitMask;
             var ptr = (byte*)&word;
             WriteVarbyteLength(valueLength, valueLengthBytes, ptr + 1 + keyLengthBytes);
-            *(long*)indicatorAddress = word & hasFillerBit;
+            *(long*)indicatorAddress = word | hasFillerBit;
         }
     }
 }
