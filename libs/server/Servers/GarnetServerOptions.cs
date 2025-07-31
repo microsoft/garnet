@@ -355,6 +355,16 @@ namespace Garnet.server
         public int ReplicaDisklessSyncDelay = 5;
 
         /// <summary>
+        /// Timeout in seconds for replication sync operations
+        /// </summary>
+        public int ReplicaSyncTimeout = 5;
+
+        /// <summary>
+        /// Timeout in seconds for replication attach operation
+        /// </summary>
+        public int ReplicaAttachTimeout = 60;
+
+        /// <summary>
         /// AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.
         /// </summary>
         public string ReplicaDisklessSyncFullSyncAofThreshold = string.Empty;

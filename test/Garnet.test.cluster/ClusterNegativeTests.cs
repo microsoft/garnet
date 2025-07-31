@@ -366,6 +366,104 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
             }
         }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterFailedToAddAofSyncTask()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+            var primaryOffset1 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
+
+            // Take a checkpoint to create an in-memory entry
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            var replicaId = context.clusterTestUtils.ClusterMyId(replicaIndex, logger: context.logger);
+            var endpoint = context.clusterTestUtils.GetEndPoint(replicaIndex);
+            try
+            {
+                // Set wait condition
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Failed_To_AddAofSyncTask_UnknownNode);
+
+                var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+                var expected = $"Failed to create AOF sync task for {replicaId} with address {endpoint.Address} and port {endpoint.Port}";
+                ClassicAssert.AreEqual(expected, respReplicate);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Failed_To_AddAofSyncTask_UnknownNode);
+            }
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+        }
+
+        [Test, Order(6), CancelAfter(testTimeout)]
+        public void ClusterReplicaSyncTimeoutTest()
+        {
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var nodes_count = 2;
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1);
+            context.CreateConnection();
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+
+            var keyLength = 32;
+            var kvpairCount = 32;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
+            var primaryOffset1 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
+
+            // Take a checkpoint to create an in-memory entry
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.Checkpoint(primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(primaryIndex, primaryLastSaveTime, logger: context.logger);
+
+            try
+            {
+                // Set wait condition
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
+
+                var respReplicate = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+                var expected = "The operation has timed out.";
+                ClassicAssert.AreEqual(expected, respReplicate);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
+            }
+
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+        }
 #endif
 
         [Test, CancelAfter(60_000)]
