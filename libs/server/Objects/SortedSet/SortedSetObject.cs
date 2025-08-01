@@ -552,6 +552,7 @@ namespace Garnet.server
                         if (!sortedSetObject1.IsExpired(item.Key))
                             directResult.Add(item.Key, item.Value);
                     }
+                    return directResult;
                 }
             }
 

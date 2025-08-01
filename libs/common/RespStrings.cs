@@ -10,6 +10,9 @@ namespace Garnet.common
         public static ReadOnlySpan<byte> EMPTYARRAY => "*0\r\n"u8;
         public static ReadOnlySpan<byte> EMPTYSET => "~0\r\n"u8;
         public static ReadOnlySpan<byte> EMPTYMAP => "%0\r\n"u8;
+        public static ReadOnlySpan<byte> INFINITY => "INF"u8;
+        public static ReadOnlySpan<byte> POS_INFINITY => "+INF"u8;
+        public static ReadOnlySpan<byte> NEG_INFINITY => "-INF"u8;
         public static ReadOnlySpan<byte> INTEGERZERO => ":0\r\n"u8;
         public static ReadOnlySpan<byte> INTEGERONE => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP2_NULLARRAY => "*-1\r\n"u8;

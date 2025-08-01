@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -430,11 +430,14 @@ namespace Tsavorite.core
         {
             if (errorCode != 0)
             {
-                var errorMessage = new Win32Exception((int)errorCode).Message;
+                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
 
         /// <summary>
         /// Note: will read potentially more data (based on sector alignment)
