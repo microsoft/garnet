@@ -5,6 +5,9 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+#if DEBUG
+using Garnet.common;
+#endif
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -13,6 +16,8 @@ namespace Garnet.cluster
     internal sealed unsafe class ReceiveCheckpointHandler
     {
         readonly ClusterProvider clusterProvider;
+        readonly CancellationTokenSource cts;
+        readonly TimeSpan replicaSyncTimeout;
         IDevice writeIntoCkptDevice = null;
         private SemaphoreSlim writeCheckpointSemaphore = null;
         private SectorAlignedBufferPool writeCheckpointBufferPool = null;
@@ -23,10 +28,14 @@ namespace Garnet.cluster
         {
             this.clusterProvider = clusterProvider;
             this.logger = logger;
+            cts = new();
+            replicaSyncTimeout = TimeSpan.FromSeconds(clusterProvider.serverOptions.ReplicaSyncTimeout);
         }
 
         public void Dispose()
         {
+            cts.Cancel();
+            cts.Dispose();
             writeCheckpointSemaphore?.Dispose();
             writeCheckpointBufferPool?.Free();
             writeCheckpointBufferPool = null;
@@ -65,6 +74,10 @@ namespace Garnet.cluster
 
             Debug.Assert(writeIntoCkptDevice != null);
             WriteInto(writeIntoCkptDevice, (ulong)startAddress, data, data.Length, segmentId);
+
+#if DEBUG
+            ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false).GetAwaiter().GetResult();
+#endif
         }
 
         /// <summary>
@@ -77,27 +90,32 @@ namespace Garnet.cluster
         /// <param name="size"></param>
         private unsafe void WriteInto(IDevice device, ulong address, ReadOnlySpan<byte> buffer, int size, int segmentId = -1)
         {
-            if (writeCheckpointBufferPool == null)
-                writeCheckpointBufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            writeCheckpointBufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
 
             long numBytesToWrite = size;
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = writeCheckpointBufferPool.Get((int)numBytesToWrite);
-            fixed (byte* bufferRaw = buffer)
+            try
             {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+                fixed (byte* bufferRaw = buffer)
+                {
+                    Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+                }
+
+                writeCheckpointSemaphore ??= new(0);
+
+                if (segmentId == -1)
+                    device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
+                else
+                    device.WriteAsync((IntPtr)pbuffer.aligned_pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
+
+                _ = writeCheckpointSemaphore.Wait(replicaSyncTimeout, cts.Token);
             }
-
-            if (writeCheckpointSemaphore == null) writeCheckpointSemaphore = new(0);
-
-            if (segmentId == -1)
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
-            else
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
-            writeCheckpointSemaphore.Wait();
-
-            pbuffer.Return();
+            finally
+            {
+                pbuffer.Return();
+            }
         }
 
         private unsafe void IOCallback(uint errorCode, uint numBytes, object context)
@@ -107,7 +125,15 @@ namespace Garnet.cluster
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ReceiveCheckpointHandler] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-            writeCheckpointSemaphore.Release();
+
+            try
+            {
+                _ = writeCheckpointSemaphore.Release();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(ReceiveCheckpointHandler)}.IOCallback");
+            }
         }
 
         [DllImport("libc")]
