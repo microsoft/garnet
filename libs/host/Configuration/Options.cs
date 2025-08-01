@@ -451,6 +451,14 @@ namespace Garnet
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-attach-timeout", Required = false, HelpText = "Timeout in seconds for replication attach operation.")]
+        public int ReplicaAttachTimeout { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-sync-timeout", Required = false, HelpText = "Timeout in seconds for replication sync operations.")]
+        public int ReplicaSyncTimeout { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("repl-diskless-sync-full-sync-aof-threshold", Required = false, HelpText = "AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.")]
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
@@ -892,6 +900,8 @@ namespace Garnet
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
+                ReplicaSyncTimeout = ReplicaSyncTimeout,
+                ReplicaAttachTimeout = ReplicaAttachTimeout,
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,

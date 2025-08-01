@@ -45,5 +45,13 @@ namespace Garnet.common
         /// Consume callback on ReplicaSyncTask faults.
         /// </summary>
         Aof_Sync_Task_Consume,
+        /// <summary>
+        /// Failed to add AOF sync task due to unknown node
+        /// </summary>
+        Replication_Failed_To_AddAofSyncTask_UnknownNode,
+        /// <summary>
+        /// Delay response on receive checkpoint to trigger timeout
+        /// </summary>
+        Replication_Timeout_On_Receive_Checkpoint,
     }
 }

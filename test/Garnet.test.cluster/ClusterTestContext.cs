@@ -224,7 +224,8 @@ namespace Garnet.test.cluster
             bool latencyMonitory = false,
             int loggingFrequencySecs = 5,
             int checkpointThrottleFlushDelayMs = 0,
-            bool clusterReplicaResumeWithData = false)
+            bool clusterReplicaResumeWithData = false,
+            int replicaSyncTimeout = 60)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -277,7 +278,8 @@ namespace Garnet.test.cluster
                 latencyMonitory: latencyMonitory,
                 loggingFrequencySecs: loggingFrequencySecs,
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
-                clusterReplicaResumeWithData: clusterReplicaResumeWithData);
+                clusterReplicaResumeWithData: clusterReplicaResumeWithData,
+                replicaSyncTimeout: replicaSyncTimeout);
 
             foreach (var node in nodes)
                 node.Start();
