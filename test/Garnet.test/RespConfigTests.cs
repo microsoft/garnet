@@ -713,7 +713,10 @@ namespace Garnet.test
             }
 
             // Wait for log size tracker
-            var sizeTrackerDelay = TimeSpan.FromSeconds(LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds);
+            var sizeTrackerDelay =
+                TimeSpan.FromSeconds(
+                    LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator,
+                        CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds + 2);
             Thread.Sleep(sizeTrackerDelay);
 
             // Verify that empty page count has increased
