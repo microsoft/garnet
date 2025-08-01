@@ -124,9 +124,9 @@ local cmsgpack = {
 
 -- define struct for (optional) inclusion into sandbox_env
 local struct = {
-    pack = string.pack;
-    unpack = string.unpack;
-    size = string.packsize;
+    pack = chain_func(error_wrapper_r1, garnet_struct_pack);
+    unpack = chain_func(error_wrapper_rvar, garnet_struct_unpack);
+    size = chain_func(error_wrapper_r1, garnet_struct_size);
 }
 
 -- define redis for (optional, but almost always) inclusion into sandbox_env
