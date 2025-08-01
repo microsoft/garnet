@@ -51,6 +51,12 @@ namespace Garnet.cluster
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
 
+        /// <inheritdoc/>
+        public bool IsReplicating { get; private set; }
+
+        /// <inheritdoc/>
+        public IGarnetServer Server { get; set; }
+
         public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;

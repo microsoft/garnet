@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Text;
+using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -31,7 +32,7 @@ namespace Garnet.cluster
                 var acquiredLock = false;
                 try
                 {
-                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne))
+                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne, upgradeLock: false))
                     {
                         logger?.LogError($"{nameof(TryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                         while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
@@ -47,7 +48,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
+                    if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
                 }
             }
             else
@@ -70,9 +71,17 @@ namespace Garnet.cluster
                     return true;
                 }
 
+                ReplicateSyncOptions syncOpts = new(
+                    primaryId,
+                    Background: false,
+                    Force: true,
+                    TryAddReplica: true,
+                    AllowReplicaResetOnFailure: true,
+                    UpgradeLock: false
+                );
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, primaryId, background: false, force: true, tryAddReplica: true, out var errorMessage) :
-                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, primaryId, background: false, force: true, tryAddReplica: true, out errorMessage);
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, syncOpts, out var errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, syncOpts, out errorMessage);
 
                 if (!success)
                 {

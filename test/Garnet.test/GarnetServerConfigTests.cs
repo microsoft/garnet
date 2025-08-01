@@ -795,6 +795,149 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void ClusterReplicationReestablishmentTimeout()
+        {
+            // Command line args
+            {
+                // No value is accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // 0 accepted
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "0" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Positive accepted
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "30" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(30, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Negative rejected
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "-1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Invalid rejected
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "foo" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // No value is accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // 0 accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": 0 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Positive accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": 30 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(30, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Negative rejected
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": -1 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterReplicaResumeWithData()
+        {
+            // Command line args
+            {
+                // Default accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.ClusterReplicaResumeWithData);
+                }
+
+                // Switch is accepted
+                {
+                    var args = new[] { "--cluster-replica-resume-with-data" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.ClusterReplicaResumeWithData);
+                }
+            }
+
+            // JSON args
+            {
+                // Default accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.ClusterReplicaResumeWithData);
+                }
+
+                // False is accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicaResumeWithData"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.ClusterReplicaResumeWithData);
+                }
+
+                // True is accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicaResumeWithData"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.ClusterReplicaResumeWithData);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""ClusterReplicaResumeWithData"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
         /// <summary>
         /// Import a garnet.conf file with the given contents
         /// </summary>
