@@ -524,7 +524,7 @@ namespace GarnetJSON.JSONPath
             {
                 if (Math.Abs(longIndex) > Array.MaxLength)
                 {
-                    index= longIndex < 0 ? -Array.MaxLength : Array.MaxLength;
+                    index = longIndex < 0 ? -Array.MaxLength : Array.MaxLength;
                 }
                 else
                 {
