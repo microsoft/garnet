@@ -366,8 +366,10 @@ namespace GarnetJSON.JSONPath
                         }
 
                         var indexer = _expression.AsSpan(start, length);
-                        int index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
-
+                        if (!TryParseIndex(indexer, out int index))
+                        {
+                            throw new JsonException($"Invalid Array index: {indexer}");
+                        }
                         indexes.Add(index);
                         return scan ? new ScanArrayMultipleIndexFilter(indexes) : new ArrayMultipleIndexFilter(indexes);
                     }
@@ -376,7 +378,10 @@ namespace GarnetJSON.JSONPath
                         if (length > 0)
                         {
                             var indexer = _expression.AsSpan(start, length);
-                            int index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
+                            if (!TryParseIndex(indexer, out int index))
+                            {
+                                throw new JsonException($"Invalid Array index: {indexer}");
+                            }
                             if (colonCount == 1)
                             {
                                 endIndex = index;
@@ -397,8 +402,11 @@ namespace GarnetJSON.JSONPath
                         }
 
                         var indexer = _expression.AsSpan(start, length);
-                        long index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
-                        return scan ? new ScanArrayIndexFilter() { Index = (int)index } : new ArrayIndexFilter { Index = (int)index };
+                        if (!TryParseIndex(indexer, out int index))
+                        {
+                            throw new JsonException($"Invalid Array index: {indexer}");
+                        }
+                        return scan ? new ScanArrayIndexFilter() { Index = index } : new ArrayIndexFilter { Index = index };
                     }
                 }
                 else if (currentCharacter == ',')
@@ -442,7 +450,10 @@ namespace GarnetJSON.JSONPath
                     if (length > 0)
                     {
                         var indexer = _expression.AsSpan(start, length);
-                        int index = EnsureIndexWithinArrayBounds(long.Parse(indexer, CultureInfo.InvariantCulture));
+                        if (!TryParseIndex(indexer, out int index))
+                        {
+                            throw new JsonException($"Invalid Array index: {indexer}");
+                        }
 
                         if (colonCount == 0)
                         {
@@ -502,17 +513,31 @@ namespace GarnetJSON.JSONPath
         }
 
         /// <summary>
-        /// While an index may be parsed as a long, this ensures it fits within Array.MaxLength bounds
+        /// Try and parse a span to a properly clamped array index
         /// </summary>
-        /// <param name="index">The parsed (potentially) long value</param>
-        /// <returns>Either the original index as an int or capped </returns>
-        private static int EnsureIndexWithinArrayBounds(long index)
+        /// <param name="expression">The expression to be parsed</param>
+        /// <param name="index">When successful, contains the int clamped Index, otherwise -1.</param>
+        /// <returns>Whether the expression was parsed successfully.</returns>
+        private static bool TryParseIndex(ReadOnlySpan<char> expression, out int index)
         {
-            if (Math.Abs(index) > Array.MaxLength)
+            if (long.TryParse(expression, CultureInfo.InvariantCulture, out var longIndex))
             {
-                return index < 0 ? -Array.MaxLength : Array.MaxLength;
+                if (Math.Abs(longIndex) > Array.MaxLength)
+                {
+                    index= longIndex < 0 ? -Array.MaxLength : Array.MaxLength;
+                }
+                else
+                {
+                    index = (int)longIndex;
+                }
+
+                return true;
             }
-            return (int)index;
+
+            index = -1;
+            return false;
+
+
         }
 
         /// <summary>

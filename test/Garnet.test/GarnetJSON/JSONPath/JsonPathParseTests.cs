@@ -23,6 +23,7 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -731,12 +732,12 @@ namespace Garnet.test.JSONPath
         [Test]
         public void AdjacentIndexers()
         {
-            JsonPath path = new JsonPath("[1][0][0][" + int.MaxValue + "]");
+            JsonPath path = new JsonPath("[1][0][-4][" + int.MaxValue + "]");
             ClassicAssert.AreEqual(4, path.Filters.Count);
             ClassicAssert.AreEqual(1, ((ArrayIndexFilter)path.Filters[0]).Index);
             ClassicAssert.AreEqual(0, ((ArrayIndexFilter)path.Filters[1]).Index);
-            ClassicAssert.AreEqual(0, ((ArrayIndexFilter)path.Filters[2]).Index);
-            ClassicAssert.AreEqual(int.MaxValue, ((ArrayIndexFilter)path.Filters[3]).Index);
+            ClassicAssert.AreEqual(-4, ((ArrayIndexFilter)path.Filters[2]).Index);
+            ClassicAssert.AreEqual(Array.MaxLength, ((ArrayIndexFilter)path.Filters[3]).Index);
         }
 
         [Test]
