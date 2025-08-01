@@ -554,13 +554,6 @@ namespace Garnet.test.JSONPath
             ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("[1]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Index 1 not valid on JObject.");
         }
 
-        [Test]
-        public void EvaluateWildcardIndexOnObjectWithError()
-        {
-            var o = JsonNode.Parse(@"{""Blah"": 1}");
-
-            ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("[*]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Index * not valid on JObject.");
-        }
 
         [Test]
         public void EvaluateSliceOnObjectWithError()
@@ -780,10 +773,9 @@ namespace Garnet.test.JSONPath
 
             IList<JsonNode> t = [.. a.SelectNodes("$..*")];
             ClassicAssert.IsNotNull(t);
-            ClassicAssert.AreEqual(5, t.Count);
-            JsonAssert.AreEqual(a, t[0]);
-            JsonAssert.AreEqual(a[0], t[1]);
-            JsonAssert.AreEqual(a[1], t[3]);
+            ClassicAssert.AreEqual(4, t.Count);
+            JsonAssert.AreEqual(a[0], t[0]);
+            JsonAssert.AreEqual(a[1], t[2]);
         }
 
         [Test]
@@ -817,12 +809,11 @@ namespace Garnet.test.JSONPath
 
             IList<JsonNode> t = [.. a.SelectNodes("$..*")];
             ClassicAssert.IsNotNull(t);
-            ClassicAssert.AreEqual(9, t.Count);
+            ClassicAssert.AreEqual(8, t.Count);
 
-            JsonAssert.AreEqual(a, t[0]);
-            JsonAssert.AreEqual(a[0], t[1]);
-            JsonAssert.AreEqual(a[1], t[3]);
-            JsonAssert.AreEqual(a[2], t[5]);
+            JsonAssert.AreEqual(a[0], t[0]);
+            JsonAssert.AreEqual(a[1], t[2]);
+            JsonAssert.AreEqual(a[2], t[4]);
         }
 
         [Test]

@@ -23,6 +23,7 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -731,12 +732,12 @@ namespace Garnet.test.JSONPath
         [Test]
         public void AdjacentIndexers()
         {
-            JsonPath path = new JsonPath("[1][0][0][" + int.MaxValue + "]");
+            JsonPath path = new JsonPath("[1][0][-4][" + int.MaxValue + "]");
             ClassicAssert.AreEqual(4, path.Filters.Count);
             ClassicAssert.AreEqual(1, ((ArrayIndexFilter)path.Filters[0]).Index);
             ClassicAssert.AreEqual(0, ((ArrayIndexFilter)path.Filters[1]).Index);
-            ClassicAssert.AreEqual(0, ((ArrayIndexFilter)path.Filters[2]).Index);
-            ClassicAssert.AreEqual(int.MaxValue, ((ArrayIndexFilter)path.Filters[3]).Index);
+            ClassicAssert.AreEqual(-4, ((ArrayIndexFilter)path.Filters[2]).Index);
+            ClassicAssert.AreEqual(Array.MaxLength, ((ArrayIndexFilter)path.Filters[3]).Index);
         }
 
         [Test]
@@ -756,6 +757,46 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual("dependencies", ((FieldFilter)path.Filters[2]).Name);
             ClassicAssert.AreEqual("System.Xml.ReaderWriter", ((FieldFilter)path.Filters[3]).Name);
             ClassicAssert.AreEqual("source", ((FieldFilter)path.Filters[4]).Name);
+        }
+
+        [Test]
+        public void ArrayOfArrayValue()
+        {
+            JsonPath path = new JsonPath("$.a[?(@.a in [[1,2],[2,3]])]");
+
+            ClassicAssert.AreEqual(2, path.Filters.Count);
+            ClassicAssert.AreEqual("a", ((FieldFilter)path.Filters[0]).Name);
+            QueryExpression InExpression = ((QueryFilter)path.Filters[1]).Expression;
+            ClassicAssert.AreEqual(QueryOperator.In, InExpression.Operator);
+            ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
+            JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
+            ClassicAssert.AreEqual(2, Array?.Count);
+            ClassicAssert.AreEqual(true, JsonNode.DeepEquals(Array?[0], JsonNode.Parse("[1,2]")));
+        }
+
+        [Test]
+        public void ArrayOfArrayValueWithEscaping()
+        {
+
+            string hi_there_str = """
+                                  [
+                                  "\"hi\"",
+                                  "there"
+                                  ]
+                                  """;
+
+            JsonPath path = new JsonPath($"$.a[?(@.a in [{hi_there_str},[2,3]])]");
+
+            ClassicAssert.AreEqual(2, path.Filters.Count);
+            ClassicAssert.AreEqual("a", ((FieldFilter)path.Filters[0]).Name);
+            QueryExpression InExpression = ((QueryFilter)path.Filters[1]).Expression;
+            ClassicAssert.AreEqual(QueryOperator.In, InExpression.Operator);
+            ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
+            JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
+            ClassicAssert.AreEqual(2, Array?.Count);
+
+
+            ClassicAssert.AreEqual(true, JsonNode.DeepEquals(Array?[0], JsonNode.Parse(hi_there_str)));
         }
     }
 }
