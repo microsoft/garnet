@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -87,9 +88,17 @@ namespace Garnet.cluster
             }
             else
             {
+                ReplicateSyncOptions syncOpts = new(
+                    nodeId,
+                    Background: background,
+                    Force: false,
+                    TryAddReplica: true,
+                    AllowReplicaResetOnFailure: true,
+                    UpgradeLock: false
+                );
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
-                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, nodeId, background: background, force: false, tryAddReplica: true, upgradeLock: false, allowReplicaResetOnFailure: true, out var errorMessage) :
-                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, nodeId, background: background, force: false, tryAddReplica: true, upgradeLock: false, allowReplicaResetOnFailure: true, out errorMessage);
+                    clusterProvider.replicationManager.TryReplicateDisklessSync(this, syncOpts, out var errorMessage) :
+                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, syncOpts, out errorMessage);
 
                 if (success)
                 {
