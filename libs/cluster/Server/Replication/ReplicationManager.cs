@@ -221,6 +221,7 @@ namespace Garnet.cluster
                 return;
             }
 
+            var suppressUnlock = false;
             try
             {
                 if (!clusterProvider.clusterManager.CurrentConfig.IsReplica || clusterProvider.clusterManager.CurrentConfig.LocalNodePrimaryId != primaryId)
@@ -238,25 +239,47 @@ namespace Garnet.cluster
 
                 logger.LogInformation("Beginning resync to {primaryId} after replication session failed", primaryId);
 
-                ReplicateSyncOptions syncOpts = new(primaryId, Background: false, Force: true, TryAddReplica: true, AllowReplicaResetOnFailure: false, UpgradeLock: true);
-                ReadOnlySpan<byte> errorMessage;
-                var success =
-                        clusterProvider.serverOptions.ReplicaDisklessSync ?
-                        clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, syncOpts, out errorMessage) :
-                        clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, syncOpts, out errorMessage);
+                // At this point we need to hold the lock until this upcoming task completes
+                suppressUnlock = true;
+                _ = Task.Run(
+                    () =>
+                    {
+                        try
+                        {
+                            // Because of lock shenanigans we can't use Background: true here
+                            ReplicateSyncOptions syncOpts = new(primaryId, Background: false, Force: true, TryAddReplica: true, AllowReplicaResetOnFailure: false, UpgradeLock: true);
+                            ReadOnlySpan<byte> errorMessage;
+                            var success =
+                                    clusterProvider.serverOptions.ReplicaDisklessSync ?
+                                    clusterProvider.replicationManager.TryReplicateDisklessSync(activeSession, syncOpts, out errorMessage) :
+                                    clusterProvider.replicationManager.TryReplicateDiskbasedSync(activeSession, syncOpts, out errorMessage);
 
-                if (success)
-                {
-                    logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
-                }
-                else
-                {
-                    logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
-                }
+                            if (success)
+                            {
+                                logger.LogInformation("Resync to {primaryId} successfully started", primaryId);
+                            }
+                            else
+                            {
+                                logger.LogWarning("Failed to resync to {primaryId} after replication session failed: {errorMessage}", primaryId, Encoding.UTF8.GetString(errorMessage));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.LogError(ex, "Error encountered on replication recovery background task");
+                        }
+                        finally
+                        {
+                            clusterProvider.AllowRoleChange();
+                        }
+                    }
+                );
             }
             finally
             {
-                clusterProvider.AllowRoleChange();
+                if (!suppressUnlock)
+                {
+                    clusterProvider.AllowRoleChange();
+                }
             }
         }
 
