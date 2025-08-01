@@ -16,6 +16,9 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using static Utility;
+
     /// <summary>
     /// Sector aligned memory allocator
     /// </summary>
@@ -35,28 +38,31 @@ namespace Tsavorite.core
         internal GCHandle handle;
 
         /// <summary>
-        /// Offset for initial allocation alignment of the block to form <see cref="aligned_pointer"/>.
+        /// Offset for initial allocation alignment of the block; this is the offset from the first element of <see cref="buffer"/> to form <see cref="aligned_pointer"/>.
+        /// This alignment is internal to <see cref="SectorAlignedMemory"/>, and ensures that callers see an aligned starting address.
         /// </summary>
-        public int offset;
+        public int aligned_offset;
 
         /// <summary>
-        /// Aligned pointer; initial allocation plus <see cref="offset"/>
+        /// Aligned pointer; initial allocation (the first element of <see cref="buffer"/>) plus <see cref="aligned_offset"/>
+        /// This alignment is internal to <see cref="SectorAlignedMemory"/>, and ensures that callers see an aligned starting address.
         /// </summary>
         public byte* aligned_pointer;
 
         /// <summary>
-        /// Valid offset for operations above <see cref="aligned_pointer"/>, such as file IO; when reading, we round down to the nearest sector size,
-        /// and this is the amount we rounded down by. Used by <see cref="GetValidPointer()"/>.
+        /// Valid offset for operations above <see cref="aligned_pointer"/>, to get their own desired alignment relative to our aligned starting address.
+        /// This is set by the caller for operations such as file reading, which rounds down to the nearest sector size; this is the amount of that rounding down.
+        /// Used by <see cref="GetValidPointer()"/>, which is <see cref="aligned_pointer"/> + <see cref="valid_offset"/>.
         /// </summary>
         public int valid_offset;
 
         /// <summary>
-        /// Required bytes for the current operation, e.g. number of bytes to read. There will always be at least this much usable space in the allocation.
+        /// Required (requested) bytes for the current operation, e.g. number of bytes to read. There will always be at least this much usable space in the allocation.
         /// </summary>
         public int required_bytes;
 
         /// <summary>
-        /// Available bytes after the operation is complete, e.g. the number of bytes actually read; starts at <see cref="valid_offset"/>.
+        /// Available bytes after the operation is complete, e.g. the number of bytes actually read; <see cref="GetValidPointer()"/>, which is <see cref="aligned_pointer"/> + <see cref="valid_offset"/>.
         /// </summary>
         public int available_bytes;
 
@@ -114,7 +120,7 @@ namespace Tsavorite.core
             buffer = GC.AllocateArray<byte>(requiredSize, true);
             long bufferAddr = (long)Unsafe.AsPointer(ref buffer[0]);
             aligned_pointer = (byte*)((bufferAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            offset = (int)((long)aligned_pointer - bufferAddr);
+            aligned_offset = (int)((long)aligned_pointer - bufferAddr);
             // Assume ctor is called for allocation and leave Free unset
         }
 
@@ -147,7 +153,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get the total aligned memory capacity of the buffer
         /// </summary>
-        public int AlignedTotalCapacity => buffer.Length - offset;
+        public int AlignedTotalCapacity => buffer.Length - aligned_offset;
 
         /// <summary>
         /// Get valid pointer
@@ -189,7 +195,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public override string ToString()
         {
-            return string.Format($"{(long)aligned_pointer} {offset} {valid_offset} {required_bytes} {available_bytes}"
+            return string.Format($"{(long)aligned_pointer} {aligned_offset} {valid_offset} {required_bytes} {available_bytes}"
 #if CHECK_FREE
                 + $" {Free}"
 #endif
@@ -312,7 +318,7 @@ namespace Tsavorite.core
             Interlocked.Increment(ref totalGets);
 #endif
             int required_bytes = numRecords * recordSize;
-            int requiredSize = sectorSize + ((required_bytes + (sectorSize - 1)) & ~(sectorSize - 1));
+            int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
             if (queue[index] == null)
             {
@@ -329,7 +335,7 @@ namespace Tsavorite.core
                 {
                     page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
                     page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-                    page.offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+                    page.aligned_offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
                 }
                 page.required_bytes = required_bytes;
                 return page;
@@ -337,13 +343,14 @@ namespace Tsavorite.core
 
             page = new SectorAlignedMemory(level: index)
             {
-                buffer = GC.AllocateArray<byte>(sectorSize * (1 << index), !UnpinOnReturn)
+                // Add an additional sector for the leading RoundUp of pageAddr to sectorSize.
+                buffer = GC.AllocateArray<byte>(sectorSize * ((1 << index) + 1), !UnpinOnReturn)
             };
             if (UnpinOnReturn)
                 page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
             long pageAddr = (long)Unsafe.AsPointer(ref page.buffer[0]);
-            page.aligned_pointer = (byte*)((pageAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            page.offset = (int)((long)page.aligned_pointer - pageAddr);
+            page.aligned_pointer = (byte*)RoundUp(pageAddr, sectorSize);
+            page.aligned_offset = (int)((long)page.aligned_pointer - pageAddr);
             page.pool = this;
             page.required_bytes = required_bytes;
             return page;

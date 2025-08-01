@@ -41,6 +41,7 @@ namespace Tsavorite.test
         {
             HeapMemorySize = sizeof(int);
             SerializedSize = HeapMemorySize;
+            SerializedSizeIsExact = true;
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>

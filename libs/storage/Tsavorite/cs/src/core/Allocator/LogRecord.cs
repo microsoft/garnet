@@ -219,7 +219,7 @@ namespace Tsavorite.core
                 // If it's a revivified record, it may have ValueIsInline set, so clear that if it's not an object (SetValueIsObject clears it).
                 if (sizeInfo.ValueIsObject)
                 {
-                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.InvalidObjectId, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
+                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
                     InfoRef.SetValueIsObject();
                 }
                 else

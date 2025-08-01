@@ -352,7 +352,8 @@ namespace Tsavorite.core
 
             // TODO: If ObjectIdMap for this page is empty and FlushedDiskTailOffset is 0, we can write directly from the page to disk (with the sector-aligning pre-Read).
 
-            // "Aligned" refers to sector aligned
+            // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries).
+            // This includes the objectId space for Overflow and Heap Objects. "Aligned" refers to sector aligned
             int startOffset = 0, alignedStartOffset = 0, endOffset = (int)numBytesToWrite;
             if (asyncResult.partial)
             {
@@ -361,18 +362,16 @@ namespace Tsavorite.core
                 startOffset = (int)(asyncResult.fromAddress - pageStart);
                 alignedStartOffset = RoundDown(startOffset, sectorSize);
                 endOffset = (int)(asyncResult.untilAddress - pageStart);
+                numBytesToWrite = (uint)(endOffset - startOffset);
             }
-
-            // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries).
-            // This includes the objectId space for Overflow and Heap Objects.
-            Debug.Assert(numBytesToWrite == endOffset - startOffset, $"numBytesToWrite={numBytesToWrite} does not equal endOffset - startOffset={endOffset - startOffset}");
 
             // Hang onto local copies of the objects and page inline data, so they are kept valid even if the original page is reclaimed.
             // TODO: Should Page eviction null the ObjectIdMap, or its internal MultiLevelPageArray, vs. just clearing the objects
             var localObjectIdMap = values[flushPage % BufferSize].objectIdMap;
-            var srcBuffer = bufferPool.Get(endOffset - alignedStartOffset); // Source buffer adjusts size for alignment subtraction from startOffset.
+            var srcBuffer = bufferPool.Get((int)numBytesToWrite);
             var pageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
             pageSpan.CopyTo(srcBuffer.Span);
+            srcBuffer.available_bytes = (int)numBytesToWrite;
 
             // We suspend epoch during the actual flush as that can take a long time.
             var epochWasProtected = epoch.ThisInstanceProtected();
@@ -381,7 +380,7 @@ namespace Tsavorite.core
 
             // Object keys and values are serialized into this Stream.
             var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
-            var diskBuffer = new DiskStreamWriteBuffer(device, bufferPool.Get(IStreamBuffer.DiskWriteBufferSize), valueObjectSerializer, AsyncReadPageCallback);
+            var diskBuffer = new DiskStreamWriteBuffer(device, bufferPool.Get(IStreamBuffer.DiskWriteBufferSize), valueObjectSerializer, AsyncSimpleFlushPageCallback);
             PinnedMemoryStream<DiskStreamWriteBuffer> pinnedMemoryStream = new(diskBuffer);
 
             try
@@ -396,7 +395,7 @@ namespace Tsavorite.core
                         using var countdownEvent = new CountdownEvent(1);
                         PageAsyncReadResult<Empty> result = new() { handle = countdownEvent };
                         alignedDestinationAddress += (ulong)alignedStartOffset;
-                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.BufferPointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.BufferPointer, (uint)sectorSize, AsyncSimpleReadPageCallback, result);
                         result.handle.Wait();
                         diskBuffer.OnInitialSectorReadComplete(startOffset - alignedStartOffset);
                     }
@@ -405,9 +404,14 @@ namespace Tsavorite.core
                 diskBuffer.SetAlignedDeviceAddress(alignedDestinationAddress);
                 valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
 
+                // AddressType consistency check
+                Debug.Assert(IsInLogMemory(asyncResult.fromAddress), "fromAddress is not marked as in Log memory");
+                Debug.Assert(IsInLogMemory(asyncResult.untilAddress), "untilAddress is not marked as in Log memory");
+                Debug.Assert(fuzzyStartLogicalAddress < 0 || IsInLogMemory(fuzzyStartLogicalAddress), "fromAddress is not marked as in Log memory");
+
                 var logicalAddress = asyncResult.fromAddress;
-                var endPhysicalAddress = (long)srcBuffer.aligned_pointer + endOffset;
-                for (var physicalAddress = (long)srcBuffer.aligned_pointer + startOffset; physicalAddress < endPhysicalAddress; /* incremented in loop */)
+                var endPhysicalAddress = (long)srcBuffer.aligned_pointer + numBytesToWrite;
+                for (var physicalAddress = (long)srcBuffer.aligned_pointer; physicalAddress < endPhysicalAddress; /* incremented in loop */)
                 {
                     var logRecord = new LogRecord(physicalAddress, localObjectIdMap);
 
@@ -426,10 +430,13 @@ namespace Tsavorite.core
 
                     // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
                     diskBuffer.Write(in logRecord, FlushedDiskTailOffset);
-                    var streamRecordSize = RoundUp(pinnedMemoryStream.Position, Constants.kRecordAlignment) - prevPosition;
+                    var streamRecordSize = RoundUp(diskBuffer.TotalWrittenLength, Constants.kRecordAlignment) - prevPosition;
                     Debug.Assert(streamRecordSize >= logRecordSize, $"Serialized size of record {streamRecordSize} is less than expected record size {logRecordSize}.");
 
                     FlushedDiskTailOffset += streamRecordSize - logRecordSize;  // The flush "next adjacent" sequence guarantees only one thread at a time will be calling this
+
+                    logicalAddress += logRecordSize;    // advance in main log
+                    physicalAddress += logRecordSize;   // advance in source buffer
                 }
                 diskBuffer.OnFlushComplete();
             }

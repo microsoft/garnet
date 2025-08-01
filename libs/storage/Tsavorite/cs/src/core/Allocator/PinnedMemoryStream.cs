@@ -63,7 +63,7 @@ namespace Tsavorite.core
         /// <summary>The current position of the stream seeking; only Reading is supported</summary>
         public override long Position
         {
-            get => streamBuffer.Position;   // TODO: needs to include priorCumulativeLength
+            get => streamBuffer.Position;
             set => throw new InvalidOperationException("Stream does not support set_Position.");
         }
 

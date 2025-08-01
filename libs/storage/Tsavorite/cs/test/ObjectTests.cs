@@ -93,6 +93,35 @@ namespace Tsavorite.test
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void ObjectDiskWriteReadSingle()
+        {
+            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var bContext = session.BasicContext;
+            const int keyInt = 42;
+
+            var keyStruct = new TestObjectKey { key = keyInt };
+            var key = SpanByte.FromPinnedVariable(ref keyStruct);
+            var value = new TestObjectValue { value = keyInt * 2 };
+            _ = bContext.Upsert(key, value, Empty.Default);
+
+            TestObjectInput input = new();
+            TestObjectOutput output = new();
+            var status = bContext.Read(key, ref input, ref output, Empty.Default);
+            Assert.That(status.IsPending, Is.False);
+            Assert.That(status.Found, Is.True);
+            Assert.That(output.value.value, Is.EqualTo(keyInt * 2));
+
+            store.Log.FlushAndEvict(wait: true);
+
+            status = bContext.Read(key, ref input, ref output, Empty.Default);
+            Assert.That(status.IsPending, Is.True);
+            Assert.That(bContext.CompletePendingWithOutputs(out var outputs, wait: true), Is.True);
+            (status, output) = GetSinglePendingResult(outputs);
+            Assert.That(status.Found, Is.True);
+            Assert.That(output.value.value, Is.EqualTo(keyInt * 2));
+        }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectDiskWriteRead()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
@@ -170,41 +199,53 @@ namespace Tsavorite.test
         }
 
         public enum SerializedSizeMode { SerSizeExact, SerSizeInexact };
+        public enum SerializeValueSize
+        {
+            HalfBuffer = IStreamBuffer.DiskWriteBufferSize / 2,
+            OneBuffer = IStreamBuffer.DiskWriteBufferSize,
+            ThreeHalfBuffer = (IStreamBuffer.DiskWriteBufferSize / 2) * 3,
+            TwoBuffer = IStreamBuffer.DiskWriteBufferSize * 2
+        }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
-        public void ObjectDiskWriteReadObject([Values] SerializedSizeMode serSizeMode)
+        public void ObjectDiskWriteReadLarge([Values] SerializedSizeMode serSizeMode, [Values] SerializeValueSize serializeValueSize)
         {
             using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
-            var valueSize = IStreamBuffer.DiskWriteBufferSize / 2;
-            const int numRec = 5;
+            var valueSize = (int)serializeValueSize;
+            const int numRec = 3;
             for (int ii = 0; ii < numRec; ii++)
             {
                 var key1Struct = new TestObjectKey { key = ii };
                 var key = SpanByte.FromPinnedVariable(ref key1Struct);
-                var value = new TestLargeObjectValue (valueSize * (ii + 1), serializedSizeIsExact: serSizeMode == SerializedSizeMode.SerSizeExact);
+                var value = new TestLargeObjectValue (valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializedSizeMode.SerSizeExact);
                 new Span<byte>(value.value).Fill(0x42);
                 _ = bContext.Upsert(key, value, Empty.Default);
             }
 
+            // Test before and after the flush
+            DoRead();
             store.Log.FlushAndEvict(wait: true);
+            DoRead();
 
-            TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
-
-            for (int ii = 0; ii < numRec; ii++)
+            void DoRead()
             {
-                var output = new TestLargeObjectOutput();
-                var keyStruct = new TestObjectKey { key = ii };
-                var key = SpanByte.FromPinnedVariable(ref keyStruct);
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                for (int ii = 0; ii < numRec; ii++)
+                {
+                    var output = new TestLargeObjectOutput();
+                    var keyStruct = new TestObjectKey { key = ii };
+                    var key = SpanByte.FromPinnedVariable(ref keyStruct);
 
-                var status = bContext.Read(key, ref input, ref output, Empty.Default);
-                if (status.IsPending)
-                    (status, output) = bContext.GetSinglePendingResult();
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
 
-                Assert.That(output.value.value.Length, Is.EqualTo(valueSize * (ii + 1)));
-                foreach (var element in new ReadOnlySpan<byte>(output.value.value))
-                    Assert.That(element, Is.EqualTo(0x42));
+                    Assert.That(output.value.value.Length, Is.EqualTo(valueSize + (ii * 4096)));
+                    foreach (var element in new ReadOnlySpan<byte>(output.value.value))
+                        Assert.That(element, Is.EqualTo(0x42));
+                }
             }
         }
 

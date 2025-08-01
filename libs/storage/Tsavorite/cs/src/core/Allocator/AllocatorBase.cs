@@ -1528,15 +1528,17 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-            var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
+            var fileOffset = IsObjectAllocator
+                ? (ulong)AbsoluteAddress(fromLogicalAddress)
+                : (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
+            var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);          // Round down to sector start
 
-            var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
-            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
+            var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);  // Round up in length (due to alignedFileOffset round-down to sector start)
+            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1)); // Round up to sector end
 
             var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
-            record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));   // alignedReadLength - (valid_offset, which is the round-down to sector start))
             record.required_bytes = numBytes;
 
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
@@ -1559,15 +1561,17 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-            var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
+            Debug.Assert(!IsObjectAllocator, $"Cannot use this form of {GetCurrentMethodName()} with {nameof(ObjectAllocator<TStoreFunctions>)}");
 
-            var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
-            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));
+            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
+            var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);          // Round down to sector start
+
+            var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);  // Round up in length (due to alignedFileOffset round-down to sector start)
+            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1)); // Round up to sector end
 
             context.record = bufferPool.Get((int)alignedReadLength);
             context.record.valid_offset = (int)(fileOffset - alignedFileOffset);
-            context.record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
+            context.record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));   // alignedReadLength - (valid_offset, which is the round-down to sector start))
             context.record.required_bytes = numBytes;
 
             device.ReadAsync(alignedFileOffset,
@@ -1837,20 +1841,27 @@ namespace Tsavorite.core
                     epoch.ProtectAndDrain();
                 }
             }
-
-            // Convert to absolute address as we're going to disk
-            fromLogicalAddress = AbsoluteAddress(fromLogicalAddress);
             AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
         }
 
-        private protected void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
+        private protected void AsyncSimpleReadPageCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
+                logger?.LogError($"{nameof(AsyncSimpleReadPageCallback)} error: {{errorCode}}", errorCode);
 
             // Signal the event so the waiter can continue
             var result = (PageAsyncReadResult<Empty>)context;
             _ = result.handle.Signal();
+        }
+
+        private protected void AsyncSimpleFlushPageCallback(uint errorCode, uint numBytes, object context)
+        {
+            if (errorCode != 0)
+                logger?.LogError($"{nameof(AsyncSimpleFlushPageCallback)} error: {{errorCode}}", errorCode);
+
+            // Signal the event so the waiter can continue
+            var result = (PageAsyncFlushResult<Empty>)context;
+            _ = result.done.Set();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1869,7 +1880,7 @@ namespace Tsavorite.core
                     ? new(bufferPool, PageSize, device.SectorSize, ctx.logicalAddress, storeFunctions)
                     : new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, ctx.logicalAddress, storeFunctions);
                 var valueObjectSerializer = IsObjectAllocator ? storeFunctions.CreateValueObjectSerializer() : default;
-                var readBuffer = new DiskStreamReadBuffer<TStoreFunctions>(in readParams, device, valueObjectSerializer, AsyncReadPageCallback);
+                var readBuffer = new DiskStreamReadBuffer<TStoreFunctions>(in readParams, device, valueObjectSerializer, AsyncSimpleReadPageCallback);
                 if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord))
                 {
                     Debug.Assert(!readBuffer.recordInfo.Invalid, "Invalid records should not be in the hash chain for pending IO");
