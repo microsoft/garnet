@@ -1383,13 +1383,6 @@ namespace Garnet.test
             ClassicAssert.IsFalse(respDel);
         }
 
-        private string GetRandomString(int len)
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string(Enumerable.Repeat(chars, len)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
-        }
-
         [Test]
         public void SingleDeleteWithObjectStoreDisable_LTMForEtagSetData()
         {
@@ -1408,7 +1401,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
@@ -1451,7 +1444,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
@@ -1486,7 +1479,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
