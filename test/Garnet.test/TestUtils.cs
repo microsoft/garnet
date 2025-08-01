@@ -94,6 +94,8 @@ namespace Garnet.test
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
         private static IReadOnlyDictionary<string, RespCommandDocs> RespCustomCommandsDocs;
 
+        private static Random Random = new();
+
         internal static string AzureTestContainer
         {
             get
@@ -1090,6 +1092,31 @@ using System.Threading.Tasks;
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Get effective memory size based on configured memory size and page size.
+        /// </summary>
+        /// <param name="memorySize">Memory size string</param>
+        /// <param name="pageSize">Page size string</param>
+        /// <param name="parsedPageSize">Parsed page size</param>
+        /// <returns>Effective memory size</returns>
+        public static long GetEffectiveMemorySize(string memorySize, string pageSize, out long parsedPageSize)
+        {
+            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
+            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memorySize, pageSize, out var epc);
+            return parsedMemorySize - (epc * parsedPageSize);
+        }
+
+        /// <summary>
+        /// Get a random alphanumeric string of specified length
+        /// </summary>
+        /// <param name="len"></param>
+        /// <returns></returns>
+        public static string GetRandomString(int len)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[Random.Next(s.Length)])]);
         }
     }
 }

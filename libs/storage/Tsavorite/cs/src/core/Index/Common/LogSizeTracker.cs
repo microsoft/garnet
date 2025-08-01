@@ -76,12 +76,13 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+        public static readonly int ResizeTaskDelaySeconds = 10;
+
         private ConcurrentCounter logSize;
         private long lowTargetSize;
         private long highTargetSize;
         public TLogSizeCalculator LogSizeCalculator;
         private readonly ILogger logger;
-        internal const int resizeTaskDelaySeconds = 10;
 
         internal LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> logAccessor;
 
@@ -188,7 +189,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(resizeTaskDelaySeconds), token);
+                    await Task.Delay(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), token);
                     ResizeIfNeeded(token);
                 }
                 catch (OperationCanceledException)

@@ -9,9 +9,13 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
@@ -336,7 +340,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
             var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
-            var currMemorySize = GetEffectiveMemorySize(initMemorySize, out var parsedPageSize);
+            var currMemorySize = TestUtils.GetEffectiveMemorySize(initMemorySize, pageSize, out var parsedPageSize);
 
             var garnetServer = redis.GetServer(TestUtils.EndPoint);
             var info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
@@ -373,7 +377,7 @@ namespace Garnet.test
             info = TestUtils.GetStoreAddressInfo(garnetServer, isObjectStore: storeType == StoreType.Object);
             Assert.That(info.HeadAddress, Is.GreaterThan(prevHead));
 
-            currMemorySize = GetEffectiveMemorySize(smallerSize, out _);
+            currMemorySize = TestUtils.GetEffectiveMemorySize(smallerSize, pageSize, out _);
 
             // Insert records until head address moves
             prevHead = info.HeadAddress;
@@ -398,7 +402,7 @@ namespace Garnet.test
             // Try to set memory size to a larger value than current
             result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
-            currMemorySize = GetEffectiveMemorySize(largerSize, out _);
+            currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
 
             // Continue to insert records until new memory capacity is reached
             prevHead = info.HeadAddress;
@@ -436,7 +440,7 @@ namespace Garnet.test
             var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
             var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
 
-            var currMemorySize = GetEffectiveMemorySize(initMemorySize, out var parsedPageSize);
+            var currMemorySize = TestUtils.GetEffectiveMemorySize(initMemorySize, pageSize, out var parsedPageSize);
 
             int lastIdxSecondRound;
             int keysInsertedFirstRound;
@@ -488,7 +492,7 @@ namespace Garnet.test
                 var result = db.Execute("CONFIG", "SET", option, largerSize);
                 ClassicAssert.AreEqual("OK", result.ToString());
 
-                currMemorySize = GetEffectiveMemorySize(largerSize, out _);
+                currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
 
                 // Continue to insert records until new memory capacity is reached
                 prevHead = info.HeadAddress;
@@ -552,12 +556,179 @@ namespace Garnet.test
                 }
             }
         }
+    }
 
-        private long GetEffectiveMemorySize(string memSize, out long parsedPageSize)
+    /// <summary>
+    /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
+    /// </summary>
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class RespConfigIndexUtilizationTests
+    {
+        GarnetServer server;
+        private string memorySize = "3m";
+        private string indexSize = "512";
+        private string objectStoreLogMemorySize = "8192";
+        private string objectStoreHeapMemorySize = "4096";
+        private string pageSize = "1024";
+        private bool useReviv;
+        private readonly Random r = new();
+
+        public RespConfigIndexUtilizationTests(bool useReviv)
         {
-            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
-            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memSize, pageSize, out var epc);
-            return parsedMemorySize - (epc * parsedPageSize);
+            this.useReviv = useReviv;
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(null,
+                memorySize: memorySize,
+                indexSize: indexSize,
+                pageSize: pageSize,
+                objectStorePageSize: pageSize,
+                objectStoreLogMemorySize: objectStoreLogMemorySize,
+                objectStoreIndexSize: indexSize,
+                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
+                useReviv: useReviv);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        /// <summary>
+        /// This test verifies that dynamically changing the index size configuration using CONFIG SET
+        /// incurs the expected shifts in the overflow buckets of the store, and that no data is lost in the process.
+        /// </summary>
+        /// <param name="storeType">Store type (Main / Object)</param>
+        /// <param name="largerSize1">Larger index size than configured</param>
+        /// <param name="largerSize2">Larger index size than previous</param>
+        [Test]
+        [TestCase(StoreType.Main, "1024", "4096")]
+        [TestCase(StoreType.Object, "1024", "4096")]
+        public void ConfigSetIndexSizeUtilizationTest(StoreType storeType, string largerSize1, string largerSize2)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var option = storeType == StoreType.Main ? "index" : "obj-index";
+            var parsedIndexSize = ServerOptions.ParseSize(indexSize, out _);
+
+            var currIndexSize = storeType == StoreType.Main
+                ? server.Provider.StoreWrapper.store.IndexSize
+                : server.Provider.StoreWrapper.objectStore.IndexSize;
+
+            // Verify initial index size and overflow bucket allocations are zero
+            ClassicAssert.AreEqual(parsedIndexSize / 64, currIndexSize);
+            ClassicAssert.AreEqual(0, GetOverflowBucketAllocations());
+
+            // Generate data with random keys (so that hashtable overflows)
+            var val = new RedisValue("x");
+            var keys = new string[200];
+            for (var i = 0; i < keys.Length; i++)
+                keys[i] = TestUtils.GetRandomString(8);
+
+            // Insert first batch of data
+            for (var i = 0; i < 100; i++)
+            {
+                if (storeType == StoreType.Main)
+                    _ = db.StringSet(keys[i], val);
+                else
+                    _ = db.ListRightPush(keys[i], [val]);
+            }
+
+            // Verify that overflow bucket allocations are non-zero after initial insertions
+            var currOverflowBucketAllocations = GetOverflowBucketAllocations();
+            ClassicAssert.Greater(currOverflowBucketAllocations, 0);
+            var prevOverflowBucketAllocations = currOverflowBucketAllocations;
+
+            // Try to set index size to a larger value than current
+            var result = db.Execute("CONFIG", "SET", option, largerSize1);
+            ClassicAssert.AreEqual("OK", result.ToString());
+
+            // Verify that overflow bucket allocations have decreased
+            ClassicAssert.Less(GetOverflowBucketAllocations(), prevOverflowBucketAllocations);
+
+            // Insert second batch of data
+            for (var i = 100; i < 200; i++)
+            {
+                if (storeType == StoreType.Main)
+                    _ = db.StringSet(keys[i], val);
+                else
+                    _ = db.ListRightPush(keys[i], [val]);
+            }
+
+            prevOverflowBucketAllocations = GetOverflowBucketAllocations();
+
+            // Try to set index size to a larger value than current
+            result = db.Execute("CONFIG", "SET", option, largerSize2);
+            ClassicAssert.AreEqual("OK", result.ToString());
+
+            // Verify that overflow bucket allocations have decreased again
+            ClassicAssert.Less(GetOverflowBucketAllocations(), prevOverflowBucketAllocations);
+
+            // Verify that all keys still exist in the database
+            foreach (var key in keys)
+            {
+                ClassicAssert.IsTrue(db.KeyExists(key));
+            }
+
+            long GetOverflowBucketAllocations() =>
+                storeType == StoreType.Main
+                    ? server.Provider.StoreWrapper.store.OverflowBucketAllocations
+                    : server.Provider.StoreWrapper.objectStore.OverflowBucketAllocations;
+        }
+
+        /// <summary>
+        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET
+        /// incurs a reduction in the empty page count of the object store.
+        /// </summary>
+        /// <param name="largerSize">Heap size larger than configured size</param>
+        [Test]
+        [TestCase("8192")]
+        public void ConfigSetHeapSizeUtilizationTest(string largerSize)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var option = "obj-heap-memory";
+
+            // Verify that initial empty page count is zero
+            var objectStore = server.Provider.StoreWrapper.objectStore;
+            ClassicAssert.AreEqual(0, objectStore.Log.EmptyPageCount);
+
+            // Add objects to store to fill up heap
+            var values = new RedisValue[16];
+            for (var i = 0; i < values.Length; i++)
+                values[i] = "x";
+
+            for (var i = 0; i < 8; i++)
+            {
+                var key = $"key{i++:00000}";
+                _ = db.ListRightPush(key, values);
+            }
+
+            // Wait for log size tracker
+            var sizeTrackerDelay = TimeSpan.FromSeconds(LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds);
+            Thread.Sleep(sizeTrackerDelay);
+
+            // Verify that empty page count has increased
+            ClassicAssert.Greater(objectStore.Log.EmptyPageCount, 0);
+            var prevEpc = objectStore.Log.EmptyPageCount;
+
+            // Try to set heap size to a larger value than current
+            var result = db.Execute("CONFIG", "SET", option, largerSize);
+            ClassicAssert.AreEqual("OK", result.ToString());
+
+            // Wait for log size tracker
+            Thread.Sleep(sizeTrackerDelay);
+
+            // Verify that empty page count has decreased
+            ClassicAssert.Less(objectStore.Log.EmptyPageCount, prevEpc);
         }
     }
 }

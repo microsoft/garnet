@@ -1459,12 +1459,6 @@ namespace Garnet.test
             ClassicAssert.IsFalse(respDel);
         }
 
-        private string GetRandomString(int len)
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[r.Next(s.Length)])]);
-        }
-
         [Test]
         public void SingleDeleteWithObjectStoreDisable_LTM()
         {
@@ -1483,7 +1477,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.StringSet(pair.Item1, pair.Item2);
             }
@@ -1556,7 +1550,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.StringSet(pair.Item1, pair.Item2);
             }
@@ -1584,12 +1578,12 @@ namespace Garnet.test
             List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
-                keys.Add(GetRandomString(keyLen));
+                keys.Add(TestUtils.GetRandomString(keyLen));
                 var key = keys.Last();
 
                 for (int j = 0; j < setCount; j++)
                 {
-                    var member = GetRandomString(valLen);
+                    var member = TestUtils.GetRandomString(valLen);
                     db.SetAdd(key, member);
                 }
             }
@@ -1624,7 +1618,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.StringSet(pair.Item1, pair.Item2);
             }
@@ -1651,12 +1645,12 @@ namespace Garnet.test
             List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
-                keys.Add(GetRandomString(keyLen));
+                keys.Add(TestUtils.GetRandomString(keyLen));
                 var key = keys.Last();
 
                 for (int j = 0; j < setCount; j++)
                 {
-                    var member = GetRandomString(valLen);
+                    var member = TestUtils.GetRandomString(valLen);
                     db.SetAdd(key, member);
                 }
             }
@@ -3916,8 +3910,8 @@ namespace Garnet.test
                 List<Tuple<string, string>> data = [];
                 for (var i = 0; i < keyCount; i++)
                 {
-                    lastKey = GetRandomString(keyLen);
-                    lastValue = GetRandomString(valLen);
+                    lastKey = TestUtils.GetRandomString(keyLen);
+                    lastValue = TestUtils.GetRandomString(valLen);
                     if (firstKey == null)
                     {
                         firstKey = lastKey;
