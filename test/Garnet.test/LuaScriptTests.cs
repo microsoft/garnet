@@ -2795,7 +2795,7 @@ return cjson.encode(nested)");
 
             // Complex cases
             var packABIRes = (byte[])db.ScriptEvaluate("return struct.pack('dLc0', 0, 6, 'value1')");
-            ClassicAssert.True(packABIRes.SequenceEqual(new byte[] {  
+            ClassicAssert.True(packABIRes.SequenceEqual(new byte[] {
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // double 0.0
                 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // ulong 6
                 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31              // "value" + null-terminated
@@ -2916,7 +2916,7 @@ return cjson.encode(nested)");
 
             var unpackSignedLongRes = (int[])db.ScriptEvaluate("return { struct.unpack('l', '\\x60\\x79\\xFE\\xFF\\xFF\\xFF\\xFF\\xFF') }");
             ClassicAssert.True(unpackSignedLongRes.SequenceEqual([-100000, 9]));
-            
+
             var unpackUnsignedLongRes = (int[])db.ScriptEvaluate("return { struct.unpack('L', '\\xA0\\x86\\x01\\x00\\x00\\x00\\x00\\x00') }");
             ClassicAssert.True(unpackUnsignedLongRes.SequenceEqual([100000, 9]));
 

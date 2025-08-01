@@ -831,7 +831,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    size = (int) self.state.CheckNumber(previousArgIndex);
+                    size = (int)self.state.CheckNumber(previousArgIndex);
                     self.state.Remove(previousArgIndex);
                     decodedCount--;
                 }
