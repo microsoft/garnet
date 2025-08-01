@@ -58,7 +58,7 @@ namespace Garnet.test.JSONPath
             public string? scalar_not_found_consensus { get; set; }
 
 
-            public JsonNode? ScalarOrConensus => consensus ?? scalar_consensus;
+            public JsonNode? ScalarOrConsensus => consensus ?? scalar_consensus;
         }
 
         internal record RegressionTestHolder(RegressionTestQuery[] queries);
