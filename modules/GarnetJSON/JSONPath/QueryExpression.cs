@@ -318,8 +318,11 @@ namespace GarnetJSON.JSONPath
                 return leftNum.CompareTo(rightNum);
             }
 
-            return -1;
-            //return string.CompareOrdinal(leftValue.ToJsonString(), rightValue.ToJsonString());
+
+            var leftString = leftValue.GetValueKind()== JsonValueKind.String? leftValue.GetValue<string>() : leftValue.ToJsonString();
+            var rightString = rightValue.GetValueKind() == JsonValueKind.String ? rightValue.GetValue<string>() : rightValue.ToJsonString();
+
+            return string.CompareOrdinal(leftString, rightString);
         }
 
         private static bool RegexEquals(JsonValue? input, JsonValue? pattern, JsonSelectSettings? settings)
@@ -379,7 +382,7 @@ namespace GarnetJSON.JSONPath
 
             if (TryGetAsDouble(value, out double leftNum) && TryGetAsDouble(queryValue, out double rightNum))
             {
-                return leftNum == rightNum;
+                return leftNum.Equals(rightNum);
             }
 
             if (IsBoolean(value) && IsBoolean(queryValue))
@@ -432,11 +435,11 @@ namespace GarnetJSON.JSONPath
             {
                 if (value.TryGetValue<double>(out var valueNum))
                 {
-                    return queryValue.TryGetValue<double>(out var queryNum) ? valueNum == queryNum : valueNum == queryValue.GetValue<long>();
+                    return queryValue.TryGetValue<double>(out var queryNum) ? valueNum.Equals(queryNum) : valueNum.Equals(queryValue.GetValue<long>());
                 }
                 else
                 {
-                    return queryValue.TryGetValue<double>(out var queryNum) ? value.GetValue<long>() == queryNum : value.GetValue<long>() == queryValue.GetValue<long>();
+                    return queryValue.TryGetValue<double>(out var queryNum) ? queryNum.Equals(value.GetValue<long>()) : value.GetValue<long>() == queryValue.GetValue<long>();
                 }
             }
 

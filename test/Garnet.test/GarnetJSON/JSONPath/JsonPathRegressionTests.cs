@@ -65,13 +65,13 @@ namespace Garnet.test.JSONPath
 
 
 
-        internal static IEnumerable<RegressionTestQuery> LoadCases()
+        internal static IEnumerable<TestCaseData> LoadCases()
         {
 
             // JSON adapted from https://github.com/cburgmer/json-path-comparison/blob/master/regression_suite/regression_suite.yaml
             var holder = JsonSerializer.Deserialize<RegressionTestHolder>(
                 File.OpenRead("GarnetJSON/JSONPath/RegressionSuite.json"));
-            return holder!.queries;
+            return holder!.queries.Select(x => new TestCaseData(x).SetArgDisplayNames(x.id, x.selector));
 
         }
         [Test, TestCaseSource(nameof(LoadCases))]
