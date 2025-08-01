@@ -268,7 +268,8 @@ namespace Garnet.test
             TextWriter logTo = null,
             bool enableCluster = false,
             int expiredKeyDeletionScanFrequencySecs = -1,
-            bool useReviv = false
+            bool useReviv = false,
+            bool useInChainRevivOnly = false
             )
         {
             if (useAzureStorage)
@@ -410,12 +411,17 @@ namespace Garnet.test
             {
                 opts.UseRevivBinsPowerOf2 = true;
                 opts.RevivBinBestFitScanLimit = 0;
-                opts.RevivNumberOfBinsToSearch = 0;
+                opts.RevivNumberOfBinsToSearch = int.MaxValue;
                 opts.RevivifiableFraction = 1;
                 opts.RevivInChainOnly = false;
                 opts.RevivBinRecordCounts = [];
                 opts.RevivBinRecordSizes = [];
                 opts.RevivObjBinRecordCount = 256;
+            }
+
+            if (useInChainRevivOnly)
+            {
+                opts.RevivInChainOnly = true;
             }
 
             return new GarnetServer(opts, loggerFactory);
@@ -483,7 +489,8 @@ namespace Garnet.test
             string luaMemoryLimit = "",
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false)
+            bool useNativeDeviceLinux = false,
+            int replicaSyncTimeout = 60)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -535,7 +542,8 @@ namespace Garnet.test
                     luaMemoryLimit: luaMemoryLimit,
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint,
                     luaTransactionMode: luaTransactionMode,
-                    useNativeDeviceLinux: useNativeDeviceLinux);
+                    useNativeDeviceLinux: useNativeDeviceLinux,
+                    replicaSyncTimeout: replicaSyncTimeout);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -602,7 +610,8 @@ namespace Garnet.test
             string unixSocketPath = null,
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false)
+            bool useNativeDeviceLinux = false,
+            int replicaSyncTimeout = 60)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -715,6 +724,7 @@ namespace Garnet.test
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
                 UseNativeDeviceLinux = useNativeDeviceLinux,
+                ReplicaSyncTimeout = replicaSyncTimeout
             };
 
             if (lowMemory)
