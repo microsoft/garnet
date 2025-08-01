@@ -335,7 +335,7 @@ namespace Garnet.cluster
                     PrimaryRecover();
                     break;
                 case NodeRole.REPLICA:
-                    // We will instead recover as part of TryConnectToPrimary instead
+                    // We will instead recover as part of TryReplicate instead
                     // ReplicaRecover();
                     break;
                 default:
