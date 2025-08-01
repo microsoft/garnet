@@ -256,7 +256,7 @@ namespace Garnet.server
             state.CallFromLuaEntered(luaStatePtr);
 
             var numLuaArgs = state.StackTop;
-            if (numLuaArgs < 2 || !TryGetFormat(this, 1, out var format))
+            if (numLuaArgs == 0 || !TryGetFormat(this, 1, out var format))
             {
                 return LuaWrappedError(1, constStrs.BadArgPack);
             }
@@ -825,13 +825,13 @@ namespace Garnet.server
                     int previousArgIndex = self.state.StackTop;
 
                     // if c0, then get the size from the previous decoded number
-                    if (decodedCount == 0 || self.state.Type(previousArgIndex) != LuaType.Number
-                        || !Int32.TryParse(self.state.CheckNumber(previousArgIndex).ToString(), out size))
+                    if (decodedCount == 0 || self.state.Type(previousArgIndex) != LuaType.Number)
                     {
                         constStrErrId = self.constStrs.BadArgUnpack;
                         return false;
                     }
 
+                    size = (int) self.state.CheckNumber(previousArgIndex);
                     self.state.Remove(previousArgIndex);
                     decodedCount--;
                 }

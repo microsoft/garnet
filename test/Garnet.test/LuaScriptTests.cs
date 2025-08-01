@@ -2730,6 +2730,12 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
+            var packEmptyStringRes = db.ScriptEvaluate("return struct.pack('!8')");
+            ClassicAssert.AreEqual(string.Empty, (string)packEmptyStringRes);
+
+            var packStringRes = (byte[])db.ScriptEvaluate("return struct.pack('!8c5', 'hello')");
+            ClassicAssert.True(packStringRes.SequenceEqual(new byte[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F }));
+
             var packBigEndianRes = (byte[])db.ScriptEvaluate("return struct.pack('>hB', 0x1234, 0x56)");
             ClassicAssert.True(packBigEndianRes.SequenceEqual(new byte[] { 0x12, 0x34, 0x56 }));
 
@@ -2837,6 +2843,10 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
+            // Not power of two
+            var excNotPowerOfTwoArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!9')"));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to loadstring", excNotPowerOfTwoArgs.Message);
+
             // Invalid format
             var excFormat = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack(123, 123)"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", excFormat.Message);
@@ -2860,10 +2870,6 @@ return cjson.encode(nested)");
             // Invalid alignment
             var excBadAlignment = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!9c1', 'Z')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to loadstring", excBadAlignment.Message);
-
-            // Missing argument
-            var excMissingArgs = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.pack('!8')"));
-            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", excMissingArgs.Message);
         }
 
         [Test]
@@ -2871,6 +2877,10 @@ return cjson.encode(nested)");
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
+
+            var unpackDC0Res = db.ScriptEvaluate("return { struct.unpack('dc0', '\\x1F\\x85\\xEB\\x51\\xB8\\x1E\\x09\\x40dynamic') }");
+            ClassicAssert.AreEqual("dyn", (string)unpackDC0Res[0]);
+            ClassicAssert.AreEqual(12, (long)unpackDC0Res[1]);
 
             var unpackHRes = (int[])db.ScriptEvaluate("return { struct.unpack('HH', '\\x01\\x00\\x02\\x00') }");
             ClassicAssert.True(unpackHRes.SequenceEqual([1, 2, 5]));
@@ -3012,10 +3022,6 @@ return cjson.encode(nested)");
             // Invalid character size
             var excInvalidCharacterZeroSize = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('sc0', 'size\\x00dynamic')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excInvalidCharacterZeroSize.Message);
-
-            // Invalid character size
-            var excInvalidCharacterSizeDouble = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('dc0', '\\x1F\\x85\\xEB\\x51\\xB8\\x1E\\x09\\x40dynamic')"));
-            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to unpack", excInvalidCharacterSizeDouble.Message);
 
             // Invalid String without terminator
             var excBadString = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.unpack('s', 'hello')"));
