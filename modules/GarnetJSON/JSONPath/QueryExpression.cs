@@ -319,7 +319,7 @@ namespace GarnetJSON.JSONPath
             }
 
 
-            var leftString = leftValue.GetValueKind()== JsonValueKind.String? leftValue.GetValue<string>() : leftValue.ToJsonString();
+            var leftString = leftValue.GetValueKind() == JsonValueKind.String ? leftValue.GetValue<string>() : leftValue.ToJsonString();
             var rightString = rightValue.GetValueKind() == JsonValueKind.String ? rightValue.GetValue<string>() : rightValue.ToJsonString();
 
             return string.CompareOrdinal(leftString, rightString);
