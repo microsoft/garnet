@@ -988,7 +988,7 @@ namespace GarnetJSON.JSONPath
                         sb.Append('\n');
                         break;
                     case 'f':
-                        sb.Append('\r');
+                        sb.Append('\f');
                         break;
                     case 'r':
                         sb.Append('\r');
