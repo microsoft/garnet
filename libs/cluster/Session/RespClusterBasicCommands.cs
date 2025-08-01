@@ -442,6 +442,11 @@ namespace Garnet.cluster
                 }
             }
 
+            if (clusterProvider.replicationManager.currentRecoveryStatus != RecoveryStatus.NoRecovery)
+            {
+                clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
+            }
+
             var resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
             if (!soft) clusterProvider.FlushDB(true);
 
