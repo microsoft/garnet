@@ -67,7 +67,7 @@ namespace Tsavorite.core
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
+            Initialize(storeBase);
         }
 
         /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>
@@ -113,7 +113,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
-        public override void Initialize() => Initialize(FirstValidAddress);
+        public override void Initialize(TsavoriteBase storeBase) => Initialize(storeBase, FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
@@ -255,28 +255,36 @@ namespace Tsavorite.core
                 if (!storeBase.FindTag(ref hei))
                     continue;
 
-                // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
-                for (var scanAddress = hei.entry.Address; scanAddress >= closeAddress; /*incremented in loop*/)
+                // If the address is in the HashBucketEntry, this will update it; otherwise we will have to traverse the tag chain.
+                if (!hei.UpdateToOnDiskAddress(closeAddress, ClosedDiskTailOffset))
                 {
-                    // Use GetPhysicalAddress() directly here for speed (we're just updating RecordInfo so don't need the overhead of an ObjectIdMap lookup)
-                    var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
-                    if (logRecord.Info.PreviousAddress == closeAddress)
+                    // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
+                    for (var scanAddress = hei.entry.Address; scanAddress >= closeAddress; /*incremented in loop*/)
                     {
-                        logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
-                        break;
+                        // Use GetPhysicalAddress() directly here for speed (we're just updating RecordInfo so don't need the overhead of an ObjectIdMap lookup)
+                        var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
+                        if (logRecord.Info.Valid)
+                        {
+                            if (logRecord.Info.PreviousAddress == closeAddress)
+                            {
+                                logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
+                                break;
+                            }
+                            if (logRecord.Info.PreviousAddress < closeAddress)
+                            {
+                                Debug.Fail("We should have found closeAddress");
+                                break;
+                            }
+                        }
+                        scanAddress += logRecord.GetInlineRecordSizes().allocatedSize;
                     }
-                    if (logRecord.Info.PreviousAddress < closeAddress)
-                    {
-                        Debug.Fail("We should have found closeAddress");
-                        break;
-                    }
-                    scanAddress += logRecord.GetInlineRecordSizes().allocatedSize;
                 }
 
                 // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
                 // as we saved it in the object's.SerializedSize (and we ignore SerializedSizeIsExact because we know it hasn't changed) or, if it's
                 // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
-                ClosedDiskTailOffset += closeLogRecord.CalculateExpansion();
+                // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
+                _ = MonotonicUpdate(ref ClosedDiskTailOffset, closeLogRecord.CalculateExpansion(), out _);
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
                 closeAddress += closeLogRecord.GetInlineRecordSizes().allocatedSize;
@@ -421,7 +429,8 @@ namespace Tsavorite.core
                     // Do not write Invalid records or v+1 records (e.g. during a checkpoint).
                     if (logRecord.Info.Invalid || (logicalAddress >= fuzzyStartLogicalAddress && logRecord.Info.IsInNewVersion))
                     {
-                        FlushedDiskTailOffset -= logRecordSize;
+                        // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
+                        _ = MonotonicUpdate(ref FlushedDiskTailOffset, -logRecordSize, out _);
                         continue;
                     }
 
@@ -433,12 +442,13 @@ namespace Tsavorite.core
                     var streamRecordSize = RoundUp(diskBuffer.TotalWrittenLength, Constants.kRecordAlignment) - prevPosition;
                     Debug.Assert(streamRecordSize >= logRecordSize, $"Serialized size of record {streamRecordSize} is less than expected record size {logRecordSize}.");
 
-                    FlushedDiskTailOffset += streamRecordSize - logRecordSize;  // The flush "next adjacent" sequence guarantees only one thread at a time will be calling this
+                    // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
+                    _ = MonotonicUpdate(ref FlushedDiskTailOffset, streamRecordSize - logRecordSize, out _);
 
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
-                diskBuffer.OnFlushComplete();
+                diskBuffer.OnFlushComplete(callback, asyncResult);
             }
             finally
             {

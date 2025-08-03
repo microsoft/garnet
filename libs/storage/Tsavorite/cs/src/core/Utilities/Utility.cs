@@ -299,7 +299,8 @@ namespace Tsavorite.core
             do
             {
                 oldValue = variable;
-                if (oldValue >= newValue) return false;
+                if (oldValue >= newValue)
+                    return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }
@@ -317,8 +318,32 @@ namespace Tsavorite.core
             do
             {
                 oldValue = variable;
-                if (oldValue >= newValue) return false;
+                if (oldValue >= newValue)
+                    return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="address">The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns> if oldValue less than newValue </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool MonotonicUpdateAddress(ref long address, long newValue, out long oldValue)
+        {
+            do
+            {
+                oldValue = address;
+
+                // We don't have absolute ordering with the AddressType, since OnDisk is less than InLogMemory
+                // but on-disk AbsoluteAddress can easily be greater than HeadAddress. So we need an explicit test
+                // to allow converting an address from in-memory to on-disk.
+                if (oldValue >= newValue && !(LogAddress.IsInLogMemory(oldValue) && LogAddress.IsOnDisk(newValue)))
+                    return false;
+            } while (Interlocked.CompareExchange(ref address, newValue, oldValue) != oldValue);
             return true;
         }
 

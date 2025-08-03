@@ -13,6 +13,13 @@ namespace Tsavorite.core
     using static VarbyteLengthUtility;
     using static LogAddress;
 
+    /// <summary>
+    /// The class that manages IO writing of ObjectAllocator records. It manages the write buffer at two levels:
+    /// <list type="bullet">
+    ///     <item>At the higher level, called by IO routines, it manages the overall record writing, including flushing to disk as the buffer is filled.</item>
+    ///     <item>At the lower level, it provides the stream for the valueObjectSerializer, which is called via Serialize() by the higher level.</item>
+    /// </list>
+    /// </summary>
     internal unsafe class DiskStreamWriteBuffer : IStreamBuffer
     {
         readonly IDevice logDevice;
@@ -415,25 +422,38 @@ namespace Tsavorite.core
             priorCumulativeLength += span.Length;
             valueCumulativeLength += span.Length;
             alignedDeviceAddress += (ulong)span.Length;
+            // This does not alter currentPosition; that is the caller's responsibility, as this is called for partial flushes.
         }
 
         /// <inheritdoc/>
-        public void OnFlushComplete()
+        public void OnFlushComplete(DeviceIOCompletionCallback originalCallback, object originalContext)
         {
             // Flush the last of the buffer, sector-aligning and zeroing the end. (All chunk-length updates have been done if we were chunk-chaining).
             if (currentPosition == 0)
-                return; // Nothing to flush
+            {
+                // Nothing to flush. TODO: TotalWrittenLength may exceed uint.MaxValue so the callback's numBytes will be incorrect.
+                originalCallback(errorCode: 0, (uint)TotalWrittenLength, originalContext);
+                return;
+            }
 
+            // Flush the final piece to disk, using the caller's original callback and context.
             var flushLength = RoundUp(currentPosition, SectorSize);
             if (flushLength > currentPosition)
                 new Span<byte>(BufferPointer + currentPosition, flushLength - currentPosition).Clear();
-            FlushToDevice(new ReadOnlySpan<byte>(BufferPointer, flushLength));
+
+            // TODO: This will send flushLength, not TotalWrittenLength, to the callback as numBytes.
+            logDevice.WriteAsync((IntPtr)BufferPointer, alignedDeviceAddress, (uint)flushLength, originalCallback, originalContext);
+
+            priorCumulativeLength = 0;
+            valueCumulativeLength = 0;
+            alignedDeviceAddress = 0;
         }
 
         void DoSerialize(IHeapObject valueObject)
         {
-            // TODO: For multi-buffer, consider using two buffers, a full one being flushed to disk on a background thread while the foreground thread populates the next one in parallel.
-            // This could simply hold the CountdownEvent for the "disk write in progress" buffer and Wait() on it when DoSerialize() has filled the next buffer.
+            // TODO: For multi-buffer, consider using a circular buffer array (possibly of size 2), with the full buffers being flushed to disk in sequence
+            // on a background thread while the foreground thread populates the "current" one in parallel, sets it to flush to disk, and Wait()s for a free
+            // one to continue the population.
 
             // valueCumulativeLength is only relevant for object serialization; we increment it elsewhere to avoid "if" so here we reset it to the appropriate
             // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have (-currentPosition + currentPosition + 4).
@@ -473,6 +493,7 @@ namespace Tsavorite.core
             var alignmentIncrease = newCurrentPosition - currentPosition;
             if (alignmentIncrease > 0)
             {
+                // Zeroinit the extra and update current position.
                 new Span<byte>(BufferPointer + currentPosition, alignmentIncrease).Clear();
                 currentPosition = newCurrentPosition;
             }

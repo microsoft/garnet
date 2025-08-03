@@ -123,7 +123,7 @@ namespace Tsavorite.core
             var allocatorSettings = new AllocatorSettings(logSettings, epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
             hlog = allocatorFactory(allocatorSettings, storeFunctions);
             hlogBase = hlog.GetBase<TAllocator>();
-            hlogBase.Initialize();
+            hlogBase.Initialize(this);
             Log = new(this, hlog);
 
             if (UseReadCache)
@@ -140,7 +140,7 @@ namespace Tsavorite.core
                 allocatorSettings.evictCallback = ReadCacheEvict;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
                 readcacheBase = readcache.GetBase<TAllocator>();
-                readcacheBase.Initialize();
+                readcacheBase.Initialize(this);
                 ReadCache = new(this, readcache);
             }
 

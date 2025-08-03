@@ -63,9 +63,9 @@ namespace Tsavorite.core
         void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// The Flush operation has completed. Flush any partial buffer contents to the storage or network.
+        /// The Flush operation has completed. Flush any partial buffer contents to the storage or network and ensure the original callback is called.
         /// </summary>
-        void OnFlushComplete();
+        void OnFlushComplete(DeviceIOCompletionCallback originalCallback, object originalContext);
 
         /// <summary>
         /// Read more bytes from the disk or network, up to <paramref name="destinationSpan.Length"/>, and store in the buffer. It may not read all bytes

@@ -32,6 +32,14 @@ namespace Tsavorite.core
         [FieldOffset(0)]
         public long word;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal HashBucketEntry(ushort tag, long address, bool tentative = false)
+        {
+            Tag = tag;
+            Address = address;
+            Tentative = tentative;
+        }
+
         public long Address
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

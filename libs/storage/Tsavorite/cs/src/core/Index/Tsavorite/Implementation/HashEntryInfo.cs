@@ -1,13 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Tsavorite.core
 {
-    using static Utility;
     using static LogAddress;
+    using static Utility;
 
     /// <summary>Hash table entry information for a key</summary>
     public unsafe struct HashEntryInfo
@@ -72,16 +73,49 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetToCurrent() => entry.word = bucket->bucket_entries[slot];
 
+        /// <summary>
+        /// Update this entry's Address to point on-disk if it matches <paramref name="targetAddress"/>
+        /// </summary>
+        /// <param name="targetAddress">The address to change</param>
+        /// <param name="diskTailOffset">The cumulative offset from record expansion to be added to PreviousAddress</param>
+        /// <return>True if the address was updated in the <see cref="HashBucketEntry"/>, else false and the caller will traverse the chain
+        ///     to find <paramref name="targetAddress"/>.</return>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool UpdateToOnDiskAddress(long targetAddress, long diskTailOffset)
+        {
+            while (true)
+            {
+                HashBucketEntry currentEntry = new() { word = bucket->bucket_entries[slot] };
+                var newTargetAddress = targetAddress + diskTailOffset;
+
+                // If the address is not in the HashBucketEntry, do some sanity checks then return false.
+                if (currentEntry.Address != targetAddress)
+                {
+                    Debug.Assert(SetIsOnDisk(newTargetAddress) != currentEntry.Address, "Unexpected re-setting of same address to OnDisk; should only be done once");
+                    if (SetIsOnDisk(newTargetAddress) == currentEntry.Address)
+                        return true;
+                    Debug.Assert(currentEntry.Address >= targetAddress, "Unexpected miss of targetAddress; should have found it while looking to update");
+                    return false;
+                }
+
+                // Try to update the HashBucketEntry
+                HashBucketEntry updatedEntry = new(tag, SetIsOnDisk(newTargetAddress));
+                if (currentEntry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, currentEntry.word))
+                {
+                    entry.word = updatedEntry.word;
+                    return true;
+                }
+
+                // CAS failed which likely means a conflict with insertion or elision; yield and retry
+                _ = Thread.Yield();
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryCAS(long newLogicalAddress)
         {
             // Insert as the first record in the hash chain.
-            HashBucketEntry updatedEntry = new()
-            {
-                Tag = tag,
-                Address = newLogicalAddress & kAddressBitMask,
-                Tentative = false
-            };
+            HashBucketEntry updatedEntry = new(tag, newLogicalAddress & kAddressBitMask);
 
             if (entry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, entry.word))
             {

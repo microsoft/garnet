@@ -35,7 +35,7 @@ namespace Tsavorite.core
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
+            Initialize(storeBase);
         }
 
         /// <summary>
@@ -72,7 +72,7 @@ namespace Tsavorite.core
             }
         }
 
-        public override void Initialize() => Initialize(FirstValidAddress);
+        public override void Initialize(TsavoriteBase storeBase) => Initialize(storeBase, FirstValidAddress);
 
         /// <summary>
         /// Dispose memory allocator

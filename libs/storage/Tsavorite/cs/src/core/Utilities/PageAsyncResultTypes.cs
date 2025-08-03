@@ -101,15 +101,17 @@ namespace Tsavorite.core
     public sealed class PageAsyncFlushResult<TContext>
     {
         /// <summary>
-        /// Page
+        /// The index of the log Page being written
         /// </summary>
         public long page;
+
         /// <summary>
-        /// Context
+        /// Context object for the callback
         /// </summary>
         public TContext context;
+
         /// <summary>
-        /// Count
+        /// Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.
         /// </summary>
         public int count;
 

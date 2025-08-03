@@ -211,7 +211,7 @@ namespace Tsavorite.core
             SafeTailAddress = FirstValidAddress;
             commitQueue = new WorkQueueLIFO<CommitInfo>(SerialCommitCallbackWorker);
             allocator = new(new AllocatorSettings(logSettings.GetLogSettings(), epoch, logger) { flushCallback = CommitCallback });
-            allocator.Initialize();
+            allocator.Initialize(storeBase: null);  // StoreBase is not needed for TsavoriteLogAllocator
             beginAddress = allocator.BeginAddress;
 
             // TsavoriteLog is used as a read-only iterator
@@ -2540,7 +2540,7 @@ namespace Tsavorite.core
                 logger?.LogInformation("Unable to recover using any available commit");
 
                 // Reset variables to normal
-                allocator.Initialize();
+                allocator.Initialize(storeBase: null);  // StoreBase is not needed for TsavoriteLogAllocator
                 CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)
@@ -2694,7 +2694,7 @@ namespace Tsavorite.core
             {
                 logger?.LogDebug("Unable to recover using any available commit");
                 // Reset things to be something normal lol
-                allocator.Initialize();
+                allocator.Initialize(storeBase: null);  // StoreBase is not needed for TsavoriteLogAllocator
                 CommittedUntilAddress = FirstValidAddress;
                 beginAddress = allocator.BeginAddress;
                 if (readOnlyMode)

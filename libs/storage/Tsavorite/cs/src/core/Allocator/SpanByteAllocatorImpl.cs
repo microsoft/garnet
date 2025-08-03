@@ -34,7 +34,7 @@ namespace Tsavorite.core
                 if (IsAllocated(index))
                     FreePage(index);
             }
-            Initialize();
+            Initialize(storeBase);
         }
 
         /// <summary>Allocate memory page, pinned in memory, and in sector aligned form, if possible</summary>
@@ -74,7 +74,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress);
 
-        public override void Initialize() => Initialize(FirstValidAddress);
+        public override void Initialize(TsavoriteBase storeBase) => Initialize(storeBase, FirstValidAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)

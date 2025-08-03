@@ -194,13 +194,13 @@ namespace Tsavorite.core
         /// <summary>If set, this is a function to call to determine whether the object size tracker reports maximum memory size has been exceeded.</summary>
         public Func<bool> IsSizeBeyondLimit;
 
-        /// <summary>The TsavoriteBase implemention. Currently used for hash table lookup for PatchExpandedAddresses.</summary>
+        /// <summary>The <see cref="TsavoriteBase"/> implementation. Currently used for hash table lookup for PatchExpandedAddresses.</summary>
         internal TsavoriteBase storeBase;
         #endregion
 
         #region Abstract and virtual methods
         /// <summary>Initialize fully derived allocator</summary>
-        public abstract void Initialize();
+        public abstract void Initialize(TsavoriteBase storeBase);
 
         /// <summary>Write async to device</summary>
         /// <typeparam name="TContext"></typeparam>
@@ -715,10 +715,11 @@ namespace Tsavorite.core
 
         /// <summary>Initialize allocator</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        protected void Initialize(long firstValidAddress)
+        protected void Initialize(TsavoriteBase storeBase, long firstValidAddress)
         {
             Debug.Assert(AbsoluteAddress(firstValidAddress) <= PageSize, $"AbsoluteAddress(firstValidAddress) {AbsoluteAddress(firstValidAddress)} should be <= PageSize {PageSize}");
 
+            this.storeBase = storeBase;
             bufferPool ??= new SectorAlignedBufferPool(1, sectorSize);
             firstValidAddress = SetAddressType(AbsoluteAddress(firstValidAddress)); // Initially InLogMemory but may need to be changed to InReadCache
 
@@ -1300,6 +1301,7 @@ namespace Tsavorite.core
                 // Process a page (possibly fragment) at a time.
                 for (long closePageAddress = GetAddressOfStartOfPage(closeStartAddress); closePageAddress < closeEndAddress; closePageAddress += PageSize)
                 {
+                    // Get the range on this page: the start may be 0 or greater, and the end may be end-of-page or less.
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
                     long end = closeEndAddress < closePageAddress + PageSize ? closeEndAddress : closePageAddress + PageSize;
 
@@ -1308,7 +1310,7 @@ namespace Tsavorite.core
                     if (OnEvictionObserver is not null)
                         MemoryPageScan(start, end, OnEvictionObserver);
 
-                    // If we are using a null storage device, we must also shift BeginAddress 
+                    // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)
                         _ = MonotonicUpdate(ref BeginAddress, end, out _);
 
@@ -1319,7 +1321,13 @@ namespace Tsavorite.core
                     if (end == closePageAddress + PageSize)
                         _wrapper.FreePage((int)GetPage(closePageAddress));
 
+                    // Update ClosedUntilAddress, leaving it in-memory
                     _ = MonotonicUpdate(ref ClosedUntilAddress, end, out _);
+
+                    // Now that we have data on disk, BeginAddress must be a disk address. For here we only need to convert it if it is not yet on-disk;
+                    // the actual address does not change in that case, as it cannot have any diskTailOffset.
+                    if (!IsOnDisk(BeginAddress))
+                        _ = MonotonicUpdateAddress(ref BeginAddress, SetIsOnDisk(BeginAddress), out _);
                 }
 
                 // End if we have exhausted co-operative work
@@ -1874,13 +1882,12 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
-                // TODO: logicalAddress must be physicalAddress here.
+                // Note: logicalAddress is actually physicalAddress here, with the OnDisk AddressType; there can't be fixed pages for expanded records.
                 // TODO: move this "if" to an IAllocator function call to do the DiskStreamReadBuffer.Read().
                 DiskStreamReadBuffer<TStoreFunctions>.ReadParameters readParams = IsObjectAllocator
                     ? new(bufferPool, PageSize, device.SectorSize, ctx.logicalAddress, storeFunctions)
                     : new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, ctx.logicalAddress, storeFunctions);
-                var valueObjectSerializer = IsObjectAllocator ? storeFunctions.CreateValueObjectSerializer() : default;
-                var readBuffer = new DiskStreamReadBuffer<TStoreFunctions>(in readParams, device, valueObjectSerializer, AsyncSimpleReadPageCallback);
+                var readBuffer = new DiskStreamReadBuffer<TStoreFunctions>(in readParams, device, AsyncSimpleReadPageCallback);
                 if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord))
                 {
                     Debug.Assert(!readBuffer.recordInfo.Invalid, "Invalid records should not be in the hash chain for pending IO");

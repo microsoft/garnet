@@ -8,11 +8,22 @@ using static Tsavorite.core.VarbyteLengthUtility;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
 
+    /// <summary>
+    /// The class that manages IO read of ObjectAllocator records. It manages the read buffer at two levels:
+    /// <list type="bullet">
+    ///     <item>At the higher level, called by IO routines, it manages the overall record reading, including issuing additional reads as the buffer is drained.</item>
+    ///     <item>At the lower level, it provides the stream for the valueObjectSerializer, which is called via Deserialize() by the higher level.</item>
+    /// </list>
+    /// </summary>
     internal unsafe class DiskStreamReadBuffer<TStoreFunctions> : IStreamBuffer
         where TStoreFunctions : IStoreFunctions
     {
+        /// <summary>
+        /// Information for the IO read operation.
+        /// </summary>
         internal readonly struct ReadParameters
         {
             /// <summary>The <see cref="SectorAlignedBufferPool"/> for <see cref="SectorAlignedMemory"/> buffer allocations</summary>
@@ -75,7 +86,8 @@ namespace Tsavorite.core
 
         readonly ReadParameters readParams;
         readonly IDevice logDevice;
-        readonly IObjectSerializer<IHeapObject> valueObjectSerializer;
+        IObjectSerializer<IHeapObject> valueObjectSerializer;
+        PinnedMemoryStream<DiskStreamReadBuffer<TStoreFunctions>> pinnedMemoryStream;
 
         /// <summary>The <see cref="SectorAlignedMemory"/> of the non-overflow key buffer.</summary>
         /// <remarks>Held as a field instead of a local so it can be Dispose()d in case of an exception.</remarks>
@@ -134,12 +146,11 @@ namespace Tsavorite.core
 
         int SectorSize => (int)logDevice.SectorSize;
 
-        public DiskStreamReadBuffer(in ReadParameters readParams, IDevice logDevice, IObjectSerializer<IHeapObject> valueObjectSerializer, DeviceIOCompletionCallback ioCompletionCallback)
+        public DiskStreamReadBuffer(in ReadParameters readParams, IDevice logDevice, DeviceIOCompletionCallback ioCompletionCallback)
         {
             this.readParams = readParams;
             this.logDevice = logDevice ?? throw new ArgumentNullException(nameof(logDevice));
             this.ioCompletionCallback = ioCompletionCallback ?? throw new ArgumentNullException(nameof(ioCompletionCallback));
-            this.valueObjectSerializer = valueObjectSerializer;
 
             // Sectors and MaxInternalOffset are powers of 2; we want to be sure we have room for 2 sectors in OverflowByteArray offsets.
             Debug.Assert(SectorSize < OverflowByteArray.MaxInternalOffset, $"Sector size {SectorSize} must be less than OverflowByteArray.MaxInternalOffset {OverflowByteArray.MaxInternalOffset}");
@@ -171,7 +182,7 @@ namespace Tsavorite.core
         /// </remarks>
         public bool Read(ref SectorAlignedMemory recordBuffer, ReadOnlySpan<byte> requestedKey, out DiskLogRecord diskLogRecord)
         {
-            var availableBytes = recordBuffer.available_bytes;
+            currentLength = recordBuffer.available_bytes;
             var ptr = recordBuffer.aligned_pointer;
             diskLogRecord = default;
 
@@ -179,7 +190,7 @@ namespace Tsavorite.core
             // and can verify it here (unless NoKey, in which case key is empty and we assume we have the record we want; and for Scan(), the same).
 
             // In the vast majority of cases we will already have read at least one sector, which has all we need for length bytes, and maybe the full record.
-            if (availableBytes >= RecordInfo.GetLength() + 1 + 2) // + 1 for indicator byte + the minimum of 2 1-byte lengths for key and value
+            if (currentLength >= RecordInfo.GetLength() + 1 + 2) // + 1 for indicator byte + the minimum of 2 1-byte lengths for key and value
             {
                 (var keyLengthBytes, var valueLengthBytes, isChunkedValue) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
                 recordInfo = *(RecordInfo*)ptr;
@@ -188,12 +199,12 @@ namespace Tsavorite.core
                 optionalLength = LogRecord.GetOptionalLength(recordInfo);
 
                 var offsetToKeyStart = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes;
-                if (availableBytes >= offsetToKeyStart)
+                if (currentLength >= offsetToKeyStart)
                 {
                     var keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
                     var valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
 
-                    if (availableBytes >= offsetToKeyStart + keyLength)
+                    if (currentLength >= offsetToKeyStart + keyLength)
                     {
                         var ptrToKeyData = ptr + offsetToKeyStart;
                         var minRequiredLength = offsetToKeyStart + keyLength;
@@ -204,7 +215,7 @@ namespace Tsavorite.core
 
                         // If we have the full record, we're done.
                         var totalLength = minRequiredLength + valueLength + optionalLength;
-                        if (availableBytes >= totalLength)
+                        if (currentLength >= totalLength)
                         {
                             var valueObject = recordInfo.ValueIsObject ? DoDeserialize(out _, out _) : null;    // optionals are in the recordBuffer if present, so ignore the outparams for them
                             diskLogRecord = DiskLogRecord.Transfer(ref recordBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
@@ -228,6 +239,7 @@ namespace Tsavorite.core
                         keyBuffer.required_bytes = keyLength;                   // ... and this is the length of the key
 
                         // Read the rest of the record, possibly in pieces.
+                        currentPosition = minRequiredLength;    // offsetToValueStart
                         ReadValue(keyOverflow: default, offsetToValueStart: minRequiredLength, valueLength, out diskLogRecord);
                         return true;
                     }
@@ -567,7 +579,7 @@ namespace Tsavorite.core
                 ReadFromDevice(valueBuffer, deviceOffset, alignedBytesToRead);
             currentPosition = 0;
             priorCumulativeLength += currentLength;
-            currentLength = (int)valueLength;   // Again, this may be 0
+            currentLength = alignedBytesToRead;   // Again, this may be 0
 
             // Now copy the ending (possibly partial) data. This is similar to what we did at the top, but we may not have read all (or even any) value data.
             var prevAvailableLength = availableLength;
@@ -587,6 +599,13 @@ namespace Tsavorite.core
         {
             // TODO: For multi-buffer, consider using two buffers, with the next one being read from disk on a background thread while the foreground thread processes the current one in parallel.
             // This could simply hold the CountdownEvent for the "disk read in progress" buffer and Wait() on it when DoDeserialize() is ready for the next buffer.
+            if (valueObjectSerializer is null)
+            {
+                pinnedMemoryStream = new(this);
+                valueObjectSerializer = readParams.storeFunctions.CreateValueObjectSerializer();
+                valueObjectSerializer.BeginDeserialize(pinnedMemoryStream);
+            }
+
             valueObjectSerializer.Deserialize(out var valueObject);
             OnDeserializeComplete(valueObject, out eTag, out expiration);
             return valueObject;
@@ -614,15 +633,19 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public void OnFlushComplete() => throw new InvalidOperationException("OnFlushComplete is not supported for DiskStreamReadBuffer");
+        public void OnFlushComplete(DeviceIOCompletionCallback originalCallback, object originalContext) => throw new InvalidOperationException("OnFlushComplete is not supported for DiskStreamReadBuffer");
 
         /// <inheritdoc/>
         public void Dispose()
         {
+            pinnedMemoryStream?.Dispose();
+            valueObjectSerializer?.EndDeserialize();
+
             keyBuffer?.Return();
             keyBuffer = default;
             valueBuffer?.Return();
             valueBuffer = default;
+
         }
     }
 }
