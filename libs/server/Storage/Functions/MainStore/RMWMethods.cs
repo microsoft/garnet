@@ -89,7 +89,6 @@ namespace Garnet.server
                     var length = sbSrcHLL.Length;
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = value.ToPointer();
-
                     value.ShrinkSerializedLength(length);
                     Buffer.MemoryCopy(srcHLL, dstHLL, value.Length, value.Length);
                     break;
@@ -97,15 +96,12 @@ namespace Garnet.server
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
                     int spaceForEtag = this.functionsState.etagState.etagOffsetForVarlen;
-                    // Copy input to value
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     var metadataSize = input.arg1 == 0 ? 0 : sizeof(long);
                     value.ShrinkSerializedLength(newInputValue.Length + metadataSize + spaceForEtag);
                     value.ExtraMetadata = input.arg1;
                     newInputValue.CopyTo(value.AsSpan(spaceForEtag));
-
                     long clientSentEtag = input.parseState.GetLong(1);
-
                     if (cmd == RespCommand.SETIFMATCH)
                         clientSentEtag++;
 
@@ -177,11 +173,9 @@ namespace Garnet.server
                 case RespCommand.SETBIT:
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
-
                     value.ShrinkSerializedLength(BitmapManager.Length(bOffset));
-
-                    // Always return 0 at initial updater because previous value was 0
                     BitmapManager.UpdateBitmap(value.ToPointer(), bOffset, bSetVal);
+                    // Always return 0 at initial updater because previous value was 0
                     CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
                     break;
 
@@ -213,9 +207,7 @@ namespace Garnet.server
                 case RespCommand.APPEND:
                     var appendValue = input.parseState.GetArgSliceByRef(0);
                     value.ShrinkSerializedLength(appendValue.Length);
-                    // Copy value to be appended to the newly allocated value buffer
                     appendValue.ReadOnlySpan.CopyTo(value.AsSpan());
-
                     CopyValueLengthToOutput(ref value, ref output, 0);
                     break;
                 case RespCommand.INCR:
@@ -320,15 +312,15 @@ namespace Garnet.server
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE, you must make sure you must reset etagState in FunctionState
         private bool InPlaceUpdaterWorker(ref SpanByte key, ref RawStringInput input, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
+            RespCommand cmd = input.header.cmd;
             // Expired data
             if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
             {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
+                rmwInfo.Action = cmd is RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 recordInfo.ClearHasETag();
                 return false;
             }
 
-            RespCommand cmd = input.header.cmd;
             bool hadRecordPreMutation = recordInfo.ETag;
             bool shouldUpdateEtag = hadRecordPreMutation;
             if (shouldUpdateEtag)
@@ -785,15 +777,7 @@ namespace Garnet.server
 
                     return false;
                 case RespCommand.DELIFEXPIM:
-                    // Only if the key has expired, will we delete it.
-                    if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
-                    {
-                        // setting the action and returning false will tombstone this record
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        // reset etag state that may have been initialized earlier,
-                        EtagState.ResetState(ref functionsState.etagState);
-                        return false;
-                    }
+                    // this is the case where it isn't expired
                     shouldUpdateEtag = false;
                     break;
                 default:
