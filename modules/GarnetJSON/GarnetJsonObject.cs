@@ -40,8 +40,12 @@ namespace GarnetJSON
     /// </summary>
     public class GarnetJsonObject : CustomObjectBase
     {
-        private static readonly JsonSerializerOptions DefaultJsonSerializerOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-        private static readonly JsonSerializerOptions IndentedJsonSerializerOptions = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+        private static readonly JsonSerializerOptions DefaultJsonSerializerOptions =
+            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+        private static readonly JsonSerializerOptions IndentedJsonSerializerOptions =
+            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+
         private static readonly byte[] OpenBoxBracket = Encoding.UTF8.GetBytes("[");
         private static readonly byte[] CloseBoxBracket = Encoding.UTF8.GetBytes("]");
         private static readonly byte[] OpenCurlyBracket = Encoding.UTF8.GetBytes("{");
@@ -105,7 +109,9 @@ namespace GarnetJSON
         /// <summary>
         /// Disposes the <see cref="GarnetJsonObject"/> instance.
         /// </summary>
-        public override void Dispose() { }
+        public override void Dispose()
+        {
+        }
 
         /// <inheritdoc/>
         public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10,
@@ -122,7 +128,8 @@ namespace GarnetJSON
         /// <param name="newLine">The string to use for new lines.</param>
         /// <param name="space">The string to use for spaces.</param>
         /// <returns>True if the operation is successful; otherwise, false.</returns>
-        public bool TryGet(ReadOnlySpan<ArgSlice> paths, List<byte[]> output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
+        public bool TryGet(ReadOnlySpan<ArgSlice> paths, List<byte[]> output, out ReadOnlySpan<byte> errorMessage,
+            string? indent = null, string? newLine = null, string? space = null)
         {
             if (paths.Length == 1)
             {
@@ -137,6 +144,7 @@ namespace GarnetJSON
                 {
                     output.Add(Comma);
                 }
+
                 isFirst = false;
 
                 output.Add(DoubleQuotes);
@@ -148,6 +156,7 @@ namespace GarnetJSON
                     return false;
                 }
             }
+
             output.Add(CloseCurlyBracket);
 
             errorMessage = default;
@@ -165,7 +174,8 @@ namespace GarnetJSON
         /// <param name="newLine">The string to use for new lines. (ignored with generic format)</param>
         /// <param name="space">The string to use for spaces. (ignored with generic format)</param>
         /// <returns>True if the operation is successful; otherwise, false.</returns>
-        public bool TryGet(ReadOnlySpan<byte> path, List<byte[]> output, out ReadOnlySpan<byte> errorMessage, string? indent = null, string? newLine = null, string? space = null)
+        public bool TryGet(ReadOnlySpan<byte> path, List<byte[]> output, out ReadOnlySpan<byte> errorMessage,
+            string? indent = null, string? newLine = null, string? space = null)
         {
             try
             {
@@ -177,7 +187,10 @@ namespace GarnetJSON
 
                 if (path.Length == 0)
                 {
-                    output.Add(JsonSerializer.SerializeToUtf8Bytes(rootNode, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions));
+                    output.Add(JsonSerializer.SerializeToUtf8Bytes(rootNode,
+                        indent is null && newLine is null && space is null
+                            ? DefaultJsonSerializerOptions
+                            : IndentedJsonSerializerOptions));
                     return true;
                 }
 
@@ -192,10 +205,15 @@ namespace GarnetJSON
                     {
                         output.Add(Comma);
                     }
+
                     isFirst = false;
 
-                    output.Add(JsonSerializer.SerializeToUtf8Bytes(item, indent is null && newLine is null && space is null ? DefaultJsonSerializerOptions : IndentedJsonSerializerOptions));
+                    output.Add(JsonSerializer.SerializeToUtf8Bytes(item,
+                        indent is null && newLine is null && space is null
+                            ? DefaultJsonSerializerOptions
+                            : IndentedJsonSerializerOptions));
                 }
+
                 output.Add(CloseBoxBracket);
                 return true;
             }
@@ -216,7 +234,8 @@ namespace GarnetJSON
         /// <param name="errorMessage">The error message if the operation fails.</param>
         /// <returns>The result of the set operation.</returns>
         /// <exception cref="JsonException">Thrown when there is an error in JSON processing.</exception>
-        public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions, out ReadOnlySpan<byte> errorMessage)
+        public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions,
+            out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
@@ -253,7 +272,8 @@ namespace GarnetJSON
                     }
 
                     // Find parent node using parent path
-                    var parentNode = rootNode.SelectNodes(GetParentPath(pathStr, out var pathParentOffset)).FirstOrDefault();
+                    var parentNode = rootNode.SelectNodes(GetParentPath(pathStr, out var pathParentOffset))
+                        .FirstOrDefault();
                     if (parentNode is null)
                     {
                         return SetResult.ConditionNotMet;

@@ -32,7 +32,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of JSON nodes that match the filter.</returns>
         /// <exception cref="JsonException">Thrown when the step value is zero or when no match is found and ErrorWhenNoMatch is true.</exception>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             if (Step == 0)
             {
@@ -79,7 +80,8 @@ namespace GarnetJSON.JSONPath
                 {
                     if (settings?.ErrorWhenNoMatch ?? false)
                     {
-                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Array slice of {0} to {1} returned no results.",
+                        throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                            "Array slice of {0} to {1} returned no results.",
                             Start != null ? Start.GetValueOrDefault().ToString(CultureInfo.InvariantCulture) : "*",
                             End != null ? End.GetValueOrDefault().ToString(CultureInfo.InvariantCulture) : "*"));
                     }
@@ -89,7 +91,8 @@ namespace GarnetJSON.JSONPath
             {
                 if (settings?.ErrorWhenNoMatch ?? false)
                 {
-                    throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Array slice is not valid on {0}.", current?.GetType().Name));
+                    throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                        "Array slice is not valid on {0}.", current?.GetType().Name));
                 }
             }
         }
@@ -102,7 +105,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of JSON nodes that match the filter.</returns>
         /// <exception cref="JsonException">Thrown when the step value is zero or when no match is found and ErrorWhenNoMatch is true.</exception>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             if (Step == 0)
             {
@@ -152,7 +156,8 @@ namespace GarnetJSON.JSONPath
                     {
                         if (settings?.ErrorWhenNoMatch ?? false)
                         {
-                            throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Array slice of {0} to {1} returned no results.",
+                            throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                                "Array slice of {0} to {1} returned no results.",
                                 Start != null ? Start.GetValueOrDefault().ToString(CultureInfo.InvariantCulture) : "*",
                                 End != null ? End.GetValueOrDefault().ToString(CultureInfo.InvariantCulture) : "*"));
                         }
@@ -162,7 +167,8 @@ namespace GarnetJSON.JSONPath
                 {
                     if (settings?.ErrorWhenNoMatch ?? false)
                     {
-                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Array slice is not valid on {0}.", current?.GetType().Name));
+                        throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                            "Array slice is not valid on {0}.", current?.GetType().Name));
                     }
                 }
             }
