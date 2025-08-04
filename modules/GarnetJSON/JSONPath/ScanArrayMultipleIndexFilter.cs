@@ -29,7 +29,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON node.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             // Inspired by https://stackoverflow.com/a/30441479/7331395
             IEnumerator? enumerator = null;
@@ -75,11 +76,13 @@ namespace GarnetJSON.JSONPath
                         {
                             foreach (int i in Indexes)
                             {
-                                if (TryGetTokenIndex(innerArr, i, settings?.ErrorWhenNoMatch ?? false, out var foundNode))
+                                if (TryGetTokenIndex(innerArr, i, settings?.ErrorWhenNoMatch ?? false,
+                                        out var foundNode))
                                 {
                                     yield return foundNode;
                                 }
                             }
+
                             enumerator = innerArr.GetEnumerator();
                         }
                         else if (jsonNode is JsonObject innerOobj)
@@ -97,7 +100,6 @@ namespace GarnetJSON.JSONPath
                     }
                 }
             }
-
         }
 
         /// <summary>
@@ -107,7 +109,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current enumerable of JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             return current.SelectMany(x => ExecuteFilter(root, x, settings));
         }

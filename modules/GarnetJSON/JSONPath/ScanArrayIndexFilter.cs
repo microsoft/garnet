@@ -22,14 +22,16 @@ namespace GarnetJSON.JSONPath
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
         /// <exception cref="JsonException">Thrown when the index is not valid on the current node and errorWhenNoMatch is true.</exception>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             // Inspired by https://stackoverflow.com/a/30441479/7331395
             IEnumerator? enumerator = null;
             if (current is JsonArray arr)
             {
                 enumerator = arr.GetEnumerator();
-                if (Index is not null && TryGetTokenIndex(arr, Index.Value, settings?.ErrorWhenNoMatch ?? false, out var foundNode))
+                if (Index is not null && TryGetTokenIndex(arr, Index.Value, settings?.ErrorWhenNoMatch ?? false,
+                        out var foundNode))
                 {
                     yield return foundNode;
                 }
@@ -38,7 +40,6 @@ namespace GarnetJSON.JSONPath
             {
                 enumerator = obj.GetEnumerator();
             }
-
 
 
             if (enumerator is not null)
@@ -56,6 +57,7 @@ namespace GarnetJSON.JSONPath
                             {
                                 yield return element;
                             }
+
                             jsonNode = element;
                             stack.Push(enumerator);
                         }
@@ -67,6 +69,7 @@ namespace GarnetJSON.JSONPath
                             {
                                 yield return element.Value;
                             }
+
                             stack.Push(enumerator);
                         }
 
@@ -74,11 +77,13 @@ namespace GarnetJSON.JSONPath
                         {
                             if (Index.HasValue)
                             {
-                                if (TryGetTokenIndex(jsonNode, Index.Value, settings?.ErrorWhenNoMatch ?? false, out var foundNode))
+                                if (TryGetTokenIndex(jsonNode, Index.Value, settings?.ErrorWhenNoMatch ?? false,
+                                        out var foundNode))
                                 {
                                     yield return foundNode;
                                 }
                             }
+
                             enumerator = innerArr.GetEnumerator();
                         }
                         else if (jsonNode is JsonObject innerOobj)
@@ -96,7 +101,6 @@ namespace GarnetJSON.JSONPath
                     }
                 }
             }
-
         }
 
         /// <summary>
@@ -106,11 +110,10 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current enumerable of JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             return current.SelectMany(x => ExecuteFilter(root, x, settings));
         }
-
-
     }
 }

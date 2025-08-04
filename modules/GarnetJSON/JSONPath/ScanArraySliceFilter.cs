@@ -78,6 +78,7 @@ namespace GarnetJSON.JSONPath
                         yield return arr[i];
                     }
                 }
+
                 enumerator = arr.GetEnumerator();
             }
             else if (current is JsonObject obj)

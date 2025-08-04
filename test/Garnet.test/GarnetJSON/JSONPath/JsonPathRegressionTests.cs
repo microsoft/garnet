@@ -1,4 +1,5 @@
 #region License
+
 // Copyright (c) 2007 James Newton-King
 //
 // Permission is hereby granted, free of charge, to any person
@@ -21,6 +22,7 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
+
 #endregion
 
 #nullable enable
@@ -50,10 +52,13 @@ namespace Garnet.test.JSONPath
             public bool? ordered { get; set; }
             public required JsonNode document { get; set; }
             public JsonNode? consensus { get; set; }
+
             [JsonPropertyName("not-found-consensus")]
             public string? not_found_consensus { get; set; }
+
             [JsonPropertyName("scalar-consensus")]
             public JsonNode? scalar_consensus { get; set; }
+
             [JsonPropertyName("scalar-not-found-consensus")]
             public string? scalar_not_found_consensus { get; set; }
 
@@ -64,16 +69,14 @@ namespace Garnet.test.JSONPath
         internal record RegressionTestHolder(RegressionTestQuery[] queries);
 
 
-
         internal static IEnumerable<TestCaseData> LoadCases()
         {
-
             // JSON adapted from https://github.com/cburgmer/json-path-comparison/blob/master/regression_suite/regression_suite.yaml
             var holder = JsonSerializer.Deserialize<RegressionTestHolder>(
                 File.OpenRead("GarnetJSON/JSONPath/RegressionSuite.json"));
             return holder!.queries.Select(x => new TestCaseData(x).SetArgDisplayNames(x.id, x.selector));
-
         }
+
         [Test, TestCaseSource(nameof(LoadCases))]
         public void TestRegression(RegressionTestQuery query)
         {
@@ -86,6 +89,7 @@ namespace Garnet.test.JSONPath
                     // no consensus, skipping
                     return;
                 }
+
                 var result = path.Evaluate(query.document, query.document, null).ToArray();
                 if (result.Length == 0)
                 {
@@ -125,7 +129,6 @@ namespace Garnet.test.JSONPath
                     {
                         ClassicAssert.IsTrue(false, query.id);
                     }
-
                 }
             }
             catch (Exception ex)
@@ -142,11 +145,7 @@ namespace Garnet.test.JSONPath
                 {
                     throw;
                 }
-
             }
-
         }
-
-
     }
 }

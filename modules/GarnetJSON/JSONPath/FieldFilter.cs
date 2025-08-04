@@ -31,7 +31,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
         /// <exception cref="JsonException">Thrown when the specified field does not exist and <see cref="JsonSelectSettings.ErrorWhenNoMatch"/> is set to true.</exception>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             if (current is JsonObject obj)
             {
@@ -43,7 +44,8 @@ namespace GarnetJSON.JSONPath
                     }
                     else if (settings?.ErrorWhenNoMatch ?? false)
                     {
-                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Property '{0}' does not exist on JObject.", Name));
+                        throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                            "Property '{0}' does not exist on JObject.", Name));
                     }
                 }
                 else
@@ -59,7 +61,8 @@ namespace GarnetJSON.JSONPath
             {
                 if (settings?.ErrorWhenNoMatch ?? false)
                 {
-                    throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Property '{0}' not valid on {1}.", Name is not null ? Name : "*", current?.GetType().Name));
+                    throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                        "Property '{0}' not valid on {1}.", Name is not null ? Name : "*", current?.GetType().Name));
                 }
             }
 
@@ -73,7 +76,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current enumerable of JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             var hasCount = current.TryGetNonEnumeratedCount(out int count);
 
@@ -113,7 +117,8 @@ namespace GarnetJSON.JSONPath
                         }
                         else if (errorWhenNoMatch)
                         {
-                            throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Property '{0}' does not exist on JObject.", Name));
+                            throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                                "Property '{0}' does not exist on JObject.", Name));
                         }
                     }
                     else
@@ -135,7 +140,9 @@ namespace GarnetJSON.JSONPath
                 {
                     if (errorWhenNoMatch)
                     {
-                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Property '{0}' not valid on {1}.", Name is not null ? Name : "*", current?.GetType().Name));
+                        throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                            "Property '{0}' not valid on {1}.", Name is not null ? Name : "*",
+                            current?.GetType().Name));
                     }
                 }
             }
