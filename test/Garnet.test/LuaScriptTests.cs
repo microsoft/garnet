@@ -2932,8 +2932,8 @@ return cjson.encode(nested)");
             var unpackRes = (int[])db.ScriptEvaluate("return { struct.unpack('>hB', '\\x12\\x34\\x56') }");
             ClassicAssert.True(unpackRes.SequenceEqual([0x1234, 0x56, 4]));
 
-            var unpackZeroTerminatedStringRes = db.ScriptEvaluate("return { struct.unpack('Bc0', '\\x07dynamic') }");
-            ClassicAssert.AreEqual("dynamic", (string)unpackZeroTerminatedStringRes[0]);
+            var unpackBC0StringRes = db.ScriptEvaluate("return { struct.unpack('Bc0', '\\x07dynamic') }");
+            ClassicAssert.AreEqual("dynamic", (string)unpackBC0StringRes[0]);
 
             var unpackNullTerminatedStringRes = db.ScriptEvaluate("return { struct.unpack('s', 'hi\\0') }");
             ClassicAssert.AreEqual("hi", (string)unpackNullTerminatedStringRes[0]);
@@ -3083,7 +3083,7 @@ return cjson.encode(nested)");
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to loadstring", excBadControlOptions.Message);
 
             var excBadFormat = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.size(123)"));
-            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to loadstring", excBadControlOptions.Message);
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to loadstring", excBadFormat.Message);
         }
 
         [Test]

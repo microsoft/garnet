@@ -511,7 +511,7 @@ namespace Garnet.server
                 if (h.Endian == Native.Endian) // header endian == native endian
                 {
                     // If header endian matches native endian, pick the method that matches native order
-                    if (BitConverter.IsLittleEndian)
+                    if (Native.Endian == (int)Endian.LITTLE)
                         BinaryPrimitives.WriteSingleLittleEndian(into[0..], (float)value);
                     else
                         BinaryPrimitives.WriteSingleBigEndian(into[0..], (float)value);
@@ -519,7 +519,7 @@ namespace Garnet.server
                 else
                 {
                     // Endian mismatch: pick the opposite method to get the bytes in header's endian format
-                    if (BitConverter.IsLittleEndian)
+                    if (Native.Endian == (int)Endian.LITTLE)
                         BinaryPrimitives.WriteSingleBigEndian(into[0..], (float)value);
                     else
                         BinaryPrimitives.WriteSingleLittleEndian(into[0..], (float)value);
@@ -543,7 +543,7 @@ namespace Garnet.server
                 if (h.Endian == Native.Endian) // header endian == native endian
                 {
                     // If header endian matches native endian, pick the method that matches native order
-                    if (BitConverter.IsLittleEndian)
+                    if (Native.Endian == (int)Endian.LITTLE)
                         BinaryPrimitives.WriteDoubleLittleEndian(into[0..], value);
                     else
                         BinaryPrimitives.WriteDoubleBigEndian(into[0..], value);
@@ -551,7 +551,7 @@ namespace Garnet.server
                 else
                 {
                     // Endian mismatch: pick the opposite method to get the bytes in header's endian format
-                    if (BitConverter.IsLittleEndian)
+                    if (Native.Endian == (int)Endian.LITTLE)
                         BinaryPrimitives.WriteDoubleBigEndian(into[0..], value);
                     else
                         BinaryPrimitives.WriteDoubleLittleEndian(into[0..], value);
@@ -584,9 +584,10 @@ namespace Garnet.server
                     return false;
                 }
 
-                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(data.Length).Span;
-                data.CopyTo(into[0..]);
-                self.scratchBufferBuilder.MoveOffset(data.Length);
+                // When l > size, that is, the Lua string is longer than the requested size.Only the first size bytes of the string are copied into the buffer. The extra bytes beyond size are ignored.
+                var into = self.scratchBufferBuilder.ViewRemainingArgSlice(size).Span;
+                data[..size].CopyTo(into[0..]);
+                self.scratchBufferBuilder.MoveOffset(size);
 
                 if (opt is 's')
                 {
@@ -797,7 +798,25 @@ namespace Garnet.server
             static bool TryDecodeSingle(LuaRunner self, Header h, int size, int pos, ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
             {
                 var slice = data.Slice(pos);
-                float value = h.Endian == Native.Endian ? BinaryPrimitives.ReadSingleLittleEndian(slice) : BinaryPrimitives.ReadSingleBigEndian(slice);
+                float value;
+
+                // Reverses the bytes only when the target endianness is different from the system's native one
+                if (h.Endian == Native.Endian)
+                {
+                    if (Native.Endian == (int)Endian.LITTLE)
+                        value = BinaryPrimitives.ReadSingleLittleEndian(slice);
+                    else
+                        value = BinaryPrimitives.ReadSingleBigEndian(slice);
+                }
+                else
+                {
+                    if (Native.Endian == (int)Endian.LITTLE)
+                        value = BinaryPrimitives.ReadSingleBigEndian(slice);
+                    else
+                        value = BinaryPrimitives.ReadSingleLittleEndian(slice);
+                }
+
+
                 self.state.PushNumber((double)value);
                 decodedCount++;
 
@@ -808,7 +827,25 @@ namespace Garnet.server
             static bool TryDecodeDouble(LuaRunner self, Header h, int size, int pos, ReadOnlySpan<byte> data, ref int decodedCount, out int constStrErrId)
             {
                 var slice = data.Slice(pos);
-                double value = h.Endian == Native.Endian ? BinaryPrimitives.ReadDoubleLittleEndian(slice) : BinaryPrimitives.ReadDoubleBigEndian(slice);
+                double value;
+
+                // Reverses the bytes only when the target endianness is different from the system's native one
+                if (h.Endian == Native.Endian)
+                {
+                    if (Native.Endian == (int)Endian.LITTLE)
+                        value = BinaryPrimitives.ReadDoubleLittleEndian(slice);
+                    else
+                        value = BinaryPrimitives.ReadDoubleBigEndian(slice);
+                }
+                else
+                {
+                    if (Native.Endian == (int)Endian.LITTLE)
+                        value = BinaryPrimitives.ReadDoubleBigEndian(slice);
+                    else
+                        value = BinaryPrimitives.ReadDoubleLittleEndian(slice);
+                }
+
+
                 self.state.PushNumber(value);
                 decodedCount++;
 
