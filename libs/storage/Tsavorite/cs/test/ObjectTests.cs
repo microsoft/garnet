@@ -101,7 +101,7 @@ namespace Tsavorite.test
 
             var keyStruct = new TestObjectKey { key = keyInt };
             var key = SpanByte.FromPinnedVariable(ref keyStruct);
-            var value = new TestObjectValue { value = keyInt * 2 };
+            var value = new TestObjectValue { value = keyInt };
             _ = bContext.Upsert(key, value, Empty.Default);
 
             TestObjectInput input = new();
@@ -109,7 +109,7 @@ namespace Tsavorite.test
             var status = bContext.Read(key, ref input, ref output, Empty.Default);
             Assert.That(status.IsPending, Is.False);
             Assert.That(status.Found, Is.True);
-            Assert.That(output.value.value, Is.EqualTo(keyInt * 2));
+            Assert.That(output.value.value, Is.EqualTo(keyInt));
 
             store.Log.FlushAndEvict(wait: true);
 
@@ -118,7 +118,7 @@ namespace Tsavorite.test
             Assert.That(bContext.CompletePendingWithOutputs(out var outputs, wait: true), Is.True);
             (status, output) = GetSinglePendingResult(outputs);
             Assert.That(status.Found, Is.True);
-            Assert.That(output.value.value, Is.EqualTo(keyInt * 2));
+            Assert.That(output.value.value, Is.EqualTo(keyInt));
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]

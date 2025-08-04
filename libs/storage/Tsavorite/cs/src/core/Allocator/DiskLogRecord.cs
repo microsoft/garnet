@@ -361,23 +361,25 @@ namespace Tsavorite.core
                 keyBuffer = bufferPool.Get(key.Length);
             key.CopyTo(keyBuffer.RequiredSpan);
             keyOverflow = default;
+            keySpan = PinnedSpanByte.FromPinnedSpan(keyBuffer.RequiredSpan);
             recordInfo.SetKeyIsInline();
         }
 
         /// <summary>
         /// Copy value for record copying.
         /// </summary>
-        /// <param name="valueSpan">Record value Span</param>
+        /// <param name="srcValueSpan">Record value Span</param>
         /// <param name="bufferPool">Allocator for backing storage</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void CopyValue(ReadOnlySpan<byte> valueSpan, SectorAlignedBufferPool bufferPool)
+        internal void CopyValue(ReadOnlySpan<byte> srcValueSpan, SectorAlignedBufferPool bufferPool)
         {
             if (recordOrValueBuffer is not null)
-                recordOrValueBuffer.pool.EnsureSize(ref keyBuffer, valueSpan.Length);
+                recordOrValueBuffer.pool.EnsureSize(ref keyBuffer, srcValueSpan.Length);
             else
-                recordOrValueBuffer = bufferPool.Get(valueSpan.Length);
-            valueSpan.CopyTo(keyBuffer.RequiredSpan);
+                recordOrValueBuffer = bufferPool.Get(srcValueSpan.Length);
+            srcValueSpan.CopyTo(keyBuffer.RequiredSpan);
             valueOverflowOrObject = default;
+            valueSpan = PinnedSpanByte.FromPinnedSpan(recordOrValueBuffer.RequiredSpan);
             recordInfo.SetValueIsInline();
         }
 

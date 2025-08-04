@@ -283,7 +283,7 @@ namespace Tsavorite.core
                 // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
                 // as we saved it in the object's.SerializedSize (and we ignore SerializedSizeIsExact because we know it hasn't changed) or, if it's
                 // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
-                // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
+                // TODO is MonotonicUpdate needed? The OnPagesClosedWorker page-fragment ordering sequence should guarantee that only one thread at a time will be doing this
                 _ = MonotonicUpdate(ref ClosedDiskTailOffset, closeLogRecord.CalculateExpansion(), out _);
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
@@ -397,8 +397,8 @@ namespace Tsavorite.core
                 {
                     // Writes must be sector-aligned and the current write would not start on a sector boundary. Read one sector of bytes back from the disk to the start of
                     // the buffer (rather than re-serializing the start of the page; we wrote it to disk with expanded objects in a prior Flush). We'll start overwriting at
-                    // startOffset, which is somewhere in the middle of that sector. Do not read back the invalid header of page 0.
-                    if ((flushPage > 0) || (startOffset > GetFirstValidLogicalAddressOnPage(flushPage)))
+                    // startOffset, which is somewhere in the middle of that sector. Do not read back the invalid header of page 0; we'll write it below.
+                    if (flushPage > 0 || startOffset > GetFirstValidLogicalAddressOnPage(flushPage))
                     {
                         using var countdownEvent = new CountdownEvent(1);
                         PageAsyncReadResult<Empty> result = new() { handle = countdownEvent };
@@ -418,8 +418,15 @@ namespace Tsavorite.core
                 Debug.Assert(fuzzyStartLogicalAddress < 0 || IsInLogMemory(fuzzyStartLogicalAddress), "fromAddress is not marked as in Log memory");
 
                 var logicalAddress = asyncResult.fromAddress;
-                var endPhysicalAddress = (long)srcBuffer.aligned_pointer + numBytesToWrite;
-                for (var physicalAddress = (long)srcBuffer.aligned_pointer; physicalAddress < endPhysicalAddress; /* incremented in loop */)
+                var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
+
+                if (flushPage == 0 && startOffset == AbsoluteAddress(GetFirstValidLogicalAddressOnPage(flushPage)))
+                {
+                    // Write the header of page 0. This keeps the file aligned with the first logical address, and maybe we'll add something useful there.
+                    diskBuffer.Write(new ReadOnlySpan<byte>((byte*)pagePointers[flushPage % BufferSize], startOffset));
+                }
+
+                for (var physicalAddress = (long)srcBuffer.GetValidPointer(); physicalAddress < endPhysicalAddress; /* incremented in loop */)
                 {
                     var logRecord = new LogRecord(physicalAddress, localObjectIdMap);
 

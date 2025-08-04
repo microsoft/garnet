@@ -96,10 +96,10 @@ namespace Tsavorite.core
         /// <remarks>Held as a field instead of a local so it can be Dispose()d in case of an exception.</remarks>
         SectorAlignedMemory valueBuffer;
 
-        /// <summary>Deserialization position (we do not support write in this buffer) in the current (sub-)chunk. This is less than or equal to <see cref="currentLength"/>;
+        /// <summary>For object deserialization, the position (we do not support write in this buffer) in the current (sub-)chunk. This is less than or equal to <see cref="currentLength"/>;
         /// if equal to, then there is no more to data process in the buffer and another buffer must be read if the record is incomplete.</summary>
         int currentPosition;
-        /// <summary>Amount of data that has been read into the buffer for the current (sub-)chunk. This is greater than or equal to <see cref="currentPosition"/>;
+        /// <summary>For object deserialization, the amount of data that has been read into the buffer for the current (sub-)chunk. This is greater than or equal to <see cref="currentPosition"/>;
         /// if equal to, then there is no more to data process in the buffer and another buffer must be read if the record is incomplete.</summary>
         int currentLength;
         /// <summary>The amount of data we have remaining for the current (sub-)chunk (<see cref="currentPosition"/> is 0-based).</summary>
@@ -109,8 +109,10 @@ namespace Tsavorite.core
         /// <remarks>For chained chunks with the continuation tag, we should always have a buffer large enough for a full chunk. But if <see cref="IHeapObject.SerializedSizeIsExact"/>,
         /// we write a single chunk that may be very large.</remarks>
         long unreadExactLength;
-        /// <summary>Cumulative length of data read into the buffer for object deserialization</summary>
-        long priorCumulativeLength;
+        /// <summary>For value object deserialization, the cumulative length of data read into the buffer. Does not apply to other record fields or value types</summary>
+        long valueCumulativeLength;
+        /// <summary>For object deserialization, the position of the start of the value bytes.</summary>
+        int valueDataStartPosition;
 
         /// <summary>If true, the value is an object in chained-chunk (continuation indicator) format.</summary>
         bool isChunkedValue;
@@ -133,13 +135,13 @@ namespace Tsavorite.core
         /// <summary>The Span of current chunk data read into the buffer.</summary>
         public Span<byte> ChunkBufferSpan => valueBuffer.Span;
 
-        /// <summary>The amount of data written to the buffer so far (from Read() or Write()).</summary>
+        /// <summary>The amount of data read into the buffer so far (from Read() or Write()), including cumulative lengths of previous buffers (before FlushAndReset).</summary>
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
-        public long Length => priorCumulativeLength + currentLength;
+        public long Length => valueCumulativeLength + currentLength;
 
-        /// <summary>The current position the buffer so far, including cumulative lengths of previous buffers (before FlushAndReset).</summary>
+        /// <summary>The current position in the desrialization buffer so far, including cumulative lengths of previous buffers (before FlushAndReset).</summary>
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
-        public long Position => priorCumulativeLength + currentPosition;
+        public long Position => valueCumulativeLength + currentPosition;
 
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
@@ -183,7 +185,7 @@ namespace Tsavorite.core
         public bool Read(ref SectorAlignedMemory recordBuffer, ReadOnlySpan<byte> requestedKey, out DiskLogRecord diskLogRecord)
         {
             currentLength = recordBuffer.available_bytes;
-            var ptr = recordBuffer.aligned_pointer;
+            var ptr = recordBuffer.GetValidPointer();
             diskLogRecord = default;
 
             // Check for RecordInfo and indicator byte. If we have that, check for key length; for disk IO we are called for a specific key
@@ -206,23 +208,29 @@ namespace Tsavorite.core
 
                     if (currentLength >= offsetToKeyStart + keyLength)
                     {
+                        // We have the full key in recordBuffer
                         var ptrToKeyData = ptr + offsetToKeyStart;
-                        var minRequiredLength = offsetToKeyStart + keyLength;
+                        valueDataStartPosition = offsetToKeyStart + keyLength;
 
                         // We have the full key, so check for a match if we had a requested key, and return if not.
                         if (!requestedKey.IsEmpty && !readParams.storeFunctions.KeysEqual(requestedKey, new ReadOnlySpan<byte>(ptrToKeyData, keyLength)))
                             return false;
 
                         // If we have the full record, we're done.
-                        var totalLength = minRequiredLength + valueLength + optionalLength;
+                        var totalLength = valueDataStartPosition + valueLength + optionalLength;
                         if (currentLength >= totalLength)
                         {
+                            currentPosition = offsetToKeyStart + keyLength;
+
+                            // We need to set valueBuffer for Deserialize(), so transfer the recordBuffer to us, then to the output diskLogRecord.
+                            valueBuffer = recordBuffer;
+                            recordBuffer = default;
                             var valueObject = recordInfo.ValueIsObject ? DoDeserialize(out _, out _) : null;    // optionals are in the recordBuffer if present, so ignore the outparams for them
-                            diskLogRecord = DiskLogRecord.Transfer(ref recordBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
+                            diskLogRecord = DiskLogRecord.Transfer(ref valueBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
                             return true;
                         }
 
-                        // We have the key in recordBuffer (and maybe in requestedKey) but don't have the value or optionals. If we have a fixed-size page,
+                        // We have the full key in recordBuffer (and maybe in requestedKey) but don't have the value or optionals. If we have a fixed-size page,
                         // just read it and return; we won't have overflow or objects.
                         if (readParams.fixedPageSize > 0)
                         {
@@ -239,8 +247,7 @@ namespace Tsavorite.core
                         keyBuffer.required_bytes = keyLength;                   // ... and this is the length of the key
 
                         // Read the rest of the record, possibly in pieces.
-                        currentPosition = minRequiredLength;    // offsetToValueStart
-                        ReadValue(keyOverflow: default, offsetToValueStart: minRequiredLength, valueLength, out diskLogRecord);
+                        ReadValue(keyOverflow: default, valueLength, out diskLogRecord);
                         return true;
                     }
 
@@ -269,16 +276,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read the value (and optionals if present)</summary>
-        private void ReadValue(OverflowByteArray keyOverflow, int offsetToValueStart, long valueLength, out DiskLogRecord diskLogRecord)
+        private void ReadValue(OverflowByteArray keyOverflow, long valueLength, out DiskLogRecord diskLogRecord)
         {
             // The most common case is that we have the recordInfo and the key in either keyBuffer or keyOverflow.
             // This broken out into two functions to allow ReadKeyAndValue to wait on an event and then compare the key.
-            BeginReadValue(offsetToValueStart, valueLength, out var valueOverflow, out var eTag, out var expiration);
+            BeginReadValue(valueLength, out var valueOverflow, out var eTag, out var expiration);
             diskLogRecord = EndReadValue(keyOverflow, valueLength, valueOverflow, eTag, expiration);
             return;
         }
 
-        private void BeginReadValue(int offsetToValueStart, long valueLength, out OverflowByteArray valueOverflow,
+        private void BeginReadValue(long valueLength, out OverflowByteArray valueOverflow,
                 out long eTag, out long expiration, CountdownEvent multiCountdownEvent = null)
         {
             // This is the most common initial case: we have the recordInfo and the key in either keyBuffer or keyOverflow.
@@ -291,7 +298,7 @@ namespace Tsavorite.core
 
             if (valueIsOverflow)
             {
-                valueOverflow = AllocateOverflowAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), multiCountdownEvent);
+                valueOverflow = AllocateOverflowAndReadFromDevice(valueDataStartPosition, (int)(valueLength + optionalLength), multiCountdownEvent);
                 if (optionalLength > 0)
                     valueOverflow.ExtractOptionals(recordInfo, (int)valueLength, out eTag, out expiration);
                 return;
@@ -299,7 +306,7 @@ namespace Tsavorite.core
             
             if (!recordInfo.ValueIsObject)
             {
-                valueBuffer = AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), multiCountdownEvent);
+                valueBuffer = AllocateBufferAndReadFromDevice(valueDataStartPosition, (int)(valueLength + optionalLength), multiCountdownEvent);
                 if (optionalLength > 0)
                     ExtractOptionals((int)valueLength, out eTag, out expiration);
                 return;
@@ -307,14 +314,15 @@ namespace Tsavorite.core
 
             // This is an object so we will read it into our separate deserialization buffer and then deserialize it from there (we retain ownership of this buffer).
             // Allocate the same size we used to write, plus an additional sector to ensure we have room for the optionals after the final chunk.
-            currentPosition = 0;
+            currentPosition = valueDataStartPosition;
+            valueCumulativeLength = 0;
             unreadExactLength = 0;
 
             if (isChunkedValue)
             {
                 // Start the chained-chunk Read sequence. Don't read optionals here, they are read after the last (sub-)chunk, but we have to allocate enough
                 // buffer to read them when we get there, so do the adjustment here instead of calling AllocateBuffer.
-                var (alignedReadStart, startPadding) = readParams.GetAlignedReadStart(offsetToValueStart);
+                var (alignedReadStart, startPadding) = readParams.GetAlignedReadStart(valueDataStartPosition);
                 var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)valueLength + startPadding);
 
                 var recordBuffer = readParams.bufferPool.Get(maxBufferSize);
@@ -332,14 +340,14 @@ namespace Tsavorite.core
                 // chunks (with isChunkedValue/continuation) or sub-chunks (pieces of a full chunk; but no isChunkedValue/continuation) and get the optionals on the final sub-chunk.
                 if (valueLength + optionalLength <= maxBufferSize)
                 {
-                    valueBuffer = AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), multiCountdownEvent);
+                    valueBuffer = AllocateBufferAndReadFromDevice(valueDataStartPosition, (int)(valueLength + optionalLength), multiCountdownEvent);
                     Debug.Assert(valueBuffer.required_bytes == (int)valueLength, $"Expected required_bytes {(int)valueLength}, actual {valueBuffer.required_bytes}");
                     currentLength = (int)valueLength;
                 }
                 else
                 {
                     // Start the multi-sub-chunk Read sequence. Don't read optionals here, they are read after the last sub-chunk.
-                    valueBuffer = AllocateBuffer(offsetToValueStart, maxBufferSize, out var alignedReadStart, out var alignedBytesToRead);
+                    valueBuffer = AllocateBuffer(valueDataStartPosition, maxBufferSize, out var alignedReadStart, out var alignedBytesToRead);
                     Debug.Assert(alignedBytesToRead == maxBufferSize, $"Expected alignedBytesToRead {alignedBytesToRead} to match maxBufferSize {maxBufferSize}");
                     ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead, multiCountdownEvent);
                     currentLength = valueBuffer.required_bytes = (int)valueLength;
@@ -369,6 +377,8 @@ namespace Tsavorite.core
         /// <summary>Read the key and value (and optionals if present)</summary>
         private bool ReadKeyAndValue(ReadOnlySpan<byte> requestedKey, int offsetToKeyStart, int keyLength, long valueLength, out DiskLogRecord diskLogRecord)
         {
+            Debug.Assert(valueDataStartPosition == offsetToKeyStart + keyLength, $"valueDataStartPosition {valueDataStartPosition} should == offsetToKeyStart ({offsetToKeyStart}) + keyLength ({keyLength})");
+
             // If the total length is small enough, just read the entire thing into a SectorAlignedMemory. Also do this if we have a value object that is not chunked;
             // in this case we know it was held in a single buffer on Write().
             var totalLength = offsetToKeyStart + keyLength + valueLength + optionalLength;
@@ -376,6 +386,8 @@ namespace Tsavorite.core
             if (totalLength < IStreamBuffer.DiskReadForceOverflowSize || (recordInfo.ValueIsObject && !isChunkedValue))
             {
                 var recordBuffer = AllocateBufferAndReadFromDevice(offsetToFieldStart: 0, (int)totalLength);
+
+                currentPosition = offsetToKeyStart + keyLength;
                 var valueObject = recordInfo.ValueIsObject ? DoDeserialize(out _, out _) : null;    // optionals are in the recordBuffer if present, so ignore the outparams for them
 
                 // We have the full key, so check for a match if we had a requested key.
@@ -390,7 +402,6 @@ namespace Tsavorite.core
             }
 
             var keyIsOverflow = keyLength > readParams.maxInlineKeyLength;
-            var offsetToValueStart = offsetToKeyStart + keyLength;
             OverflowByteArray valueOverflow;
 
             // The record is large. If key is not overflow then the value is large, either an overflow or a chunked object.
@@ -401,7 +412,7 @@ namespace Tsavorite.core
                 // Since keys are usually small and optionals are at most two longs (which will at worst add an additional sector, which we've asserted are < MaxInternalOffset),
                 // we can usually get all the data with one IO via ReadOverflowFromDevice, then copy out the key and optionals, set the Value offsets, and we're done.
                 var alignedKeyStart = RoundDown(offsetToKeyStart, SectorSize);
-                if (offsetToValueStart - alignedKeyStart <= OverflowByteArray.MaxInternalOffset)
+                if (valueDataStartPosition - alignedKeyStart <= OverflowByteArray.MaxInternalOffset)
                 {
                     // Yes it will fit. We'll start reading at alignedKeyStart, which will use offsetToKeyStart as the OverflowByteArray's start, and include optionals.
                     // From that we'll extract the key, then update the offset to be at the beginning of the actual value.
@@ -439,7 +450,7 @@ namespace Tsavorite.core
                 keyBuffer = AllocateBufferAndReadFromDevice(offsetToKeyStart, keyLength, countdownEvent);
 
             // Initiate reading the value, which may be the initial buffer for a chunked object.
-            BeginReadValue(offsetToValueStart, valueLength, out valueOverflow, out eTag, out expiration, countdownEvent);
+            BeginReadValue(valueLength, out valueOverflow, out eTag, out expiration, countdownEvent);
 
             // Wait until both ReadFromDevice()s complete.
             countdownEvent?.Wait();
@@ -570,7 +581,7 @@ namespace Tsavorite.core
                     getOptionalLength = optionalLength;
             }
 
-            var deviceOffset = readParams.unalignedRecordStartOffset + priorCumulativeLength + currentLength;
+            var deviceOffset = readParams.unalignedRecordStartOffset + valueDataStartPosition + valueCumulativeLength + currentLength;
             Debug.Assert((deviceOffset & (readParams.sectorSize - 1)) == 0, $"Next device position is not aligned for chunk continuation");
 
             valueBuffer.required_bytes = (int)valueLength;
@@ -578,7 +589,7 @@ namespace Tsavorite.core
             if (alignedBytesToRead > 0)
                 ReadFromDevice(valueBuffer, deviceOffset, alignedBytesToRead);
             currentPosition = 0;
-            priorCumulativeLength += currentLength;
+            valueCumulativeLength += currentLength;
             currentLength = alignedBytesToRead;   // Again, this may be 0
 
             // Now copy the ending (possibly partial) data. This is similar to what we did at the top, but we may not have read all (or even any) value data.
@@ -606,6 +617,10 @@ namespace Tsavorite.core
                 valueObjectSerializer.BeginDeserialize(pinnedMemoryStream);
             }
 
+            // valueCumulativeLength is only relevant for object serialization; we increment it on all device reads to avoid "if", so here we reset it to the appropriate
+            // "start at 0" by making it the negative of currentPosition. Subsequently if we read e.g. an int, we'll have Position = (-currentPosition + currentPosition + 4)
+            // and similar for Length.
+            valueCumulativeLength = -currentPosition;
             valueObjectSerializer.Deserialize(out var valueObject);
             OnDeserializeComplete(valueObject, out eTag, out expiration);
             return valueObject;
@@ -613,7 +628,7 @@ namespace Tsavorite.core
 
         void OnDeserializeComplete(IHeapObject valueObject, out long eTag, out long expiration)
         {
-            valueObject.SerializedSize = Length;
+            valueObject.SerializedSize = Position - valueDataStartPosition;
 
             // Extract optionals if they are present. This assumes currentPosition has been correctly set to the first byte after value data.
             ExtractOptionals(currentPosition, out eTag, out expiration);

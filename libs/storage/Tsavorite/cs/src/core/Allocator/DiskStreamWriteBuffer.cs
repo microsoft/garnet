@@ -33,7 +33,7 @@ namespace Tsavorite.core
         /// <summary>Cumulative length of data written to the buffer before the current buffer contents</summary>
         long priorCumulativeLength;
 
-        /// <summary>Destination address to write to; incremented with each write.</summary>
+        /// <summary>Device address to write to; incremented with each Write.</summary>
         ulong alignedDeviceAddress;
 
         /// <summary>In the most common case, SerializedSizeIsExact is true and this is the expected length of the serialized value object
@@ -127,7 +127,7 @@ namespace Tsavorite.core
             }
 
             // The in-memory record is not inline, so we must form the indicator bytes for the inline disk image (expanding Overflow and Object).
-            ReadOnlySpan<byte> keySpan = logRecord.Key;
+            var keySpan = logRecord.Key;
 
             if (!logRecord.Info.ValueIsObject)
             {
@@ -340,6 +340,7 @@ namespace Tsavorite.core
             {
                 Debug.Assert(currentPosition == SectorSize, $"currentPosition {currentPosition} must be at the end of the first sector afte OnChunkComplete for chunk-chaining.");
                 valueLengthPosition = currentPosition - sizeof(int);
+                valueDataStartPosition = currentPosition;
                 
                 // We don't want Position or Length to include the bytes used by the intermediate chained-chunk length markers.
                 valueCumulativeLength -= sizeof(int);
@@ -455,9 +456,10 @@ namespace Tsavorite.core
             // on a background thread while the foreground thread populates the "current" one in parallel, sets it to flush to disk, and Wait()s for a free
             // one to continue the population.
 
-            // valueCumulativeLength is only relevant for object serialization; we increment it elsewhere to avoid "if" so here we reset it to the appropriate
-            // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have (-currentPosition + currentPosition + 4).
+            // valueCumulativeLength is only relevant for object serialization; we increment it on all device writes to avoid "if", so here we reset it to the appropriate
+            // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have Length and Position = (-currentPosition + currentPosition + 4).
             valueCumulativeLength = -currentPosition;
+            valueDataStartPosition = currentPosition;
             valueObjectSerializer.Serialize(valueObject);
             OnSerializeComplete(valueObject);
         }
