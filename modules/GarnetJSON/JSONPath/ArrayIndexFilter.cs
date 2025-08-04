@@ -22,11 +22,13 @@ namespace GarnetJSON.JSONPath
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
         /// <exception cref="JsonException">Thrown when the index is not valid on the current node and errorWhenNoMatch is true.</exception>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             if (Index != null)
             {
-                if (TryGetTokenIndex(current, Index.GetValueOrDefault(), settings?.ErrorWhenNoMatch ?? false, out var jsonNode))
+                if (TryGetTokenIndex(current, Index.GetValueOrDefault(), settings?.ErrorWhenNoMatch ?? false,
+                        out var jsonNode))
                 {
                     return [jsonNode];
                 }
@@ -37,11 +39,16 @@ namespace GarnetJSON.JSONPath
                 {
                     return array;
                 }
+                else if (current is JsonObject obj)
+                {
+                    return (obj as IDictionary<string, JsonNode>).Values;
+                }
                 else
                 {
                     if (settings?.ErrorWhenNoMatch ?? false)
                     {
-                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Index * not valid on {0}.", current?.GetType().Name));
+                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Index * not valid on {0}.",
+                            current?.GetType().Name));
                     }
                 }
             }
@@ -56,7 +63,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current enumerable of JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             var hasCount = current.TryGetNonEnumeratedCount(out int count);
             if (hasCount && count == 0)
@@ -101,11 +109,19 @@ namespace GarnetJSON.JSONPath
                             yield return v;
                         }
                     }
+                    else if (item is JsonObject obj)
+                    {
+                        foreach (var kv in obj)
+                        {
+                            yield return kv.Value;
+                        }
+                    }
                     else
                     {
                         if (errorWhenNoMatch)
                         {
-                            throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Index * not valid on {0}.", current?.GetType().Name));
+                            throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                                "Index * not valid on {0}.", current?.GetType().Name));
                         }
                     }
                 }
