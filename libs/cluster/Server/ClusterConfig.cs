@@ -638,56 +638,15 @@ namespace Garnet.cluster
             return replicaWorkerIds;
         }
 
-        private string CreateFormattedNodeInfo(int workerId)
-        {
-            var nodeInfo = "*12\r\n";
-            nodeInfo += "$2\r\nid\r\n";
-            nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
-            nodeInfo += "$4\r\nport\r\n";
-            nodeInfo += $":{workers[workerId].Port}\r\n";
-            nodeInfo += "$7\r\naddress\r\n";
-            nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
-            nodeInfo += "$4\r\nrole\r\n";
-            nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
-            nodeInfo += "$18\r\nreplication-offset\r\n";
-            nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
-            nodeInfo += "$6\r\nhealth\r\n";
-            nodeInfo += $"$6\r\nonline\r\n";
-            return nodeInfo;
-        }
-
-        private string CreateFormattedShardInfo(int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
-        {
-            var shardInfo = $"*4\r\n";
-
-            shardInfo += $"$5\r\nslots\r\n";//1
-
-            shardInfo += $"*{shardRanges.Count * 2}\r\n";//2
-            for (int i = 0; i < shardRanges.Count; i++)
-            {
-                var range = shardRanges[i];
-                shardInfo += $":{range.Item1}\r\n";
-                shardInfo += $":{range.Item2}\r\n";
-            }
-
-            shardInfo += $"$5\r\nnodes\r\n";//3
-
-            shardInfo += $"*{1 + replicaWorkerIds.Count}\r\n";//4
-            shardInfo += CreateFormattedNodeInfo(primaryWorkerId);
-            foreach (var id in replicaWorkerIds)
-                shardInfo += CreateFormattedNodeInfo(id);
-
-            return shardInfo;
-        }
-
         /// <summary>
         /// Get formatted (using CLUSTER SHARDS format) cluster config information.
         /// </summary>
+        /// <param name="clusterConnection"></param>
         /// <returns>RESP formatted string</returns>
-        public string GetShardsInfo()
+        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection)
         {
-            string shardsInfo = "";
-            int shardCount = 0;
+            var shardsInfo = "";
+            var shardCount = 0;
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY)
@@ -700,6 +659,54 @@ namespace Garnet.cluster
             }
             shardsInfo = $"*{shardCount}\r\n" + shardsInfo;
             return shardsInfo;
+
+            string CreateFormattedShardInfo(int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
+            {
+                var shardInfo = $"*4\r\n";
+                shardInfo += $"$5\r\nslots\r\n";
+                shardInfo += $"*{shardRanges.Count * 2}\r\n";
+                for (var i = 0; i < shardRanges.Count; i++)
+                {
+                    var range = shardRanges[i];
+                    shardInfo += $":{range.Item1}\r\n";
+                    shardInfo += $":{range.Item2}\r\n";
+                }
+
+                shardInfo += $"$5\r\nnodes\r\n";
+                shardInfo += $"*{1 + replicaWorkerIds.Count}\r\n";
+                if (primaryWorkerId == 1)
+                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, true);
+                else
+                {
+                    _ = clusterConnection.GetConnectionInfo(workers[primaryWorkerId].Nodeid, out var info);
+                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, info.connected);
+                }
+                foreach (var id in replicaWorkerIds)
+                {
+                    _ = clusterConnection.GetConnectionInfo(workers[id].Nodeid, out var info);
+                    shardInfo += CreateFormattedNodeInfo(id, info.connected);
+                }
+
+                return shardInfo;
+
+                string CreateFormattedNodeInfo(int workerId, bool connected)
+                {
+                    var nodeInfo = "*12\r\n";
+                    nodeInfo += "$2\r\nid\r\n";
+                    nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
+                    nodeInfo += "$4\r\nport\r\n";
+                    nodeInfo += $":{workers[workerId].Port}\r\n";
+                    nodeInfo += "$7\r\naddress\r\n";
+                    nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
+                    nodeInfo += "$4\r\nrole\r\n";
+                    nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
+                    nodeInfo += "$18\r\nreplication-offset\r\n";
+                    nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
+                    nodeInfo += "$6\r\nhealth\r\n";
+                    nodeInfo += connected ? "$6\r\nonline\r\n" : "$7\r\noffline\r\n";
+                    return nodeInfo;
+                }
+            }
         }
 
         private string CreateFormattedSlotInfo(int slotStart, int slotEnd, string address, int port, string nodeid, string hostname, List<string> replicaIds)
