@@ -772,8 +772,8 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
-                RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.EXPIREAT => NetworkEXPIRE(RespCommand.EXPIREAT, ref storageApi),
+                RespCommand.PEXPIREAT => NetworkEXPIRE(RespCommand.PEXPIREAT, ref storageApi),
                 RespCommand.DUMP => NetworkDUMP(ref storageApi),
                 RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 
