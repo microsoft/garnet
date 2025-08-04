@@ -12,6 +12,7 @@ using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -93,8 +94,6 @@ namespace Garnet.test
         private static bool CustomCommandsDocsInitialized;
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
         private static IReadOnlyDictionary<string, RespCommandDocs> RespCustomCommandsDocs;
-
-        private static Random Random = new();
 
         internal static string AzureTestContainer
         {
@@ -1111,12 +1110,12 @@ using System.Threading.Tasks;
         /// <summary>
         /// Get a random alphanumeric string of specified length
         /// </summary>
-        /// <param name="len"></param>
-        /// <returns></returns>
+        /// <param name="len">Length of string</param>
+        /// <returns>Random alphanumeric string</returns>
         public static string GetRandomString(int len)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[Random.Next(s.Length)])]);
+            return RandomNumberGenerator.GetString(chars, len);
         }
     }
 }
