@@ -272,9 +272,8 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="val"></param>
         /// <param name="output"></param>
-        /// <param name="pinnedOutputBuffer"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val, Span<byte> pinnedOutputBuffer);
+        GarnetStatus IncrementByFloat(ArgSlice key, ref ArgSlice output, double val);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)

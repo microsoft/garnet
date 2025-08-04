@@ -250,11 +250,9 @@ namespace Garnet.server
             => Increment(key, out output, -decrementCount);
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val,
-                                             Span<byte> pinnedOutputBuffer)
+        public GarnetStatus IncrementByFloat(ArgSlice key, ref ArgSlice output, double val)
         {
             SessionParseState parseState = default;
-            output = ArgSlice.FromPinnedSpan(pinnedOutputBuffer);
 
             var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
             _ = Increment(key, ref input, ref output);
@@ -267,7 +265,6 @@ namespace Garnet.server
             switch (errorFlag)
             {
                 case OperationError.INVALID_TYPE:
-                    return GarnetStatus.WRONGTYPE;
                 case OperationError.NAN_OR_INFINITY:
                     return GarnetStatus.WRONGTYPE;
                 default:
@@ -276,24 +273,21 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(ArgSlice key, out double dbl, double val)
+        public GarnetStatus IncrementByFloat(ArgSlice key, out double output, double val)
         {
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var status = IncrementByFloat(key, out var _output, val, outputBuffer);
+            var _output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var status = IncrementByFloat(key, ref _output, val);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    _ = NumUtils.TryReadDouble(_output.ReadOnlySpan, out dbl);
+                    _ = NumUtils.TryReadDouble(_output.ReadOnlySpan, out output);
                     break;
                 case GarnetStatus.WRONGTYPE:
                 default:
                     var errorFlag = (OperationError)_output.Span[0];
-
-                    if (errorFlag == OperationError.NAN_OR_INFINITY)
-                        dbl = double.NaN;
-                    else
-                        dbl = default;
+                    output = errorFlag == OperationError.NAN_OR_INFINITY ? double.NaN : 0;
                     break;
             }
 

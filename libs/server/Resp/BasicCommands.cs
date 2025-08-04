@@ -772,7 +772,8 @@ namespace Garnet.server
             }
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var status = storageApi.IncrementByFloat(key, out var output, dbl, outputBuffer);
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var status = storageApi.IncrementByFloat(key, ref output, dbl);
 
             switch (status)
             {
