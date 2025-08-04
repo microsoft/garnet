@@ -2105,6 +2105,23 @@ namespace Garnet.test.cluster
             }
         }
 
+        public string ClusterStatus(int[] nodeIndices)
+        {
+            var clusterStatus = "";
+            foreach (var index in nodeIndices)
+                clusterStatus += $"{GetNodeInfo(ClusterNodes(index))}\n";
+
+            static string GetNodeInfo(ClusterConfiguration nodeConfig)
+            {
+                var output = $"[{nodeConfig.Origin}]";
+
+                foreach (var node in nodeConfig.Nodes)
+                    output += $"\n\t{node.Raw}";
+                return output;
+            }
+            return clusterStatus;
+        }
+
         public ClusterConfiguration ClusterNodes(int nodeIndex, ILogger logger = null)
             => ClusterNodes((IPEndPoint)endpoints[nodeIndex], logger);
 
@@ -2947,6 +2964,16 @@ namespace Garnet.test.cluster
                 if (infoItem[0].Item2.Equals("failover-completed"))
                     break;
                 BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForFailoverCompleted));
+            }
+        }
+
+        public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var role = RoleCommand(nodeIndex, logger);
+                if (role.Value.Equals("master")) break;
+                BackOff(cancellationToken: context.cts.Token);
             }
         }
 
