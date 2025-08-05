@@ -672,7 +672,7 @@ namespace Garnet.server
 
                 while (optIx < format.Length)
                 {
-                    char opt = (char) format[optIx++];
+                    char opt = (char)format[optIx++];
 
                     if (!TryGetOptSize(this, opt, format, ref optIx, out int size, out var errOptSizeIndex))
                     {
