@@ -7,6 +7,8 @@ using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 
+using LimitDef = (int offset, int countLimit);
+
 namespace Garnet.server
 {
     /// <summary>
@@ -22,9 +24,9 @@ namespace Garnet.server
             public bool ByScore { get; set; }
             public bool ByLex { get; set; }
             public bool Reverse { get; set; }
-            public (int, int) Limit { get; set; }
-            public bool ValidLimit { get; set; }
             public bool WithScores { get; set; }
+            public bool ValidLimit { get; set; }
+            public LimitDef Limit { get; set; }
         };
 
         private enum SpecialRanges : byte
@@ -215,11 +217,10 @@ namespace Garnet.server
                 var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
                 var valueArray = value.ToArray();
 
-                if (!sortedSetDict.TryGetValue(valueArray, out var key))
+                if (!sortedSetDict.Remove(valueArray, out var key))
                     continue;
 
                 output.Header.result1++;
-                sortedSetDict.Remove(valueArray);
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
 
@@ -588,13 +589,13 @@ namespace Garnet.server
             // Using to list to avoid modified enumerator exception
             foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
             {
-                if (sortedSetDict.Remove(item.Item2, out var key))
+                if (sortedSetDict.Remove(item.Element, out var key))
                 {
-                    sortedSet.Remove((key, item.Item2));
+                    sortedSet.Remove((key, item.Element));
 
-                    UpdateSize(item.Item2, false);
+                    UpdateSize(item.Element, false);
                 }
-                TryRemoveExpiration(item.Item2);
+                TryRemoveExpiration(item.Element);
             }
 
             // Write the number of elements
@@ -937,7 +938,7 @@ namespace Garnet.server
             bool validLimit,
             bool rem,
             out int errorCode,
-            (int, int) limit = default)
+            LimitDef limit = default)
         {
             var elementsInLex = new List<(double, byte[])>();
 
@@ -961,7 +962,7 @@ namespace Garnet.server
 
             if (minValueInfinity == SpecialRanges.InfiniteMax ||
                 maxValueInfinity == SpecialRanges.InfiniteMin ||
-                (validLimit && (limit.Item1 < 0 || limit.Item2 == 0)))
+                (validLimit && (limit.offset < 0 || limit.countLimit == 0)))
             {
                 errorCode = 0;
                 return elementsInLex;
@@ -995,9 +996,8 @@ namespace Garnet.server
 
                     if (rem)
                     {
-                        if (sortedSetDict.TryGetValue(item.Element, out var _key))
+                        if (sortedSetDict.Remove(item.Element, out var _key))
                         {
-                            sortedSetDict.Remove(item.Element);
                             sortedSet.Remove((_key, item.Element));
                             TryRemoveExpiration(item.Element);
 
@@ -1012,8 +1012,8 @@ namespace Garnet.server
                 if (validLimit)
                 {
                     elementsInLex = [.. elementsInLex
-                                        .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                        .Take(limit.Item2 >= 0 ? limit.Item2 : elementsInLex.Count)];
+                                        .Skip(limit.offset > 0 ? limit.offset : 0)
+                                        .Take(limit.countLimit >= 0 ? limit.countLimit : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
@@ -1042,7 +1042,7 @@ namespace Garnet.server
         /// <param name="rem"></param>
         /// <param name="limit"></param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
+        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, LimitDef limit = default)
         {
             if (doReverse)
             {
@@ -1051,8 +1051,8 @@ namespace Garnet.server
             }
 
             List<(double, byte[])> scoredElements = new();
-            if ((validLimit && (limit.Item1 < 0 || limit.Item2 == 0)) ||
-                (sortedSet.Max.Item1 < minValue))
+            if ((validLimit && (limit.offset < 0 || limit.countLimit == 0)) ||
+                (sortedSet.Max.Score < minValue))
             {
                 return scoredElements;
             }
@@ -1060,25 +1060,24 @@ namespace Garnet.server
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
                 if (IsExpired(item.Element)) continue;
-                if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
-                if (minExclusive && item.Item1 == minValue) continue;
+                if (item.Score > maxValue || (maxExclusive && item.Score == maxValue)) break;
+                if (minExclusive && item.Score == minValue) continue;
                 scoredElements.Add(item);
             }
             if (doReverse) scoredElements.Reverse();
             if (validLimit)
             {
                 scoredElements = [.. scoredElements
-                                 .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                 .Take(limit.Item2 >= 0 ? limit.Item2 : scoredElements.Count)];
+                                 .Skip(limit.offset > 0 ? limit.offset : 0)
+                                 .Take(limit.countLimit >= 0 ? limit.countLimit : scoredElements.Count)];
             }
 
             if (rem)
             {
                 foreach (var item in scoredElements.ToList())
                 {
-                    if (sortedSetDict.TryGetValue(item.Item2, out var _key))
+                    if (sortedSetDict.Remove(item.Item2, out var _key))
                     {
-                        sortedSetDict.Remove(item.Item2);
                         sortedSet.Remove((_key, item.Item2));
                         TryRemoveExpiration(item.Item2);
 
