@@ -283,7 +283,7 @@ namespace Garnet.server
             // We have to copy this off, as once we PCall curStackTop could be modified
             var oldStackTop = StackTop;
 
-            LuaStatus res = NativeMethods.PCall(state, args, rets);
+            var res = NativeMethods.PCall(state, args, rets);
 
             if (res != LuaStatus.OK || rets < 0)
             {
