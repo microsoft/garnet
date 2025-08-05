@@ -2971,7 +2971,6 @@ return cjson.encode(nested)");
             var unpackLittleEndianDoubleRes = db.ScriptEvaluate("return tostring(struct.unpack('<d', '\\031\\133\\235\\081\\184\\030\\009\\064'))");
             ClassicAssert.AreEqual(3.14d, double.Parse((string)unpackLittleEndianDoubleRes));
 
-
             var packDoubleRes = (byte[])db.ScriptEvaluate("return struct.pack('d', 3.14)");
             ClassicAssert.True(packDoubleRes.SequenceEqual(new byte[] { 0x1F, 0x85, 0xEB, 0x51, 0xB8, 0x1E, 0x09, 0x40 }));
 
@@ -2980,8 +2979,6 @@ return cjson.encode(nested)");
 
             var packLittleEndianDoubleRes = (byte[])db.ScriptEvaluate("return struct.pack('<d', 3.14)");
             ClassicAssert.True(packLittleEndianDoubleRes.SequenceEqual(new byte[] { 0x1F, 0x85, 0xEB, 0x51, 0xB8, 0x1E, 0x09, 0x40 }));
-
-
 
             var unpackSpaceRes = (int[])db.ScriptEvaluate("return { struct.unpack('B B', '\\001\\002') }");
             ClassicAssert.True(unpackSpaceRes.SequenceEqual([1, 2, 3]));
