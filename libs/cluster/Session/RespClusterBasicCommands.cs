@@ -404,6 +404,12 @@ namespace Garnet.cluster
                     SendAndReset();
             }
 
+            // After each GOSSIP, ensure cluster connections for replication are in a good state
+            if (Server is GarnetServerBase garnetServer)
+            {
+                clusterProvider.replicationManager.EnsureReplication(this, garnetServer.ActiveClusterSessions());
+            }
+
             return true;
         }
 
