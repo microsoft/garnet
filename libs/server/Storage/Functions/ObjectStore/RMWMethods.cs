@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -21,7 +20,6 @@ namespace Garnet.server
             switch (type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
                 case GarnetObjectType.DelIfExpIm:
                     return false;
@@ -58,7 +56,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
@@ -119,29 +117,11 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(0);
-
-                    var optionType = (ExpireOption)input.arg1;
-                    var expireAt = input.arg2 == 1;
-
-                    long expiryTicks;
-                    if (expireAt)
-                    {
-                        expiryTicks = input.header.type == GarnetObjectType.PExpire
-                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
-                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
-                    }
-                    else
-                    {
-                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
-                            ? TimeSpan.FromMilliseconds(expiryValue)
-                            : TimeSpan.FromSeconds(expiryValue);
-                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    }
-
                     var expiryExists = value.Expiration > 0;
-                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
+
+                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
+
+                    return EvaluateObjectExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -231,30 +211,11 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(0);
-
-                    var optionType = (ExpireOption)input.arg1;
-                    var expireAt = input.arg2 == 1;
-
-                    long expiryTicks;
-                    if (expireAt)
-                    {
-                        expiryTicks = input.header.type == GarnetObjectType.PExpire
-                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
-                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
-                    }
-                    else
-                    {
-                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
-                            ? TimeSpan.FromMilliseconds(expiryValue)
-                            : TimeSpan.FromSeconds(expiryValue);
-                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    }
-
                     var expiryExists = value.Expiration > 0;
 
-                    EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
+                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
+
+                    EvaluateObjectExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)

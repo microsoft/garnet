@@ -127,6 +127,10 @@ namespace Garnet.cluster
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetWorkerAddressFromNodeId(remoteNodeId);
 
+            // If address is null or port is not valid, we cannot create a task
+            if (address == null || port <= 0 || ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Failed_To_AddAofSyncTask_UnknownNode))
+                throw new GarnetException($"Failed to create AOF sync task for {remoteNodeId} with address {address} and port {port}");
+
             // Create AofSyncTask
             try
             {
@@ -227,6 +231,10 @@ namespace Garnet.cluster
                 var replicaNodeId = rss.replicaSyncMetadata.originNodeId;
                 var (address, port) = current.GetWorkerAddressFromNodeId(replicaNodeId);
 
+                // If address is null or port is not valid, we cannot create a task
+                if (address == null || port <= 0)
+                    throw new GarnetException($"Failed to create AOF sync task for {replicaNodeId} with address {address} and port {port}");
+
                 try
                 {
                     rss.AddAofSyncTask(new AofSyncTaskInfo(
@@ -247,7 +255,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(ex, "{method} creating AOF sync task for {replicaNodeId} failed", nameof(TryAddReplicationTasks), replicaNodeId);
+                    logger?.LogError(ex, "{method} creating AOF sync task for {replicaNodeId} failed", nameof(TryAddReplicationTasks), replicaNodeId);
                     return false;
                 }
             }
@@ -260,7 +268,7 @@ namespace Garnet.cluster
                 // Fail adding the task if truncation has happened
                 if (startAddress < TruncatedUntil && !clusterProvider.AllowDataLoss)
                 {
-                    logger?.LogWarning("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationTasks), startAddress, TruncatedUntil);
+                    logger?.LogError("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationTasks), startAddress, TruncatedUntil);
                     return false;
                 }
 

@@ -30,7 +30,8 @@ namespace GarnetJSON
         /// <param name="input">The input data.</param>
         /// <param name="writer">The output data.</param>
         /// <returns>Always returns true.</returns>
-        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => true;
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input,
+            ref RespMemoryWriter writer) => true;
 
         /// <summary>
         /// Updates the JSON object with the specified key and input.
@@ -41,7 +42,8 @@ namespace GarnetJSON
         /// <param name="writer">The output data.</param>
         /// <param name="rmwInfo">Additional information for the update.</param>
         /// <returns>True if the update is successful, otherwise false.</returns>
-        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
+        public override bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject,
+            ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             Debug.Assert(jsonObject is GarnetJsonObject);
 
@@ -104,7 +106,8 @@ namespace GarnetJSON
         /// <param name="writer">The output data.</param>
         /// <param name="readInfo">Additional information for the read operation.</param>
         /// <returns>True if the read is successful, otherwise false.</returns>
-        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref RespMemoryWriter writer, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject jsonObject,
+            ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
             Debug.Assert(jsonObject is GarnetJsonObject);
             var garnetJsonObject = jsonObject as GarnetJsonObject;
@@ -135,7 +138,8 @@ namespace GarnetJSON
                         indent = GetNextString(ref input, ref offset);
                         continue;
                     }
-                    else if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.NEWLINE) && offset < parseState.Count)
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.NEWLINE) &&
+                             offset < parseState.Count)
                     {
                         newLine = GetNextString(ref input, ref offset);
                         continue;
@@ -176,6 +180,7 @@ namespace GarnetJSON
                 writer.Realloc(outputArr.Select(x => x.Length).Sum());
                 writer.WriteBulkString(outputArr);
             }
+
             return true;
         }
     }
