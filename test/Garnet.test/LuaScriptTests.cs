@@ -3108,7 +3108,6 @@ return cjson.encode(nested)");
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            // Invalid format for size
             var excFormatString = ClassicAssert.Throws<RedisServerException>(() => db.ScriptEvaluate("return struct.size('s')"));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to format", excFormatString.Message);
 
