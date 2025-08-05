@@ -156,7 +156,8 @@ namespace Garnet.test.cluster
             string luaMemoryLimit = "",
             bool useHostname = false,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false)
+            bool useNativeDeviceLinux = false,
+            int replicaSyncTimeout = 60)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -201,7 +202,8 @@ namespace Garnet.test.cluster
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit,
                 luaTransactionMode: luaTransactionMode,
-                useNativeDeviceLinux: useNativeDeviceLinux);
+                useNativeDeviceLinux: useNativeDeviceLinux,
+                replicaSyncTimeout: replicaSyncTimeout);
 
             foreach (var node in nodes)
                 node.Start();
