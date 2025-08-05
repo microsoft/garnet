@@ -5088,6 +5088,7 @@ namespace Garnet.test
         [TestCase("ZINTERCARD 2 zset1 zset2", 2, Description = "Basic intersection cardinality")]
         [TestCase("ZINTERCARD 3 zset1 zset2 zset3", 1, Description = "Three-way intersection cardinality")]
         [TestCase("ZINTERCARD 2 zset1 zset2 LIMIT 1", 1, Description = "With limit")]
+        [TestCase("ZINTERCARD 2 zset1 zset2 LIMIT 0", 2, Description = "With unlimited limit")]
         public void CanDoZInterCard(string command, int expectedCount)
         {
             using var lightClientRequest = TestUtils.CreateRequest();

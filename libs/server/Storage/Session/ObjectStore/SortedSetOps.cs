@@ -1335,7 +1335,7 @@ namespace Garnet.server
             var status = SortedSetIntersect(keys, null, SortedSetAggregateType.Sum, out var pairs);
             if (status == GarnetStatus.OK && pairs != null)
             {
-                count = limit.HasValue ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
+                count = limit > 0 ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
             }
 
             return status;
