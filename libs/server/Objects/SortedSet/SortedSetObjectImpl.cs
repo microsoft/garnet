@@ -959,7 +959,9 @@ namespace Garnet.server
                 (maxValueExclusive, minValueExclusive) = (minValueExclusive, maxValueExclusive);
             }
 
-            if (minValueInfinity == SpecialRanges.InfiniteMax || maxValueInfinity == SpecialRanges.InfiniteMin)
+            if (minValueInfinity == SpecialRanges.InfiniteMax ||
+                maxValueInfinity == SpecialRanges.InfiniteMin ||
+                (validLimit && (limit.Item1 < 0 || limit.Item2 == 0)))
             {
                 errorCode = 0;
                 return elementsInLex;
@@ -1011,7 +1013,7 @@ namespace Garnet.server
                 {
                     elementsInLex = [.. elementsInLex
                                         .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)];
+                                        .Take(limit.Item2 >= 0 ? limit.Item2 : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
@@ -1048,7 +1050,8 @@ namespace Garnet.server
             }
 
             List<(double, byte[])> scoredElements = new();
-            if (sortedSet.Max.Item1 < minValue)
+            if ((validLimit && (limit.Item1 < 0 || limit.Item2 == 0)) ||
+                (sortedSet.Max.Item1 < minValue))
             {
                 return scoredElements;
             }
@@ -1065,7 +1068,7 @@ namespace Garnet.server
             {
                 scoredElements = [.. scoredElements
                                  .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)];
+                                 .Take(limit.Item2 >= 0 ? limit.Item2 : scoredElements.Count)];
             }
 
             if (rem)
