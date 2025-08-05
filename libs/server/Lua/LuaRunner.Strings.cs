@@ -214,6 +214,7 @@ namespace Garnet.server
                 BadArgDecode = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_decode);
                 BadArgPack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_pack);
                 BadArgUnpack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_unpack);
+                BadArgFormat = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_format);
                 BadArgBOr = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bor);
                 BadArgBAnd = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_band);
                 BadArgBXor = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bxor);
