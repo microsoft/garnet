@@ -97,6 +97,8 @@ namespace Garnet.server
             internal int BadArgPack { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_unpack"/>
             internal int BadArgUnpack { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_format"/>
+            internal int BadArgFormat { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_bor"/>
             internal int BadArgBOr { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_band"/>
