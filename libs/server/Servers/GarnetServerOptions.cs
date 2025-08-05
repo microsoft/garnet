@@ -514,13 +514,13 @@ namespace Garnet.server
         /// 
         /// Attempts will only be made if Primary and Replica are exchanging GOSSIP messages.
         /// </summary>
-        public int ClusterReplicationReestablishmentTimeout;
+        public int ClusterReplicationReestablishmentTimeout = 0;
 
         /// <summary>
         /// If true, a Cluster Replica will load any AOF/Checkpoint data from disk when it starts
         /// and NOT dump it's data until a Primary connects.
         /// </summary>
-        public bool ClusterReplicaResumeWithData;
+        public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
         /// Get the directory name for database checkpoints
