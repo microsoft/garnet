@@ -1047,6 +1047,7 @@ namespace Garnet.server
             if (doReverse)
             {
                 (minValue, maxValue) = (maxValue, minValue);
+                (minExclusive, maxExclusive) = (maxExclusive, minExclusive);
             }
 
             List<(double, byte[])> scoredElements = new();

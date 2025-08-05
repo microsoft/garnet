@@ -4275,6 +4275,11 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 45 LIMIT -1 1");
             expectedResponse = "*0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Exclusions should be reversed too
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board +inf (40", 3);
+            expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
