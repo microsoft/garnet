@@ -638,7 +638,13 @@ namespace Garnet.server
 
             if (numLuaArgs < 2 || !TryGetFormat(this, 1, ref format, out var rentedArray))
             {
-                return LuaWrappedError(1, constStrs.BadArgUnpack);
+                return LuaWrappedError(0, constStrs.BadArgUnpack);
+            }
+
+            // Format is removed from args as reading from the above, here is to check the data is string type
+            if (state.Type(1) != LuaType.String)
+            {
+                return LuaWrappedError(0, constStrs.BadArgUnpack);
             }
 
             try
