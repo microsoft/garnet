@@ -326,8 +326,10 @@ namespace Garnet
                         out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)
                     || !ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg))
                 {
-                    logger?.LogError("Module {0} failed to load with error {1}", modulePath,
-                        Encoding.UTF8.GetString(errorMsg));
+                    if (errorMsg != null)
+                        logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
+                    else
+                        logger?.LogError("Module {0} failed to load with unknown error", modulePath);
                 }
             }
         }
