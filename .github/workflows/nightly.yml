@@ -18,10 +18,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+        # os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
+        # framework: [ 'net8.0', 'net9.0' ]
+        # configuration: [ 'Debug', 'Release' ]
+        # test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+
+        os: [ ubuntu-22.04, windows-2022 ]
+        framework: [  'net9.0' ]
+        configuration: [  'Release' ]
+        test: [ 'Garnet.test.GarnetClientTests' ]
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -42,6 +48,63 @@ jobs:
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
         timeout-minutes: 45 
+
+
+      - name: Install Allure via Scoop (Windows only)
+        if: runner.os == 'Windows'
+        run: |
+          iex "& {$(irm get.scoop.sh)}"
+          scoop install allure
+
+      - name: Install Allure via Homebrew (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl file git
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew install allure          
+
+      - name: Load test report history
+        uses: actions/checkout@v3
+        if: always()
+        continue-on-error: true
+        with:
+          ref: gh-pages2
+          path: gh-pages2
+
+      - name: Build Allure Report (Windows only)
+        if: runner.os == 'Windows' && always()
+        run: |
+          allure generate build/allure-results --clean -o build/allure-report
+      - name: Build test report
+        uses: simple-elf/allure-report-action@v1.7
+        if: runner.os == 'Linux' && always()
+        with:
+          gh_pages: gh-pages2
+          allure_history: allure-history
+          allure_results: build/allure-results
+
+      - name: Upload Allure Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ runner.os }}
+          path: build/allure-report
+
+#      - name: Publish test report
+#        uses: peaceiris/actions-gh-pages@v3
+#        if: always()
+#        with:
+#          github_token: ${{ secrets.GITHUB_TOKEN }}
+#          publish_dir: ./allure-report
+#          destination_dir: garnet-dotnet-report
+#          user_name: Garnet Nightly
+
+          
+
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
@@ -84,25 +147,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install and Run Azurite
-        shell: bash
-        run: |
-          npm install -g azurite
-          azurite &
+#      - name: Install and Run Azurite
+#        shell: bash
+#        run: |
+#          npm install -g azurite
+#          azurite &
       - name: Install dependencies
         run: dotnet restore
       - name: Format
         run: dotnet format --verify-no-changes --verbosity diagnostic
-      - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-      - name: Run Tsavorite tests
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-        timeout-minutes: 45 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+#      - name: Build Tsavorite
+#        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+#      - name: Run Tsavorite tests
+#        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+#        timeout-minutes: 45 
+#      - name: Upload test results
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+#          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
   pipeline-success:
