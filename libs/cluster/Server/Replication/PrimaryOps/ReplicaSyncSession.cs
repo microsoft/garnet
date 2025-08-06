@@ -34,7 +34,7 @@ namespace Garnet.cluster
         readonly CancellationToken token = token;
         readonly CancellationTokenSource cts = new();
         SectorAlignedBufferPool bufferPool = null;
-        readonly SemaphoreSlim semaphore = new(0);
+        readonly SemaphoreSlim signalCompletion = new(0);
 
         public readonly string replicaNodeId = replicaNodeId;
         public readonly string replicaAssignedPrimaryId = replicaAssignedPrimaryId;
@@ -55,7 +55,7 @@ namespace Garnet.cluster
             AofSyncTask = null;
             cts.Cancel();
             cts.Dispose();
-            semaphore?.Dispose();
+            signalCompletion?.Dispose();
             bufferPool?.Free();
         }
 
@@ -590,7 +590,7 @@ namespace Garnet.cluster
                 else
                     device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
             }
-            await semaphore.WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+            await signalCompletion.WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
             return (pbuffer, (int)numBytesToRead);
         }
 
@@ -601,7 +601,7 @@ namespace Garnet.cluster
                 var errorMessage = Tsavorite.core.Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ReplicaSyncSession] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-            semaphore.Release();
+            signalCompletion.Release();
         }
     }
 
