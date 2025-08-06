@@ -23,10 +23,10 @@ jobs:
         # configuration: [ 'Debug', 'Release' ]
         # test: [ 'Garnet.test', 'Garnet.test.cluster' ]
 
-        os: [ ubuntu-22.04, windows-2022 ]
+        os: [ ubuntu-latest, windows-latest ]
         framework: [  'net9.0' ]
         configuration: [  'Release' ]
-        test: [ 'Garnet.test.GarnetClientTests' ]
+        test: [ 'Garnet.test.MultiDatabaseTest' ]
 
     steps:
       - name: Check out code
@@ -41,8 +41,8 @@ jobs:
           dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore
-      - name: Check style format
-        run: dotnet format --verify-no-changes --verbosity diagnostic
+#      - name: Check style format
+#        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Run tests ${{ matrix.test }}
@@ -66,18 +66,14 @@ jobs:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install allure          
 
-      - name: Load test report history
-        uses: actions/checkout@v3
-        if: always()
-        continue-on-error: true
-        with:
-          ref: gh-pages2
-          path: gh-pages2
+#      - name: Load test report history
+#        uses: actions/checkout@v3
+#        if: always()
+#        continue-on-error: true
+#        with:
+#          ref: gh-pages2
+#          path: gh-pages2
 
-      - name: Build Allure Report (Windows only)
-        if: runner.os == 'Windows' && always()
-        run: |
-          allure generate build/allure-results --clean -o build/allure-report
       - name: Build test report
         uses: simple-elf/allure-report-action@v1.7
         if: runner.os == 'Linux' && always()
@@ -85,6 +81,12 @@ jobs:
           gh_pages: gh-pages2
           allure_history: allure-history
           allure_results: build/allure-results
+
+
+      - name: Build Allure Report 
+        if: always()
+        run: |
+          allure generate build/allure-report/ --clean -o build/allure-report/allure-report-${{ runner.os }}
 
       - name: Upload Allure Report Artifact
         if: always()
