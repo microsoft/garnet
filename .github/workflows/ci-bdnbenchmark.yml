@@ -68,6 +68,12 @@ jobs:
           iex "& {$(irm get.scoop.sh)}"
           scoop install allure
 
+      - name: Add Scoop bin to PATH (Windows only)
+        if: runner.os == 'Windows'
+        run: |
+          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
+          allure --version
+
       - name: Install Allure via Homebrew (Linux only)
         if: runner.os == 'Linux' && always()
         run: |
@@ -92,15 +98,6 @@ jobs:
           gh_pages: gh-pages2
           allure_history: allure-history
           allure_results: build/allure-results
-
-      - name: Build test report (Windows)
-        uses: simple-elf/allure-report-action@v1.7
-        if: runner.os == 'Windows' && always()
-        with:
-          gh_pages: gh-pages2
-          allure_history: allure-history
-          allure_results: build/allure-results
-
 
       - name: Build Allure Report 
         if: always()
