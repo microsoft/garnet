@@ -82,7 +82,9 @@ jobs:
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install allure          
+          brew install allure
+          allure --version
+
 
 
       - name: Run BDN.benchmark Perf Test
@@ -91,18 +93,35 @@ jobs:
         continue-on-error: false
 
 
-      - name: Build test report
-        uses: simple-elf/allure-report-action@v1.7
-        if: runner.os == 'Linux' && always()
-        with:
-          gh_pages: gh-pages2
-          allure_history: allure-history
-          allure_results: build/allure-results
+#      - name: Build test report
+#        uses: simple-elf/allure-report-action@v1.7
+#        if: runner.os == 'Linux' && always()
+#        with:
+#          gh_pages: gh-pages2
+#          allure_history: allure-history
+#          allure_results: build/allure-results
 
-      - name: Build Allure Report 
+      - name: Verify and Build Allure Report (Linux)
+        if: runner.os == 'Linux' && always()
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
+
+      - name: Verify Build Allure Report (Windows)
+        if: runner.os == 'Windows' && always()
+        run: |
+          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
+          allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
+
+      - name: Build Allure Report
         if: always()
         run: |
-          allure generate build/allure-report/ --clean -o build/allure-report/allure-report-${{ runner.os }}
+          allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
+
+      - name: Verify Allure Report Output
+        if: always()
+        run: |
+          dir build/allure-report/allure-report-${{ runner.os }}
 
       - name: Upload Allure Report Artifact
         if: always()
