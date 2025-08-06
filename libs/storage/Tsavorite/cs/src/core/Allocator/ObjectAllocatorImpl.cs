@@ -251,40 +251,43 @@ namespace Tsavorite.core
             {
                 // Get the key from the logRecord being closed, and use that to get to the start of the tag chain.
                 var closeLogRecord = CreateLogRecord(closeAddress);
-                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(closeLogRecord.Key));
-                if (!storeBase.FindTag(ref hei))
-                    continue;
-
-                // If the address is in the HashBucketEntry, this will update it; otherwise we will have to traverse the tag chain.
-                if (!hei.UpdateToOnDiskAddress(closeAddress, ClosedDiskTailOffset))
+                if (!closeLogRecord.Info.Invalid)
                 {
-                    // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
-                    for (var scanAddress = hei.entry.Address; scanAddress >= closeAddress; /*incremented in loop*/)
-                    {
-                        // Use GetPhysicalAddress() directly here for speed (we're just updating RecordInfo so don't need the overhead of an ObjectIdMap lookup)
-                        var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
-                        if (logRecord.Info.Valid)
-                        {
-                            if (logRecord.Info.PreviousAddress == closeAddress)
-                            {
-                                logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
-                                break;
-                            }
-                            if (logRecord.Info.PreviousAddress < closeAddress)
-                            {
-                                Debug.Fail("We should have found closeAddress");
-                                break;
-                            }
-                        }
-                        scanAddress += logRecord.GetInlineRecordSizes().allocatedSize;
-                    }
-                }
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(closeLogRecord.Key));
+                    if (!storeBase.FindTag(ref hei))
+                        continue;
 
-                // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
-                // as we saved it in the object's.SerializedSize (and we ignore SerializedSizeIsExact because we know it hasn't changed) or, if it's
-                // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
-                // TODO is MonotonicUpdate needed? The OnPagesClosedWorker page-fragment ordering sequence should guarantee that only one thread at a time will be doing this
-                _ = MonotonicUpdate(ref ClosedDiskTailOffset, closeLogRecord.CalculateExpansion(), out _);
+                    // If the address is in the HashBucketEntry, this will update it; otherwise we will have to traverse the tag chain.
+                    if (!hei.UpdateToOnDiskAddress(closeAddress, ClosedDiskTailOffset))
+                    {
+                        // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
+                        for (var scanAddress = hei.entry.Address; scanAddress >= closeAddress; /*incremented in loop*/)
+                        {
+                            // Use GetPhysicalAddress() directly here for speed (we're just updating RecordInfo so don't need the overhead of an ObjectIdMap lookup)
+                            var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
+                            if (logRecord.Info.Valid)
+                            {
+                                if (logRecord.Info.PreviousAddress == closeAddress)
+                                {
+                                    logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
+                                    break;
+                                }
+                                if (logRecord.Info.PreviousAddress < closeAddress)
+                                {
+                                    Debug.Fail("We should have found closeAddress");
+                                    break;
+                                }
+                            }
+                            scanAddress += logRecord.GetInlineRecordSizes().allocatedSize;
+                        }
+                    }
+
+                    // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
+                    // as we saved it in the object's.SerializedSize (and we ignore SerializedSizeIsExact because we know it hasn't changed) or, if it's
+                    // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
+                    // TODO is MonotonicUpdate needed? The OnPagesClosedWorker page-fragment ordering sequence should guarantee that only one thread at a time will be doing this
+                    _ = MonotonicUpdate(ref ClosedDiskTailOffset, ClosedDiskTailOffset + closeLogRecord.CalculateExpansion(), out _);
+                }
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
                 closeAddress += closeLogRecord.GetInlineRecordSizes().allocatedSize;
@@ -436,21 +439,23 @@ namespace Tsavorite.core
                     // Do not write Invalid records or v+1 records (e.g. during a checkpoint).
                     if (logRecord.Info.Invalid || (logicalAddress >= fuzzyStartLogicalAddress && logRecord.Info.IsInNewVersion))
                     {
+                        // Shrink the expansion for skipped records. We still have to step over the record to get to the next one.
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
-                        _ = MonotonicUpdate(ref FlushedDiskTailOffset, -logRecordSize, out _);
-                        continue;
+                        _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset - logRecordSize, out _);
                     }
+                    else
+                    {
+                        logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
+                        var prevPosition = pinnedMemoryStream.Position;
 
-                    logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
-                    var prevPosition = pinnedMemoryStream.Position;
+                        // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
+                        diskBuffer.Write(in logRecord, FlushedDiskTailOffset);
+                        var streamRecordSize = RoundUp(diskBuffer.TotalWrittenLength, Constants.kRecordAlignment) - prevPosition;
+                        Debug.Assert(streamRecordSize >= logRecordSize, $"Serialized size of record {streamRecordSize} is less than expected record size {logRecordSize}.");
 
-                    // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
-                    diskBuffer.Write(in logRecord, FlushedDiskTailOffset);
-                    var streamRecordSize = RoundUp(diskBuffer.TotalWrittenLength, Constants.kRecordAlignment) - prevPosition;
-                    Debug.Assert(streamRecordSize >= logRecordSize, $"Serialized size of record {streamRecordSize} is less than expected record size {logRecordSize}.");
-
-                    // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
-                    _ = MonotonicUpdate(ref FlushedDiskTailOffset, streamRecordSize - logRecordSize, out _);
+                        // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
+                        _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset - logRecordSize + streamRecordSize, out _);
+                    }
 
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer

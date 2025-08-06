@@ -943,7 +943,7 @@ namespace Tsavorite.core
                 var valueLength = ValueSpan.Length;
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 valueLengthByteGrowth = GetByteCount(valueLength) - valueLengthBytes;
-                keyLengthGrowth = objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Length - ObjectIdMap.ObjectIdSize;
+                valueLengthGrowth = objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Length - ObjectIdMap.ObjectIdSize;
             }
             else
             {
@@ -956,8 +956,8 @@ namespace Tsavorite.core
 
             // The actual expansion is relative to allocatedSize (that is what LogicalAddresses are based on).
             var growth = keyLengthByteGrowth + keyLengthGrowth + valueLengthByteGrowth + valueLengthGrowth;
-            var expansion = RoundUp(growth, Constants.kRecordAlignment) - GetInlineRecordSizes().allocatedSize;
-            Debug.Assert((expansion & (Constants.kRecordAlignment - 1)) == 0, $"Unaligned record expansion {expansion}");
+            var (actualSize, allocatedSize) = GetInlineRecordSizes();
+            var expansion = RoundUp(actualSize + growth - allocatedSize, Constants.kRecordAlignment);
             return expansion;
         }
 

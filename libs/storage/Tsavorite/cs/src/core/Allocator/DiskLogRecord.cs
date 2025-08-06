@@ -212,7 +212,7 @@ namespace Tsavorite.core
                 Debug.Assert(keyOverflow.IsEmpty, "Must have only one of keyBuffer or keyOverflow");
                 this.keyBuffer = keyBuffer;     // Transfer ownership to us
                 keyBuffer = default;
-                keySpan = PinnedSpanByte.FromPinnedPointer(keyBuffer.GetValidPointer(), keyBuffer.required_bytes);
+                keySpan = PinnedSpanByte.FromPinnedSpan(this.keyBuffer.RequiredSpan);
                 recordInfo.SetKeyIsInline();
             }
             else
@@ -223,25 +223,25 @@ namespace Tsavorite.core
                 recordInfo.SetKeyIsOverflow();
             }
 
-            if (valueObject is not null)
-            {
-                Debug.Assert(valueBuffer is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
-                valueOverflowOrObject = valueObject;
-                recordInfo.SetValueIsObject();
-            }
             if (valueBuffer is not null)
             {
                 Debug.Assert(valueObject is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
                 recordOrValueBuffer = valueBuffer;     // Transfer ownership to us
                 valueBuffer = default;
-                valueSpan = PinnedSpanByte.FromPinnedPointer(valueBuffer.GetValidPointer(), valueBuffer.required_bytes);
+                valueSpan = PinnedSpanByte.FromPinnedSpan(recordOrValueBuffer.RequiredSpan);
                 recordInfo.SetValueIsInline();
+            }
+            else if (valueObject is not null)
+            {
+                Debug.Assert(valueBuffer is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
+                valueOverflowOrObject = valueObject;
+                recordInfo.SetValueIsObject();
             }
             else
             {
                 Debug.Assert(!valueOverflow.IsEmpty, "Must have valueBuffer, valueObject, or valueOverflow");
                 Debug.Assert(valueObject is null && valueBuffer is null, "Must have only one of valueBuffer, valueOverflow, or valueObject");
-                valueOverflowOrObject = valueOverflow;
+                valueOverflowOrObject = valueOverflow.Data;     // *not* the OverflowByteArray
                 recordInfo.SetValueIsOverflow();
             }
             this.eTag = Info.HasETag ? eTag : LogRecord.NoETag;
@@ -474,7 +474,7 @@ namespace Tsavorite.core
             }
             else
             {
-                valueOverflowOrObject = logRecord.GetValueOverflow();
+                valueOverflowOrObject = logRecord.GetValueOverflow().Data;  // *not* the OverflowByteArray
                 recordInfo.SetValueIsOverflow();
             }
 

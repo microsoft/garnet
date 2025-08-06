@@ -26,6 +26,10 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
 
+            var storeFunctions = TestContext.CurrentContext.Test.MethodName == nameof(ObjectDiskWriteReadLarge)
+                ? StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordDisposer.Instance)
+                : StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance);
+
             store = new(new()
             {
                 IndexSize = 1L << 13,
@@ -33,7 +37,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
+            }, storeFunctions
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -49,7 +53,7 @@ namespace Tsavorite.test
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
-        public void ObjectInMemWriteRead()
+        public void ObjectInMemWriteReadUpsert()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
@@ -67,7 +71,7 @@ namespace Tsavorite.test
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
-        public void ObjectInMemWriteRead2()
+        public void ObjectInMemWriteReadRMW()
         {
             using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
@@ -168,6 +172,7 @@ namespace Tsavorite.test
             }
 
             // Update first 100 using RMW from storage
+            var numPendingUpdates = 0;
             for (int i = 0; i < 100; i++)
             {
                 var keyStruct = new TestObjectKey { key = i };
@@ -175,9 +180,14 @@ namespace Tsavorite.test
                 input = new TestObjectInput { value = 1 };
                 status = bContext.RMW(key, ref input, Empty.Default);
                 if (status.IsPending)
+                {
+                    numPendingUpdates++;
                     _ = bContext.CompletePending(true);
+                }
             }
+            Assert.That(numPendingUpdates, Is.EqualTo(100));
 
+            var numPendingReads = 0;
             for (int i = 0; i < 2000; i++)
             {
                 var output = new TestObjectOutput();
@@ -187,15 +197,16 @@ namespace Tsavorite.test
 
                 status = bContext.Read(key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
-                    (status, output) = bContext.GetSinglePendingResult();
-                else
                 {
-                    if (i is < 100 or >= 1900)
-                        ClassicAssert.AreEqual(value.value + 1, output.value.value);
-                    else
-                        ClassicAssert.AreEqual(value.value, output.value.value);
+                    numPendingReads++;
+                    (status, output) = bContext.GetSinglePendingResult();
                 }
+                if (i is < 100 or >= 1900)
+                    ClassicAssert.AreEqual(value.value + 1, output.value.value);
+                else
+                    ClassicAssert.AreEqual(value.value, output.value.value);
             }
+            Assert.That(numPendingReads, Is.GreaterThanOrEqualTo(numPendingUpdates));
         }
 
         public enum SerializedSizeMode { SerSizeExact, SerSizeInexact };
@@ -213,6 +224,8 @@ namespace Tsavorite.test
             using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
             var valueSize = (int)serializeValueSize;
             const int numRec = 3;
             for (int ii = 0; ii < numRec; ii++)
@@ -221,7 +234,7 @@ namespace Tsavorite.test
                 var key = SpanByte.FromPinnedVariable(ref key1Struct);
                 var value = new TestLargeObjectValue (valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializedSizeMode.SerSizeExact);
                 new Span<byte>(value.value).Fill(0x42);
-                _ = bContext.Upsert(key, value, Empty.Default);
+                _ = bContext.Upsert(key, ref input, value, ref output);
             }
 
             // Test before and after the flush
@@ -242,9 +255,9 @@ namespace Tsavorite.test
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult();
 
-                    Assert.That(output.value.value.Length, Is.EqualTo(valueSize + (ii * 4096)));
-                    foreach (var element in new ReadOnlySpan<byte>(output.value.value))
-                        Assert.That(element, Is.EqualTo(0x42));
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)));
+                    var numLongs = output.valueObject.value.Length % 8;
+                    Assert.That(new ReadOnlySpan<byte>(output.valueObject.value).ContainsAnyExcept((byte)0x42), Is.False);
                 }
             }
         }
@@ -277,13 +290,14 @@ namespace Tsavorite.test
                 var output = new TestLargeObjectOutput();
                 var keyStruct = new TestObjectKey { key = ii };
                 var key = SpanByte.FromPinnedVariable(ref keyStruct);
-                
+
+                input.expectedSpanLength = valueSize * (ii + 1);
                 var status = bContext.Read(key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                     (status, output) = bContext.GetSinglePendingResult();
 
-                Assert.That(output.value.value.Length, Is.EqualTo(valueSize * (ii + 1)));
-                Assert.That(new ReadOnlySpan<byte>(output.value.value).SequenceEqual(new ReadOnlySpan<byte>(valueBuffer).Slice(0, output.value.value.Length)));
+                Assert.That(output.valueArray.Length, Is.EqualTo(valueSize * (ii + 1)));
+                Assert.That(new ReadOnlySpan<byte>(output.valueArray).SequenceEqual(new ReadOnlySpan<byte>(valueBuffer).Slice(0, output.valueArray.Length)));
             }
         }
     }

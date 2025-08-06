@@ -21,12 +21,19 @@ namespace Tsavorite.core
 
         internal readonly bool IsEmpty => Data is null;
 
-        readonly int Offset => Unsafe.As<byte, ushort>(ref Data[0]) + PrefixSize;
+        readonly int StartOffset => Unsafe.As<byte, ushort>(ref Data[0]) + PrefixSize;
 
-        internal readonly int Length => Data.Length - Offset - Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
+        readonly int EndOffset => Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
 
-        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Data.AsSpan().Slice(Offset, Length);
-        internal readonly Span<byte> Span => Data.AsSpan().Slice(Offset, Length);
+        internal readonly int Length => Data.Length - StartOffset - EndOffset;
+
+        /// <summary>Span of data between offsets</summary>
+        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Data.AsSpan().Slice(StartOffset, Length);
+        /// <summary>Span of data between offsets</summary>
+        internal readonly Span<byte> Span => Data.AsSpan().Slice(StartOffset, Length);
+
+        /// <summary>Span of all data, including before and after offsets; this is for aligned Read from the device.</summary>
+        internal readonly Span<byte> AlignedReadSpan => Data.AsSpan().Slice(PrefixSize);
 
         /// <summary>Construct an <see cref="OverflowByteArray"/> from a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/>.</summary>
         internal OverflowByteArray(byte[] data) => Data = data;
@@ -35,8 +42,10 @@ namespace Tsavorite.core
         {
             Debug.Assert(startOffset <= ushort.MaxValue, "startOffset must be less than or equal to ushort.MaxValue");
             Debug.Assert(endOffset <= ushort.MaxValue, "endOffset must be less than or equal to ushort.MaxValue");
+
+            // Allocate with enough extra space for the metadata (offset from start and end)
             Data = !zeroInit 
-                ? GC.AllocateUninitializedArray<byte>(length) 
+                ? GC.AllocateUninitializedArray<byte>(length + (sizeof(ushort) * 2)) 
                 : (new byte[length + (sizeof(ushort) * 2)]);
             Unsafe.As<byte, ushort>(ref Data[0]) = (ushort)startOffset;
             Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]) = (ushort)endOffset;

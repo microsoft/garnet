@@ -67,6 +67,17 @@ namespace Tsavorite.core
             return value;
         }
 
+        /// <summary>Read var-length bytes in the given word. Used for in-memory <see cref="LogRecord"/> and limited to 3-byte keys and 4-byte values
+        ///     which combine with the indicator byte to fit into a 'long'. The shift operations are faster than the pointer-based alternative implementation
+        ///     used for disk-image generation, which has the data expanded inline so may have 4-byte keys and 8-byte values.</summary>
+        /// <param name="word">The word being queried</param>
+        /// <param name="precedingNumBytes">If we are querying for value, this is the number of bytes in the key; otherwise it is 0</param>
+        /// <param name="targetNumBytes">The number of bytes in the target (key or value)</param>
+        /// <remark>This assumes little-endian</remark>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int ReadVarbyteLengthInWord(long word, int precedingNumBytes, int targetNumBytes)
+            => (int)(word >> ((1 + precedingNumBytes) * 8) & ((1L << targetNumBytes * 8) - 1));
+
         /// <summary>Write var-length bytes at the given location.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void WriteVarbyteLength(long value, int numBytes, byte* ptrToFirstByte)
@@ -77,6 +88,21 @@ namespace Tsavorite.core
                 value >>= 8;
             }
             Debug.Assert(value == 0, "len too short");
+        }
+
+        /// <summary>Write var-length bytes into the given word. Used for in-memory <see cref="LogRecord"/> and limited to 3-byte keys and 4-byte values
+        ///     which combine with the indicator byte to fit into a 'long'. The shift operations are faster than the pointer-based alternative implementation
+        ///     used for disk-image generation, which has the data expanded inline so may have 4-byte keys and 8-byte values.</summary>
+        /// <param name="word">The word being updated</param>
+        /// <param name="value">The value being set into the word</param>
+        /// <param name="precedingNumBytes">If we are setting the value, this is the number of bytes in the key; otherwise it is 0</param>
+        /// <param name="targetNumBytes">The number of bytes in the target (key or value)</param>
+        /// <remark>This assumes little-endian</remark>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void WriteVarbyteLengthInWord(ref long word, int value, int precedingNumBytes, int targetNumBytes)
+        {
+            int shift = (1 + precedingNumBytes) * 8;
+            word = (word & ~(((1L << targetNumBytes * 8) - 1) << shift)) | ((long)value << shift);
         }
 
         internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
@@ -242,8 +268,8 @@ namespace Tsavorite.core
             var indicatorByte = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | hasFillerBit);
             *ptr++ = indicatorByte;
 
-            WriteVarbyteLength(keyLength, keyLengthBytes, ptr);
-            WriteVarbyteLength(valueLength, valueLengthBytes, ptr + keyLengthBytes);
+            WriteVarbyteLengthInWord(ref word, keyLength, precedingNumBytes: 0, keyLengthBytes);
+            WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             return word;
         }
 
@@ -260,8 +286,8 @@ namespace Tsavorite.core
             Debug.Assert(keyLengthBytes <= 3, "Inline keyLengthBytes limit exceeded");
             Debug.Assert(valueLengthBytes <= 4, "Inline valueLengthBytes limit exceeded");
 
-            var keyLength = (int)ReadVarbyteLength(keyLengthBytes, ptr);
-            var valueLength = (int)ReadVarbyteLength(valueLengthBytes, ptr + keyLengthBytes);
+            var keyLength = ReadVarbyteLengthInWord(*(long*)ptr, precedingNumBytes: 0, keyLengthBytes);
+            var valueLength = ReadVarbyteLengthInWord(*(long*)ptr, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             return (keyLength, valueLength, hasFiller);
         }
 
@@ -273,8 +299,7 @@ namespace Tsavorite.core
         {
             // Mask off the filler bit; we'll reset it on return.
             var word = *(long*)indicatorAddress & ~kHasFillerBitMask;
-            var ptr = (byte*)&word;
-            WriteVarbyteLength(valueLength, valueLengthBytes, ptr + 1 + keyLengthBytes);
+            WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             *(long*)indicatorAddress = word | hasFillerBit;
         }
     }

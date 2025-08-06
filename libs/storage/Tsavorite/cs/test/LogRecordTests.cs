@@ -97,7 +97,7 @@ namespace Tsavorite.test.LogRecordTests
             var inputValueLength = 1 << 8 - 1;
             byte* keyPtr, valuePtr;
 
-            // Test 1-2 byte valueLengthByte boundary with 1-keyLengthByte key
+            // Test 1- and 2-byte valueLengthByte boundary with 1-keyLengthByte key
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(1));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out int keyLengthBytes, out int valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(1));
@@ -110,8 +110,8 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(valueLengthBytes, Is.EqualTo(2));
             VerifyKeyAndValue();
 
-            // Test 2-3 byte valueLengthByte boundary with 2-keyLengthByte key
-            inputKeyLength = inputValueLength = 1 << 16 - 1;
+            // Test 2- and 3-byte valueLengthByte boundary with 2-keyLengthByte key
+            inputKeyLength = inputValueLength = (1 << 16) - 1;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(2));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(2));
@@ -119,28 +119,28 @@ namespace Tsavorite.test.LogRecordTests
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 16;
-            Assert.That(GetByteCount(1 << 16), Is.EqualTo(3));
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
-            // Test 3-4 byte valueLengthByte boundary with 3-keyLengthByte key
-            inputKeyLength = inputValueLength = 1 << 24 - 1;
-            Assert.That(GetByteCount(1 << 24 - 1), Is.EqualTo(3));
+            // Test 3- and 4-byte valueLengthByte boundary with 3-keyLengthByte key
+            inputKeyLength = inputValueLength = (1 << 24) - 1;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(3));
             Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 24;
-            Assert.That(GetByteCount(1 << 24), Is.EqualTo(4));
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(4));
             VerifyKeyAndValue();
 
             // Test max ValueLength
             inputValueLength = int.MaxValue;
-            Assert.That(GetByteCount(int.MaxValue), Is.EqualTo(4));
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(4));
             VerifyKeyAndValue();
@@ -156,6 +156,25 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That((long)keyLengthPtr, Is.EqualTo((long)(ptr + 1)));
                 Assert.That((long)valuePtr, Is.EqualTo((long)(keyPtr + outputKeyLength)));
                 Assert.That((long)valueLengthPtr, Is.EqualTo((long)(keyLengthPtr + keyLengthBytes)));
+
+                // Now test the word-based forms for in-memory use only
+                if (inputValueLength <= int.MaxValue)
+                {
+                    // First verify reading from the pointer-update version.
+                    long word = *(long*)indicatorAddress;
+                    var keyLength2 = ReadVarbyteLengthInWord(word, precedingNumBytes: 0, keyLengthBytes);
+                    var valueLength2 = ReadVarbyteLengthInWord(word, keyLengthBytes, valueLengthBytes);
+                    Assert.That(keyLength2, Is.EqualTo(inputKeyLength));
+                    Assert.That(valueLength2, Is.EqualTo(inputValueLength));
+
+                    word = 0x7171717171717171;  // Initialize with a bit pattern to mask off
+                    WriteVarbyteLengthInWord(ref word, inputKeyLength, precedingNumBytes: 0, keyLengthBytes);                   // Write key
+                    WriteVarbyteLengthInWord(ref word, inputValueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);  // Write value
+                    keyLength2 = ReadVarbyteLengthInWord(word, precedingNumBytes: 0, keyLengthBytes);
+                    valueLength2 = ReadVarbyteLengthInWord(word, precedingNumBytes: keyLengthBytes, valueLengthBytes);
+                    Assert.That(keyLength2, Is.EqualTo(inputKeyLength));
+                    Assert.That(valueLength2, Is.EqualTo(inputValueLength));
+                }
             }
         }
 

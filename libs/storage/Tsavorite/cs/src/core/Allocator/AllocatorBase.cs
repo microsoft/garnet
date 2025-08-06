@@ -1885,8 +1885,8 @@ namespace Tsavorite.core
                 // Note: logicalAddress is actually physicalAddress here, with the OnDisk AddressType; there can't be fixed pages for expanded records.
                 // TODO: move this "if" to an IAllocator function call to do the DiskStreamReadBuffer.Read().
                 DiskStreamReadBuffer<TStoreFunctions>.ReadParameters readParams = IsObjectAllocator
-                    ? new(bufferPool, PageSize, device.SectorSize, ctx.logicalAddress, storeFunctions)
-                    : new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, ctx.logicalAddress, storeFunctions);
+                    ? new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions)
+                    : new(bufferPool, PageSize, device.SectorSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions);
                 var readBuffer = new DiskStreamReadBuffer<TStoreFunctions>(in readParams, device, AsyncSimpleReadPageCallback);
                 if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord))
                 {

@@ -248,7 +248,7 @@ namespace Tsavorite.core
             ptr += keyByteCount;
             WriteVarbyteLength(valueLength, valueByteCount, ptr);
             ptr += valueByteCount;
-            currentPosition += (int)(ptr - (BufferPointer + currentPosition));
+            currentPosition = (int)(ptr - BufferPointer);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -278,29 +278,21 @@ namespace Tsavorite.core
             var dataStart = 0;
             while (data.Length - dataStart > 0)
             {
-                // If it won't all fit in the remaining buffer, write the first part that will (that may be a full buffer, if it's a multi-buffer span).
-                if (data.Length - dataStart > RemainingCapacity - lengthSpaceReserve)
-                {
-                    Debug.Assert(RemainingCapacity > 0, "RemainingCapacity == 0 should have already triggered an OnChunkComplete call, which would have reset the buffer");
+                Debug.Assert(RemainingCapacity - lengthSpaceReserve > 0, "RemainingCapacity  - lengthSpaceReserve == 0 should have already triggered an OnChunkComplete call, which would have reset the buffer");
 
-                    // Write the part that fits.
-                    var chunk = data.Slice(dataStart, RemainingCapacity);
-                    chunk.CopyTo(RemainingSpan);
-                    dataStart += RemainingCapacity;
-                    currentPosition += RemainingCapacity;
+                // If it won't all fit in the remaining buffer, write as much as will.
+                var chunkLength = data.Length - dataStart;
+                if (chunkLength > RemainingCapacity - lengthSpaceReserve)
+                    chunkLength = RemainingCapacity - lengthSpaceReserve;
+
+                var chunk = data.Slice(dataStart, chunkLength);
+                chunk.CopyTo(RemainingSpan);
+                dataStart += chunk.Length;
+                currentPosition += chunk.Length;
+
+                // See if we're at the end of the buffer.
+                if (RemainingCapacity - lengthSpaceReserve == 0)
                     OnChunkComplete(lengthSpaceReserve);
-                }
-
-                // If the remaining data fits in the remaining buffer, copy it and return.
-                if (data.Length - dataStart <= RemainingCapacity)
-                {
-                    // Copy the partial chunk.
-                    var chunk = data.Slice(dataStart);
-                    Debug.Assert(chunk.Length <= RemainingCapacity, $"chunk.Length {chunk.Length} > RemainingCapacity {RemainingCapacity}");
-                    chunk.CopyTo(RemainingSpan);
-                    currentPosition += chunk.Length;
-                    return;
-                }
             }
         }
 
@@ -338,7 +330,6 @@ namespace Tsavorite.core
             // no continuation bit; that's fine, just a wasted int we can't avoid.
             if (valueLengthPosition != NoPosition)
             {
-                Debug.Assert(currentPosition == SectorSize, $"currentPosition {currentPosition} must be at the end of the first sector afte OnChunkComplete for chunk-chaining.");
                 valueLengthPosition = currentPosition - sizeof(int);
                 valueDataStartPosition = currentPosition;
                 
@@ -490,7 +481,7 @@ namespace Tsavorite.core
         {
             // The buffer is aligned to sector size, which will be a multiple of kRecordAlignment, so this should always be true.
             var newCurrentPosition = RoundUp(currentPosition, Constants.kRecordAlignment);
-            Debug.Assert(newCurrentPosition < RemainingCapacity);
+            Debug.Assert(newCurrentPosition < buffer.AlignedTotalCapacity);
 
             var alignmentIncrease = newCurrentPosition - currentPosition;
             if (alignmentIncrease > 0)

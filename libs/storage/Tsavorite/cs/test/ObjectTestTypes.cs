@@ -244,18 +244,15 @@ namespace Tsavorite.test
 
     public class TestLargeObjectOutput
     {
-        public TestLargeObjectValue value;
+        public TestLargeObjectValue valueObject;
+        public byte[] valueArray;
     }
 
     public class TestLargeObjectFunctions : SessionFunctionsBase<TestLargeObjectInput, TestLargeObjectOutput, Empty>
     {
         public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestLargeObjectInput input, ref TestLargeObjectOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-            ClassicAssert.IsTrue(status.Found);
-            for (int i = 0; i < output.value.value.Length; i++)
-            {
-                ClassicAssert.AreEqual((byte)(output.value.value.Length + i), output.value.value[i]);
-            }
+            Assert.That(status.Found, Is.True);
         }
 
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestLargeObjectInput input, ref TestLargeObjectOutput output, ref ReadInfo readInfo)
@@ -268,16 +265,18 @@ namespace Tsavorite.test
                 case TestValueStyle.Inline:
                     Assert.That(srcLogRecord.Info.ValueIsInline, Is.True);
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(input.expectedSpanLength));
+                    output.valueArray = srcLogRecord.ValueSpan.ToArray();
                     break;
                 case TestValueStyle.Overflow:
                     Assert.That(srcLogRecord.Info.ValueIsOverflow, Is.True);
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(input.expectedSpanLength));
+                    output.valueArray = srcLogRecord.ValueSpan.ToArray();
                     break;
                 case TestValueStyle.Object:
                     Assert.That(srcLogRecord.Info.ValueIsObject, Is.True);
                     break;
             }
-            output.value = (TestLargeObjectValue)srcLogRecord.ValueObject;
+            output.valueObject = srcLogRecord.Info.ValueIsObject ? (TestLargeObjectValue)srcLogRecord.ValueObject : default;
             return true;
         }
 
@@ -285,7 +284,7 @@ namespace Tsavorite.test
         {
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
-            output.value = (TestLargeObjectValue)logRecord.ValueObject;
+            output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
             return true;
         }
 
@@ -293,7 +292,7 @@ namespace Tsavorite.test
         {
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
-            output.value = (TestLargeObjectValue)logRecord.ValueObject;
+            output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
             return true;
         }
 
