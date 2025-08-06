@@ -28,7 +28,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON node to evaluate.</param>
         /// <param name="settings">The settings to use for JSON selection.</param>
         /// <returns>An enumerable collection of matching JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             if (Expression.IsMatch(root, current, settings))
             {
@@ -57,6 +58,7 @@ namespace GarnetJSON.JSONPath
                         {
                             yield return jsonNode;
                         }
+
                         stack.Push(enumerator);
 
                         if (jsonNode is JsonArray innerArr)
@@ -87,7 +89,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The collection of current JSON nodes to evaluate.</param>
         /// <param name="settings">The settings to use for JSON selection.</param>
         /// <returns>An enumerable collection of matching JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             return current.SelectMany(x => ExecuteFilter(root, x, settings));
         }

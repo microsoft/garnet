@@ -132,14 +132,14 @@ namespace Garnet.test.cluster
         public IPEndPoint[] GetEndpointsWithout(IPEndPoint endPoint) =>
             [.. endpoints.Select(x => (IPEndPoint)x).Where(x => x.Port != endPoint.Port || x.Address != endPoint.Address)];
 
-        public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null)
+        public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null, CommandFlags flags = CommandFlags.None)
         {
             if (!skipLogging)
                 logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, string.Join(' ', args));
             try
             {
                 var server = GetServer(endPoint);
-                var resp = server.Execute(cmd, args);
+                var resp = server.Execute(cmd, args, flags: flags);
                 return resp;
             }
             catch (Exception ex)
@@ -587,6 +587,9 @@ namespace Garnet.test.cluster
             this.endpoints = endpoints;
             this.certificates = certificates;
         }
+
+        public int HashSlot(RedisKey key)
+        => redis.HashSlot(key);
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
@@ -2881,12 +2884,14 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
+        public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
             long primaryReplicationOffset;
             long secondaryReplicationOffset1;
             while (true)
             {
+                cancellation.ThrowIfCancellationRequested();
+
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
@@ -2964,6 +2969,16 @@ namespace Garnet.test.cluster
                 if (infoItem[0].Item2.Equals("failover-completed"))
                     break;
                 BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForFailoverCompleted));
+            }
+        }
+
+        public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var role = RoleCommand(nodeIndex, logger);
+                if (role.Value.Equals("master")) break;
+                BackOff(cancellationToken: context.cts.Token);
             }
         }
 

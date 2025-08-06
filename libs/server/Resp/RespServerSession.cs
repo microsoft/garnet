@@ -119,6 +119,8 @@ namespace Garnet.server
 
         readonly ILogger logger = null;
 
+        IGarnetServer server;
+
         /// <summary>
         /// Clients must enable asking to make node respond to requests on slots that are being imported.
         /// </summary>
@@ -129,7 +131,19 @@ namespace Garnet.server
         ///
         /// It is not guaranteed to be set.
         /// </summary>
-        public IGarnetServer Server { get; set; }
+        public IGarnetServer Server
+        {
+            get => server;
+            set
+            {
+                server = value;
+                if (clusterSession is not null)
+                {
+                    clusterSession.Server = value;
+                }
+            }
+        }
+
 
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
@@ -758,8 +772,8 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
-                RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.EXPIREAT => NetworkEXPIRE(RespCommand.EXPIREAT, ref storageApi),
+                RespCommand.PEXPIREAT => NetworkEXPIRE(RespCommand.PEXPIREAT, ref storageApi),
                 RespCommand.DUMP => NetworkDUMP(ref storageApi),
                 RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 

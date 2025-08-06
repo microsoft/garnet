@@ -273,16 +273,16 @@ namespace Garnet.server
         /// <param name="val"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(ArgSlice key, out ArgSlice output, double val);
+        GarnetStatus IncrementByFloat(ArgSlice key, ref ArgSlice output, double val);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="outputDbl"></param>
+        /// <param name="output"></param>
         /// <param name="val"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(ArgSlice key, out double outputDbl, double val);
+        GarnetStatus IncrementByFloat(ArgSlice key, out double output, double val);
         #endregion
 
         #region DELETE
@@ -1093,12 +1093,10 @@ namespace Garnet.server
         /// Sets an expiration time on a hash field.
         /// </summary>
         /// <param name="key">The key of the hash.</param>
-        /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
-        /// <param name="expireOption">The expiration option to apply.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus HashExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Persists the specified hash key, removing any expiration time set on it.

@@ -16,7 +16,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON node.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of JSON nodes that match the filter.</returns>
-        public abstract IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings);
+        public abstract IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings);
 
         /// <summary>
         /// Executes the filter on a collection of JSON nodes.
@@ -25,7 +26,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The collection of current JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of JSON nodes that match the filter.</returns>
-        public abstract IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings);
+        public abstract IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings);
 
         /// <summary>
         /// Tries to get a JSON node at the specified index from a JSON array.
@@ -41,24 +43,27 @@ namespace GarnetJSON.JSONPath
             jsonNode = default;
             if (t is JsonArray a)
             {
-                if (a.Count <= index)
+                int indexToUse = index < 0 ? a.Count + index : index;
+                if (indexToUse < 0 || a.Count <= indexToUse)
                 {
                     if (errorWhenNoMatch)
                     {
-                        throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Index {0} outside the bounds of JArray.", index));
+                        throw new JsonException(string.Format(CultureInfo.InvariantCulture,
+                            "Index {0} outside the bounds of JArray.", index));
                     }
 
                     return false;
                 }
 
-                jsonNode = a[index];
+                jsonNode = a[indexToUse];
                 return true;
             }
             else
             {
                 if (errorWhenNoMatch)
                 {
-                    throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Index {0} not valid on {1}.", index, t?.GetType().Name));
+                    throw new JsonException(string.Format(CultureInfo.InvariantCulture, "Index {0} not valid on {1}.",
+                        index, t?.GetType().Name));
                 }
 
                 return false;
