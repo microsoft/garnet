@@ -321,13 +321,13 @@ namespace Garnet
 
                 var modulePath = moduleCSData[0];
                 var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
-                if (ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true))
+
+                if (!ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies,
+                        out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)
+                    || !ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg))
                 {
-                    ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
-                }
-                else
-                {
-                    logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
+                    logger?.LogError("Module {0} failed to load with error {1}", modulePath,
+                        Encoding.UTF8.GetString(errorMsg));
                 }
             }
         }
