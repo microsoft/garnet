@@ -355,6 +355,16 @@ namespace Garnet.server
         public int ReplicaDisklessSyncDelay = 5;
 
         /// <summary>
+        /// Timeout in seconds for replication sync operations
+        /// </summary>
+        public int ReplicaSyncTimeout = 5;
+
+        /// <summary>
+        /// Timeout in seconds for replication attach operation
+        /// </summary>
+        public int ReplicaAttachTimeout = 60;
+
+        /// <summary>
         /// AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.
         /// </summary>
         public string ReplicaDisklessSyncFullSyncAofThreshold = string.Empty;
@@ -495,6 +505,22 @@ namespace Garnet.server
         /// Gets the base directory for storing object-store checkpoints
         /// </summary>
         public string ObjectStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "ObjectStore");
+
+        /// <summary>
+        /// Seconds between attempts to re-establish replication between a Primary and Replica if the replication connection
+        /// has faulted.
+        /// 
+        /// 0 disables.
+        /// 
+        /// Attempts will only be made if Primary and Replica are exchanging GOSSIP messages.
+        /// </summary>
+        public int ClusterReplicationReestablishmentTimeout = 0;
+
+        /// <summary>
+        /// If true, a Cluster Replica will load any AOF/Checkpoint data from disk when it starts
+        /// and NOT dump it's data until a Primary connects.
+        /// </summary>
+        public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
         /// Get the directory name for database checkpoints
