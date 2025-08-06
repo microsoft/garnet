@@ -26,7 +26,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [  'net9.0' ]
         configuration: [  'Release' ]
-        test: [ 'Garnet.test.MultiDatabaseTest' ]
+        test: [ 'Garnet.test.Resp' ]
 
     steps:
       - name: Check out code
@@ -51,13 +51,13 @@ jobs:
 
 
       - name: Install Allure via Scoop (Windows only)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && always()
         run: |
           iex "& {$(irm get.scoop.sh)}"
           scoop install allure
 
       - name: Install Allure via Homebrew (Linux only)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && always()
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential curl file git
