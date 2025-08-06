@@ -7,7 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 
-using LimitDef = (int offset, int countLimit);
+using Limit = (int offset, int count);
 
 namespace Garnet.server
 {
@@ -26,7 +26,7 @@ namespace Garnet.server
             public bool Reverse { get; set; }
             public bool WithScores { get; set; }
             public bool ValidLimit { get; set; }
-            public LimitDef Limit { get; set; }
+            public Limit Limit { get; set; }
         };
 
         private enum SpecialRanges : byte
@@ -938,7 +938,7 @@ namespace Garnet.server
             bool validLimit,
             bool rem,
             out int errorCode,
-            LimitDef limit = default)
+            Limit limit = default)
         {
             var elementsInLex = new List<(double, byte[])>();
 
@@ -962,7 +962,7 @@ namespace Garnet.server
 
             if (minValueInfinity == SpecialRanges.InfiniteMax ||
                 maxValueInfinity == SpecialRanges.InfiniteMin ||
-                (validLimit && (limit.offset < 0 || limit.countLimit == 0)))
+                (validLimit && (limit.offset < 0 || limit.count == 0)))
             {
                 errorCode = 0;
                 return elementsInLex;
@@ -1013,7 +1013,7 @@ namespace Garnet.server
                 {
                     elementsInLex = [.. elementsInLex
                                         .Skip(limit.offset > 0 ? limit.offset : 0)
-                                        .Take(limit.countLimit >= 0 ? limit.countLimit : elementsInLex.Count)];
+                                        .Take(limit.count >= 0 ? limit.count : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
@@ -1042,7 +1042,7 @@ namespace Garnet.server
         /// <param name="rem"></param>
         /// <param name="limit"></param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, LimitDef limit = default)
+        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, Limit limit = default)
         {
             if (doReverse)
             {
@@ -1051,7 +1051,7 @@ namespace Garnet.server
             }
 
             List<(double, byte[])> scoredElements = new();
-            if ((validLimit && (limit.offset < 0 || limit.countLimit == 0)) ||
+            if ((validLimit && (limit.offset < 0 || limit.count == 0)) ||
                 (sortedSet.Max.Score < minValue))
             {
                 return scoredElements;
@@ -1069,7 +1069,7 @@ namespace Garnet.server
             {
                 scoredElements = [.. scoredElements
                                  .Skip(limit.offset > 0 ? limit.offset : 0)
-                                 .Take(limit.countLimit >= 0 ? limit.countLimit : scoredElements.Count)];
+                                 .Take(limit.count >= 0 ? limit.count : scoredElements.Count)];
             }
 
             if (rem)
