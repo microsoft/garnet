@@ -450,7 +450,7 @@ namespace Garnet.cluster
 
             if (clusterProvider.replicationManager.currentRecoveryStatus != RecoveryStatus.NoRecovery)
             {
-                clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
+                clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
 
             var resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
