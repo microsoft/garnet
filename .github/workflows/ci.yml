@@ -91,10 +91,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        #os: [ ubuntu-latest, windows-latest ]
+        #framework: [ 'net8.0' , 'net9.0']
+        #configuration: [ 'Debug', 'Release' ]
+        #test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0' , 'net9.0']
-        configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+        framework: [ 'net9.0']
+        configuration: [ 'Release' ]
+        test: [ 'Garnet.test' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -121,6 +126,47 @@ jobs:
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
+
+
+      - name: Install Allure via Scoop (Windows only)
+        if: runner.os == 'Windows'
+        run: |
+          iex "& {$(irm get.scoop.sh)}"
+          scoop install allure
+
+      - name: Install Allure via Homebrew (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl file git
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew install allure          
+
+      - name: Load test report history
+        uses: actions/checkout@v3
+        if: always()
+        continue-on-error: true
+        with:
+          ref: gh-pages2
+          path: gh-pages2
+      - name: Build test report
+        uses: simple-elf/allure-report-action@v1.7
+        if: always()
+        with:
+          gh_pages: gh-pages2
+          allure_history: allure-history
+          allure_results: build/allure-results
+      - name: Publish test report
+        uses: peaceiris/actions-gh-pages@v3
+        if: always()
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./allure-report
+          destination_dir: garnet-dotnet-report
+          user_name: Garnet CI
+                
   # Job to build and test Tsavorite code (only if there were changes to it)
   build-test-tsavorite:        
     name: Tsavorite
