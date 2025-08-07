@@ -48,46 +48,47 @@ jobs:
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
         timeout-minutes: 45 
+                                                                                                                 
 
-
-      - name: Install Allure via Scoop (Windows only)
+      - name: Install Allure and Generate Report (Windows only)
         if: runner.os == 'Windows' && always()
         run: |
           iex "& {$(irm get.scoop.sh)}"
           scoop install allure
+          scoop bucket add extras
+          scoop install trx2allure
+          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
+          allure --version
+          trx2allure -i GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}/*.trx -o allure-results
+          allure generate allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
 
-      - name: Install Allure via Homebrew (Linux only)
+#      - name: Install Allure and Generate Report (Linux only)
+#        if: runner.os == 'Linux' && always()
+#        run: |
+#          sudo apt-get update
+#          sudo apt-get install -y build-essential curl file git
+#          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+#          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
+#          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+#          brew install allure
+#          allure --version
+#          allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
+
+
+      # no need to convert trx to allure results on Linux, as dotnet test can output allure results directly on Linux
+      - name: Install Allure and Generate Report (Linux only)
         if: runner.os == 'Linux' && always()
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential curl file git
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install allure          
+          curl -Ls -o allure.tgz https://repo.maven.apache.org/maven2/io/qameta/allure/allure-commandline/2.29.0/allure-commandline-2.29.0.tgz
+          tar -xzf allure.tgz -C $HOME
+          echo "$HOME/allure-2.29.0/bin" >> $GITHUB_PATH
+          allure --version          
+          allure generate GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }} --clean -o build/allure-report/allure-report-${{ runner.os }}
 
-
-#      - name: Load test report history
-#        uses: actions/checkout@v3
-#        if: always()
-#        continue-on-error: true
-#        with:
-#          ref: gh-pages2
-#          path: gh-pages2
-
-      - name: Build test report
-        uses: simple-elf/allure-report-action@v1.7
-        if: runner.os == 'Linux' && always()
-        with:
-          gh_pages: gh-pages2
-          allure_history: allure-history
-          allure_results: build/allure-results
-
-
-      - name: Build Allure Report 
+      - name: Verify Allure Report Output
         if: always()
         run: |
-          allure generate build/allure-report/ --clean -o build/allure-report/allure-report-${{ runner.os }}
+          dir build/allure-report/allure-report-${{ runner.os }}
 
       - name: Upload Allure Report Artifact
         if: always()
@@ -96,14 +97,6 @@ jobs:
           name: allure-report-${{ runner.os }}
           path: build/allure-report
 
-#      - name: Publish test report
-#        uses: peaceiris/actions-gh-pages@v3
-#        if: always()
-#        with:
-#          github_token: ${{ secrets.GITHUB_TOKEN }}
-#          publish_dir: ./allure-report
-#          destination_dir: garnet-dotnet-report
-#          user_name: Garnet Nightly
 
           
 
