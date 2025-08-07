@@ -629,12 +629,12 @@ namespace Garnet.test
 
             // Generate data with random keys (so that hashtable overflows)
             var val = new RedisValue("x");
-            var keys = new string[200];
+            var keys = new string[500];
             for (var i = 0; i < keys.Length; i++)
                 keys[i] = TestUtils.GetRandomString(8);
 
             // Insert first batch of data
-            for (var i = 0; i < 100; i++)
+            for (var i = 0; i < 250; i++)
             {
                 if (storeType == StoreType.Main)
                     _ = db.StringSet(keys[i], val);
@@ -652,10 +652,11 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", result.ToString());
 
             // Verify that overflow bucket allocations have decreased
-            ClassicAssert.Less(GetOverflowBucketAllocations(), prevOverflowBucketAllocations);
+            currOverflowBucketAllocations = GetOverflowBucketAllocations();
+            ClassicAssert.Less(currOverflowBucketAllocations, prevOverflowBucketAllocations);
 
             // Insert second batch of data
-            for (var i = 100; i < 200; i++)
+            for (var i = 250; i < 500; i++)
             {
                 if (storeType == StoreType.Main)
                     _ = db.StringSet(keys[i], val);
@@ -670,7 +671,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual("OK", result.ToString());
 
             // Verify that overflow bucket allocations have decreased again
-            ClassicAssert.Less(GetOverflowBucketAllocations(), prevOverflowBucketAllocations);
+            currOverflowBucketAllocations = GetOverflowBucketAllocations();
+            ClassicAssert.Less(currOverflowBucketAllocations, prevOverflowBucketAllocations);
 
             // Verify that all keys still exist in the database
             foreach (var key in keys)
