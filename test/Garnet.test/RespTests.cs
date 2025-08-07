@@ -4408,25 +4408,39 @@ namespace Garnet.test
             db.Execute("CLIENT", "SETNAME", "testname");
             var result = (string)db.Execute("CLIENT", "GETNAME");
             ClassicAssert.AreEqual("testname", result);
+
+            // Test clearing client name
+            db.Execute("CLIENT", "SETNAME", "");
+            result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual(null, result);
         }
 
         [Test]
-        [TestCase("validname", true, Description = "Set valid name")]
-        [TestCase("", false, Description = "Set empty name")]
-        [TestCase(null, false, Description = "Set null name")]
-        [TestCase("name with spaces", false, Description = "Set name with spaces")]
-        public void ClientSetNameTest(string name, bool shouldSucceed)
+        [TestCase(false, "validname", true, "validname", Description = "Set valid name")]
+        [TestCase(true, "validname", true, "validname", Description = "Set valid name")]
+        [TestCase(false, "", true, Description = "Set empty name")]
+        [TestCase(true, "", true, Description = "Set empty name")]
+        [TestCase(false, "name with spaces", false, Description = "Set name with spaces")]
+        [TestCase(true, "name with spaces", false, Description = "Set name with spaces")]
+        public void ClientSetNameTest(bool hello, string name, bool shouldSucceed, string expectedName = null)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             if (shouldSucceed)
             {
-                var result = (string)db.Execute("CLIENT", "SETNAME", name);
-                ClassicAssert.AreEqual("OK", result);
+                if (!hello)
+                {
+                    var result = (string)db.Execute("CLIENT", "SETNAME", name);
+                    ClassicAssert.AreEqual("OK", result);
+                }
+                else
+                {
+                    db.Execute("HELLO", "2", "SETNAME", name);
+                }
 
                 var getName = (string)db.Execute("CLIENT", "GETNAME");
-                ClassicAssert.AreEqual(name, getName);
+                ClassicAssert.AreEqual(expectedName, getName);
             }
             else
             {

@@ -289,9 +289,9 @@ namespace Garnet.cluster
                 if (!ClusterProvider.serverOptions.DisableObjects)
                 {
                     // Iterate through object store
-                    var objectStoreCheckpointTask = await ClusterProvider.storeWrapper.objectStore.
+                    var objectStoreCheckpointTask = ClusterProvider.storeWrapper.objectStore.
                         TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
-                    result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
+                    result = await WaitOrDie(checkpointTask: objectStoreCheckpointTask, iteratorManager: manager);
                     if (!result.success)
                         throw new InvalidOperationException("Object store checkpoint stream failed!");
                 }
