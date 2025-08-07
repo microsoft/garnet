@@ -21,9 +21,6 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIRE:
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.GETDEL:
                 case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
@@ -168,9 +165,6 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIRE:
-                case RespCommand.EXPIREAT:
-                case RespCommand.PEXPIREAT:
                 case RespCommand.PERSIST:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
@@ -573,39 +567,15 @@ namespace Garnet.server
 
                     break;
 
-                case RespCommand.PEXPIRE:
                 case RespCommand.EXPIRE:
                     var expiryExists = value.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetLong(0);
-                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
-                        ? TimeSpan.FromSeconds(expiryValue)
-                        : TimeSpan.FromMilliseconds(expiryValue);
-                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    var expireOption = (ExpireOption)input.arg1;
+                    var expirationWithOption = new ExpirationWithOption(input.arg1);
 
                     // reset etag state that may have been initialized earlier
                     EtagState.ResetState(ref functionsState.etagState);
 
-                    if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
-                        return false;
-
-                    // doesn't update etag, since it's only the metadata that was updated
-                    return true;
-                case RespCommand.PEXPIREAT:
-                case RespCommand.EXPIREAT:
-                    expiryExists = value.MetadataSize > 0;
-
-                    var expiryTimestamp = input.parseState.GetLong(0);
-                    expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
-                        ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
-                        : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
-                    expireOption = (ExpireOption)input.arg1;
-
-                    // reset etag state that may have been initialized earlier
-                    EtagState.ResetState(ref functionsState.etagState);
-
-                    if (!EvaluateExpireInPlace(expireOption, expiryExists, expiryTicks, ref value, ref output))
+                    if (!EvaluateExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output))
                         return false;
 
                     // doesn't update etag, since it's only the metadata that was updated
@@ -822,8 +792,8 @@ namespace Garnet.server
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
-                        var expiration = input.arg1;
-                        if (expiration == -1)
+                        var expirationInTicks = input.arg1;
+                        if (expirationInTicks == -1)
                         {
                             // there is existing metadata, but we want to clear it.
                             // we remove metadata, shift the value, shrink length
@@ -837,12 +807,12 @@ namespace Garnet.server
                                 rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                             }
                         }
-                        else if (expiration > 0)
+                        else if (expirationInTicks > 0)
                         {
                             // there is no existing metadata, but we want to add it. we cannot do in place update.
                             if (value.ExtraMetadata == 0) return false;
                             // set expiration to the specific value
-                            value.ExtraMetadata = expiration;
+                            value.ExtraMetadata = expirationInTicks;
                         }
 
                         var valueLength = value.LengthWithoutMetadata;
@@ -1185,33 +1155,13 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.EXPIRE:
-                case RespCommand.PEXPIRE:
                     shouldUpdateEtag = false;
 
                     var expiryExists = oldValue.MetadataSize > 0;
 
-                    var expiryValue = input.parseState.GetLong(0);
-                    var tsExpiry = input.header.cmd == RespCommand.EXPIRE
-                        ? TimeSpan.FromSeconds(expiryValue)
-                        : TimeSpan.FromMilliseconds(expiryValue);
-                    var expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    var expireOption = (ExpireOption)input.arg1;
+                    var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
-                    break;
-
-                case RespCommand.PEXPIREAT:
-                case RespCommand.EXPIREAT:
-                    expiryExists = oldValue.MetadataSize > 0;
-                    shouldUpdateEtag = false;
-
-                    var expiryTimestamp = input.parseState.GetLong(0);
-                    expiryTicks = input.header.cmd == RespCommand.PEXPIREAT
-                        ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryTimestamp)
-                        : ConvertUtils.UnixTimestampInSecondsToTicks(expiryTimestamp);
-                    expireOption = (ExpireOption)input.arg1;
-
-                    EvaluateExpireCopyUpdate(expireOption, expiryExists, expiryTicks, ref oldValue, ref newValue, ref output);
+                    EvaluateExpireCopyUpdate(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref oldValue, ref newValue, ref output);
                     break;
 
                 case RespCommand.PERSIST:
@@ -1385,16 +1335,16 @@ namespace Garnet.server
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        var expiration = input.arg1;
-                        if (expiration == 0)
+                        var expirationInTicks = input.arg1;
+                        if (expirationInTicks == 0)
                         {
                             // We want to retain the old metadata
                             newValue.ExtraMetadata = oldValue.ExtraMetadata;
                         }
-                        else if (expiration > 0)
+                        else if (expirationInTicks > 0)
                         {
                             // We want to add the given expiration
-                            newValue.ExtraMetadata = expiration;
+                            newValue.ExtraMetadata = expirationInTicks;
                         }
 
                         var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);

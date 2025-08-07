@@ -2,13 +2,16 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -1274,7 +1277,159 @@ namespace Garnet.test.cluster
             }
         }
 
+        [Test, Order(24)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationManualCheckpointing()
+        {
+            // Use case here is, outside of the cluster, period COMMITAOFs are requested.
+            // Done so in recovery scenarios, if a primary does NOT come back there's still confidence
+            // a replica has recent data.
+
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + primary_count * replica_count;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1);
+            context.CreateConnection(useTLS: true);
+            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+
+            var primaryEndPoint = (IPEndPoint)context.endpoints[0];
+            var replicaEndPoint = (IPEndPoint)context.endpoints[1];
+
+            // Check cluster is in good state pre-commit
+            {
+                var firstVal = Guid.NewGuid().ToString();
+                var setPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "SET", ["test-key", firstVal]);
+                ClassicAssert.AreEqual("OK", setPrimaryRes);
+                var getPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "GET", ["test-key"]);
+                ClassicAssert.AreEqual(firstVal, getPrimaryRes);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
+                var readonlyReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "READONLY", []);
+                ClassicAssert.AreEqual("OK", readonlyReplicaRes);
+                var getReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "GET", ["test-key"]);
+                ClassicAssert.AreEqual(firstVal, getReplicaRes);
+            }
+
+            // Commit outside of cluster logic
+            var primaryCommit = context.nodes[0].Store.CommitAOF();
+            ClassicAssert.IsTrue(primaryCommit);
+            var secondCommit = context.nodes[1].Store.CommitAOF();
+            ClassicAssert.IsFalse(secondCommit);
+
+            // Check cluster remains in good state
+            {
+                var secondVal = Guid.NewGuid().ToString();
+                var setPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "SET", ["test-key2", secondVal]);
+                ClassicAssert.AreEqual("OK", setPrimaryRes);
+                var getPrimaryRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "GET", ["test-key2"]);
+                ClassicAssert.AreEqual(secondVal, getPrimaryRes);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
+
+                var readonlyReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "READONLY", []);
+                ClassicAssert.AreEqual("OK", readonlyReplicaRes);
+                var getReplicaRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "GET", ["test-key2"]);
+                ClassicAssert.AreEqual(secondVal, getReplicaRes);
+            }
+        }
+
         [Test, Order(25)]
+        [Category("CLUSTER")]
+        [CancelAfter(30_000)]
+        [TestCase(ExceptionInjectionType.Divergent_AOF_Stream)]
+        [TestCase(ExceptionInjectionType.Aof_Sync_Task_Consume)]
+        public async Task ReplicaSyncTaskFaultsRecoverAsync(ExceptionInjectionType faultType, CancellationToken cancellation)
+        {
+            // Ensure that a fault in ReplicaSyncTask (on the primary, sourced from either side) doesn't leave a replica permanently desynced
+            //
+            // While a possible cause of this is something actually breaking on the replica (in which case, a retry won't matter)
+            // that isn't the only possible cause
+
+#if !DEBUG
+            Assert.Ignore($"Depends on {nameof(ExceptionInjectionHelper)}, which is disabled in non-Debug builds");
+#endif
+
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + primary_count * replica_count;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection(useTLS: true);
+            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.AreEqual(1, shards.Count);
+            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
+            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
+            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+
+            var primaryEndPoint = (IPEndPoint)context.endpoints[0];
+            var replicaEndPoint = (IPEndPoint)context.endpoints[1];
+
+            using var primaryInsertCancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+
+            var keyCount = 0;
+
+            var uniqueSuffix = Guid.NewGuid().ToString();
+
+            var continuallyWriteToPrimaryTask =
+                Task.Run(
+                    async () =>
+                    {
+                        while (!primaryInsertCancel.IsCancellationRequested)
+                        {
+                            var setRes = (string)context.clusterTestUtils.Execute(primaryEndPoint, "SET", [$"test-key-{keyCount}", $"{keyCount}-{uniqueSuffix}"]);
+                            ClassicAssert.AreEqual("OK", setRes);
+
+                            keyCount++;
+
+                            await Task.Delay(10);
+                        }
+                    },
+                    cancellation
+                );
+
+            await Task.Delay(100, cancellation);
+
+            // Force replica to continually fault
+            ExceptionInjectionHelper.EnableException(faultType);
+
+            // Give it enough time to die horribly
+            await Task.Delay(100, cancellation);
+
+            // Stop primary writes
+            primaryInsertCancel.Cancel();
+            await continuallyWriteToPrimaryTask;
+
+            // Resolve fault on replica
+            ExceptionInjectionHelper.DisableException(faultType);
+
+            // Wait for sync to catch up
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, cancellation: cancellation);
+
+            // Check that replica received all values
+            var readonlyRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "READONLY", []);
+            ClassicAssert.AreEqual("OK", readonlyRes);
+
+            for (var i = 0; i < keyCount; i++)
+            {
+                var getRes = (string)context.clusterTestUtils.Execute(replicaEndPoint, "GET", [$"test-key-{i}"]);
+                ClassicAssert.AreEqual($"{i}-{uniqueSuffix}", getRes);
+
+            }
+        }
+
+        [Test, Order(26)]
         [Category("REPLICATION")]
         public async Task ClusterReplicationMultiRestartRecover()
         {
@@ -1345,7 +1500,396 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(26)]
+        [Test, Order(27)]
+        [Category("CLUSTER")]
+        [CancelAfter(30_000)]
+        public async Task ReplicasRestartAsReplicasAsync(CancellationToken cancellation)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + primary_count * replica_count;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateConnection(useTLS: true);
+            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            IPEndPoint primary = (IPEndPoint)context.endpoints[0];
+            IPEndPoint replica = (IPEndPoint)context.endpoints[1];
+
+            // Make sure role assignment is as expected
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
+
+            context.ShutdownNode(primary);
+            context.ShutdownNode(replica);
+
+            // Intentionally leaving primary offline
+            context.RestartNode(replica);
+
+            // Delay a bit for replication init tasks to fire off
+            await Task.Delay(100, cancellation);
+
+            // Make sure replica did not promote to Primary
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
+        }
+
+        [Test, Order(28)]
+        [Category("CLUSTER")]
+        [CancelAfter(30_000)]
+        [TestCase(ExceptionInjectionType.None, true)]
+        [TestCase(ExceptionInjectionType.None, false)]
+        [TestCase(ExceptionInjectionType.Divergent_AOF_Stream, true)]
+        [TestCase(ExceptionInjectionType.Divergent_AOF_Stream, false)]
+        [TestCase(ExceptionInjectionType.Aof_Sync_Task_Consume, true)]
+        [TestCase(ExceptionInjectionType.Aof_Sync_Task_Consume, false)]
+        public async Task PrimaryUnavailableRecoveryAsync(ExceptionInjectionType faultType, bool replicaFailoverBeforeShutdown, CancellationToken cancellation)
+        {
+            // Case we're testing is where a Primary _and_ it's Replica die, but only the Replica comes back.
+            //
+            // If configured correctly (for example, as a cache), we still want the Replica to come back up with some data - even if it's
+            // acknowledges writes to the Primary are dropped.
+            //
+            // We also sometimes inject faults into the Primaries and Replicas before the proper fault, to simulate a cluster
+            // in an unstable environment.
+            //
+            // Additionally we simulate both when we detect failures and intervene in time to promote Replicas to Primaries,
+            // and when we don't intervene until after everything dies and the Replicas come back.
+
+#if !DEBUG
+            Assert.Ignore($"Depends on {nameof(ExceptionInjectionHelper)}, which is disabled in non-Debug builds");
+#endif
+
+            var replica_count = 1;// Per primary
+            var primary_count = 2;
+            var nodes_count = primary_count + primary_count * replica_count;
+            ClassicAssert.IsTrue(primary_count > 0);
+
+            // Config lifted from a deployed product, be wary of changing these without discussion
+            context.CreateInstances(
+                nodes_count,
+                tryRecover: true,
+                disablePubSub: false,
+                disableObjects: false,
+                enableAOF: true,
+                AofMemorySize: "128m",
+                CommitFrequencyMs: -1,
+                aofSizeLimit: "256m",
+                compactionFrequencySecs: 30,
+                compactionType: LogCompactionType.Scan,
+                latencyMonitory: true,
+                metricsSamplingFrequency: 1,
+                loggingFrequencySecs: 10,
+                checkpointThrottleFlushDelayMs: 0,
+                FastCommit: true,
+                FastAofTruncate: true,
+                OnDemandCheckpoint: true,
+                useTLS: true,
+                enableLua: true,
+                luaMemoryMode: LuaMemoryManagementMode.Tracked,
+                luaTransactionMode: true,
+                luaMemoryLimit: "2M",
+                clusterReplicationReestablishmentTimeout: 1,
+                clusterReplicaResumeWithData: true
+            );
+            context.CreateConnection(useTLS: true);
+            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
+
+            shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.AreEqual(2, shards.Count);
+
+            IPEndPoint primary1 = (IPEndPoint)context.endpoints[0];
+            IPEndPoint primary2 = (IPEndPoint)context.endpoints[1];
+            IPEndPoint replica1 = (IPEndPoint)context.endpoints[2];
+            IPEndPoint replica2 = (IPEndPoint)context.endpoints[3];
+
+            // Make sure role assignment is as expected
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary1).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary2).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica1).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica2).Value);
+
+            // Populate both shards
+            var writtenToPrimary1 = new ConcurrentDictionary<string, string>();
+            var writtenToPrimary2 = new ConcurrentDictionary<string, string>();
+            using (var writeTaskCancel = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
+            {
+                var uniquePrefix = Guid.NewGuid();
+
+                var writeToPrimary1Task =
+                    Task.Run(
+                        async () =>
+                        {
+                            var ix = -1;
+
+                            var p1 = shards.Single(s => s.nodes.Any(n => n.nodeIndex == context.endpoints.IndexOf(primary1)));
+
+                            while (!writeTaskCancel.IsCancellationRequested)
+                            {
+                                ix++;
+
+                                var key = $"pura-1-{uniquePrefix}-{ix}";
+
+                                var slot = context.clusterTestUtils.HashSlot(key);
+                                if (!p1.slotRanges.Any(x => slot >= x.Item1 && slot <= x.Item2))
+                                {
+                                    continue;
+                                }
+
+                                var value = Guid.NewGuid().ToString();
+                                try
+                                {
+                                    var res = (string)context.clusterTestUtils.Execute(primary1, "SET", [key, value]);
+                                    if (res == "OK")
+                                    {
+                                        writtenToPrimary1[key] = value;
+                                    }
+
+                                    await Task.Delay(10, writeTaskCancel.Token);
+                                }
+                                catch
+                                {
+                                    // Ignore, cancellation or throwing should both just be powered through
+                                }
+                            }
+                        },
+                        cancellation
+                    );
+
+                var writeToPrimary2Task =
+                    Task.Run(
+                        async () =>
+                        {
+                            var ix = -1;
+
+                            var p2 = shards.Single(s => s.nodes.Any(n => n.nodeIndex == context.endpoints.IndexOf(primary2)));
+
+                            while (!writeTaskCancel.IsCancellationRequested)
+                            {
+                                ix++;
+
+                                var key = $"pura-2-{uniquePrefix}-{ix}";
+
+                                var slot = context.clusterTestUtils.HashSlot(key);
+                                if (!p2.slotRanges.Any(x => slot >= x.Item1 && slot <= x.Item2))
+                                {
+                                    continue;
+                                }
+
+                                var value = Guid.NewGuid().ToString();
+
+                                try
+                                {
+                                    var res = (string)context.clusterTestUtils.Execute(primary1, "SET", [key, value]);
+                                    if (res == "OK")
+                                    {
+                                        writtenToPrimary2[key] = value;
+                                    }
+
+                                    await Task.Delay(10, writeTaskCancel.Token);
+                                }
+                                catch
+                                {
+                                    // Ignore, cancellation or throwing should both just be powered through
+                                }
+                            }
+                        },
+                        cancellation
+                    );
+
+                // Simulate out of band checkpointing
+                var checkpointTask =
+                    Task.Run(
+                        async () =>
+                        {
+                            while (!writeTaskCancel.IsCancellationRequested)
+                            {
+                                foreach (var node in context.nodes)
+                                {
+                                    try
+                                    {
+                                        _ = await node.Store.CommitAOFAsync(writeTaskCancel.Token);
+                                    }
+                                    catch (TaskCanceledException)
+                                    {
+                                        // Cancel is fine
+                                        break;
+                                    }
+                                    catch
+                                    {
+                                        // Ignore everything else
+                                    }
+                                }
+
+                                try
+                                {
+                                    await Task.Delay(100, writeTaskCancel.Token);
+                                }
+                                catch
+                                {
+                                    continue;
+                                }
+                            }
+                        },
+                        cancellation
+                    );
+
+                // Wait for a bit, optionally injecting a fault
+                if (faultType == ExceptionInjectionType.None)
+                {
+                    await Task.Delay(10_000, cancellation);
+                }
+                else
+                {
+                    var timer = Stopwatch.StartNew();
+
+                    // Things start fine
+                    await Task.Delay(1_000, cancellation);
+
+                    // Wait for something to get replicated
+                    var replica1Happened = false;
+                    var replica2Happened = false;
+                    do
+                    {
+                        if (!replica1Happened)
+                        {
+                            var readonlyRes = (string)context.clusterTestUtils.Execute(replica1, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyRes);
+
+                            foreach (var kv in writtenToPrimary1)
+                            {
+                                var val = (string)context.clusterTestUtils.Execute(replica1, "GET", [kv.Key]);
+                                if (val == kv.Value)
+                                {
+                                    replica1Happened = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!replica2Happened)
+                        {
+                            var readonlyRes = (string)context.clusterTestUtils.Execute(replica2, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyRes);
+
+                            foreach (var kv in writtenToPrimary2)
+                            {
+                                var val = (string)context.clusterTestUtils.Execute(replica2, "GET", [kv.Key]);
+                                if (val == kv.Value)
+                                {
+                                    replica2Happened = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        await Task.Delay(100, cancellation);
+                    } while (!replica1Happened || !replica2Happened);
+
+                    // Things fail for a bit
+                    ExceptionInjectionHelper.EnableException(faultType);
+                    await Task.Delay(2_000, cancellation);
+
+                    // Things recover
+                    ExceptionInjectionHelper.DisableException(faultType);
+
+                    timer.Stop();
+
+                    // Wait out the rest of the duration
+                    if (timer.ElapsedMilliseconds < 10_000)
+                    {
+                        await Task.Delay((int)(10_000 - timer.ElapsedMilliseconds), cancellation);
+                    }
+                }
+
+                // Stop writing
+                writeTaskCancel.Cancel();
+
+                // Wait for all our writes and checkpoints to spin down
+                await Task.WhenAll(writeToPrimary1Task, writeToPrimary2Task, checkpointTask);
+            }
+
+            // Shutdown all primaries
+            context.ShutdownNode(primary1);
+            context.ShutdownNode(primary2);
+
+            // Sometimes we can intervene post-Primary crash but pre-Replica crash, simulate that
+            if (replicaFailoverBeforeShutdown)
+            {
+                await UpgradeReplicasAsync(context, replica1, replica2, cancellation);
+            }
+
+            // Shutdown the (old) replicas
+            context.ShutdownNode(replica1);
+            context.ShutdownNode(replica2);
+
+            // Restart just the replicas
+            context.RestartNode(replica1);
+            context.RestartNode(replica2);
+
+            // If we didn't promte pre-crash, promote now that Replicas came back
+            if (!replicaFailoverBeforeShutdown)
+            {
+                await UpgradeReplicasAsync(context, replica1, replica2, cancellation);
+            }
+
+            // Confirm that at least some of the data is available on each Replica
+            var onReplica1 = 0;
+            foreach (var (k, v) in writtenToPrimary1)
+            {
+                var res = (string)context.clusterTestUtils.Execute(replica1, "GET", [k]);
+                if (res is not null)
+                {
+                    ClassicAssert.AreEqual(v, res);
+                    onReplica1++;
+                }
+            }
+
+            var onReplica2 = 0;
+            foreach (var (k, v) in writtenToPrimary2)
+            {
+                var res = (string)context.clusterTestUtils.Execute(replica2, "GET", [k]);
+                if (res is not null)
+                {
+                    ClassicAssert.AreEqual(v, res);
+                    onReplica2++;
+                }
+            }
+
+            // Something, ANYTHING, made it
+            ClassicAssert.IsTrue(onReplica1 > 0, $"Nothing made it to replica 1, should have been up to {writtenToPrimary1.Count} values");
+            ClassicAssert.IsTrue(onReplica2 > 0, $"Nothing made it to replica 2, should have been up to {writtenToPrimary2.Count} values");
+
+            static async Task UpgradeReplicasAsync(ClusterTestContext context, IPEndPoint replica1, IPEndPoint replica2, CancellationToken cancellation)
+            {
+                // Promote the replicas, if no primary is coming back
+                var takeOverRes1 = (string)context.clusterTestUtils.Execute(replica1, "CLUSTER", ["FAILOVER", "FORCE"]);
+                var takeOverRes2 = (string)context.clusterTestUtils.Execute(replica2, "CLUSTER", ["FAILOVER", "FORCE"]);
+                ClassicAssert.AreEqual("OK", takeOverRes1);
+                ClassicAssert.AreEqual("OK", takeOverRes2);
+
+                // Wait for roles to update
+                while (true)
+                {
+                    await Task.Delay(10, cancellation);
+
+                    if (context.clusterTestUtils.RoleCommand(replica1).Value != "master")
+                    {
+                        continue;
+                    }
+
+                    if (context.clusterTestUtils.RoleCommand(replica2).Value != "master")
+                    {
+                        continue;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        [Test, Order(27)]
+        [Category("CLUSTER")]
         [Category("REPLICATION")]
         public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
         {

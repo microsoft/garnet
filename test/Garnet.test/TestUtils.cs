@@ -463,7 +463,7 @@ namespace Garnet.test
             });
         }
 
-        public static GarnetServer[] CreateGarnetCluster(
+        public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
             string checkpointDir,
             EndPointCollection endpoints,
             bool enableCluster = true,
@@ -506,16 +506,26 @@ namespace Garnet.test
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
             bool useNativeDeviceLinux = false,
+            int clusterReplicationReestablishmentTimeout = 0,
+            string aofSizeLimit = "",
+            int compactionFrequencySecs = 0,
+            LogCompactionType compactionType = LogCompactionType.Scan,
+            bool latencyMonitory = false,
+            int metricSamplingFrequencySecs = 0,
+            int loggingFrequencySecs = 5,
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
             var nodes = new GarnetServer[endpoints.Count];
+            var opts = new GarnetServerOptions[nodes.Length];
             for (var i = 0; i < nodes.Length; i++)
             {
                 var endpoint = (IPEndPoint)endpoints[i];
 
-                var opts = GetGarnetServerOptions(
+                opts[i] = GetGarnetServerOptions(
                     checkpointDir,
                     checkpointDir,
                     endpoint,
@@ -559,11 +569,19 @@ namespace Garnet.test
                     clusterAnnounceEndpoint: clusterAnnounceEndpoint,
                     luaTransactionMode: luaTransactionMode,
                     useNativeDeviceLinux: useNativeDeviceLinux,
+                    clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout,
+                    aofSizeLimit: aofSizeLimit,
+                    compactionFrequencySecs: compactionFrequencySecs,
+                    compactionType: compactionType,
+                    latencyMonitory: latencyMonitory,
+                    loggingFrequencySecs: loggingFrequencySecs,
+                    checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
+                    clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout);
 
                 ClassicAssert.IsNotNull(opts);
 
-                if (opts.EndPoints[0] is IPEndPoint ipEndpoint)
+                if (opts[i].EndPoints[0] is IPEndPoint ipEndpoint)
                 {
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
@@ -574,9 +592,9 @@ namespace Garnet.test
                     }
                 }
 
-                nodes[i] = new GarnetServer(opts, loggerFactory);
+                nodes[i] = new GarnetServer(opts[i], loggerFactory);
             }
-            return nodes;
+            return (nodes, opts);
         }
 
         public static GarnetServerOptions GetGarnetServerOptions(
@@ -627,6 +645,14 @@ namespace Garnet.test
             EndPoint clusterAnnounceEndpoint = null,
             bool luaTransactionMode = false,
             bool useNativeDeviceLinux = false,
+            int clusterReplicationReestablishmentTimeout = 0,
+            string aofSizeLimit = "",
+            int compactionFrequencySecs = 0,
+            LogCompactionType compactionType = LogCompactionType.Scan,
+            bool latencyMonitory = false,
+            int loggingFrequencySecs = 5,
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60)
         {
             if (useAzureStorage)
@@ -723,6 +749,7 @@ namespace Garnet.test
                     : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
                 FastAofTruncate = fastAofTruncate,
                 AofMemorySize = aofMemorySize,
+                AofSizeLimit = aofSizeLimit,
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
                 UseAofNullDevice = useAofNullDevice,
@@ -740,7 +767,14 @@ namespace Garnet.test
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
                 UseNativeDeviceLinux = useNativeDeviceLinux,
-                ReplicaSyncTimeout = replicaSyncTimeout
+                ClusterReplicationReestablishmentTimeout = clusterReplicationReestablishmentTimeout,
+                CompactionFrequencySecs = compactionFrequencySecs,
+                CompactionType = compactionType,
+                LatencyMonitor = latencyMonitory,
+                LoggingFrequency = loggingFrequencySecs,
+                CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
+                ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
+                ReplicaSyncTimeout = replicaSyncTimeout,
             };
 
             if (lowMemory)

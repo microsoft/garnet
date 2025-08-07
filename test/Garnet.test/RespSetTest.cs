@@ -723,15 +723,15 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("1,2,3", "2,3,4", "2", null, Description = "Basic intersection")]
-        [TestCase("1,2,3", "", "0", null, Description = "Intersection with empty set")]
-        [TestCase("1,2,3", "4,5,6", "0", null, Description = "No intersection")]
-        [TestCase("1,1,1", "1,1,1", "1", null, Description = "Sets with duplicate values")]
-        [TestCase("", "", "0", null, Description = "Both sets empty")]
-        [TestCase("1,2,3,4,5", "2,3,4,5,6", "1", "1", Description = "Basic intersection with limit")]
-        [TestCase("1,2,3", "2,3,4", "2", "5", Description = "Limit greater than intersection")]
-        [TestCase("1,2,3,4,5", "2,3,4,5,6", "0", "0", Description = "Zero limit")]
-        public void CanDoSinterCard(string values1, string values2, string expectedCount, string limit)
+        [TestCase("1,2,3", "2,3,4", 2, null, Description = "Basic intersection")]
+        [TestCase("1,2,3", "", 0, null, Description = "Intersection with empty set")]
+        [TestCase("1,2,3", "4,5,6", 0, null, Description = "No intersection")]
+        [TestCase("1,1,1", "1,1,1", 1, null, Description = "Sets with duplicate values")]
+        [TestCase("", "", 0, null, Description = "Both sets empty")]
+        [TestCase("1,2,3,4,5", "2,3,4,5,6", 1, "1", Description = "Basic intersection with limit")]
+        [TestCase("1,2,3", "2,3,4", 2, "5", Description = "Limit greater than intersection")]
+        [TestCase("1,2,3,4,5", "2,3,4,5,6", 4, "0", Description = "Zero limit")]
+        public void CanDoSinterCard(string values1, string values2, long expectedCount, string limit)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -752,7 +752,7 @@ namespace Garnet.test
                 (long)db.Execute("SINTERCARD", 2, "key1", "key2") :
                 (long)db.Execute("SINTERCARD", 2, "key1", "key2", "LIMIT", limit);
 
-            ClassicAssert.AreEqual(long.Parse(expectedCount), result);
+            ClassicAssert.AreEqual(expectedCount, result);
 
             // Test with non-existing keys
             result = (long)db.Execute("SINTERCARD", 2, "nonexistent1", "nonexistent2");

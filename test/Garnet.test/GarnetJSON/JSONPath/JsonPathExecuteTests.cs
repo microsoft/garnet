@@ -1,4 +1,5 @@
 #region License
+
 // Copyright (c) 2007 James Newton-King
 //
 // Permission is hereby granted, free of charge, to any person
@@ -21,6 +22,7 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
+
 #endregion
 
 using System;
@@ -41,22 +43,22 @@ namespace Garnet.test.JSONPath
         [Test]
         public void GreaterThanIssue1518()
         {
-            string statusJson = @"{""usingmem"": ""214376""}";//214,376
+            string statusJson = @"{""usingmem"": ""214376""}"; //214,376
             var jObj = JsonNode.Parse(statusJson);
 
-            var success = jObj.TrySelectNode("$..[?(@.usingmem>10)]", out var result);//found,10
+            var success = jObj.TrySelectNode("$..[?(@.usingmem>10)]", out var result); //found,10
             ClassicAssert.IsTrue(success);
             JsonAssert.AreEqual(jObj, result);
 
-            success = jObj.TrySelectNode("$..[?(@.usingmem>27000)]", out result);//null, 27,000
+            success = jObj.TrySelectNode("$..[?(@.usingmem>27000)]", out result); //null, 27,000
             ClassicAssert.IsTrue(success);
             JsonAssert.AreEqual(jObj, result);
 
-            success = jObj.TrySelectNode("$..[?(@.usingmem>21437)]", out result);//found, 21,437
+            success = jObj.TrySelectNode("$..[?(@.usingmem>21437)]", out result); //found, 21,437
             ClassicAssert.IsTrue(success);
             JsonAssert.AreEqual(jObj, result);
 
-            success = jObj.TrySelectNode("$..[?(@.usingmem>21438)]", out result);//null,21,438
+            success = jObj.TrySelectNode("$..[?(@.usingmem>21438)]", out result); //null,21,438
             ClassicAssert.IsTrue(success);
             JsonAssert.AreEqual(jObj, result);
         }
@@ -64,18 +66,17 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BacktrackingRegex_SingleMatch_TimeoutRespected()
         {
-            const string RegexBacktrackingPattern = "(?<a>(.*?))[|].*(?<b>(.*?))[|].*(?<c>(.*?))[|].*(?<d>[1-3])[|].*(?<e>(.*?))[|].*[|].*[|].*(?<f>(.*?))[|].*[|].*(?<g>(.*?))[|].*(?<h>(.*))";
+            const string RegexBacktrackingPattern =
+                "(?<a>(.*?))[|].*(?<b>(.*?))[|].*(?<c>(.*?))[|].*(?<d>[1-3])[|].*(?<e>(.*?))[|].*[|].*[|].*(?<f>(.*?))[|].*[|].*(?<g>(.*?))[|].*(?<h>(.*))";
 
-            var jObj = JsonNode.Parse(@"[{""b"": ""15/04/2020 8:18:03 PM|1|System.String[]|3|Libero eligendi magnam ut inventore.. Quaerat et sit voluptatibus repellendus blanditiis aliquam ut.. Quidem qui ut sint in ex et tempore.|||.\\iste.cpp||46018|-1"" }]");
+            var jObj = JsonNode.Parse(
+                @"[{""b"": ""15/04/2020 8:18:03 PM|1|System.String[]|3|Libero eligendi magnam ut inventore.. Quaerat et sit voluptatibus repellendus blanditiis aliquam ut.. Quidem qui ut sint in ex et tempore.|||.\\iste.cpp||46018|-1"" }]");
 
             ClassicAssert.Throws<RegexMatchTimeoutException>((() =>
             {
                 jObj.SelectNodes(
                     $"[?(@.b =~ /{RegexBacktrackingPattern}/)]",
-                    new JsonSelectSettings
-                    {
-                        RegexMatchTimeout = TimeSpan.FromSeconds(0.01)
-                    }).ToArray();
+                    new JsonSelectSettings { RegexMatchTimeout = TimeSpan.FromSeconds(0.01) }).ToArray();
             }));
         }
 
@@ -551,23 +552,20 @@ namespace Garnet.test.JSONPath
         {
             var o = JsonNode.Parse(@"{""Blah"": 1}");
 
-            ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("[1]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Index 1 not valid on JObject.");
+            ClassicAssert.Throws<JsonException>(
+                () => { o.TrySelectNode("[1]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); },
+                @"Index 1 not valid on JObject.");
         }
 
-        [Test]
-        public void EvaluateWildcardIndexOnObjectWithError()
-        {
-            var o = JsonNode.Parse(@"{""Blah"": 1}");
-
-            ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("[*]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Index * not valid on JObject.");
-        }
 
         [Test]
         public void EvaluateSliceOnObjectWithError()
         {
             var o = JsonNode.Parse(@"{""Blah"": 1}");
 
-            ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("[:]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Array slice is not valid on JObject.");
+            ClassicAssert.Throws<JsonException>(
+                () => { o.TrySelectNode("[:]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); },
+                @"Array slice is not valid on JObject.");
         }
 
         [Test]
@@ -584,7 +582,8 @@ namespace Garnet.test.JSONPath
         {
             var a = JsonNode.Parse(@"[1, 2, 3, 4, 5]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[0, 1]", out var result); }, @"Path returned multiple tokens.");
+            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[0, 1]", out var result); },
+                @"Path returned multiple tokens.");
         }
 
         [Test]
@@ -592,7 +591,11 @@ namespace Garnet.test.JSONPath
         {
             var a = JsonNode.Parse(@"[1, 2, 3, 4, 5]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("BlahBlah", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Property 'BlahBlah' not valid on JArray.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    a.TrySelectNode("BlahBlah", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result);
+                }, @"Property 'BlahBlah' not valid on JArray.");
         }
 
         [Test]
@@ -600,7 +603,11 @@ namespace Garnet.test.JSONPath
         {
             var a = JsonNode.Parse(@"[1, 2, 3, 4, 5]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[9,10]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, @"Index 9 outside the bounds of JArray.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    a.TrySelectNode("[9,10]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result);
+                }, @"Index 9 outside the bounds of JArray.");
         }
 
         [Test]
@@ -608,7 +615,11 @@ namespace Garnet.test.JSONPath
         {
             var o = JsonNode.Parse(@"{""Blah"": 1}");
 
-            ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("Missing", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Property 'Missing' does not exist on JObject.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    o.TrySelectNode("Missing", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result);
+                }, "Property 'Missing' does not exist on JObject.");
         }
 
         [Test]
@@ -626,7 +637,12 @@ namespace Garnet.test.JSONPath
         {
             var o = JsonNode.Parse(@"{""Blah"": 1}");
 
-            ClassicAssert.Throws<JsonException>(() => { o.TrySelectNode("['Missing','Missing2']", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Property 'Missing' does not exist on JObject.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    o.TrySelectNode("['Missing','Missing2']", new JsonSelectSettings { ErrorWhenNoMatch = true },
+                        out var result);
+                }, "Property 'Missing' does not exist on JObject.");
         }
 
         [Test]
@@ -634,7 +650,12 @@ namespace Garnet.test.JSONPath
         {
             var a = JsonNode.Parse(@"[1, 2, 3, 4, 5]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("['Missing','Missing2']", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Properties 'Missing', 'Missing2' not valid on JArray.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    a.TrySelectNode("['Missing','Missing2']", new JsonSelectSettings { ErrorWhenNoMatch = true },
+                        out var result);
+                }, "Properties 'Missing', 'Missing2' not valid on JArray.");
         }
 
         [Test]
@@ -642,15 +663,27 @@ namespace Garnet.test.JSONPath
         {
             var a = JsonNode.Parse(@"[1, 2, 3, 4, 5]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[99:]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Array slice of 99 to * returned no results.");
+            ClassicAssert.Throws<JsonException>(
+                () => { a.TrySelectNode("[99:]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); },
+                "Array slice of 99 to * returned no results.");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[1:-19]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Array slice of 1 to -19 returned no results.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    a.TrySelectNode("[1:-19]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result);
+                }, "Array slice of 1 to -19 returned no results.");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[:-19]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Array slice of * to -19 returned no results.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    a.TrySelectNode("[:-19]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result);
+                }, "Array slice of * to -19 returned no results.");
 
             a = JsonNode.Parse(@"[]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[:]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Array slice of * to * returned no results.");
+            ClassicAssert.Throws<JsonException>(
+                () => { a.TrySelectNode("[:]", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); },
+                "Array slice of * to * returned no results.");
         }
 
         [Test]
@@ -667,7 +700,11 @@ namespace Garnet.test.JSONPath
         {
             var a = JsonNode.Parse(@"[1, 2, 3, 4, 5]");
 
-            ClassicAssert.Throws<JsonException>(() => { a.TrySelectNode("[1000].Ha", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result); }, "Index 1000 outside the bounds of JArray.");
+            ClassicAssert.Throws<JsonException>(
+                () =>
+                {
+                    a.TrySelectNode("[1000].Ha", new JsonSelectSettings { ErrorWhenNoMatch = true }, out var result);
+                }, "Index 1000 outside the bounds of JArray.");
         }
 
         [Test]
@@ -780,10 +817,9 @@ namespace Garnet.test.JSONPath
 
             IList<JsonNode> t = [.. a.SelectNodes("$..*")];
             ClassicAssert.IsNotNull(t);
-            ClassicAssert.AreEqual(5, t.Count);
-            JsonAssert.AreEqual(a, t[0]);
-            JsonAssert.AreEqual(a[0], t[1]);
-            JsonAssert.AreEqual(a[1], t[3]);
+            ClassicAssert.AreEqual(4, t.Count);
+            JsonAssert.AreEqual(a[0], t[0]);
+            JsonAssert.AreEqual(a[1], t[2]);
         }
 
         [Test]
@@ -817,12 +853,11 @@ namespace Garnet.test.JSONPath
 
             IList<JsonNode> t = [.. a.SelectNodes("$..*")];
             ClassicAssert.IsNotNull(t);
-            ClassicAssert.AreEqual(9, t.Count);
+            ClassicAssert.AreEqual(8, t.Count);
 
-            JsonAssert.AreEqual(a, t[0]);
-            JsonAssert.AreEqual(a[0], t[1]);
-            JsonAssert.AreEqual(a[1], t[3]);
-            JsonAssert.AreEqual(a[2], t[5]);
+            JsonAssert.AreEqual(a[0], t[0]);
+            JsonAssert.AreEqual(a[1], t[2]);
+            JsonAssert.AreEqual(a[2], t[4]);
         }
 
         [Test]
@@ -1174,11 +1209,14 @@ namespace Garnet.test.JSONPath
             // Willis Street
 
             var manufacturers = (JsonArray)o["Manufacturers"];
-            IList<string> firstProductNames = [.. manufacturers.Select(m =>
-            {
-                m.AsObject().TrySelectNode("Products[1].Name", out var node);
-                return node?.GetValue<string>();
-            })];
+            IList<string> firstProductNames =
+            [
+                .. manufacturers.Select(m =>
+                {
+                    m.AsObject().TrySelectNode("Products[1].Name", out var node);
+                    return node?.GetValue<string>();
+                })
+            ];
             // null
             // Headlight Fluid
 
@@ -1386,13 +1424,19 @@ namespace Garnet.test.JSONPath
             var o = JsonNode.Parse(json);
 
             // just to verify expected behavior hasn't changed
-            IEnumerable<string> sanity1 = [.. o.SelectNodes("Values[?(@.Coercible == '1')].Name").Select(x => x.GetValue<string>())];
-            IEnumerable<string> sanity2 = [.. o.SelectNodes("Values[?(@.Coercible != '1')].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> sanity1 =
+                [.. o.SelectNodes("Values[?(@.Coercible == '1')].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> sanity2 =
+                [.. o.SelectNodes("Values[?(@.Coercible != '1')].Name").Select(x => x.GetValue<string>())];
             // new behavior
-            IEnumerable<string> mustBeNumber1 = [.. o.SelectNodes("Values[?(@.Coercible === 1)].Name").Select(x => x.GetValue<string>())];
-            IEnumerable<string> mustBeString1 = [.. o.SelectNodes("Values[?(@.Coercible !== 1)].Name").Select(x => x.GetValue<string>())];
-            IEnumerable<string> mustBeString2 = [.. o.SelectNodes("Values[?(@.Coercible === '1')].Name").Select(x => x.GetValue<string>())];
-            IEnumerable<string> mustBeNumber2 = [.. o.SelectNodes("Values[?(@.Coercible !== '1')].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeNumber1 =
+                [.. o.SelectNodes("Values[?(@.Coercible === 1)].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeString1 =
+                [.. o.SelectNodes("Values[?(@.Coercible !== 1)].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeString2 =
+                [.. o.SelectNodes("Values[?(@.Coercible === '1')].Name").Select(x => x.GetValue<string>())];
+            IEnumerable<string> mustBeNumber2 =
+                [.. o.SelectNodes("Values[?(@.Coercible !== '1')].Name").Select(x => x.GetValue<string>())];
 
             // FAILS-- JsonPath returns { "String" }
             //CollectionAssert.AreEquivalent(new[] { "Number", "String" }, sanity1);

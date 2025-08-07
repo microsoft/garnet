@@ -22,7 +22,9 @@ namespace GarnetJSON.JSONPath
         Or = 9,
         RegexEquals = 10,
         StrictEquals = 11,
-        StrictNotEquals = 12
+        StrictNotEquals = 12,
+        Not = 13,
+        In = 14
     }
 
     /// <summary>
@@ -92,6 +94,7 @@ namespace GarnetJSON.JSONPath
                             return false;
                         }
                     }
+
                     return true;
                 case QueryOperator.Or:
                     foreach (QueryExpression e in Expressions)
@@ -101,7 +104,10 @@ namespace GarnetJSON.JSONPath
                             return true;
                         }
                     }
+
                     return false;
+                case QueryOperator.Not:
+                    return !Expressions[0].IsMatch(root, t, settings);
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -146,8 +152,9 @@ namespace GarnetJSON.JSONPath
         {
             if (Operator == QueryOperator.Exists)
             {
-                return Left is List<PathFilter> left ? JsonPath.Evaluate(left, root, t, settings).Any() : true;
+                return Left is not List<PathFilter> left || JsonPath.Evaluate(left, root, t, settings).Any();
             }
+
 
             if (Left is List<PathFilter> leftPath)
             {
@@ -223,6 +230,8 @@ namespace GarnetJSON.JSONPath
                         return CompareTo(left, right) <= 0;
                     case QueryOperator.Exists:
                         return true;
+                    case QueryOperator.In:
+                        return CheckIn(left, right);
                 }
             }
             else
@@ -236,6 +245,26 @@ namespace GarnetJSON.JSONPath
             }
 
             return false;
+        }
+
+        internal static bool CheckIn(JsonNode? left, JsonNode? right)
+        {
+            if (left is null && right is null)
+            {
+                return false;
+            }
+
+            if (right is not JsonArray rightArray)
+            {
+                return false;
+            }
+
+            if (left is null)
+            {
+                return rightArray.Any(x => x == null);
+            }
+
+            return rightArray.Any(x => JsonNode.DeepEquals(x, left));
         }
 
         internal static int CompareTo(JsonValue? leftValue, JsonValue? rightValue)
@@ -265,18 +294,24 @@ namespace GarnetJSON.JSONPath
                     case JsonValueKind.Undefined:
                         return 0;
                     case JsonValueKind.String:
-                        return leftValue.GetValue<string>()!.CompareTo(rightValue!.GetValue<string>());
+                        return string.Compare(leftValue.GetValue<string>(), rightValue.GetValue<string>(),
+                            StringComparison.Ordinal);
                     case JsonValueKind.Number:
                         if (leftValue.TryGetValue<long>(out var left))
                         {
-                            return rightValue.TryGetValue<long>(out var right) ? left.CompareTo(right) : left.CompareTo((long)rightValue.GetValue<double>());
+                            return rightValue.TryGetValue<long>(out var right)
+                                ? left.CompareTo(right)
+                                : left.CompareTo((long)rightValue.GetValue<double>());
                         }
                         else
                         {
-                            return rightValue.TryGetValue<long>(out var right) ? ((long)leftValue.GetValue<double>()).CompareTo(right) : leftValue.GetValue<double>().CompareTo(rightValue.GetValue<double>());
+                            return rightValue.TryGetValue<long>(out var right)
+                                ? ((long)leftValue.GetValue<double>()).CompareTo(right)
+                                : leftValue.GetValue<double>().CompareTo(rightValue.GetValue<double>());
                         }
                     default:
-                        throw new InvalidOperationException($"Can compare only value types, but the current type is: {leftValue.GetValueKind()}");
+                        throw new InvalidOperationException(
+                            $"Can compare only value types, but the current type is: {leftValue.GetValueKind()}");
                 }
             }
 
@@ -290,17 +325,21 @@ namespace GarnetJSON.JSONPath
                 return leftNum.CompareTo(rightNum);
             }
 
-            if (leftValue is null || rightValue is null)
-            {
-                return 0;
-            }
 
-            return leftValue.GetValue<string>().CompareTo(rightValue.GetValue<string>());
+            var leftString = leftValue.GetValueKind() == JsonValueKind.String
+                ? leftValue.GetValue<string>()
+                : leftValue.ToJsonString();
+            var rightString = rightValue.GetValueKind() == JsonValueKind.String
+                ? rightValue.GetValue<string>()
+                : rightValue.ToJsonString();
+
+            return string.CompareOrdinal(leftString, rightString);
         }
 
         private static bool RegexEquals(JsonValue? input, JsonValue? pattern, JsonSelectSettings? settings)
         {
-            if (input is null || pattern is null || input.GetValueKind() != JsonValueKind.String || pattern.GetValueKind() != JsonValueKind.String)
+            if (input is null || pattern is null || input.GetValueKind() != JsonValueKind.String ||
+                pattern.GetValueKind() != JsonValueKind.String)
             {
                 return false;
             }
@@ -343,7 +382,7 @@ namespace GarnetJSON.JSONPath
 
         internal static bool EqualsWithStringCoercion(JsonValue? value, JsonValue? queryValue)
         {
-            if (value is null && value is null)
+            if (value is null && queryValue is null)
             {
                 return true;
             }
@@ -355,7 +394,7 @@ namespace GarnetJSON.JSONPath
 
             if (TryGetAsDouble(value, out double leftNum) && TryGetAsDouble(queryValue, out double rightNum))
             {
-                return leftNum == rightNum;
+                return leftNum.Equals(rightNum);
             }
 
             if (IsBoolean(value) && IsBoolean(queryValue))
@@ -408,11 +447,15 @@ namespace GarnetJSON.JSONPath
             {
                 if (value.TryGetValue<double>(out var valueNum))
                 {
-                    return queryValue.TryGetValue<double>(out var queryNum) ? valueNum == queryNum : valueNum == queryValue.GetValue<long>();
+                    return queryValue.TryGetValue<double>(out var queryNum)
+                        ? valueNum.Equals(queryNum)
+                        : valueNum.Equals(queryValue.GetValue<long>());
                 }
                 else
                 {
-                    return queryValue.TryGetValue<double>(out var queryNum) ? value.GetValue<long>() == queryNum : value.GetValue<long>() == queryValue.GetValue<long>();
+                    return queryValue.TryGetValue<double>(out var queryNum)
+                        ? queryNum.Equals(value.GetValue<long>())
+                        : value.GetValue<long>() == queryValue.GetValue<long>();
                 }
             }
 
@@ -434,7 +477,9 @@ namespace GarnetJSON.JSONPath
             return false;
         }
 
-        private static bool IsBoolean([NotNullWhen(true)] JsonNode? v) => v is not null && (v.GetValueKind() == JsonValueKind.False || v.GetValueKind() == JsonValueKind.True);
+        private static bool IsBoolean([NotNullWhen(true)] JsonNode? v) => v is not null &&
+                                                                          (v.GetValueKind() == JsonValueKind.False ||
+                                                                           v.GetValueKind() == JsonValueKind.True);
 
         private static bool TryGetAsDouble(JsonValue? value, out double num)
         {
