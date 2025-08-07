@@ -109,6 +109,8 @@ namespace Garnet.server
                 return true;
             }
 
+            // Client names cannot contain spaces, newlines or special characters.
+            // We limit names to printable characters excluding space.
             foreach (var c in clientName)
             {
                 if (c < 33 || c > 126)
