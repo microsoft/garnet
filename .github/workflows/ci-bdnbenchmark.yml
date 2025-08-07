@@ -61,32 +61,6 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-
-      - name: Install Allure via Scoop (Windows only)
-        if: runner.os == 'Windows' && always()
-        run: |
-          iex "& {$(irm get.scoop.sh)}"
-          scoop install allure
-
-      - name: Add Scoop bin to PATH (Windows only)
-        if: runner.os == 'Windows'
-        run: |
-          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
-          allure --version
-
-      - name: Install Allure via Homebrew (Linux only)
-        if: runner.os == 'Linux' && always()
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential curl file git
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install allure
-          allure --version
-
-
-
       - name: Run BDN.benchmark Perf Test
         run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }} ${{ matrix.framework }}
         shell: pwsh
@@ -101,21 +75,25 @@ jobs:
 #          allure_history: allure-history
 #          allure_results: build/allure-results
 
-      - name: Verify and Build Allure Report (Linux)
-        if: runner.os == 'Linux' && always()
-        run: |
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
-
-      - name: Verify Build Allure Report (Windows)
+      - name: Install Allure and Generate Report (Windows only)
         if: runner.os == 'Windows' && always()
         run: |
+          iex "& {$(irm get.scoop.sh)}"
+          scoop install allure
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
+          allure --version
           allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
 
-      - name: Build Allure Report
-        if: always()
+      - name: Install Allure and Generate Report (Linux only)
+        if: runner.os == 'Linux' && always()
         run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl file git
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew install allure
+          allure --version
           allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
 
       - name: Verify Allure Report Output
