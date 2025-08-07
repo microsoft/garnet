@@ -47,8 +47,7 @@ jobs:
           - framework: net8.0
             gh-pages-branch: continuousbenchmark_net80
         configuration: [ 'Release' ]
-#        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
-        test: [ 'Operations.BasicOperations' ]
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -65,73 +64,29 @@ jobs:
         run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }} ${{ matrix.framework }}
         shell: pwsh
         continue-on-error: false
-
-
-#      - name: Build test report
-#        uses: simple-elf/allure-report-action@v1.7
-#        if: runner.os == 'Linux' && always()
-#        with:
-#          gh_pages: gh-pages2
-#          allure_history: allure-history
-#          allure_results: build/allure-results
-
-      - name: Install Allure and Generate Report (Windows only)
-        if: runner.os == 'Windows' && always()
+  
+      - name: Random pause between tasks so multiple inserts don't run at the same time
         run: |
-          iex "& {$(irm get.scoop.sh)}"
-          scoop install allure
-          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
-          allure --version
-          allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
+          $delay = Get-Random -Minimum 1 -Maximum 600
+          Write-Host "Sleeping for $delay seconds..."
+          Start-Sleep -Seconds $delay
+        shell: pwsh
 
-      - name: Install Allure and Generate Report (Linux only)
-        if: runner.os == 'Linux' && always()
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential curl file git
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install allure
-          allure --version
-          allure generate build/allure-results --clean -o build/allure-report/allure-report-${{ runner.os }}
-
-      - name: Verify Allure Report Output
-        if: always()
-        run: |
-          dir build/allure-report/allure-report-${{ runner.os }}
-
-      - name: Upload Allure Report Artifact
-        if: always()
+      - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-${{ runner.os }}
-          path: build/allure-report
+          name: Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: |
+             ./test/BDNPerfTests/results
+        if: ${{ always() }}
 
-        
-
-#      - name: Random pause between tasks so multiple inserts don't run at the same time
-#        run: |
-#          $delay = Get-Random -Minimum 1 -Maximum 600
-#          Write-Host "Sleeping for $delay seconds..."
-#          Start-Sleep -Seconds $delay
-#        shell: pwsh
-
-#      - name: Upload test results to artifacts
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-#          path: |
-#             ./test/BDNPerfTests/results
-#        if: ${{ always() }}
-
-#      - name: Upload Error Log to artifacts
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: ErrorLog-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-#          path: |
-#            ./test/BDNPerfTests/errorlog
-#        if: ${{ always() }}
+      - name: Upload Error Log to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ErrorLog-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: |
+            ./test/BDNPerfTests/errorlog
+        if: ${{ always() }}
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts (https://microsoft.github.io/garnet/charts/)
       - name: Store benchmark result for charts
