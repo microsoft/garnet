@@ -4408,6 +4408,11 @@ namespace Garnet.test
             db.Execute("CLIENT", "SETNAME", "testname");
             var result = (string)db.Execute("CLIENT", "GETNAME");
             ClassicAssert.AreEqual("testname", result);
+
+            // Test clearing client name
+            db.Execute("CLIENT", "SETNAME", "");
+            result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual(null, result);
         }
 
         [Test]

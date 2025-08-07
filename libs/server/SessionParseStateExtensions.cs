@@ -104,7 +104,13 @@ namespace Garnet.server
         {
             clientName = parseState.GetString(idx);
 
-            if (string.IsNullOrEmpty(clientName))
+            if (clientName == null)
+            {
+                return false;
+            }
+
+            // Reference allows clearing client name
+            if (clientName == string.Empty)
             {
                 return true;
             }
