@@ -105,17 +105,20 @@ namespace Tsavorite.core
         /// <summary>The amount of data we have remaining for the current (sub-)chunk (<see cref="currentPosition"/> is 0-based).</summary>
         int currentRemainingLength => currentLength - currentPosition;
 
-        /// <summary>For object deserialization via a large unchained single chunk, we need to track the remaining length to be read.</summary>
-        /// <remarks>For chained chunks with the continuation tag, we should always have a buffer large enough for a full chunk. But if <see cref="IHeapObject.SerializedSizeIsExact"/>,
-        /// we write a single chunk that may be very large.</remarks>
-        long unreadExactLength;
-        /// <summary>For value object deserialization, the cumulative length of data read into the buffer. Does not apply to other record fields or value types</summary>
+        /// <summary>For value object deserialization, the cumulative length of data copied into the caller's buffer by Read(). Does not apply to other record fields or value types</summary>
         long valueCumulativeLength;
+        /// <summary>The number of bytes in the intermediate chained-chunk length markers (4-byte int each). We don't want to consider this part of
+        /// <see cref="valueCumulativeLength"/> but we need to include it in offset calculations for the start of the next chunk.</summary>
+        int numBytesInChainedChunkLengths;
         /// <summary>For object deserialization, the position of the start of the value bytes.</summary>
         int valueDataStartPosition;
 
-        /// <summary>If true, the value is an object in chained-chunk (continuation indicator) format.</summary>
-        bool isChunkedValue;
+        /// <summary>If true, we are currently in a chunk in chained-chunk (continuation indicator) format that has another chunk following.</summary>
+        bool isInChainedChunk;
+        /// <summary>For object deserialization we need to track the remaining chunk length to be read.</summary>
+        /// <remarks>For chained chunks with the continuation tag, we should usually have a buffer large enough for a full chunk, as it fit in the write buffer when we wrote it.
+        /// But if <see cref="IHeapObject.SerializedSizeIsExact"/>, we write a single chunk that may be very large.</remarks>
+        long unreadChunkLength;
 
         /// <summary>The current record header; used for chunks to identify when they need to extract the optionals after the final chunk.</summary>
         internal RecordInfo recordInfo;
@@ -194,7 +197,7 @@ namespace Tsavorite.core
             // In the vast majority of cases we will already have read at least one sector, which has all we need for length bytes, and maybe the full record.
             if (currentLength >= RecordInfo.GetLength() + 1 + 2) // + 1 for indicator byte + the minimum of 2 1-byte lengths for key and value
             {
-                (var keyLengthBytes, var valueLengthBytes, isChunkedValue) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
+                (var keyLengthBytes, var valueLengthBytes, isInChainedChunk) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
                 recordInfo = *(RecordInfo*)ptr;
                 if (recordInfo.Invalid) // includes IsNull
                     return false;
@@ -204,7 +207,7 @@ namespace Tsavorite.core
                 if (currentLength >= offsetToKeyStart)
                 {
                     var keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-                    var valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
+                    var valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out isInChainedChunk);
 
                     if (currentLength >= offsetToKeyStart + keyLength)
                     {
@@ -281,7 +284,7 @@ namespace Tsavorite.core
             // The most common case is that we have the recordInfo and the key in either keyBuffer or keyOverflow.
             // This broken out into two functions to allow ReadKeyAndValue to wait on an event and then compare the key.
             BeginReadValue(valueLength, out var valueOverflow, out var eTag, out var expiration);
-            diskLogRecord = EndReadValue(keyOverflow, valueLength, valueOverflow, eTag, expiration);
+            diskLogRecord = EndReadValue(keyOverflow, valueOverflow, eTag, expiration);
             return;
         }
 
@@ -316,12 +319,12 @@ namespace Tsavorite.core
             // Allocate the same size we used to write, plus an additional sector to ensure we have room for the optionals after the final chunk.
             currentPosition = valueDataStartPosition;
             valueCumulativeLength = 0;
-            unreadExactLength = 0;
+            unreadChunkLength = valueLength;
 
-            if (isChunkedValue)
+            if (isInChainedChunk)
             {
-                // Start the chained-chunk Read sequence. Don't read optionals here, they are read after the last (sub-)chunk, but we have to allocate enough
-                // buffer to read them when we get there, so do the adjustment here instead of calling AllocateBuffer.
+                // Start the chained-chunk Read sequence. Don't read optionals here; they are read after the last (sub-)chunk, but we have to allocate enough
+                // buffer to read them when we get there, so do the adjustment here instead of calling AllocateBufferAndReadFromDevice().
                 var (alignedReadStart, startPadding) = readParams.GetAlignedReadStart(valueDataStartPosition);
                 var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)valueLength + startPadding);
 
@@ -335,8 +338,9 @@ namespace Tsavorite.core
             }
             else
             {
-                // We have a single-chunk object from SerializedSizeIsExact; it may be a large chunk. If we can get it and the optionals into a single buffer, do so, else read in
-                // chunks (with isChunkedValue/continuation) or sub-chunks (pieces of a full chunk; but no isChunkedValue/continuation) and get the optionals on the final sub-chunk.
+                // We have a single chunk object, either from SerializedSizeIsExact or just a small enough inexact to fit in a single buffer (if Exact, it may be a large chunk).
+                // If we can get it and the optionals into a single buffer, do so, else read in (with isChunkedValue/continuation) or sub-chunks (pieces of a full chunk; but no
+                // isChunkedValue/continuation) and get the optionals on the final sub-chunk.
                 if (valueLength + optionalLength <= maxBufferSize)
                 {
                     valueBuffer = AllocateBufferAndReadFromDevice(valueDataStartPosition, (int)(valueLength + optionalLength), multiCountdownEvent);
@@ -351,20 +355,19 @@ namespace Tsavorite.core
                     currentLength = valueBuffer.required_bytes = maxBufferSize;
                 }
             }
+            unreadChunkLength = unreadChunkLength > currentLength ? unreadChunkLength - currentLength : 0;
 
-            // We have allocated a new buffer for just the value, so reset currentPosition and valueDataStartPosition
-            currentPosition = valueDataStartPosition = 0;
+            // We have allocated a new buffer for just the value, so reset currentPosition. valueDataStartPosition must remain, as it is used as part of the file offset.
+            currentPosition = 0;
         }
 
-        private DiskLogRecord EndReadValue(OverflowByteArray keyOverflow, long valueLength, OverflowByteArray valueOverflow,
+        private DiskLogRecord EndReadValue(OverflowByteArray keyOverflow, OverflowByteArray valueOverflow,
             long eTag, long expiration)
         {
             // Deserialize the object if there is one. This will also read any optionals if they are there.
             IHeapObject valueObject = null;
             if (recordInfo.ValueIsObject)
             {
-                if (!isChunkedValue)
-                    unreadExactLength = valueLength - currentLength;
                 valueObject = DoDeserialize(out eTag, out expiration);
                 valueBuffer = default;
             }
@@ -380,11 +383,10 @@ namespace Tsavorite.core
         {
             Debug.Assert(valueDataStartPosition == offsetToKeyStart + keyLength, $"valueDataStartPosition {valueDataStartPosition} should == offsetToKeyStart ({offsetToKeyStart}) + keyLength ({keyLength})");
 
-            // If the total length is small enough, just read the entire thing into a SectorAlignedMemory. Also do this if we have a value object that is not chunked;
-            // in this case we know it was held in a single buffer on Write().
+            // If the total length is small enough, just read the entire thing into a SectorAlignedMemory unless we have a value object that has a succeeding chunk.
             var totalLength = offsetToKeyStart + keyLength + valueLength + optionalLength;
             long eTag = 0, expiration = 0;
-            if (totalLength < IStreamBuffer.DiskReadForceOverflowSize || (recordInfo.ValueIsObject && !isChunkedValue))
+            if (totalLength < maxBufferSize && !isInChainedChunk)
             {
                 var recordBuffer = AllocateBufferAndReadFromDevice(offsetToFieldStart: 0, (int)totalLength);
 
@@ -471,7 +473,7 @@ namespace Tsavorite.core
             }
 
             // Finish the value read, which at this point is done unless we are deserializing objects, and create and return the DiskLogRecord.
-            diskLogRecord = EndReadValue(keyOverflow, valueLength, valueOverflow, eTag, expiration);
+            diskLogRecord = EndReadValue(keyOverflow, valueOverflow, eTag, expiration);
             return true;
         }
 
@@ -532,9 +534,8 @@ namespace Tsavorite.core
         {
             // TODO: handle cancellationToken in Read(); can IDevice support cancellation?
             // This is called by valueObjectSerializer.Deserialize() to read up to destinationSpan.Length bytes. First see if we have enough data for the request.
-            Debug.Assert(!isChunkedValue || unreadExactLength == 0, "Unexpected nonzero unreadExactLength when using continuation");
-            var isLastChunk = !isChunkedValue && unreadExactLength == 0;
-            var availableLength = currentRemainingLength - (isChunkedValue ? sizeof(int) : 0) - (isLastChunk ? optionalLength : 0);
+            var isLastChunk = !isInChainedChunk && unreadChunkLength == 0;
+            var availableLength = currentRemainingLength - (isInChainedChunk ? sizeof(int) : 0) - (isLastChunk ? optionalLength : 0);
             Debug.Assert(availableLength >= 0, $"Available data length cannot be negative");
 
             // If we can fill the entire request, do so and we're done. Otherwise, just copy what data we have, and we'll read additional chunks below.
@@ -556,38 +557,51 @@ namespace Tsavorite.core
 
             while (true)
             {
-                // If there is no more to read, we're done. If there are optionals, OnDeserializeComplete will extract them from currentPosition.
-                if (isLastChunk || unreadExactLength == 0)
+                // If there is no more to read, including no optionals to get, we're done. If there are optionals, OnDeserializeComplete will extract them from currentPosition.
+                if (isLastChunk && optionalLength == 0)
                     return prevCopyLength;
 
-                // Read the next chunk. If we saved with SerializedSizeIsExact, we'll use the unreadExactLength; otherwise, we are doing continuation chunks,
-                // and will override this with the next chunk length to read.
-                var valueLength = unreadExactLength;
-
-                // Get the next (sub-)chunk. If it's the last chunk, get the optionals too.
-                // chunks (with isChunkedValue/continuation) or sub-chunks (pieces of a full chunk; but no isChunkedValue/continuation) and get the optionals on the final sub-chunk.
-                if (isChunkedValue)
+                // Read the next chunk. Initialize to the amount remaining in this chunk, then modify that based on whether we have a continuation chunk after this
+                // or need to request less to fit in the buffer.
+                var valueLength = unreadChunkLength;
+                if (valueLength > maxBufferSize - optionalLength)
                 {
-                    // If isChunkedValue becomes false then there is no chunk after this, read the optionals (if any). We allocated a large enough buffer that continuation
-                    // chunks fit inside IStreamBuffer.DiskWriteBufferSize and thus with the addtional sector size we added at the end we have enough room for optionals.
-                    valueLength = GetContinuationLength(valueBuffer.GetValidPointer() + currentPosition, out isChunkedValue);   // This may be zero
-                    if (!isChunkedValue)
+                    // We have more than a buffer's worth of unread chunk data, so go get the next buffer.
+                    valueLength = maxBufferSize - optionalLength;
+
+                    // If isInChainedChunk and we still have unread chunk bytes, we need to read those to know how many bytes are in the next chunk.
+                    // Otherwise, this will be our last read and we have enough room to grab any optionals also.
+                    if (!isInChainedChunk)
                         getOptionalLength = optionalLength;
                 }
                 else
-                {
-                    // If the value ends before "end of buffer with room for optionals (if any)", then there is no chunk after this and we read the optionals (if any).
-                    // If the "optionals read" would cross the final sector boundary, this subtraction means we'll get the end of the value plus optionals on the next (or next next ...) ReadFromDevice.
-                    if (valueLength > maxBufferSize - optionalLength)
-                        valueLength = maxBufferSize - optionalLength;
+                { 
+                    // The amount of unread data is less than a buffer, and may be 0 if we have a continuation chunk.
+                    // Get the next (sub-)chunk. If it's the last chunk and small enough to fit in the buffer, get the optionals too.
+                    // chunks (with isChunkedValue/continuation) or sub-chunks (pieces of a full chunk; but no isChunkedValue/continuation) and get the optionals on the final sub-chunk.
+                    if (isInChainedChunk)
+                    {
+                        // If isInChainedChunk becomes false then there is no chunk after this, so read the optionals (if any).
+                        // There may be 0 chunk bytes remaining to be read even if isInChainedChunk, if the object serialization ended on a buffer boundary.
+                        if (valueLength == 0)
+                        {
+                            valueLength = GetContinuationLength(valueBuffer.GetValidPointer() + currentPosition, out isInChainedChunk);
+                            numBytesInChainedChunkLengths += sizeof(int);
+                        }
+                        if (valueLength < maxBufferSize - optionalLength)
+                            getOptionalLength = optionalLength;
+                    }
                     else
+                    {
+                        // If there is still unread chunk data, we have enough room for it and any optionals.
                         getOptionalLength = optionalLength;
+                    }
                 }
 
                 // Read from the device.
-                var deviceOffset = readParams.unalignedRecordStartOffset + valueDataStartPosition + valueCumulativeLength + currentLength;
+                var offsetFromRecordStart = valueDataStartPosition + valueCumulativeLength + numBytesInChainedChunkLengths;
 
-                (var alignedReadStart, var startPadding) = readParams.GetAlignedReadStart(deviceOffset);
+                (var alignedReadStart, var startPadding) = readParams.GetAlignedReadStart(offsetFromRecordStart);
                 var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)(valueLength + getOptionalLength));
                 valueBuffer.valid_offset = startPadding;
                 valueBuffer.required_bytes = (int)valueLength + getOptionalLength;
@@ -596,10 +610,15 @@ namespace Tsavorite.core
                 if (alignedBytesToRead > 0)
                     ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead);
                 currentPosition = 0;
-                valueCumulativeLength += currentLength;
-                currentLength = (int)valueLength + getOptionalLength;
-                if (!isChunkedValue)
-                    unreadExactLength -= valueLength;
+
+                // Update our cumulative length to include prior currentLength, then reset currentLength, verify valueLength is within range of the data we have, and update unreadChunkLength.
+                currentLength = valueBuffer.available_bytes;
+                if (valueLength > currentLength)
+                    valueLength = currentLength;
+                unreadChunkLength -= valueLength;
+                Debug.Assert(unreadChunkLength >= 0, $"unreadChunkLength {unreadChunkLength} cannot be less than zero");
+                if (unreadChunkLength == 0 && !isInChainedChunk)
+                    isLastChunk = true;
 
                 // Append the newly-read data to the end of the destination span.
                 var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
@@ -608,6 +627,7 @@ namespace Tsavorite.core
                 {
                     ChunkBufferSpan.Slice(currentPosition, copyLength).CopyTo(destinationSpanAppend);
                     currentPosition += copyLength;
+                    valueCumulativeLength += copyLength;
                     if (copyLength == destinationSpanAppend.Length)
                         break;
                     prevCopyLength += copyLength;
@@ -638,7 +658,10 @@ namespace Tsavorite.core
 
         void OnDeserializeComplete(IHeapObject valueObject, out long eTag, out long expiration)
         {
-            valueObject.SerializedSize = Position - valueDataStartPosition;
+            if (valueObject.SerializedSizeIsExact)
+                Debug.Assert(valueObject.SerializedSize == valueCumulativeLength, $"valueObject.SerializedSize(Exact) {valueObject.SerializedSize} != valueCumulativeLength {valueCumulativeLength}");
+            else
+                valueObject.SerializedSize = valueCumulativeLength;
 
             // Extract optionals if they are present. This assumes currentPosition has been correctly set to the first byte after value data.
             ExtractOptionals(currentPosition, out eTag, out expiration);

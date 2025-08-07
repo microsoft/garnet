@@ -107,7 +107,12 @@ namespace Tsavorite.core
 
         internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
 
-        internal static long GetValueLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
+        internal static long GetValueLength(int numBytes, byte* ptrToFirstByte, out bool isChunkedValue)
+        {
+            var length = ReadVarbyteLength(numBytes, ptrToFirstByte);
+            isChunkedValue = (length & kIsChunkedValueBitMask) != 0;
+            return length & ~kIsChunkedValueBitMask;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte ConstructIndicatorByte(int keyLength, long valueLength, out int keyByteCount, out int valueByteCount)

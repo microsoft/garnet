@@ -446,15 +446,22 @@ namespace Tsavorite.core
                     else
                     {
                         logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
-                        var prevPosition = pinnedMemoryStream.Position;
+                        var prevPosition = diskBuffer.TotalWrittenLength;
 
                         // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
                         diskBuffer.Write(in logRecord, FlushedDiskTailOffset);
-                        var streamRecordSize = RoundUp(diskBuffer.TotalWrittenLength, Constants.kRecordAlignment) - prevPosition;
-                        Debug.Assert(streamRecordSize >= logRecordSize, $"Serialized size of record {streamRecordSize} is less than expected record size {logRecordSize}.");
+                        var streamRecordSize = diskBuffer.TotalWrittenLength - prevPosition;
+
+                        var streamExpansion = streamRecordSize - logRecordSize;
+                        Debug.Assert(streamExpansion % Constants.kRecordAlignment == 0, $"streamExpansion {streamExpansion} is not record-aligned");
+#if DEBUG
+                        // Note: It is OK for the "expansion" to be negative; we don't preserve Filler here, we just write only the actual data.
+                        var logRecExpansion = logRecord.CalculateExpansion();
+                        Debug.Assert(streamExpansion == logRecExpansion, $"logRecSize to StreamSize expansion {streamExpansion} does not equal calculated expansion {logRecExpansion}");
+#endif
 
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
-                        _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset - logRecordSize + streamRecordSize, out _);
+                        _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset + streamExpansion, out _);
                     }
 
                     logicalAddress += logRecordSize;    // advance in main log

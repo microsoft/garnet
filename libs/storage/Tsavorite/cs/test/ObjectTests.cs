@@ -238,11 +238,11 @@ namespace Tsavorite.test
             }
 
             // Test before and after the flush
-            DoRead();
+            DoRead(onDisk: false);
             store.Log.FlushAndEvict(wait: true);
-            DoRead();
+            DoRead(onDisk: true);
 
-            void DoRead()
+            void DoRead(bool onDisk)
             {
                 TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
                 for (int ii = 0; ii < numRec; ii++)
@@ -257,7 +257,9 @@ namespace Tsavorite.test
 
                     Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)));
                     var numLongs = output.valueObject.value.Length % 8;
-                    Assert.That(new ReadOnlySpan<byte>(output.valueObject.value).ContainsAnyExcept((byte)0x42), Is.False);
+                    var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
+                    if (badIndex != -1)
+                        Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
                 }
             }
         }

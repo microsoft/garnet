@@ -143,7 +143,7 @@ namespace Tsavorite.core
                 if (availableBytes >= fieldInfo.offsetToKeyStart)
                 {
                     fieldInfo.keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-                    fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
+                    fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out fieldInfo.isChunkedValue);
                     fieldInfo.isComplete = !fieldInfo.isChunkedValue && fieldInfo.SerializedLength <= availableBytes;
                 }
             }
@@ -171,7 +171,7 @@ namespace Tsavorite.core
 
             fieldInfo.offsetToKeyStart = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes;
             fieldInfo.keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-            fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
+            fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out fieldInfo.isChunkedValue);
             fieldInfo.isComplete = true;
             return true;
         }

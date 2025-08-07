@@ -52,6 +52,9 @@ namespace Tsavorite.core
         int valueDataStartPosition;
         /// <summary>For object serialization, the cumulative length of the value bytes.</summary>
         int valueCumulativeLength;
+        /// <summary>The number of bytes in the intermediate chained-chunk length markers (4-byte int each). We don't want to consider this part of
+        /// <see cref="valueCumulativeLength"/> but we need to include it in the SerializedSize calculation, which is necessary for patching addresses.</summary>
+        int numBytesInChainedChunkLengths;
         /// <summary>When writing the key directly to the device, this is the interior span of the key (between the two sector-alignment caps) to be written after the first
         /// object chunk is serialized to the buffer (this two-step approach is needed so we know the chunk length).</summary>
         PinnedSpanByte keyInteriorSpan;
@@ -333,8 +336,10 @@ namespace Tsavorite.core
                 valueLengthPosition = currentPosition - sizeof(int);
                 valueDataStartPosition = currentPosition;
                 
-                // We don't want Position or Length to include the bytes used by the intermediate chained-chunk length markers.
+                // We don't want Position or Length to include the bytes used by the intermediate chained-chunk length markers but we need them
+                // for SerializedSize tracking so track them separately.
                 valueCumulativeLength -= sizeof(int);
+                numBytesInChainedChunkLengths += sizeof(int);
             }
         }
 
@@ -459,8 +464,9 @@ namespace Tsavorite.core
         {
             // Update value length with the continuation bit NOT set. This may set it to zero if we did not have any more data in the object after the last buffer flush.
             UpdateValueLength(IStreamBuffer.NoValueChunkContinuationBit);
-            valueObject.SerializedSize = Length;
+            valueObject.SerializedSize = Length + numBytesInChainedChunkLengths;
             valueDataStartPosition = 0;
+            numBytesInChainedChunkLengths = 0;
 
             if (valueLengthPosition == NoPosition)
             {
@@ -490,6 +496,8 @@ namespace Tsavorite.core
                 new Span<byte>(BufferPointer + currentPosition, alignmentIncrease).Clear();
                 currentPosition = newCurrentPosition;
             }
+
+            Debug.Assert(TotalWrittenLength % Constants.kRecordAlignment == 0, $"TotalWrittenLength {TotalWrittenLength} is not record-aligned");
         }
 
         /// <inheritdoc/>
