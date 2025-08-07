@@ -101,7 +101,7 @@ namespace Garnet.cluster
             numActiveTasks = 0;
             GossipSamplePercent = serverOptions.GossipSamplePercent;
 
-            // Run Backround task
+            // Run Background task
             if (serverOptions.ConfigFlushFrequency > 0)
                 Task.Run(() => FlushTask());
 
