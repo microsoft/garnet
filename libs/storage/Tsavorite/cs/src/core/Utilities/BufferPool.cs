@@ -156,38 +156,25 @@ namespace Tsavorite.core
         public int AlignedTotalCapacity => buffer.Length - aligned_offset;
 
         /// <summary>
-        /// Get valid pointer
+        /// Get valid pointer (accounts for aligned padding plus any offset specified for the valid start of data)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public byte* GetValidPointer()
-        {
-            return aligned_pointer + valid_offset;
-        }
+        public byte* GetValidPointer() => aligned_pointer + valid_offset;
 
         /// <summary>
-        /// Get Span of entire allocated space
+        /// Get Span of entire allocated space after the valid pointer
         /// </summary>
-        public Span<byte> Span => new (GetValidPointer(), AlignedTotalCapacity);
+        public Span<byte> TotalValidSpan => new (GetValidPointer(), AlignedTotalCapacity);
 
         /// <summary>
-        /// Get Span of used space (required bytes)
+        /// Get Span of entire allocated space after the valid pointer
         /// </summary>
-        public Span<byte> RequiredSpan => new (GetValidPointer(), required_bytes);
+        public Span<byte> AvailableValidSpan => new(GetValidPointer(), available_bytes);
 
         /// <summary>
         /// Get Span of used space (required bytes)
         /// </summary>
-        public PinnedSpanByte RequiredSpanByte => PinnedSpanByte.FromPinnedPointer(GetValidPointer(), required_bytes);
-
-        /// <summary>
-        /// Get Span of used space plus alignment overhead (available bytes) 
-        /// </summary>
-        public Span<byte> AvailableSpan => new (GetValidPointer(), available_bytes);
-
-        /// <summary>
-        /// Get Span of used space plus alignment overhead (available bytes) 
-        /// </summary>
-        public Span<byte> AlignedTotalSpan => new(GetValidPointer(), AlignedTotalCapacity);
+        public Span<byte> RequiredValidSpan => new (GetValidPointer(), required_bytes);
 
         /// <summary>
         /// ToString

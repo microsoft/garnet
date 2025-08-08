@@ -72,6 +72,10 @@ namespace Tsavorite.core
             diskLogRecord.Dispose();
             diskLogRecord = default;
         }
+
+        /// <inheritdoc/>
+        public override string ToString()
+            => $"id {id}, key {request_key}, LA {AbsoluteAddress(logicalAddress)}, MA {minAddress}, DLR {diskLogRecord}";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.

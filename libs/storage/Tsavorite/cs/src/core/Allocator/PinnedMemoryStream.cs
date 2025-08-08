@@ -57,13 +57,16 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>The amount of data in the internal streamBuffer, either from Read() or Write()</summary>
-        public override long Length => streamBuffer.Length;
+        /// <summary>The amount of data in the internal streamBuffer. Not supported because we chunk and thus may not have all data.</summary>
+        public override long Length
+        {
+            get => throw new InvalidOperationException("Stream does not support get_Length.");
+        }
 
-        /// <summary>The current position of the stream seeking; only Reading is supported</summary>
+        /// <summary>The current position of the stream seeking; not supported</summary>
         public override long Position
         {
-            get => streamBuffer.Position;
+            get => throw new InvalidOperationException("Stream does not support get_Position.");
             set => throw new InvalidOperationException("Stream does not support set_Position.");
         }
 

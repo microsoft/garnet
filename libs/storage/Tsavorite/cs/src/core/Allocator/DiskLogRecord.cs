@@ -134,6 +134,7 @@ namespace Tsavorite.core
             {
                 var ptr = (byte*)physicalAddress;
                 (var keyLengthBytes, var valueLengthBytes, fieldInfo.isChunkedValue) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
+                Debug.Assert(!fieldInfo.isChunkedValue, "This should not be called in contexts where isChunkedValue may be true (which is just the disk IO processing in DiskStreamReadBuffer.Read())");
                 fieldInfo.recordInfo = *(RecordInfo*)ptr;
                 if (fieldInfo.recordInfo.Invalid)
                     return false;
@@ -143,7 +144,7 @@ namespace Tsavorite.core
                 if (availableBytes >= fieldInfo.offsetToKeyStart)
                 {
                     fieldInfo.keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-                    fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out fieldInfo.isChunkedValue);
+                    fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
                     fieldInfo.isComplete = !fieldInfo.isChunkedValue && fieldInfo.SerializedLength <= availableBytes;
                 }
             }
@@ -164,6 +165,7 @@ namespace Tsavorite.core
                 return false;
             var ptr = (byte*)physicalAddress;
             (var keyLengthBytes, var valueLengthBytes, fieldInfo.isChunkedValue) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
+            Debug.Assert(!fieldInfo.isChunkedValue, "This should not be called in contexts where isChunkedValue may be true (which is just the disk IO processing in DiskStreamReadBuffer.Read())");
             fieldInfo.recordInfo = *(RecordInfo*)ptr;
             if (fieldInfo.recordInfo.Invalid)
                 return false;
@@ -171,7 +173,7 @@ namespace Tsavorite.core
 
             fieldInfo.offsetToKeyStart = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes;
             fieldInfo.keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-            fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out fieldInfo.isChunkedValue);
+            fieldInfo.valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
             fieldInfo.isComplete = true;
             return true;
         }
@@ -212,7 +214,7 @@ namespace Tsavorite.core
                 Debug.Assert(keyOverflow.IsEmpty, "Must have only one of keyBuffer or keyOverflow");
                 this.keyBuffer = keyBuffer;     // Transfer ownership to us
                 keyBuffer = default;
-                keySpan = PinnedSpanByte.FromPinnedSpan(this.keyBuffer.RequiredSpan);
+                keySpan = PinnedSpanByte.FromPinnedSpan(this.keyBuffer.RequiredValidSpan);
                 recordInfo.SetKeyIsInline();
             }
             else
@@ -228,7 +230,7 @@ namespace Tsavorite.core
                 Debug.Assert(valueObject is null && valueOverflow.IsEmpty, "Must have only one of valueBuffer, valueOverflow, or valueObject");
                 recordOrValueBuffer = valueBuffer;     // Transfer ownership to us
                 valueBuffer = default;
-                valueSpan = PinnedSpanByte.FromPinnedSpan(recordOrValueBuffer.RequiredSpan);
+                valueSpan = PinnedSpanByte.FromPinnedSpan(recordOrValueBuffer.RequiredValidSpan);
                 recordInfo.SetValueIsInline();
             }
             else if (valueObject is not null)
@@ -359,9 +361,9 @@ namespace Tsavorite.core
                 keyBuffer.pool.EnsureSize(ref keyBuffer, key.Length);
             else
                 keyBuffer = bufferPool.Get(key.Length);
-            key.CopyTo(keyBuffer.RequiredSpan);
+            key.CopyTo(keyBuffer.RequiredValidSpan);
             keyOverflow = default;
-            keySpan = PinnedSpanByte.FromPinnedSpan(keyBuffer.RequiredSpan);
+            keySpan = PinnedSpanByte.FromPinnedSpan(keyBuffer.RequiredValidSpan);
             recordInfo.SetKeyIsInline();
         }
 
@@ -377,9 +379,9 @@ namespace Tsavorite.core
                 recordOrValueBuffer.pool.EnsureSize(ref keyBuffer, srcValueSpan.Length);
             else
                 recordOrValueBuffer = bufferPool.Get(srcValueSpan.Length);
-            srcValueSpan.CopyTo(keyBuffer.RequiredSpan);
+            srcValueSpan.CopyTo(keyBuffer.RequiredValidSpan);
             valueOverflowOrObject = default;
-            valueSpan = PinnedSpanByte.FromPinnedSpan(recordOrValueBuffer.RequiredSpan);
+            valueSpan = PinnedSpanByte.FromPinnedSpan(recordOrValueBuffer.RequiredValidSpan);
             recordInfo.SetValueIsInline();
         }
 

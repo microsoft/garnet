@@ -30,16 +30,6 @@ namespace Tsavorite.core
         internal static int InitialIOSize => Environment.SystemPageSize;
 
         /// <summary>
-        /// The cumulative length of the data previously and currently in the buffer, in bytes.
-        /// </summary>
-        long Length { get; }
-
-        /// <summary>
-        /// The cumulative position, including previous buffer lengths, in the buffer, in bytes.
-        /// </summary>
-        long Position { get; }
-
-        /// <summary>
         /// We use these buffers for only read or only write operations, never both at the same time.
         /// </summary>
         bool IsForWrite { get; }

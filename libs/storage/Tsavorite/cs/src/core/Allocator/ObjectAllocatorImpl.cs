@@ -254,32 +254,41 @@ namespace Tsavorite.core
                 if (!closeLogRecord.Info.Invalid)
                 {
                     HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(closeLogRecord.Key));
-                    if (!storeBase.FindTag(ref hei))
+                    if (!storeBase.FindTag(ref hei) || hei.Address < BeginAddress)
                         continue;
 
                     // If the address is in the HashBucketEntry, this will update it; otherwise we will have to traverse the tag chain.
                     if (!hei.UpdateToOnDiskAddress(closeAddress, ClosedDiskTailOffset))
                     {
                         // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
-                        for (var scanAddress = hei.entry.Address; scanAddress >= closeAddress; /*incremented in loop*/)
+                        for (var prevAddress = hei.entry.Address; prevAddress >= closeAddress; /*adjusted in loop*/)
                         {
                             // Use GetPhysicalAddress() directly here for speed (we're just updating RecordInfo so don't need the overhead of an ObjectIdMap lookup)
-                            var logRecord = new LogRecord(GetPhysicalAddress(scanAddress));
+                            var logRecord = new LogRecord(GetPhysicalAddress(prevAddress));
                             if (logRecord.Info.Valid)
                             {
                                 if (logRecord.Info.PreviousAddress == closeAddress)
                                 {
                                     logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
-                                    break;
-                                }
-                                if (logRecord.Info.PreviousAddress < closeAddress)
-                                {
-                                    Debug.Fail("We should have found closeAddress");
+                                    Debug.Assert((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress < BeginAddress || IsOnDisk((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress),
+                                                $"RI: Expected PrevAddress {AbsoluteAddress((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress)} to be on Disk, but wasn't");
+                                    Debug.WriteLine($"PatchAddressUpdate  RI: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(logRecord.Info.PreviousAddress)}");
                                     break;
                                 }
                             }
-                            scanAddress += logRecord.GetInlineRecordSizes().allocatedSize;
+                            prevAddress = logRecord.Info.PreviousAddress;
+                            if (prevAddress < closeAddress)
+                            {
+                                Debug.Fail("We should have found closeAddress");
+                                break;
+                            }
                         }
+                    }
+                    else
+                    {
+                        Debug.Assert((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress < BeginAddress || IsOnDisk((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress),
+                                    $"HBE: Expected PrevAddress {AbsoluteAddress((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress)} to be on Disk, but wasn't");
+                        Debug.WriteLine($"PatchAddressUpdate HBE: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(hei.Address)}");
                     }
 
                     // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
@@ -287,6 +296,7 @@ namespace Tsavorite.core
                     // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
                     // TODO is MonotonicUpdate needed? The OnPagesClosedWorker page-fragment ordering sequence should guarantee that only one thread at a time will be doing this
                     _ = MonotonicUpdate(ref ClosedDiskTailOffset, ClosedDiskTailOffset + closeLogRecord.CalculateExpansion(), out _);
+                    Debug.WriteLine($"ClosedDiskTailOffset pt 1: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
                 }
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
@@ -381,7 +391,7 @@ namespace Tsavorite.core
             var localObjectIdMap = values[flushPage % BufferSize].objectIdMap;
             var srcBuffer = bufferPool.Get((int)numBytesToWrite);
             var pageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
-            pageSpan.CopyTo(srcBuffer.Span);
+            pageSpan.CopyTo(srcBuffer.TotalValidSpan);
             srcBuffer.available_bytes = (int)numBytesToWrite;
 
             // We suspend epoch during the actual flush as that can take a long time.
@@ -406,7 +416,7 @@ namespace Tsavorite.core
                         using var countdownEvent = new CountdownEvent(1);
                         PageAsyncReadResult<Empty> result = new() { handle = countdownEvent };
                         alignedDestinationAddress += (ulong)alignedStartOffset;
-                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.BufferPointer, (uint)sectorSize, AsyncSimpleReadPageCallback, result);
+                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.buffer.GetValidPointer(), (uint)sectorSize, AsyncSimpleReadPageCallback, result);
                         result.handle.Wait();
                         diskBuffer.OnInitialSectorReadComplete(startOffset - alignedStartOffset);
                     }
@@ -442,6 +452,7 @@ namespace Tsavorite.core
                         // Shrink the expansion for skipped records. We still have to step over the record to get to the next one.
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
                         _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset - logRecordSize, out _);
+                        Debug.WriteLine($"FlushedDiskTailOffset pt 1: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                     }
                     else
                     {
@@ -462,6 +473,7 @@ namespace Tsavorite.core
 
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
                         _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset + streamExpansion, out _);
+                        Debug.WriteLine($"FlushedDiskTailOffset pt 2: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                     }
 
                     logicalAddress += logRecordSize;    // advance in main log

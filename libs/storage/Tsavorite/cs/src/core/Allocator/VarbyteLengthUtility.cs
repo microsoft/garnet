@@ -107,11 +107,14 @@ namespace Tsavorite.core
 
         internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
 
-        internal static long GetValueLength(int numBytes, byte* ptrToFirstByte, out bool isChunkedValue)
+        internal static long GetValueLength(int numBytes, byte* ptrToFirstByte) => ReadVarbyteLength(numBytes, ptrToFirstByte);
+
+        internal static int GetChainedChunkValueLength(byte* ptrToFirstByte, out bool isChunkedValue)
         {
-            var length = ReadVarbyteLength(numBytes, ptrToFirstByte);
-            isChunkedValue = (length & kIsChunkedValueBitMask) != 0;
-            return length & ~kIsChunkedValueBitMask;
+            // For ChainedChunk format we always use an int (4 bytes) for simplicity
+            var length = *(int*)ptrToFirstByte;
+            isChunkedValue = (length & IStreamBuffer.ValueChunkContinuationBit) != 0;
+            return length & ~IStreamBuffer.ValueChunkContinuationBit;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -159,14 +162,6 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetByteCount(long value) => ((sizeof(long) * 8) - BitOperations.LeadingZeroCount((ulong)(value | 1)) + 7) / 8;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetContinuationLength(byte* ptr, out bool hasContinuationBit)
-        {
-            var length = *(int*)ptr;
-            hasContinuationBit = (length & IStreamBuffer.ValueChunkContinuationBit) != 0;
-            return length & ~IStreamBuffer.ValueChunkContinuationBit;
-        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (int length, long dataAddress) GetKeyFieldInfo(long indicatorAddress)

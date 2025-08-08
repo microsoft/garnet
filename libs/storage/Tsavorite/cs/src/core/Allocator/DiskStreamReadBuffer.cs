@@ -136,15 +136,7 @@ namespace Tsavorite.core
         readonly DeviceIOCompletionCallback ioCompletionCallback;
 
         /// <summary>The Span of current chunk data read into the buffer.</summary>
-        public Span<byte> ChunkBufferSpan => valueBuffer.Span;
-
-        /// <summary>The amount of data read into the buffer so far (from Read() or Write()), including cumulative lengths of previous buffers (before FlushAndReset).</summary>
-        /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
-        public long Length => valueCumulativeLength + currentLength;
-
-        /// <summary>The current position in the desrialization buffer so far, including cumulative lengths of previous buffers (before FlushAndReset).</summary>
-        /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
-        public long Position => valueCumulativeLength + currentPosition;
+        public Span<byte> ChunkBufferSpan => valueBuffer.TotalValidSpan;
 
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
@@ -206,8 +198,12 @@ namespace Tsavorite.core
                 var offsetToKeyStart = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes;
                 if (currentLength >= offsetToKeyStart)
                 {
+                    // We've checked whether the indicator byte says it is a chained chunk, but we need to recheck on the actual length retrieval
+                    // as the last chunk (which may be the first one) will not have the continuation bit checked.
                     var keyLength = GetKeyLength(keyLengthBytes, ptr + RecordInfo.GetLength() + 1);
-                    var valueLength = GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out isInChainedChunk);
+                    var valueLength = isInChainedChunk
+                        ? GetChainedChunkValueLength(ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out isInChainedChunk)
+                        : GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
 
                     if (currentLength >= offsetToKeyStart + keyLength)
                     {
@@ -323,18 +319,18 @@ namespace Tsavorite.core
 
             if (isInChainedChunk)
             {
-                // Start the chained-chunk Read sequence. Don't read optionals here; they are read after the last (sub-)chunk, but we have to allocate enough
-                // buffer to read them when we get there, so do the adjustment here instead of calling AllocateBufferAndReadFromDevice().
+                // Start the chained-chunk Read sequence. Don't read optionals here; they are read after the last (sub-)chunk, but we have to allocate enough buffer
+                // to read them when we get there, so do the adjustment here instead of calling AllocateBufferAndReadFromDevice(). valueLength includes the next-chunk length.
                 var (alignedReadStart, startPadding) = readParams.GetAlignedReadStart(valueDataStartPosition);
                 var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)valueLength + startPadding);
 
                 valueBuffer = readParams.bufferPool.Get(maxBufferSize);
                 valueBuffer.valid_offset = startPadding;
                 valueBuffer.required_bytes = (int)valueLength;
-                valueBuffer.available_bytes = alignedBytesToRead - startPadding;
+                valueBuffer.available_bytes = (int)valueLength;
 
                 ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead, multiCountdownEvent);
-                currentLength = alignedBytesToRead - startPadding;
+                currentLength = (int)valueLength;
             }
             else
             {
@@ -422,7 +418,7 @@ namespace Tsavorite.core
                     valueOverflow = AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength));
 
                     keyBuffer = readParams.bufferPool.Get(keyLength);
-                    valueOverflow.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.Span);
+                    valueOverflow.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.TotalValidSpan);
                     valueOverflow.AdjustOffsetFromStart(keyLength);
 
                     if (optionalLength > 0)
@@ -549,9 +545,6 @@ namespace Tsavorite.core
                     return prevCopyLength;
             }
 
-            // Reset to the start position. Since we already did at least one sector-aligned read, we do not need to use valid_offset in the valueBuffer anymore.
-            valueBuffer.valid_offset = 0;
-
             // When we get to the last chunk we will add in the optionals at the end of the read (if we have any optionals), and this will become nonzero.
             var getOptionalLength = 0;
 
@@ -585,8 +578,11 @@ namespace Tsavorite.core
                         // There may be 0 chunk bytes remaining to be read even if isInChainedChunk, if the object serialization ended on a buffer boundary.
                         if (valueLength == 0)
                         {
-                            valueLength = GetContinuationLength(valueBuffer.GetValidPointer() + currentPosition, out isInChainedChunk);
+                            valueLength = GetChainedChunkValueLength(valueBuffer.GetValidPointer() + currentPosition, out isInChainedChunk);
                             numBytesInChainedChunkLengths += sizeof(int);
+
+                            // We'll subtract this below; setting this here makes us consistent with the SerializedSizeIsExact case.
+                            unreadChunkLength = valueLength;
                         }
                         if (valueLength < maxBufferSize - optionalLength)
                             getOptionalLength = optionalLength;
@@ -598,31 +594,33 @@ namespace Tsavorite.core
                     }
                 }
 
+                if (valueLength + getOptionalLength == 0)
+                    return prevCopyLength;
+
                 // Read from the device.
                 var offsetFromRecordStart = valueDataStartPosition + valueCumulativeLength + numBytesInChainedChunkLengths;
 
                 (var alignedReadStart, var startPadding) = readParams.GetAlignedReadStart(offsetFromRecordStart);
-                var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)(valueLength + getOptionalLength));
+                var (alignedBytesToRead, _ /*endPadding*/) = readParams.GetAlignedBytesToRead((int)(valueLength + startPadding + getOptionalLength));
                 valueBuffer.valid_offset = startPadding;
                 valueBuffer.required_bytes = (int)valueLength + getOptionalLength;
-                valueBuffer.available_bytes = alignedBytesToRead - startPadding;
+                valueBuffer.available_bytes = valueBuffer.required_bytes;
 
                 if (alignedBytesToRead > 0)
                     ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead);
                 currentPosition = 0;
 
-                // Update our cumulative length to include prior currentLength, then reset currentLength, verify valueLength is within range of the data we have, and update unreadChunkLength.
-                currentLength = valueBuffer.available_bytes;
-                if (valueLength > currentLength)
-                    valueLength = currentLength;
+                // Update our lengths and whether we have more chunk data to read.
+                currentLength = valueBuffer.required_bytes;
                 unreadChunkLength -= valueLength;
                 Debug.Assert(unreadChunkLength >= 0, $"unreadChunkLength {unreadChunkLength} cannot be less than zero");
                 if (unreadChunkLength == 0 && !isInChainedChunk)
                     isLastChunk = true;
 
-                // Append the newly-read data to the end of the destination span.
+                // Append the newly-read data to the end of the destination span. This availableLength and copyLength calculation is the same as above.
                 var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
-                var copyLength = (int)valueLength < destinationSpanAppend.Length ? (int)valueLength : destinationSpanAppend.Length;
+                availableLength = currentRemainingLength - (isInChainedChunk ? sizeof(int) : 0) - (isLastChunk ? optionalLength : 0);
+                var copyLength = (availableLength >= destinationSpanAppend.Length) ? destinationSpanAppend.Length : availableLength;
                 if (copyLength > 0)
                 {
                     ChunkBufferSpan.Slice(currentPosition, copyLength).CopyTo(destinationSpanAppend);
@@ -650,7 +648,7 @@ namespace Tsavorite.core
             // valueCumulativeLength is only relevant for object serialization; we increment it on all device reads to avoid "if", so here we reset it to the appropriate
             // "start at 0" by making it the negative of currentPosition. Subsequently if we read e.g. an int, we'll have Position = (-currentPosition + currentPosition + 4)
             // and similar for Length.
-            valueCumulativeLength = -currentPosition;
+            valueCumulativeLength = 0;
             valueObjectSerializer.Deserialize(out var valueObject);
             OnDeserializeComplete(valueObject, out eTag, out expiration);
             return valueObject;
