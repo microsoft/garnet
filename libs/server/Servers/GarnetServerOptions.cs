@@ -197,9 +197,9 @@ namespace Garnet.server
         public int ClusterTimeout = 60;
 
         /// <summary>
-        /// How frequently to flush config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms
+        /// How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms
         /// </summary>
-        public int ConfigFlushFrequency = 0;
+        public int ClusterConfigFlushFrequencyMs = 0;
 
         /// <summary>
         /// TLS options

@@ -102,12 +102,12 @@ namespace Garnet.cluster
             GossipSamplePercent = serverOptions.GossipSamplePercent;
 
             // Run Background task
-            if (serverOptions.ConfigFlushFrequency > 0)
+            if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
                 Task.Run(() => FlushTask());
 
             async Task FlushTask()
             {
-                var flushConfigFrequency = TimeSpan.FromMilliseconds(serverOptions.ConfigFlushFrequency);
+                var flushConfigFrequency = TimeSpan.FromMilliseconds(serverOptions.ClusterConfigFlushFrequencyMs);
                 try
                 {
                     Interlocked.Increment(ref numActiveTasks);
@@ -162,10 +162,10 @@ namespace Garnet.cluster
         /// </summary>
         public void FlushConfig()
         {
-            if (serverOptions.ConfigFlushFrequency == -1)
+            if (serverOptions.ClusterConfigFlushFrequencyMs == -1)
                 return;
 
-            if (serverOptions.ConfigFlushFrequency > 0)
+            if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
                 Interlocked.Increment(ref flushCount);
             else
             {
