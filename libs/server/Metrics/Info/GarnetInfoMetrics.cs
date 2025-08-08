@@ -525,10 +525,14 @@ namespace Garnet.server
         public string GetRespInfo(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
         {
             var sbResponse = new StringBuilder();
-            foreach (var section in sections)
-                GetRespInfo(section, dbId, storeWrapper, sbResponse);
+            for (var i = 0; i < sections.Length; i++)
+            {
+                GetRespInfo(sections[i], dbId, storeWrapper, sbResponse);
 
-            sbResponse.AppendLine();
+                if (i != sections.Length - 1)
+                    sbResponse.AppendLine();
+            }
+
             return sbResponse.ToString();
         }
 
