@@ -568,11 +568,10 @@ namespace Garnet.test
         GarnetServer server;
         private string memorySize = "3m";
         private string indexSize = "512";
-        private string objectStoreLogMemorySize = "8192";
-        private string objectStoreHeapMemorySize = "4096";
+        private string objectStoreLogMemorySize = "16384";
+        private string objectStoreHeapMemorySize = "16384";
         private string pageSize = "1024";
         private bool useReviv;
-        private readonly Random r = new();
 
         public RespConfigIndexUtilizationTests(bool useReviv)
         {
@@ -684,6 +683,50 @@ namespace Garnet.test
                 storeType == StoreType.Main
                     ? server.Provider.StoreWrapper.store.OverflowBucketAllocations
                     : server.Provider.StoreWrapper.objectStore.OverflowBucketAllocations;
+        }
+    }
+
+    /// <summary>
+    /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
+    /// </summary>
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class RespConfigHeapUtilizationTests
+    {
+        GarnetServer server;
+        private string memorySize = "3m";
+        private string indexSize = "512";
+        private string objectStoreLogMemorySize = "8192";
+        private string objectStoreHeapMemorySize = "4096";
+        private string pageSize = "1024";
+        private bool useReviv;
+
+        public RespConfigHeapUtilizationTests(bool useReviv)
+        {
+            this.useReviv = useReviv;
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(null,
+                memorySize: memorySize,
+                indexSize: indexSize,
+                pageSize: pageSize,
+                objectStorePageSize: pageSize,
+                objectStoreLogMemorySize: objectStoreLogMemorySize,
+                objectStoreIndexSize: indexSize,
+                objectStoreHeapMemorySize: objectStoreHeapMemorySize,
+                useReviv: useReviv);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         /// <summary>
