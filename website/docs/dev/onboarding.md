@@ -62,6 +62,18 @@ dotnet run -c Debug -f net8.0 -- --logger-level Trace -m 4g -i 64m
 
 6. A third option is to install Redis-Insight on Windows. Follow the official guide [here](https://redis.com/redis-enterprise/redis-insight/#insight-form).
 
+7. A fourth option is to connect with telnet and just type commands using [inline commands](https://redis.io/docs/latest/develop/reference/protocol-spec/#inline-commands).
+However, telnet does not decode the responses, you'll see the raw RESP serialization.
+On Windows, telnet defaults to localecho off, you won't see your typing until after first command is sent.
+Alternatively, you can type Ctrl-] followed by Enter, and telnet will start echoing.
+
+Note: By default, Garnet enables inline command parsing only for local connections.
+The 'EnableInlineCommands' configuration option can disable it or enable for remote connections too.
+
+```bash
+    telnet localhost 6379
+```
+
 ## Troubleshooting
 
 1. If you need to use TLS in Linux, follow the guide at:

@@ -3220,7 +3220,7 @@ namespace Garnet.test
         [TestCase(3, Description = "RESP3 output")]
         public async Task ZRespOutput(byte respVersion)
         {
-            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true);
             c.Connect();
 
             var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
@@ -5156,7 +5156,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD zset2 4 e 4 f");
 
             var response = lightClientRequest.SendCommand("ZINTER 2 zset2 zset1 WITHSCORES");
-            // ZINTER result should obey sortedset order invariant, 
+            // ZINTER result should obey sortedset order invariant,
             var expectedResponse = "*4\r\n$1\r\nf\r\n$1\r\n8\r\n$1\r\ne\r\n$1\r\n9";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }

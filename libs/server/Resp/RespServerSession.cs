@@ -88,6 +88,11 @@ namespace Garnet.server
         /// </summary>
         int endReadHead;
 
+        /// <summary>
+        /// No redis command (including the terminator) is smaller than this length.
+        /// </summary>
+        private const int MinimumProcessLength = 4;
+
         internal byte* dcurr, dend;
         bool toDispose;
 
@@ -430,6 +435,16 @@ namespace Garnet.server
                     networkSender.IsLocalConnection());
         }
 
+        internal bool CanRunInlineCommands()
+        {
+            var enableInlineCommands = storeWrapper.serverOptions.EnableInlineCommands;
+
+            return
+                (enableInlineCommands == ConnectionProtectionOption.Yes) ||
+                ((enableInlineCommands == ConnectionProtectionOption.Local) &&
+                    networkSender.IsLocalConnection());
+        }
+
         internal bool CanRunModule()
         {
             var enableModuleCommand = storeWrapper.serverOptions.EnableModuleCommand;
@@ -568,7 +583,7 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
-            while (bytesRead - readHead >= 4)
+            while (bytesRead - readHead >= MinimumProcessLength)
             {
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
@@ -657,7 +672,7 @@ namespace Garnet.server
         }
 
         // Make first command in string as uppercase
-        private bool MakeUpperCase(byte* ptr)
+        private bool MakeUpperCase(byte* ptr, int len)
         {
             // Assume most commands are already upper case.
             // Assume most commands are 2-8 bytes long.
@@ -672,7 +687,6 @@ namespace Garnet.server
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
-            var len = bytesRead - readHead;
             if (len >= 12)
             {
                 var cmdLen = (uint)(*(ptr + 5) - '2');
@@ -1117,112 +1131,6 @@ namespace Garnet.server
             }
 
             return true;
-        }
-
-        ReadOnlySpan<byte> GetCommand(out bool success)
-        {
-            var ptr = recvBufferPtr + readHead;
-            var end = recvBufferPtr + bytesRead;
-
-            // Try the command length
-            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
-            {
-                success = false;
-                return default;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            // Try to read the command value
-            ptr += length;
-            if (ptr + 2 > end)
-            {
-                success = false;
-                return default;
-            }
-
-            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            var result = new ReadOnlySpan<byte>(recvBufferPtr + readHead, length);
-            readHead += length + 2;
-            success = true;
-
-            return result;
-        }
-
-        ReadOnlySpan<byte> GetUpperCaseCommand(out bool success)
-        {
-            var ptr = recvBufferPtr + readHead;
-            var end = recvBufferPtr + bytesRead;
-
-            // Try the command length
-            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
-            {
-                success = false;
-                return default;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            // Try to read the command value
-            ptr += length;
-            if (ptr + 2 > end)
-            {
-                success = false;
-                return default;
-            }
-
-            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            var result = new Span<byte>(recvBufferPtr + readHead, length);
-            readHead += length + 2;
-            success = true;
-
-            AsciiUtils.ToUpperInPlace(result);
-            return result;
-        }
-
-        public ArgSlice GetCommandAsArgSlice(out bool success)
-        {
-            if (bytesRead - readHead < 6)
-            {
-                success = false;
-                return default;
-            }
-
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
-            {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
-            {
-                success = false;
-                return default;
-            }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
-
-            var result = new ArgSlice(recvBufferPtr + readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
-
-            readHead += 2 + psize + 2;
-            success = true;
-            return result;
         }
 
         /// <summary>

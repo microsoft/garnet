@@ -30,6 +30,22 @@ public static class AsciiUtils
         return (uint)(c - minInclusive) <= (uint)(maxInclusive - minInclusive);
     }
 
+    /// <summary>Indicates whether character is ASCII quote character.</summary>
+    /// <param name="c">The character to evaluate.</param>
+    /// <returns>true if <paramref name="c"/> is an ASCII quote character; otherwise, false.</returns>
+    public static bool IsQuoteChar(byte c)
+    {
+        return (c == '"') || (c == '\'');
+    }
+
+    /// <summary>Indicates whether character is ASCII whitespace or a carriage return.</summary>
+    /// <param name="c">The character to evaluate.</param>
+    /// <returns>true if <paramref name="c"/> is an ASCII whitespace character; otherwise, false.</returns>
+    public static bool IsRedisWhiteSpace(byte c)
+    {
+        return (c == ' ') || (c == '\t') || (c == '\r');
+    }
+
     public static byte ToLower(byte c)
     {
         if (IsBetween(c, 'A', 'Z'))
