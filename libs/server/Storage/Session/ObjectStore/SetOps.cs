@@ -985,7 +985,7 @@ namespace Garnet.server
                 var status = SetIntersect(keys, ref setObjectStoreLockableContext, out var result);
                 if (status == GarnetStatus.OK && result != null)
                 {
-                    count = limit.HasValue ? Math.Min(result.Count, limit.Value) : result.Count;
+                    count = limit > 0 ? Math.Min(result.Count, limit.Value) : result.Count;
                 }
                 return status;
             }
