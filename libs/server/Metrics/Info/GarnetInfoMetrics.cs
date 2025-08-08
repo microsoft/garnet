@@ -467,7 +467,7 @@ namespace Garnet.server
                     GetSectionRespInfo(header, storeInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.OBJECTSTORE:
-                    if (storeWrapper.serverOptions.DisableObjects) 
+                    if (storeWrapper.serverOptions.DisableObjects)
                         return;
                     PopulateObjectStoreStats(storeWrapper);
                     GetSectionRespInfo(header, objectStoreInfo[dbId], sbResponse);
@@ -477,7 +477,7 @@ namespace Garnet.server
                     GetSectionRespInfo(header, storeHashDistrInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
-                    if (storeWrapper.serverOptions.DisableObjects) 
+                    if (storeWrapper.serverOptions.DisableObjects)
                         return;
                     PopulateObjectStoreHashDistribution(storeWrapper);
                     GetSectionRespInfo(header, objectStoreHashDistrInfo[dbId], sbResponse);
@@ -487,13 +487,13 @@ namespace Garnet.server
                     GetSectionRespInfo(header, storeRevivInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.OBJECTSTOREREVIV:
-                    if (storeWrapper.serverOptions.DisableObjects) 
+                    if (storeWrapper.serverOptions.DisableObjects)
                         return;
                     PopulateObjectStoreRevivInfo(storeWrapper);
                     GetSectionRespInfo(header, objectStoreRevivInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.PERSISTENCE:
-                    if (!storeWrapper.serverOptions.EnableAOF) 
+                    if (!storeWrapper.serverOptions.EnableAOF)
                         return;
                     PopulatePersistenceInfo(storeWrapper);
                     GetSectionRespInfo(header, persistenceInfo[dbId], sbResponse);
@@ -555,7 +555,7 @@ namespace Garnet.server
                     PopulateStoreStats(storeWrapper);
                     return storeInfo[dbId];
                 case InfoMetricsType.OBJECTSTORE:
-                    if (storeWrapper.serverOptions.DisableObjects) 
+                    if (storeWrapper.serverOptions.DisableObjects)
                         return null;
                     PopulateObjectStoreStats(storeWrapper);
                     return objectStoreInfo[dbId];
@@ -563,7 +563,7 @@ namespace Garnet.server
                     PopulateStoreHashDistribution(storeWrapper);
                     return storeHashDistrInfo[dbId];
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
-                    if (storeWrapper.serverOptions.DisableObjects) 
+                    if (storeWrapper.serverOptions.DisableObjects)
                         return null;
                     PopulateObjectStoreHashDistribution(storeWrapper);
                     return objectStoreHashDistrInfo[dbId];
@@ -571,12 +571,12 @@ namespace Garnet.server
                     PopulateStoreRevivInfo(storeWrapper);
                     return storeRevivInfo[dbId];
                 case InfoMetricsType.OBJECTSTOREREVIV:
-                    if (storeWrapper.serverOptions.DisableObjects) 
+                    if (storeWrapper.serverOptions.DisableObjects)
                         return null;
                     PopulateObjectStoreRevivInfo(storeWrapper);
                     return objectStoreRevivInfo[dbId];
                 case InfoMetricsType.PERSISTENCE:
-                    if (!storeWrapper.serverOptions.EnableAOF) 
+                    if (!storeWrapper.serverOptions.EnableAOF)
                         return null;
                     PopulatePersistenceInfo(storeWrapper);
                     return persistenceInfo[dbId];
