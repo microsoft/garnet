@@ -419,7 +419,7 @@ namespace Garnet.server
 
         private static void GetSectionRespInfo(string sectionHeader, MetricsItem[] info, StringBuilder sbResponse)
         {
-            sbResponse.AppendLine($"# {sectionHeader}");
+            sbResponse.Append($"# {sectionHeader}\r\n");
             if (info == null)
                 return;
 
@@ -427,12 +427,12 @@ namespace Garnet.server
             if (string.IsNullOrEmpty(info[0].Name))
             {
                 Debug.Assert(info.Length == 1, "Unexpected empty name in first entry of multi-entry metrics info");
-                sbResponse.AppendLine(info[0].Value);
+                sbResponse.Append($"{info[0].Value}\r\n");
             }
             else
             {
                 for (var i = 0; i < info.Length; i++)
-                    sbResponse.AppendLine($"{info[i].Name}:{info[i].Value}");
+                    sbResponse.Append($"{info[i].Name}:{info[i].Value}\r\n");
             }
         }
 
@@ -530,7 +530,7 @@ namespace Garnet.server
                 GetRespInfo(sections[i], dbId, storeWrapper, sbResponse);
 
                 if (i != sections.Length - 1)
-                    sbResponse.AppendLine();
+                    sbResponse.Append("\r\n");
             }
 
             return sbResponse.ToString();
