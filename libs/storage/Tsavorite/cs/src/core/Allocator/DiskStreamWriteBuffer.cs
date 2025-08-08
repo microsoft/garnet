@@ -252,7 +252,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
         {
-            // This is called by valueObjectSerializer.Serialize(). TODO: handle cancellationToken; can IDevice support cancellation?
+            // This is called by valueObjectSerializer.Serialize().
 
             // Copy to the buffer. If it does not fit in the remaining capacity, we will write as much as does, update the previous length int to include
             // ValueChunkContinuationIndicator if we are chunk chaining, do any deferred key processing, flush the buffer, then start the next chunk off
@@ -270,6 +270,7 @@ namespace Tsavorite.core
             while (data.Length - dataStart > 0)
             {
                 Debug.Assert(RemainingCapacity - lengthSpaceReserve > 0, "RemainingCapacity  - lengthSpaceReserve == 0 should have already triggered an OnChunkComplete call, which would have reset the buffer");
+                cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
 
                 // If it won't all fit in the remaining buffer, write as much as will.
                 var requestLength = data.Length - dataStart;

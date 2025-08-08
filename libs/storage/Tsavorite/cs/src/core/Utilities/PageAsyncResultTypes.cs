@@ -22,6 +22,7 @@ namespace Tsavorite.core
         internal DeviceIOCompletionCallback callback;
         internal object frame;
         internal CancellationTokenSource cts;
+        internal uint numBytesRead;
 
         /* Used for iteration */
         internal long resumePtr;    // TODO unused

@@ -1859,6 +1859,7 @@ namespace Tsavorite.core
 
             // Signal the event so the waiter can continue
             var result = (PageAsyncReadResult<Empty>)context;
+            result.numBytesRead = numBytes;
             _ = result.handle.Signal();
         }
 
@@ -1882,6 +1883,10 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
+                // Note: don't test for (numBytes >= ctx.record.required_bytes) for this initial read, as the file may legitimately end before the
+                // InitialIOSize request can be fulfilled. DiskStreamReadBuffer reads will only request reads of known intra-record sizes, so
+                // will test to ensure they get the expected number of bytes.
+
                 // Note: logicalAddress is actually physicalAddress here, with the OnDisk AddressType; there can't be fixed pages for expanded records.
                 // TODO: move this "if" to an IAllocator function call to do the DiskStreamReadBuffer.Read().
                 DiskStreamReadBuffer<TStoreFunctions>.ReadParameters readParams = IsObjectAllocator

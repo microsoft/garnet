@@ -131,7 +131,8 @@ namespace Tsavorite.core
         int maxBufferSize => IStreamBuffer.DiskWriteBufferSize + (int)readParams.sectorSize;
 
         /// <summary>
-        /// When we read from the buffer this callback will be used and must signal the <see cref="PageAsyncFlushResult{T}.done"/> event so we can continue.
+        /// When we read from the buffer this callback will be used and must set its <see cref="PageAsyncReadResult{T}.numBytesRead"/> numBytesRead
+        ///     and signal the <see cref="PageAsyncReadResult{T}.handle"/> event so we can continue.
         /// </summary>
         readonly DeviceIOCompletionCallback ioCompletionCallback;
 
@@ -488,7 +489,11 @@ namespace Tsavorite.core
                 PageAsyncReadResult<Empty> result = new() { handle = multiCountdownEvent ?? new CountdownEvent(1) };
                 logDevice.ReadAsync((ulong)alignedOffset, (IntPtr)ptr, (uint)alignedBytesToRead, ioCompletionCallback, result);
                 if (multiCountdownEvent is null)
+                {
                     result.handle.Wait();
+                    if (result.numBytesRead != (uint)alignedBytesToRead)
+                        throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual {result.numBytesRead}");
+                }
             }
             return keyOverflow;
         }
@@ -517,39 +522,49 @@ namespace Tsavorite.core
             Debug.Assert(alignedBytesToRead <= recordBuffer.AlignedTotalCapacity, $"alignedBytesToRead {alignedBytesToRead} is greater than AlignedTotalCapacity {recordBuffer.AlignedTotalCapacity}");
 
             // If a CountdownEvent was passed in, we're part of a multi-IO operation; otherwise, just create one for a single IO and wait for it here.
-            // TODO apparently we can't get the actual number of bytes read via IDevice
             using var localCountdownEvent = multiCountdownEvent is null ? new CountdownEvent(1) : default;
             PageAsyncReadResult<Empty> result = new() { handle = multiCountdownEvent ?? localCountdownEvent };
             logDevice.ReadAsync((ulong)alignedReadStart, (IntPtr)recordBuffer.aligned_pointer, (uint)alignedBytesToRead, ioCompletionCallback, result);
             if (multiCountdownEvent is null)
+            {
                 result.handle.Wait();
+                if (result.numBytesRead != (uint)alignedBytesToRead)
+                    throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual {result.numBytesRead}");
+            }
         }
 
         /// <inheritdoc/>
         public int Read(Span<byte> destinationSpan, CancellationToken cancellationToken = default)
         {
-            // TODO: handle cancellationToken in Read(); can IDevice support cancellation?
             // This is called by valueObjectSerializer.Deserialize() to read up to destinationSpan.Length bytes. First see if we have enough data for the request.
-            var isLastChunk = !isInChainedChunk && unreadChunkLength == 0;
-            var availableLength = currentRemainingLength - (isInChainedChunk ? sizeof(int) : 0) - (isLastChunk ? optionalLength : 0);
-            Debug.Assert(availableLength >= 0, $"Available data length cannot be negative");
-
-            // If we can fill the entire request, do so and we're done. Otherwise, just copy what data we have, and we'll read additional chunks below.
-            var prevCopyLength = (availableLength >= destinationSpan.Length) ? destinationSpan.Length : availableLength;
-            if (prevCopyLength > 0)
-            {
-                ChunkBufferSpan.Slice(currentPosition, prevCopyLength).CopyTo(destinationSpan);
-                currentPosition += prevCopyLength;
-                valueCumulativeLength += prevCopyLength;
-                if (prevCopyLength == destinationSpan.Length)
-                    return prevCopyLength;
-            }
 
             // When we get to the last chunk we will add in the optionals at the end of the read (if we have any optionals), and this will become nonzero.
             var getOptionalLength = 0;
 
+            // Amount of data copied to destination on previous iterations of the loop below.
+            var prevCopyLength = 0;
+
             while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
+
+                var isLastChunk = !isInChainedChunk && unreadChunkLength == 0;
+                var availableLength = currentRemainingLength - (isInChainedChunk ? sizeof(int) : 0) - (isLastChunk ? optionalLength : 0);
+                Debug.Assert(availableLength >= 0, $"Available data length cannot be negative");
+
+                // If we can fill the entire request, do so and we're done. Otherwise, just copy what data we have, and we'll read additional chunks below.
+                var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
+                var copyLength = (availableLength >= destinationSpanAppend.Length) ? destinationSpanAppend.Length : availableLength;
+                if (copyLength > 0)
+                {
+                    ChunkBufferSpan.Slice(currentPosition, copyLength).CopyTo(destinationSpanAppend);
+                    currentPosition += copyLength;
+                    valueCumulativeLength += copyLength;
+                    if (copyLength == destinationSpanAppend.Length)
+                        return destinationSpan.Length;
+                    prevCopyLength += copyLength;
+                }
+
                 // If there is no more to read, including no optionals to get, we're done. If there are optionals, OnDeserializeComplete will extract them from currentPosition.
                 if (isLastChunk && optionalLength == 0)
                     return prevCopyLength;
@@ -609,29 +624,10 @@ namespace Tsavorite.core
                 if (alignedBytesToRead > 0)
                     ReadFromDevice(valueBuffer, alignedReadStart, alignedBytesToRead);
                 currentPosition = 0;
-
-                // Update our lengths and whether we have more chunk data to read.
                 currentLength = valueBuffer.required_bytes;
                 unreadChunkLength -= valueLength;
                 Debug.Assert(unreadChunkLength >= 0, $"unreadChunkLength {unreadChunkLength} cannot be less than zero");
-                if (unreadChunkLength == 0 && !isInChainedChunk)
-                    isLastChunk = true;
-
-                // Append the newly-read data to the end of the destination span. This availableLength and copyLength calculation is the same as above.
-                var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
-                availableLength = currentRemainingLength - (isInChainedChunk ? sizeof(int) : 0) - (isLastChunk ? optionalLength : 0);
-                var copyLength = (availableLength >= destinationSpanAppend.Length) ? destinationSpanAppend.Length : availableLength;
-                if (copyLength > 0)
-                {
-                    ChunkBufferSpan.Slice(currentPosition, copyLength).CopyTo(destinationSpanAppend);
-                    currentPosition += copyLength;
-                    valueCumulativeLength += copyLength;
-                    if (copyLength == destinationSpanAppend.Length)
-                        break;
-                    prevCopyLength += copyLength;
-                }
             }
-            return destinationSpan.Length;
         }
 
         IHeapObject DoDeserialize(out long eTag, out long expiration)
