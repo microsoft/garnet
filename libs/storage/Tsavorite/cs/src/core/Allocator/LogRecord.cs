@@ -947,10 +947,13 @@ namespace Tsavorite.core
             }
             else
             {
-                // This assumes we know SerializedSize is exact, such as after Flush(), so we disregard SerializeSizeIsExact.
+                // This assumes we know SerializedSize is exact, such as after Flush(), so we disregard SerializeSizeIsExact, but must still account
+                // for having a full sizeof(int) value length in the initial value length (fortunately the intermediate chunk-continuation valueLength
+                // sizeof(int)s are already accounted for in SerializedSize).
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-                var serializedSize = objectIdMap.GetHeapObject(*(int*)dataAddress).SerializedSize;
-                valueLengthByteGrowth = GetByteCount(serializedSize) - valueLengthBytes;
+                var valueObject = objectIdMap.GetHeapObject(*(int*)dataAddress);
+                var serializedSize = valueObject.SerializedSize;
+                valueLengthByteGrowth = (valueObject.SerializedSizeIsExact ? GetByteCount(serializedSize) : sizeof(int)) - valueLengthBytes;
                 valueLengthGrowth = serializedSize - ObjectIdMap.ObjectIdSize;
             }
 

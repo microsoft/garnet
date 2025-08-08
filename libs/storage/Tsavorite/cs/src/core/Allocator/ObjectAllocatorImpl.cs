@@ -418,7 +418,7 @@ namespace Tsavorite.core
                         alignedDestinationAddress += (ulong)alignedStartOffset;
                         device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.buffer.GetValidPointer(), (uint)sectorSize, AsyncSimpleReadPageCallback, result);
                         result.handle.Wait();
-                        if (result.numBytesRead != (uint)sectorSize)
+                        if (result.numBytesRead != (uint)sectorSize)    // Our writes should always have written at least a sector
                             throw new TsavoriteException($"Expected number of bytes read {sectorSize}, actual {result.numBytesRead}");
                         diskBuffer.OnInitialSectorReadComplete(startOffset - alignedStartOffset);
                     }

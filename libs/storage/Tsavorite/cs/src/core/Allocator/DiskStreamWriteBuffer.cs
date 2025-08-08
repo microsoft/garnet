@@ -67,9 +67,6 @@ namespace Tsavorite.core
 
         private int RemainingCapacity => buffer.AlignedTotalCapacity - currentPosition;
 
-        /// <summary>The Span of data in the buffer past the <see cref="currentPosition"/> position.</summary>
-        public Span<byte> RemainingSpan => buffer.TotalValidSpan.Slice(currentPosition);
-
         /// <summary>The amount of bytes we wrote. Used by the caller (e.g. <see cref="ObjectAllocatorImpl{TStoreFunctions}"/> to track actual file output length.</summary>
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer. Subtract the intermediate chain-chunk length markers.</remarks>
         public long TotalWrittenLength => priorCumulativeLength + currentPosition;
@@ -184,8 +181,7 @@ namespace Tsavorite.core
             {
                 // Max value chunk size is limited to a single buffer so fits in an int. Use int.MaxValue to get the int varbyte size, but we won't write a chunk that large.
                 WriteIndicatorByteAndLengths(keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
-                keySpan.CopyTo(RemainingSpan);
-                currentPosition += keySpan.Length;
+                Write(keySpan);
 
                 // Serialize the value object into possibly multiple buffers; we will manage chunk updating in Write(ReadOnlySpan<byte> data).
                 DoSerialize(valueObject);
@@ -204,8 +200,7 @@ namespace Tsavorite.core
             var beginCapLength = RoundUp(currentPosition, SectorSize) - currentPosition;
             var capSpan = keySpan.Slice(0, beginCapLength);
             if (capSpan.Length > 0)
-                capSpan.CopyTo(RemainingSpan);
-            currentPosition += beginCapLength;
+                Write(capSpan);
 
             // Hold onto the span of the interior bytes; we must serialize the first object chunk before we can write the value length and key bytes.
             var interiorLength = RoundDown(keySpan.Length - beginCapLength, SectorSize);
@@ -216,7 +211,6 @@ namespace Tsavorite.core
             capSpan = keySpan.Slice(beginCapLength + interiorLength);
             if (capSpan.Length > 0)
                 capSpan.CopyTo(buffer.TotalValidSpan);
-            currentPosition += capSpan.Length;
             
             // Serialize the value object into possibly multiple buffers.
             DoSerialize(valueObject);
@@ -226,6 +220,8 @@ namespace Tsavorite.core
 
         private void WriteIndicatorByteAndLengths(int keyLength, long valueLength, bool isChunked = false)
         {
+            // Use a local buffer so we can call Write() just once. We are maxed at one byte indicator, 3 bytes keylen, and 8 bytes valuelen.
+            var indicatorBuffer = stackalloc byte[sizeof(long) * 2];
             var indicatorByte = ConstructIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
             if (isChunked)
             {
@@ -233,13 +229,13 @@ namespace Tsavorite.core
                 valueLengthPosition = currentPosition + 1 + keyByteCount;   // skip indicator byte and key length varbytes
             }
 
-            var ptr = buffer.GetValidPointer() + currentPosition;
+            var ptr = indicatorBuffer;
             *ptr++ = indicatorByte;
             WriteVarbyteLength(keyLength, keyByteCount, ptr);
             ptr += keyByteCount;
             WriteVarbyteLength(valueLength, valueByteCount, ptr);
             ptr += valueByteCount;
-            currentPosition = (int)(ptr - buffer.GetValidPointer());
+            Write(new ReadOnlySpan<byte>(indicatorBuffer, (int)(ptr - indicatorBuffer)));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -277,10 +273,10 @@ namespace Tsavorite.core
                 if (requestLength > RemainingCapacity - lengthSpaceReserve)
                     requestLength = RemainingCapacity - lengthSpaceReserve;
 
-                data.Slice(dataStart, requestLength).CopyTo(RemainingSpan);
+                data.Slice(dataStart, requestLength).CopyTo(buffer.TotalValidSpan.Slice(currentPosition));
                 dataStart += requestLength;
                 currentPosition += requestLength;
-                currentChunkLength += requestLength;
+                currentChunkLength += requestLength;    // This is ignored if we are not in the middle of Serialize() (DoSerialize() resets it to 0)
 
                 // See if we're at the end of the buffer.
                 if (RemainingCapacity - lengthSpaceReserve == 0)
@@ -346,9 +342,9 @@ namespace Tsavorite.core
             FlushToDevice(keyInteriorSpan);
 
             // Write the end cap of the key and the value; keyEndSectorCapPosition is sector-aligned so flushLength will be also.
-            var flushLength = RoundDown(currentPosition, SectorSize);
+            var flushLength = RoundDown(currentPosition, SectorSize) - keyEndSectorCapPosition;
             Debug.Assert(RoundUp(flushLength, SectorSize) == flushLength, $"flushLength {flushLength} should be sector-aligned and was not");
-            FlushPartialBuffer(keyEndSectorCapPosition, currentPosition);
+            FlushPartialBuffer(keyEndSectorCapPosition, keyEndSectorCapPosition + flushLength);
             ShiftUnflushedDataToStartOfBuffer(keyEndSectorCapPosition + flushLength);
 
             // We no longer want these; remaining chunks will just Flush as below.

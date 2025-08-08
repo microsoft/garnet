@@ -205,12 +205,12 @@ namespace Tsavorite.core
                     var valueLength = isInChainedChunk
                         ? GetChainedChunkValueLength(ptr + RecordInfo.GetLength() + 1 + keyLengthBytes, out isInChainedChunk)
                         : GetValueLength(valueLengthBytes, ptr + RecordInfo.GetLength() + 1 + keyLengthBytes);
+                    valueDataStartPosition = offsetToKeyStart + keyLength;
 
                     if (currentLength >= offsetToKeyStart + keyLength)
                     {
                         // We have the full key in recordBuffer
                         var ptrToKeyData = ptr + offsetToKeyStart;
-                        valueDataStartPosition = offsetToKeyStart + keyLength;
 
                         // We have the full key, so check for a match if we had a requested key, and return if not.
                         if (!requestedKey.IsEmpty && !readParams.storeFunctions.KeysEqual(requestedKey, new ReadOnlySpan<byte>(ptrToKeyData, keyLength)))
@@ -385,19 +385,22 @@ namespace Tsavorite.core
             long eTag = 0, expiration = 0;
             if (totalLength < maxBufferSize && !isInChainedChunk)
             {
-                var recordBuffer = AllocateBufferAndReadFromDevice(offsetToFieldStart: 0, (int)totalLength);
+                valueBuffer?.Return();
+                valueBuffer = default;
+                valueBuffer = AllocateBufferAndReadFromDevice(offsetToFieldStart: 0, (int)totalLength);
+                currentLength = valueBuffer.required_bytes;
 
                 currentPosition = offsetToKeyStart + keyLength;
                 var valueObject = recordInfo.ValueIsObject ? DoDeserialize(out _, out _) : null;    // optionals are in the recordBuffer if present, so ignore the outparams for them
 
                 // We have the full key, so check for a match if we had a requested key.
-                if (!requestedKey.IsEmpty && !readParams.storeFunctions.KeysEqual(requestedKey, new ReadOnlySpan<byte>(recordBuffer.GetValidPointer() + offsetToKeyStart, keyLength)))
+                if (!requestedKey.IsEmpty && !readParams.storeFunctions.KeysEqual(requestedKey, new ReadOnlySpan<byte>(valueBuffer.GetValidPointer() + offsetToKeyStart, keyLength)))
                 {
                     diskLogRecord = default;
                     return false;
                 }
 
-                diskLogRecord = DiskLogRecord.Transfer(ref recordBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
+                diskLogRecord = DiskLogRecord.Transfer(ref valueBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
                 return true;
             }
 

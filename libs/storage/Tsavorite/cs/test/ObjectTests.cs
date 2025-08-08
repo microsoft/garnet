@@ -26,7 +26,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
 
-            var storeFunctions = TestContext.CurrentContext.Test.MethodName == nameof(ObjectDiskWriteReadLarge)
+            var storeFunctions = TestContext.CurrentContext.Test.MethodName.StartsWith("ObjectDiskWriteReadLarge")
                 ? StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 : StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance);
 
@@ -209,9 +209,14 @@ namespace Tsavorite.test
             Assert.That(numPendingReads, Is.GreaterThanOrEqualTo(numPendingUpdates));
         }
 
-        public enum SerializedSizeMode { SerSizeExact, SerSizeInexact };
-        public enum SerializeValueSize
+        /// <summary>Whether value object sizes are known at the time of serialization (Exact, as most Garnet objects) or not (Inexact, e.g. JsonObject).</summary>
+        public enum SerializeValueSizeMode { SerSizeExact, SerSizeInexact };
+
+        /// <summary>Various sizes to test</summary>
+        public enum SerializeKeyValueSize
         {
+            Thirty = 30,
+            OneK = 1024,
             HalfBuffer = IStreamBuffer.DiskWriteBufferSize / 2,
             OneBuffer = IStreamBuffer.DiskWriteBufferSize,
             ThreeHalfBuffer = (IStreamBuffer.DiskWriteBufferSize / 2) * 3,
@@ -219,7 +224,7 @@ namespace Tsavorite.test
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
-        public void ObjectDiskWriteReadLarge([Values] SerializedSizeMode serSizeMode, [Values] SerializeValueSize serializeValueSize)
+        public void ObjectDiskWriteReadLargeValueSmallKey([Values] SerializeValueSizeMode serSizeMode, [Values] SerializeKeyValueSize serializeValueSize)
         {
             using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
@@ -232,7 +237,7 @@ namespace Tsavorite.test
             {
                 var key1Struct = new TestObjectKey { key = ii };
                 var key = SpanByte.FromPinnedVariable(ref key1Struct);
-                var value = new TestLargeObjectValue (valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializedSizeMode.SerSizeExact);
+                var value = new TestLargeObjectValue (valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializeValueSizeMode.SerSizeExact);
                 new Span<byte>(value.value).Fill(0x42);
                 _ = bContext.Upsert(key, ref input, value, ref output);
             }
@@ -265,7 +270,7 @@ namespace Tsavorite.test
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
-        public void ObjectDiskWriteReadOverflow()
+        public void ObjectDiskWriteReadOverflowValue()
         {
             using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
@@ -302,5 +307,55 @@ namespace Tsavorite.test
                 Assert.That(new ReadOnlySpan<byte>(output.valueArray).SequenceEqual(new ReadOnlySpan<byte>(valueBuffer).Slice(0, output.valueArray.Length)));
             }
         }
+
+        [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        public void ObjectDiskWriteReadLargeKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeValueSizeMode serSizeMode, [Values] SerializeKeyValueSize serializeValueSize)
+        {
+            using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            var keySize = (int)serializeKeySize;
+            var keyBuf = new byte[keySize];
+            var valueSize = (int)serializeValueSize;
+            const int numRec = 3;
+            for (int ii = 0; ii < numRec; ii++)
+            {
+                var value = new TestLargeObjectValue(valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializeValueSizeMode.SerSizeExact);
+                var key = new Span<byte>(keyBuf);
+                key.Fill((byte)(ii + 100));
+                new Span<byte>(value.value).Fill(0x42);
+                _ = bContext.Upsert(key, ref input, value, ref output);
+            }
+
+            // Test before and after the flush
+            DoRead(onDisk: false);
+            store.Log.FlushAndEvict(wait: true);
+            DoRead(onDisk: true);
+
+            void DoRead(bool onDisk)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                for (int ii = 0; ii < numRec; ii++)
+                {
+                    var output = new TestLargeObjectOutput();
+                    var key = new Span<byte>(keyBuf);
+                    key.Fill((byte)(ii + 100));
+
+                    var status = bContext.Read(key, ref input, ref output, Empty.Default);
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.That(status.Found, Is.True);
+
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)));
+                    var numLongs = output.valueObject.value.Length % 8;
+                    var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
+                    if (badIndex != -1)
+                        Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
+                }
+            }
+        }
+
     }
 }

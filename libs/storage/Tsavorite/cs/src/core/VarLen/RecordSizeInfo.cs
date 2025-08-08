@@ -100,7 +100,7 @@ namespace Tsavorite.core
         /// <summary>Gets the Value address in the record.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly unsafe long GetValueAddress(long recordPhysicalAddress)
-            => recordPhysicalAddress + RecordInfo.GetLength() + 1 + KeyLengthBytes + ValueLengthBytes + FieldInfo.KeySize;
+            => recordPhysicalAddress + RecordInfo.GetLength() + 1 + KeyLengthBytes + ValueLengthBytes + InlineKeySize;
 
         /// <summary>
         /// Called from Upsert or RMW methods for Span Values with the actual data size of the update value; ensures consistency between the Get*FieldInfo methods and the actual update methods.
