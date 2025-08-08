@@ -771,7 +771,9 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
             }
 
-            var status = storageApi.IncrementByFloat(key, out ArgSlice output, dbl);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var status = storageApi.IncrementByFloat(key, ref output, dbl);
 
             switch (status)
             {
@@ -1312,7 +1314,10 @@ namespace Garnet.server
                             break;
                         }
 
-                        tmpClientName = parseState.GetString(tokenIdx++);
+                        if (!parseState.TryGetClientName(tokenIdx++, out tmpClientName))
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_CLIENT_NAME);
+                        }
                     }
                     else
                     {

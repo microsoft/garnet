@@ -14,9 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\server\Garnet.server.csproj" PrivateAssets="All"/>
-    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" PrivateAssets="All"/>
-    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" PrivateAssets="All"/>
+    <ProjectReference Include="..\server\Garnet.server.csproj" PrivateAssets="All" />
+    <ProjectReference Include="..\cluster\Garnet.cluster.csproj" PrivateAssets="All" />
+    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,7 +42,7 @@
     <Content Include="..\host\bin\Release\net9.0\*.xml" Exclude="..\host\bin\Release\net9.0\Garnet.host.dll" Pack="true" PackagePath="lib\net9.0" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.so" Pack="true" PackagePath="runtimes" />
     <Content Include="..\host\bin\Release\net8.0\runtimes\**\*.dll" Pack="true" PackagePath="runtimes" />
-		<None Include="..\..\README.md" Pack="true" PackagePath="/"/>
+		<None Include="..\..\README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
 	<PropertyGroup>
