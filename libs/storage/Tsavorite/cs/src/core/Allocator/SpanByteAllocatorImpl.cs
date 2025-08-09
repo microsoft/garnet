@@ -352,8 +352,8 @@ namespace Tsavorite.core
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
         public override ITsavoriteScanIterator<SpanByte, SpanByte> Scan(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeClosedRecords, bool includeInvalidRecords)
-            => new SpanByteScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeClosedRecords, includeInvalidRecords, epoch, logger: logger);
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeClosedRecords)
+            => new SpanByteScanIterator<TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeClosedRecords, epoch, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor

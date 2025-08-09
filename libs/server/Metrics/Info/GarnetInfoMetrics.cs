@@ -393,15 +393,6 @@ namespace Garnet.server
 
         private void PopulateHlogScanInfo(StoreWrapper storeWrapper)
         {
-            var databases = storeWrapper.GetDatabasesSnapshot();
-            hlogScanStats = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
-            foreach (var db in databases)
-            {
-                hlogScanStats[db.Id] = GetDatabaseHlogStats(storeWrapper, db);
-            }
-        }
-        private MetricsItem[] GetDatabaseHlogStats(StoreWrapper storeWrapper)
-        {
             (string mainStoreMetrics, string objectStoreMetrics)[] res = storeWrapper.HybridLogDistributionScan();
             var result = new MetricsItem[res.Length * 2];
             for (int i = 0; i < res.Length; i++)
@@ -409,7 +400,7 @@ namespace Garnet.server
                 result[i * 2] = new($"MainStore_HLog_{i}", res[i].mainStoreMetrics);
                 result[i * 2 + 1] = new($"ObjectStore_HLog_{i}", res[i].objectStoreMetrics);
             }
-            return result;
+            hlogScanStats = result;
         }
 
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)

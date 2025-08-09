@@ -52,7 +52,7 @@ namespace Tsavorite.core
         /// </summary>
         internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, false, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
