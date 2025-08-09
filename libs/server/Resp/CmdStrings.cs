@@ -31,6 +31,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
+        public static ReadOnlySpan<byte> Memory => "memory"u8;
+        public static ReadOnlySpan<byte> ObjLogMemory => "obj-log-memory"u8;
+        public static ReadOnlySpan<byte> ObjHeapMemory => "obj-heap-memory"u8;
+        public static ReadOnlySpan<byte> Index => "index"u8;
+        public static ReadOnlySpan<byte> ObjIndex => "obj-index"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
@@ -326,6 +331,13 @@ namespace Garnet.server
         public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
         public const string GenericErrCommandDisallowedWithOption =
             @"ERR {0} command not allowed. If the {1} option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server.";
+        public const string GenericErrIncorrectSizeFormat = "ERR Incorrect size format in (option: '{0}')";
+        public const string GenericErrIndexSizePowerOfTwo = "ERR Index size must be a power of 2 (option: '{0}')";
+        public const string GenericErrIndexSizeAutoGrow = "ERR Cannot adjust index size when auto-grow task is running (option: '{0}')";
+        public const string GenericErrIndexSizeSmallerThanCurrent = "ERR Cannot set dynamic index size smaller than current index size (option: '{0}')";
+        public const string GenericErrIndexSizeGrowFailed = "ERR failed to grow index size beyond current size (option: '{0}')";
+        public const string GenericErrMemorySizeGreaterThanBuffer = "ERR Cannot set dynamic memory size greater than configured circular buffer size (option: '{0}')";
+        public const string GenericErrHeapMemorySizeTrackerNotRunning = "ERR Cannot adjust object store heap memory size when size tracker is not running (option: '{0}')";
 
         /// <summary>
         /// Response errors while scripting

@@ -66,6 +66,9 @@ namespace Tsavorite.core
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
         private int emptyPageCount;
 
+        /// <summary>Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size</summary>
+        private int minEmptyPageCount;
+
         /// <summary>HeadAddress offset from tail (currently page-aligned)</summary>
         internal long HeadAddressLagOffset;
 
@@ -706,7 +709,18 @@ namespace Tsavorite.core
         public int MaxEmptyPageCount => BufferSize - 1;
 
         /// <summary>Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size</summary>
-        public int MinEmptyPageCount;
+        public int MinEmptyPageCount
+        {
+            get => minEmptyPageCount;
+            set
+            {
+                minEmptyPageCount = value;
+                if (emptyPageCount != minEmptyPageCount)
+                {
+                    EmptyPageCount = minEmptyPageCount;
+                }
+            }
+        }
 
         /// <summary>Maximum memory size in bytes</summary>
         public long MaxMemorySizeBytes => (BufferSize - MinEmptyPageCount) * (long)PageSize;

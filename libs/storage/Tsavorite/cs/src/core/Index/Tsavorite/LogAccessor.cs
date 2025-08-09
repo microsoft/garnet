@@ -80,7 +80,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Minimum possible number of empty pages in Allocator
         /// </summary>
-        public int MinEmptyPageCount => allocatorBase.MinEmptyPageCount;
+        public int MinEmptyPageCount
+        {
+            get => allocatorBase.MinEmptyPageCount;
+            set { allocatorBase.MinEmptyPageCount = value; }
+        }
 
         /// <summary>
         /// Set empty page count in allocator
