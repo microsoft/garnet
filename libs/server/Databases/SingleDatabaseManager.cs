@@ -405,6 +405,8 @@ namespace Garnet.server
             return (k1 + k2, t1 + t2);
         }
 
+        public override (string mainStore, string objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
+
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
             StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.TailAddress);

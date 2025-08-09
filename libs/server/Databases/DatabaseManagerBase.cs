@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -14,6 +16,8 @@ namespace Garnet.server
 
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
+    using ScanMetrics = Dictionary<string, Dictionary<string, (long count, long size)>>;
 
     /// <summary>
     /// Base class for logical database management
@@ -745,6 +749,110 @@ namespace Garnet.server
             Logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
 
             return (deletedCount, totalCount);
+        }
+
+        /// <inheritdoc/>
+        public abstract (string mainStore, string objectStore) [] CollectHybridLogStats();
+
+        protected (string mainStore, string objectStore) CollectHybridLogStatsForDb(GarnetDatabase db)
+        {
+            FunctionsState functionsState = CreateFunctionsState();
+            MainSessionFunctions mainStoreSessionFuncs = new MainSessionFunctions(functionsState);
+            var mainStoreStats = CollectHybridLogStats(db, db.MainStore, mainStoreSessionFuncs);
+
+            string objectStoreStats = string.Empty;
+            if (ObjectStore != null)
+            {
+                ObjectSessionFunctions objectSessionFunctions = new ObjectSessionFunctions(functionsState);
+                 objectStoreStats= CollectHybridLogStats(DefaultDatabase, DefaultDatabase.ObjectStore, objectSessionFunctions);
+            }
+
+            return (mainStoreStats, objectStoreStats);
+        }
+
+        private string CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
+            GarnetDatabase db,
+            TsavoriteKV<TKey, TValue, TFuncs, TAllocator> store,
+            ISessionFunctions<TKey, TValue, TInput, TOutput, long> sessionFunctions)
+            where TFuncs : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TFuncs>
+        {
+            if (db.HybridLogStatScanStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TKey, TValue, TInput, TOutput, long>>(sessionFunctions);
+            var basicContext = session.BasicContext;
+            // region: Immutable || Mutable
+            // state: RCUdSealed || RCUdUnsealed || Tombstoned || ElidedFromHashIndex || Live
+            var scanMetrics = new ScanMetrics();
+            var fromAddr = store.Log.HeadAddress;
+            var toAddr = store.Log.TailAddress;
+            using var iter = store.Log.Scan(fromAddr, toAddr, includeClosedRecords: true, includeInvalidRecords: true);
+            // Records can be in readonly region, or mutable region
+            while (iter.GetNext(out RecordInfo recordInfo, out TKey key, out TValue value))
+            {
+                string region = iter.CurrentAddress >= db.MainStore.Log.ReadOnlyAddress ? "Mutable" : "Immutable";
+                string state = "Live";
+                if (recordInfo.IsSealed)
+                {
+                    // while the server is live, this is true for RCUd records, when we recover from checkpoints, we unseal the records, so some RCUd records may not be sealed
+                    state = "RCUdSealed";
+                }
+                else if (recordInfo.Invalid)
+                {
+                    // Setting invalid is done when a record has been elided from the hash index
+                    state = "ElidedFromHashIndex";
+                }
+                else if (recordInfo.Tombstone)
+                {
+                    state = "Tombstoned";
+                }
+                else if (!basicContext.ContainsKeyInMemory(ref key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
+                {
+                    // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
+                    state = "RCUdUnsealed";
+                }
+                long size = iter.CurrentAddress - iter.NextAddress;
+                AddScanMetric(scanMetrics, region, state, size);
+            }
+            return DumpScanMetricsInfo(scanMetrics);
+        }
+
+        private static void AddScanMetric(ScanMetrics scanMetricHolder, string region, string state, long size)
+        {
+            if (!scanMetricHolder.TryGetValue(region, out var regionMetrics))
+            {
+                regionMetrics = new Dictionary<string, (long count, long size)>();
+                scanMetricHolder[region] = regionMetrics;
+            }
+
+            if (!regionMetrics.ContainsKey(state))
+            {
+                regionMetrics[state] = (1, size);
+            }
+            else
+            {
+                regionMetrics[state] = (regionMetrics[state].count + 1, regionMetrics[state].size + size);
+            }
+        }
+
+        private static string DumpScanMetricsInfo(ScanMetrics scanMetrics)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine();
+            foreach (var region in scanMetrics.Keys)
+            {
+                sb.AppendLine($"# Region: {region}");
+                foreach (var state in scanMetrics[region].Keys)
+                {
+                    var (count, size) = scanMetrics[region][state];
+                    sb.AppendLine($"  State: {state}, Count: {count}, Size: {size}");
+                }
+            }
+            return sb.ToString();
         }
     }
 }

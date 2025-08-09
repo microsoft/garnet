@@ -1069,5 +1069,17 @@ namespace Garnet.server
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
             return databasesMapSnapshot[dbId];
         }
+
+        public override (string mainStore, string objectStore)[] CollectHybridLogStats()
+        {
+            var databasesMapSnapshot = databases.Map;
+            var result = new (string mainStore, string objectStore)[databasesMapSnapshot.Length];
+            for (int i = 0; i < databasesMapSnapshot.Length; i++)
+            {
+                var db = databasesMapSnapshot[i];
+                result[i] = CollectHybridLogStatsForDb(db);
+            }
+            return result;
+        }
     }
 }

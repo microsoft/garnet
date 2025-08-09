@@ -16,7 +16,7 @@ namespace Tsavorite.core
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
         /// <returns>Pull Scan iterator instance</returns>
-        public abstract ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false);
+        public abstract ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false, bool includeInvalidRecords = false);
 
         /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.

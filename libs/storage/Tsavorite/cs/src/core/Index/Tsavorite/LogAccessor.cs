@@ -285,8 +285,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false)
-            => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeClosedRecords);
+        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false, bool includeInvalidRecords = false)
+            => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeClosedRecords, includeInvalidRecords);
 
         /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress

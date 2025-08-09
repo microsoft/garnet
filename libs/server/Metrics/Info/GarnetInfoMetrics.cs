@@ -19,6 +19,7 @@ namespace Garnet.server
                 InfoMetricsType.OBJECTSTOREHASHTABLE => false,
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
+                InfoMetricsType.HLOGSCAN => false,
                 _ => true
             })];
 
@@ -38,6 +39,7 @@ namespace Garnet.server
         MetricsItem[] keyspaceInfo = null;
         MetricsItem[] bufferPoolStats = null;
         MetricsItem[] checkpointStats = null;
+        MetricsItem[][] hlogScanStats = null;
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
@@ -389,6 +391,21 @@ namespace Garnet.server
             checkpointStats = storeWrapper.clusterProvider == null ? null : storeWrapper.clusterProvider.GetCheckpointInfo();
         }
 
+        private void PopulateHlogScanInfo(StoreWrapper storeWrapper)
+        {
+            var databases = storeWrapper.GetDatabasesSnapshot();
+            hlogScanStats = new MetricsItem[storeWrapper.MaxDatabaseId + 1][];
+            foreach (var db in databases)
+            {
+                hlogScanStats[db.Id] = GetDatabaseHlogStats(storeWrapper, db);
+            }
+        }
+        private MetricsItem[] GetDatabaseHlogStats(StoreWrapper storeWrapper)
+        {
+            var res = storeWrapper.HybridLogDistributionScan();
+            // HK TODO: Now decompose the res into MetricsItem[] and return it!
+        }
+
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
         {
             // No word separators inside section names, some clients will then fail to process INFO output.
@@ -412,6 +429,7 @@ namespace Garnet.server
                 InfoMetricsType.MODULES => "Modules",
                 InfoMetricsType.BPSTATS => "BufferPoolStats",
                 InfoMetricsType.CINFO => "CheckpointInfo",
+                InfoMetricsType.HLOGSCAN => $"MainStoreHLogScan_DB_{dbId}",
                 _ => "Default",
             };
         }
@@ -496,6 +514,9 @@ namespace Garnet.server
                 case InfoMetricsType.CINFO:
                     PopulateCheckpointInfo(storeWrapper);
                     return GetSectionRespInfo(header, checkpointStats);
+                case InfoMetricsType.HLOGSCAN:
+                    PopulateHlogScanInfo(storeWrapper);
+                    return GetSectionRespInfo(header, storeRevivInfo[dbId]);
                 default:
                     return "";
             }
