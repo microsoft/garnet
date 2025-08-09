@@ -32,7 +32,7 @@ namespace Garnet.cluster
             this.logger = logger;
 
             var opts = clusterProvider.serverOptions;
-            replicaSyncTimeout = opts.ReplicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ReplicaSyncTimeout);
+            replicaSyncTimeout = opts.ReplicaSyncTimeout;
             cts = new();
         }
 
@@ -87,7 +87,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddReplicaSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, replicaSyncTimeout, cts.Token, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, cts.Token, logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {

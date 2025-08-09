@@ -18,7 +18,6 @@ namespace Garnet.cluster
         StoreWrapper storeWrapper,
         ClusterProvider clusterProvider,
         SyncMetadata replicaSyncMetadata = null,
-        TimeSpan replicaSyncTimeout = default,
         CancellationToken token = default,
         string replicaNodeId = null,
         string replicaAssignedPrimaryId = null,
@@ -30,11 +29,10 @@ namespace Garnet.cluster
         readonly StoreWrapper storeWrapper = storeWrapper;
         readonly ClusterProvider clusterProvider = clusterProvider;
         public readonly SyncMetadata replicaSyncMetadata = replicaSyncMetadata;
-        readonly TimeSpan replicaSyncTimeout = replicaSyncTimeout;
         readonly CancellationToken token = token;
         readonly CancellationTokenSource cts = new();
         SectorAlignedBufferPool bufferPool = null;
-        readonly SemaphoreSlim semaphore = new(0);
+        readonly SemaphoreSlim signalCompletion = new(0);
 
         public readonly string replicaNodeId = replicaNodeId;
         public readonly string replicaAssignedPrimaryId = replicaAssignedPrimaryId;
@@ -55,7 +53,7 @@ namespace Garnet.cluster
             AofSyncTask = null;
             cts.Cancel();
             cts.Dispose();
-            semaphore?.Dispose();
+            signalCompletion?.Dispose();
             bufferPool?.Free();
         }
 
@@ -135,7 +133,7 @@ namespace Garnet.cluster
                 (localEntry, aofSyncTaskInfo) = await AcquireCheckpointEntry();
                 logger?.LogInformation("Checkpoint search completed");
 
-                gcs.Connect((int)replicaSyncTimeout.TotalMilliseconds);
+                gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds);
 
                 long index_size = -1;
                 long obj_index_size = -1;
@@ -288,7 +286,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
                     beginAddress,
-                    checkpointAofBeginAddress).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    checkpointAofBeginAddress).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 var syncFromAofAddress = long.Parse(resp);
 
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
@@ -455,7 +453,7 @@ namespace Garnet.cluster
                         }
                     }
 
-                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    var resp = await gcs.ExecuteSendCkptMetadata(fileToken.ToByteArray(), (int)fileType, checkpointMetadata).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
@@ -495,7 +493,7 @@ namespace Garnet.cluster
                         (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -506,7 +504,7 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, []).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -541,7 +539,7 @@ namespace Garnet.cluster
                         var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes, segment).ConfigureAwait(false);
 
                         resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).
-                            WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                            WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                         if (!resp.Equals("OK"))
                         {
                             logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -552,7 +550,7 @@ namespace Garnet.cluster
                         startAddress += readBytes;
                     }
 
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -590,7 +588,7 @@ namespace Garnet.cluster
                 else
                     device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
             }
-            await semaphore.WaitAsync(replicaSyncTimeout, cts.Token).ConfigureAwait(false);
+            await signalCompletion.WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
             return (pbuffer, (int)numBytesToRead);
         }
 
@@ -601,7 +599,7 @@ namespace Garnet.cluster
                 var errorMessage = Tsavorite.core.Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ReplicaSyncSession] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-            semaphore.Release();
+            signalCompletion.Release();
         }
     }
 
