@@ -781,8 +781,7 @@ namespace Garnet.server
             }
         }
 
-
-        internal string[] HybridLogDistributionScan(GarnetDatabase db) => databaseManager.CollectHybridlogStatistics();
+        public (string, string)[] HybridLogDistributionScan() => databaseManager.CollectHybridLogStats();
 
         internal void Start()
         {

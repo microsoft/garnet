@@ -402,8 +402,14 @@ namespace Garnet.server
         }
         private MetricsItem[] GetDatabaseHlogStats(StoreWrapper storeWrapper)
         {
-            var res = storeWrapper.HybridLogDistributionScan();
-            // HK TODO: Now decompose the res into MetricsItem[] and return it!
+            (string mainStoreMetrics, string objectStoreMetrics)[] res = storeWrapper.HybridLogDistributionScan();
+            var result = new MetricsItem[res.Length * 2];
+            for (int i = 0; i < res.Length; i++)
+            {
+                result[i * 2] = new($"MainStore_HLog_{i}", res[i].mainStoreMetrics);
+                result[i * 2 + 1] = new($"ObjectStore_HLog_{i}", res[i].objectStoreMetrics);
+            }
+            return result;
         }
 
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)

@@ -37,8 +37,8 @@ namespace Tsavorite.core
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte, TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store, SpanByteAllocatorImpl<TStoreFunctions> hlog,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeClosedRecords, bool includeInvalidRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeClosedRecords, includeInvalidRecords, epoch, hlog.LogPageSizeBits, logger: logger)
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeClosedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeClosedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -254,7 +254,6 @@ namespace Tsavorite.core
                 recordInfo = hlog._wrapper.GetInfo(physicalAddress);
                 nextAddress = recordInfo.PreviousAddress;
                 bool skipOnScan = includeClosedRecords ? false : recordInfo.SkipOnScan;
-                // HK TODO: I think this last OR is the one removing the "includeInvalidRecords" functionality.
                 if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(ref hlog._wrapper.GetKey(physicalAddress), ref key))
                 {
                     epoch?.Suspend();
