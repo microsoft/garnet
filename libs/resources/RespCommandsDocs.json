@@ -1730,6 +1730,13 @@
         ]
       },
       {
+        "Command": "COMMAND_HELP",
+        "Name": "COMMAND|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "COMMAND_INFO",
         "Name": "COMMAND|INFO",
         "Summary": "Returns information about one, multiple or all commands.",

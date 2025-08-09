@@ -1252,6 +1252,42 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Processes COMMAND HELP subcommand.
+        /// </summary>
+        private bool NetworkCOMMAND_HELP()
+        {
+            // No arguments allowed
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("command|help");
+            }
+
+            WriteHelp(
+                 "COMMAND <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                 "(no subcommand)",
+                 "\tReturn details about all commands.",
+                 "COUNT",
+                 "\tReturn the total number of commands in this server.",
+                 "INFO [<command-name> ...]",
+                 "\tReturn details about multiple commands.",
+                 "\tIf no command names are given, documentation details for all",
+                 "\tcommands are returned.",
+                 "DOCS [<command-name> ...]",
+                 "\tReturn documentation details about multiple commands.",
+                 "\tIf no command names are given, documentation details for all",
+                 "\tcommands are returned.",
+                 "GETKEYS <full-command>",
+                 "\tReturn the keys from a full command.",
+                 "GETKEYSANDFLAGS <full-command>",
+                 "\tReturn the keys and the access flags from a full command.",
+                 "HELP",
+                 "\tPrint this help."
+            );
+
+            return true;
+        }
+
         private bool NetworkECHO()
         {
             if (parseState.Count != 1)

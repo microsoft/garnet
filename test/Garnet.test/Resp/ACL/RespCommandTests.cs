@@ -2629,6 +2629,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task CommandHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND",
+                [DoCommandHelpAsync]
+            );
+
+            static async Task DoCommandHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("COMMAND", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task ConfigRewriteACLsAsync()
         {
             await CheckCommandsAsync(

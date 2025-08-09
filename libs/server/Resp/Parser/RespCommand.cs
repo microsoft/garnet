@@ -316,6 +316,7 @@ namespace Garnet.server
         COMMAND_INFO,
         COMMAND_GETKEYS,
         COMMAND_GETKEYSANDFLAGS,
+        COMMAND_HELP,
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
@@ -447,6 +448,7 @@ namespace Garnet.server
             RespCommand.COMMAND_INFO,
             RespCommand.COMMAND_GETKEYS,
             RespCommand.COMMAND_GETKEYSANDFLAGS,
+            RespCommand.COMMAND_HELP,
             RespCommand.MEMORY_USAGE,
             // Config
             RespCommand.CONFIG_GET,
@@ -2030,6 +2032,11 @@ namespace Garnet.server
                 if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
                 {
                     return RespCommand.COMMAND_GETKEYSANDFLAGS;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.COMMAND_HELP;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
