@@ -764,7 +764,7 @@ namespace Garnet.server
             if (ObjectStore != null)
             {
                 ObjectSessionFunctions objectSessionFunctions = new ObjectSessionFunctions(functionsState);
-                 objectStoreStats= CollectHybridLogStats(DefaultDatabase, DefaultDatabase.ObjectStore, objectSessionFunctions);
+                 objectStoreStats= CollectHybridLogStats(db, db.ObjectStore, objectSessionFunctions);
             }
 
             return (mainStoreStats, objectStoreStats);
