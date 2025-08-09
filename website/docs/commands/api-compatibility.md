@@ -113,7 +113,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DOCS](server.md#command-docs) | ➕ |  |
 |  | [GETKEYS](server.md#command-getkeys) | ➕ |  |
 |  | [GETKEYSANDFLAGS](server.md#command-getkeysandflags) | ➕ |  |
-|  | HELP | ➖ |  | 
+|  | HELP | ➕ |  | 
 |  | [INFO](server.md#command-info) | ➕ |  | 
 |  | LIST | ➖ |  | 
 | <span id="connection">**CONNECTION**</span> | [AUTH](generic-commands.md#auth) | ➕ |  |

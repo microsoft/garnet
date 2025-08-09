@@ -1026,6 +1026,13 @@
         "AclCategories": "Connection, Slow"
       },
       {
+        "Command": "COMMAND_HELP",
+        "Name": "COMMAND|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "COMMAND_INFO",
         "Name": "COMMAND|INFO",
         "Arity": -2,
