@@ -210,8 +210,8 @@ namespace Tsavorite.core
             keyEndSectorCapPosition = currentPosition;
             capSpan = keySpan.Slice(beginCapLength + interiorLength);
             if (capSpan.Length > 0)
-                capSpan.CopyTo(buffer.TotalValidSpan);
-            
+                Write(capSpan);
+
             // Serialize the value object into possibly multiple buffers.
             DoSerialize(valueObject);
             WriteOptionals(in logRecord);
