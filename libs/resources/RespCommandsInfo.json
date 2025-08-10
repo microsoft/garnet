@@ -4064,6 +4064,13 @@
         ]
       },
       {
+        "Command": "SCRIPT_HELP",
+        "Name": "SCRIPT|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "SCRIPT_LOAD",
         "Name": "SCRIPT|LOAD",
         "Arity": 3,

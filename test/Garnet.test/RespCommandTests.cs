@@ -435,6 +435,7 @@ namespace Garnet.test
                 RespCommand.MODULE_HELP,
                 RespCommand.MODULE_LOADCS,
                 RespCommand.REGISTERCS,
+                RespCommand.SCRIPT_HELP,
                 RespCommand.INFO,
                 RespCommand.TIME,
                 RespCommand.LASTSAVE,

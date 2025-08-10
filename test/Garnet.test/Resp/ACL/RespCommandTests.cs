@@ -2879,6 +2879,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ScriptHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SCRIPT",
+                [DoScriptHelpAsync]
+            );
+
+            static async Task DoScriptHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("SCRIPT", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task ScriptLoadACLsAsync()
         {
             await CheckCommandsAsync(

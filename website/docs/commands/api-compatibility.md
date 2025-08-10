@@ -264,7 +264,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SCRIPT DEBUG | ➖ |  |
 |  | [SCRIPT EXISTS](scripting-and-functions.md#script-exists) | ➕ |  |
 |  | [SCRIPT FLUSH](scripting-and-functions.md#script-flush) | ➕ |  |
-|  | SCRIPT HELP | ➖ |  |
+|  | SCRIPT HELP | ➕ |  |
 |  | SCRIPT KILL | ➖ |  |
 |  | [SCRIPT LOAD](scripting-and-functions.md#script-load) | ➕ |  |
 | <span id="server">**SERVER**</span> | ACL | ➖ |  |

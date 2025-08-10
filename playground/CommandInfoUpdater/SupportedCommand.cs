@@ -364,6 +364,7 @@ namespace CommandInfoUpdater
             [
                 new("SCRIPT|EXISTS", RespCommand.SCRIPT_EXISTS),
                 new("SCRIPT|FLUSH", RespCommand.SCRIPT_FLUSH),
+                new("SCRIPT|HELP", RespCommand.SCRIPT_HELP),
                 new("SCRIPT|LOAD", RespCommand.SCRIPT_LOAD),
             ])
         ];
