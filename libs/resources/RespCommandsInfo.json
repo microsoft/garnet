@@ -532,6 +532,13 @@
         "AclCategories": "Connection, Slow"
       },
       {
+        "Command": "CLIENT_HELP",
+        "Name": "CLIENT|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "CLIENT_ID",
         "Name": "CLIENT|ID",
         "Arity": 2,
