@@ -63,7 +63,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="client">**CLIENT**</span> | CACHING | ➖ |  |
 |  | [GETNAME](client.md#client-getname) | ➕ |  |
 |  | GETREDIR | ➖ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | [ID](client.md#client-id) | ➕ |  |
 |  | [INFO](client.md#client-info) | ➕ |  |
 |  | [KILL](client.md#client-kill) | ➕ |  |

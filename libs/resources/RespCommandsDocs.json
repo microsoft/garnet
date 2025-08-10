@@ -952,6 +952,13 @@
         "Complexity": "O(1)"
       },
       {
+        "Command": "CLIENT_HELP",
+        "Name": "CLIENT|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLIENT_ID",
         "Name": "CLIENT|ID",
         "Summary": "Returns the unique client ID of the connection.",

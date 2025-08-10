@@ -200,6 +200,61 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// CLIENT HELP
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkCLIENTHELP()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("client|help");
+            }
+
+            WriteHelp(
+                "CLIENT <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "GETNAME",
+                "\tReturn the name of the current connection.",
+                "ID",
+                "\tReturn the ID of the current connection.",
+                "INFO",
+                "\tReturn information about the current client connection.",
+                "KILL <ip:port>",
+                "\tKill connection made from <ip:port>.",
+                "KILL <option> <value> [<option> <value> [...]]",
+                "\tKill connections. Options are:",
+                "\t* ADDR (<ip:port>|<unixsocket>:0)",
+                "\t  Kill connections made from the specified address",
+                "\t* LADDR (<ip:port>|<unixsocket>:0)",
+                "\t  Kill connections made to specified local address",
+                "\t* TYPE (NORMAL|MASTER|REPLICA|PUBSUB)",
+                "\t  Kill connections by type.",
+                "\t* USER <username>",
+                "\t  Kill connections authenticated by <username>.",
+                "\t* SKIPME (YES|NO)",
+                "\t  Skip killing current connection (default: yes).",
+                "\t* ID <client-id>",
+                "\t  Kill connections by client id.",
+                "\t* MAXAGE <maxage>",
+                "\t  Kill connections older than the specified age.",
+                "LIST [options ...]",
+                "\tReturn information about client connections. Options:",
+                "\t* TYPE (NORMAL|MASTER|REPLICA|PUBSUB)",
+                "\t  Return clients of specified type.",
+                "SETNAME <name>",
+                "\tAssign the name <name> to the current connection.",
+                "SETINFO <option> <value>",
+                "\tSet client meta attr. Options are:",
+                "\t* LIB-NAME: the client lib name.",
+                "\t* LIB-VER: the client lib version.",
+                "UNBLOCK <clientid> [TIMEOUT|ERROR]",
+                "\tUnblock the specified blocked client.",
+                "HELP",
+                "\tPrint this help.");
+
+            return true;
+        }
+
+        /// <summary>
         /// CLIENT KILL
         /// </summary>
         private bool NetworkCLIENTKILL()

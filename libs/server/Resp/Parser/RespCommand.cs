@@ -247,6 +247,7 @@ namespace Garnet.server
         ECHO,
 
         CLIENT,
+        CLIENT_HELP,
         CLIENT_ID,
         CLIENT_INFO,
         CLIENT_LIST,
@@ -433,6 +434,7 @@ namespace Garnet.server
             RespCommand.ACL_USERS,
             RespCommand.ACL_WHOAMI,
             // Client
+            RespCommand.CLIENT_HELP,
             RespCommand.CLIENT_ID,
             RespCommand.CLIENT_INFO,
             RespCommand.CLIENT_LIST,
@@ -1973,6 +1975,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
                 {
                     return RespCommand.CLIENT_UNBLOCK;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.CLIENT_HELP;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
