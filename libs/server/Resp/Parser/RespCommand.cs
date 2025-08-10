@@ -296,6 +296,7 @@ namespace Garnet.server
         SCRIPT,
         SCRIPT_EXISTS,
         SCRIPT_FLUSH,
+        SCRIPT_HELP,
         SCRIPT_LOAD,
 
         ACL,
@@ -1853,6 +1854,11 @@ namespace Garnet.server
                 if (subCommand.SequenceEqual(CmdStrings.EXISTS))
                 {
                     return RespCommand.SCRIPT_EXISTS;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.SCRIPT_HELP;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,

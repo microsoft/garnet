@@ -271,6 +271,34 @@ namespace Garnet.server
             return true;
         }
 
+
+        /// <summary>
+        /// SCRIPT HELP
+        /// </summary>
+        /// <returns></returns>
+        private bool NetworkScriptHelp()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("client|help");
+            }
+
+            WriteHelp(
+                "SCRIPT <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "EXISTS <sha1> [<sha1> ...]",
+                "\tReturn the name of the current connection.",
+                "FLUSH [ASYNC|SYNC]",
+                "\tFlush the Lua scripts cache. Very dangerous on replicas. Valid modes are:",
+                "\t* ASYNC: Asynchronously flush the scripts cache.",
+                "\t* SYNC: Synchronously flush the scripts cache.",
+                "LOAD <script>",
+                "\tLoad a script into the scripts cache without executing it.",
+                "HELP",
+                "\tPrint this help.");
+
+            return true;
+        }
+
         /// <summary>
         /// SCRIPT|LOAD
         /// </summary>

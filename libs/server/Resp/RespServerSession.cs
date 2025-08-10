@@ -1000,6 +1000,7 @@ namespace Garnet.server
                 RespCommand.SCRIPT_EXISTS => NetworkScriptExists(),
                 RespCommand.SCRIPT_FLUSH => NetworkScriptFlush(),
                 RespCommand.SCRIPT_LOAD => NetworkScriptLoad(),
+                RespCommand.SCRIPT_HELP => NetworkScriptHelp(),
 
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),
