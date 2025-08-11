@@ -708,7 +708,7 @@ namespace Garnet.test.Resp.ACL
         public async Task ClientHelpACLsAsync()
         {
             await CheckCommandsAsync(
-                "CLIENT",
+                "CLIENT HELP",
                 [DoClientHelpAsync]
             );
 
@@ -2647,13 +2647,28 @@ namespace Garnet.test.Resp.ACL
         public async Task CommandHelpACLsAsync()
         {
             await CheckCommandsAsync(
-                "COMMAND",
+                "COMMAND HELP",
                 [DoCommandHelpAsync]
             );
 
             static async Task DoCommandHelpAsync(GarnetClient client)
             {
                 var result = await client.ExecuteForStringArrayResultAsync("COMMAND", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
+        public async Task ConfigHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CONFIG HELP",
+                [DoCommandHelpAsync]
+            );
+
+            static async Task DoCommandHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("CONFIG", ["HELP"]);
                 ClassicAssert.IsNotNull(result);
             }
         }
@@ -4879,7 +4894,7 @@ namespace Garnet.test.Resp.ACL
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
             await CheckCommandsAsync(
-                "MODULE",
+                "MODULE HELP",
                 [DoModuleHelpAsync]
             );
 
