@@ -272,7 +272,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
-|  | CONFIG HELP | ➖ |  |
+|  | CONFIG HELP | ➕ |  |
 |  | CONFIG RESETSTAT | ➖ |  |
 |  | CONFIG REWRITE | ➖ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |

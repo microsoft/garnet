@@ -472,6 +472,7 @@ namespace Garnet.test
                 RespCommand.COMMAND_HELP,
                 RespCommand.MEMORY_USAGE,
                 // Config
+                RespCommand.CONFIG_HELP,
                 RespCommand.CONFIG_GET,
                 RespCommand.CONFIG_REWRITE,
                 RespCommand.CONFIG_SET,

@@ -39,6 +39,7 @@ namespace Garnet.server
             _ = command switch
             {
                 RespCommand.CONFIG_GET => NetworkCONFIG_GET(),
+                RespCommand.CONFIG_HELP => NetworkCONFIG_HELP(),
                 RespCommand.CONFIG_REWRITE => NetworkCONFIG_REWRITE(),
                 RespCommand.CONFIG_SET => NetworkCONFIG_SET(),
                 RespCommand.FAILOVER or

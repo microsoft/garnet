@@ -118,6 +118,7 @@ namespace CommandInfoUpdater
             new("CONFIG", RespCommand.CONFIG,
             [
                 new("CONFIG|GET", RespCommand.CONFIG_GET),
+                new("CONFIG|HELP", RespCommand.CONFIG_HELP),
                 new("CONFIG|SET", RespCommand.CONFIG_SET),
                 new("CONFIG|REWRITE", RespCommand.CONFIG_REWRITE),
             ]),

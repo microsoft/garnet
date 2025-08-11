@@ -1075,6 +1075,13 @@
         "AclCategories": "Admin, Dangerous, Slow"
       },
       {
+        "Command": "CONFIG_HELP",
+        "Name": "CONFIG|HELP",
+        "Arity": 2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Slow, Garnet"
+      },
+      {
         "Command": "CONFIG_REWRITE",
         "Name": "CONFIG|REWRITE",
         "Arity": 2,

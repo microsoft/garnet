@@ -326,6 +326,7 @@ namespace Garnet.server
 
         CONFIG,
         CONFIG_GET,
+        CONFIG_HELP,
         CONFIG_REWRITE,
         CONFIG_SET,
 
@@ -455,6 +456,7 @@ namespace Garnet.server
             RespCommand.COMMAND_HELP,
             RespCommand.MEMORY_USAGE,
             // Config
+            RespCommand.CONFIG_HELP,
             RespCommand.CONFIG_GET,
             RespCommand.CONFIG_REWRITE,
             RespCommand.CONFIG_SET,
@@ -1918,18 +1920,22 @@ namespace Garnet.server
                 {
                     return RespCommand.CONFIG_GET;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
+                if (subCommand.SequenceEqual(CmdStrings.REWRITE))
                 {
                     return RespCommand.CONFIG_REWRITE;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.SET))
+                if (subCommand.SequenceEqual(CmdStrings.SET))
                 {
                     return RespCommand.CONFIG_SET;
                 }
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.CONFIG_HELP;
+                }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CONFIG));
+                var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                           Encoding.UTF8.GetString(subCommand),
+                                           nameof(RespCommand.CONFIG));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
             }
