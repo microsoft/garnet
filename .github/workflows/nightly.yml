@@ -59,6 +59,7 @@ jobs:
           scoop bucket add extras
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
           allure --version
+          dir
           allure generate GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }} --clean -o build/allure-report/allure-report-${{ runner.os }}
 
       - name: Install Allure and Generate Report (Linux only)
@@ -71,6 +72,8 @@ jobs:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install allure
           allure --version
+          pwd
+          ls
           allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
 
       - name: Verify Allure Report Output
