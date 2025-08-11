@@ -11,13 +11,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Migrate Slots inline driver
         /// </summary>
         /// <returns></returns>
-        public bool MigrateSlotsDriverInline()
+        public async Task<bool> MigrateSlotsDriverInline()
         {
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
@@ -29,7 +29,7 @@ namespace Garnet.cluster
 #endif
 
             // Send main store
-            CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
 
             // Send object store
             if (!clusterProvider.serverOptions.DisableObjects)
@@ -37,12 +37,12 @@ namespace Garnet.cluster
                 var objectStoreBeginAddress = clusterProvider.storeWrapper.objectStore.Log.BeginAddress;
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
             }
 
             return true;
 
-            void CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
                 var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
@@ -54,7 +54,7 @@ namespace Garnet.cluster
                     i++;
                 }
 
-                Task.WaitAll(migrateOperationRunners, _cts.Token);
+                await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token);
             }
 
             Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
