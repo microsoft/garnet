@@ -59,8 +59,9 @@ jobs:
           scoop bucket add extras
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
           allure --version
-          dir
-          allure generate GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }} --clean -o build/allure-report/allure-report-${{ runner.os }}
+          dir 
+          dir"GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+          allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
 
       - name: Install Allure and Generate Report (Linux only)
         if: runner.os == 'Linux' && always()
@@ -74,6 +75,7 @@ jobs:
           allure --version
           pwd
           ls
+          ls "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" 
           allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
 
       - name: Verify Allure Report Output
