@@ -1314,7 +1314,10 @@ namespace Garnet.server
                             break;
                         }
 
-                        tmpClientName = parseState.GetString(tokenIdx++);
+                        if (!parseState.TryGetClientName(tokenIdx++, out tmpClientName))
+                        {
+                            return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_CLIENT_NAME);
+                        }
                     }
                     else
                     {
