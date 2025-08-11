@@ -234,6 +234,7 @@ namespace Garnet.server
         // Pub/Sub commands
         PUBSUB,
         PUBSUB_CHANNELS,
+        PUBSUB_HELP,
         PUBSUB_NUMPAT,
         PUBSUB_NUMSUB,
         PUBLISH,
@@ -2561,18 +2562,25 @@ namespace Garnet.server
                 {
                     return RespCommand.PUBSUB_CHANNELS;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
+                
+                if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
                 {
                     return RespCommand.PUBSUB_NUMSUB;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
+
+                if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
                 {
                     return RespCommand.PUBSUB_NUMPAT;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.PUBSUB));
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.PUBSUB_HELP;
+                }
+
+                var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                           Encoding.UTF8.GetString(subCommand),
+                                           nameof(RespCommand.PUBSUB));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
             }
