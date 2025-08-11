@@ -439,6 +439,7 @@ namespace Garnet.test
                 RespCommand.INFO,
                 RespCommand.TIME,
                 RespCommand.LASTSAVE,
+                RespCommand.PUBSUB_HELP,
                 // ACL
                 RespCommand.ACL_CAT,
                 RespCommand.ACL_DELUSER,

@@ -807,6 +807,7 @@ namespace Garnet.server
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
                 RespCommand.PUBSUB_CHANNELS => NetworkPUBSUB_CHANNELS(),
+                RespCommand.PUBSUB_HELP => NetworkPUBSUB_HELP(),
                 RespCommand.PUBSUB_NUMSUB => NetworkPUBSUB_NUMSUB(),
                 RespCommand.PUBSUB_NUMPAT => NetworkPUBSUB_NUMPAT(),
                 // Custom Object Commands

@@ -249,7 +249,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="pubsub">**PUB/SUB**</span> | [PSUBSCRIBE](analytics.md#psubscribe) | ➕ |  |
 |  | [PUBLISH](analytics.md#publish) | ➕ |  |
 |  | [PUBSUB CHANNELS](analytics.md#pubsub-channels) | ➕ |  |
-|  | PUBSUB HELP | ➖ |  |
+|  | PUBSUB HELP | ➕ |  |
 |  | [PUBSUB NUMPAT](analytics.md#pubsub-numpat) | ➕ |  |
 |  | [PUBSUB NUMSUB](analytics.md#pubsub-numsub) | ➕ |  |
 |  | PUBSUB SHARDCHANNELS | ➖ |  |

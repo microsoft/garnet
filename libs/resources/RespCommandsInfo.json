@@ -3665,6 +3665,13 @@
         "AclCategories": "PubSub, Slow"
       },
       {
+        "Command": "PUBSUB_HELP",
+        "Name": "PUBSUB|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "PUBSUB_NUMPAT",
         "Name": "PUBSUB|NUMPAT",
         "Arity": 2,

@@ -5252,6 +5252,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task PubSubHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB",
+                [DoPubSubHelpAsync]
+            );
+
+            static async Task DoPubSubHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task PubSubNumPatACLsAsync()
         {
             await CheckCommandsAsync(

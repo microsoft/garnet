@@ -247,6 +247,7 @@ namespace CommandInfoUpdater
             new("PUBSUB", RespCommand.PUBSUB,
             [
                 new("PUBSUB|CHANNELS", RespCommand.PUBSUB_CHANNELS),
+                new("PUBSUB|HELP", RespCommand.PUBSUB_HELP),
                 new("PUBSUB|NUMPAT", RespCommand.PUBSUB_NUMPAT),
                 new("PUBSUB|NUMSUB", RespCommand.PUBSUB_NUMSUB),
             ]),
