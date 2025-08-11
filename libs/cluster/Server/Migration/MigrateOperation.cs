@@ -24,6 +24,8 @@ namespace Garnet.cluster
 
             public GarnetClientSession Client => gcs;
 
+            public void ThrowIfCancelled() => session._cts.Token.ThrowIfCancellationRequested();
+
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)

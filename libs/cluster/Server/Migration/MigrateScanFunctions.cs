@@ -13,9 +13,9 @@ namespace Garnet.cluster
         #region mainStoreScan
         internal sealed unsafe class MainStoreScan : IScanIteratorFunctions<SpanByte, SpanByte>
         {
-            readonly MigrateSession.MigrateOperation mss;
+            readonly MigrateOperation mss;
 
-            internal MainStoreScan(MigrateSession.MigrateOperation mss)
+            internal MainStoreScan(MigrateOperation mss)
             {
                 this.mss = mss;
             }
@@ -29,6 +29,8 @@ namespace Garnet.cluster
             public unsafe bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
+
+                mss.ThrowIfCancelled();
 
                 // Do not send key if it is expired
                 if (ClusterSession.Expired(ref value))
@@ -50,9 +52,9 @@ namespace Garnet.cluster
         #region objectStoreScan
         internal sealed unsafe class ObjectStoreScan : IScanIteratorFunctions<byte[], IGarnetObject>
         {
-            readonly MigrateSession.MigrateOperation mss;
+            readonly MigrateOperation mss;
 
-            internal ObjectStoreScan(MigrateSession.MigrateOperation mss)
+            internal ObjectStoreScan(MigrateOperation mss)
             {
                 this.mss = mss;
             }
@@ -69,6 +71,8 @@ namespace Garnet.cluster
             public unsafe bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
+
+                mss.ThrowIfCancelled();
 
                 // Do not send key if it is expired
                 if (ClusterSession.Expired(ref value))

@@ -29,7 +29,8 @@ namespace Garnet.cluster
 #endif
 
             // Send main store
-            await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            var success = await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            if (!success) return false;
 
             // Send object store
             if (!clusterProvider.serverOptions.DisableObjects)
@@ -37,12 +38,13 @@ namespace Garnet.cluster
                 var objectStoreBeginAddress = clusterProvider.storeWrapper.objectStore.Log.BeginAddress;
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                success = await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                if (!success) return false;
             }
 
             return true;
 
-            async Task CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
                 var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
@@ -54,7 +56,17 @@ namespace Garnet.cluster
                     i++;
                 }
 
-                await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token);
+                try
+                {
+                    await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {storeType} {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress, pageSize);
+                    _cts.Cancel();
+                    return false;
+                }
+                return true;
             }
 
             Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
