@@ -382,17 +382,18 @@ namespace Garnet.server
             var length = 64;
             if (parseState.Count == 1)
             {
-                if (!parseState.TryGetLong(0, out var chars))
+                if (!parseState.TryGetLong(0, out var bits))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
 
-                if ((chars <= 0) || (chars > 4096))
+                if ((bits <= 0) || (bits > 4096))
                 {
                     return AbortWithErrorMessage("ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096"u8);
                 }
 
-                length = (chars % 4 == 0) ? (int)chars / 4 : (int)chars / 4 + 1;
+                // Bits gets rounded to the next multiple of 4 and converted to bytes to get the password length
+                length = (int)(bits / 4) + (bits % 4 == 0 ? 0 : 1);
             }
 
             WriteAsciiBulkString(System.Security.Cryptography.RandomNumberGenerator.GetHexString(length, true));
