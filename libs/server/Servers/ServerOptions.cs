@@ -242,21 +242,26 @@ namespace Garnet.server
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             bytesRead = 0;
-            foreach (char c in value)
+            for (var i = 0; i < value.Length; i++)
             {
+                var c = value[i];
                 if (char.IsDigit(c))
                 {
-                    result = result * 10 + (byte)c - '0';
+                    result = (result * 10) + (byte)c - '0';
                     bytesRead++;
                 }
                 else
                 {
-                    for (int i = 0; i < suffix.Length; i++)
+                    for (var s = 0; s < suffix.Length; s++)
                     {
-                        if (char.ToLower(c) == suffix[i])
+                        if (char.ToLower(c) == suffix[s])
                         {
-                            result *= (long)Math.Pow(1024, i + 1);
+                            result *= (long)Math.Pow(1024, s + 1);
                             bytesRead++;
+
+                            if (i + 1 < value.Length && value[i + 1] == 'b')
+                                bytesRead++;
+
                             return result;
                         }
                     }
@@ -274,7 +279,7 @@ namespace Garnet.server
         public static bool TryParseSize(string value, out long size)
         {
             size = ParseSize(value, out var charsRead);
-            return charsRead == value.Length || (charsRead == value.Length - 1 && char.ToLower(value[^1]) == 'b');
+            return charsRead == value.Length;
         }
 
         /// <summary>

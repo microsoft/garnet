@@ -104,12 +104,18 @@ public static class AsciiUtils
             var b1 = left[i];
             var b2 = right[i];
 
-            if (!allowNonAlphabeticChars && b2 is < 65 or > 90)
-                return false;
-
-            if (b1 == b2 || ((!allowNonAlphabeticChars || b2 is >= 65 and <= 90) && (b1 - 32 == b2)))
-                continue;
-            return false;
+            // Alphabetic characters
+            if (b2 is >= 65 and <= 90)
+            {
+                if (b1 != b2 && b1 - 32 != b2)
+                    return false;
+            }
+            // Non-alphabetic characters
+            else
+            {
+                if (!allowNonAlphabeticChars || b1 != b2)
+                    return false;
+            }
         }
 
         return true;
@@ -130,12 +136,18 @@ public static class AsciiUtils
             var b1 = left[i];
             var b2 = right[i];
 
-            if (!allowNonAlphabeticChars && b2 is < 97 or > 122)
-                return false;
-
-            if (b1 == b2 || ((!allowNonAlphabeticChars || b2 is >= 97 and <= 122) && (b1 + 32 == b2)))
-                continue;
-            return false;
+            // Alphabetic characters
+            if (b2 is >= 97 and <= 122)
+            {
+                if (b1 != b2 && b1 + 32 != b2)
+                    return false;
+            }
+            // Non-alphabetic characters
+            else
+            {
+                if (!allowNonAlphabeticChars || b1 != b2)
+                    return false;
+            }
         }
 
         return true;

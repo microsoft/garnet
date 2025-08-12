@@ -69,7 +69,7 @@ namespace Garnet.server
 
             var disableObj = storeWrapper.serverOptions.DisableObjects;
 
-            var initialSize = storeWrapper.serverOptions.DisableObjects ? -1L : 0L;
+            var initialSize = disableObj ? -1L : 0L;
             var object_store_index_size = initialSize;
             var object_store_log_memory_size = initialSize;
             var object_store_read_cache_log_memory_size = initialSize;
