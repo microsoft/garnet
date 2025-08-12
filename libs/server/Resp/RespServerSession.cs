@@ -962,6 +962,7 @@ namespace Garnet.server
             {
                 RespCommand.AUTH => NetworkAUTH(),
                 RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
+                RespCommand.MEMORY_HELP => NetworkMemoryHelp(),
                 RespCommand.CLIENT_ID => NetworkCLIENTID(),
                 RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
                 RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),

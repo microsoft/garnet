@@ -470,6 +470,7 @@ namespace Garnet.test
                 RespCommand.COMMAND_GETKEYS,
                 RespCommand.COMMAND_GETKEYSANDFLAGS,
                 RespCommand.COMMAND_HELP,
+                RespCommand.MEMORY_HELP,
                 RespCommand.MEMORY_USAGE,
                 // Config
                 RespCommand.CONFIG_HELP,

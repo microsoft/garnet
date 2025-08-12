@@ -231,7 +231,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [RPUSH](data-structures.md#rpush) | ➕ |  |
 |  | [RPUSHX](data-structures.md#rpushx) | ➕ |  |
 | <span id="memory">**MEMORY**</span> | DOCTOR | ➖ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | MALLOC-STATS | ➖ |  |
 |  | PURGE | ➖ |  |
 |  | STATS | ➖ |  |

@@ -4781,6 +4781,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task MemoryHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "MEMORY HELP",
+                [DoMemoryHelpAsync]
+            );
+
+            static async Task DoMemoryHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("MEMORY", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task MemoryUsageACLsAsync()
         {
             await CheckCommandsAsync(

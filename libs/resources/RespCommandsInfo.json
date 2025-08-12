@@ -3204,6 +3204,13 @@
     "AclCategories": "Slow",
     "SubCommands": [
       {
+        "Command": "MEMORY_HELP",
+        "Name": "MEMORY|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "MEMORY_USAGE",
         "Name": "MEMORY|USAGE",
         "Arity": -3,
