@@ -455,7 +455,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void OnRecordComplete()
         {
-            flushBuffer = flushBuffers.OnRecordComplete();
+            flushBuffer = flushBuffers.OnRecordComplete(alignedDeviceAddress, out var numBytesFlushed);
+            priorCumulativeLength += numBytesFlushed;
+            alignedDeviceAddress += (ulong)numBytesFlushed;
             Debug.Assert(TotalWrittenLength % Constants.kRecordAlignment == 0, $"TotalWrittenLength {TotalWrittenLength} is not record-aligned");
         }
 

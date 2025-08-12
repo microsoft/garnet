@@ -89,7 +89,13 @@ namespace Tsavorite.core
                 buffers.EndFlushComplete();
         }
 
-        internal bool OnRecordComplete()
+        /// <summary>
+        /// End of record, so align <see cref="currentPosition"/> to record alignment, flushing if we hit end of buffer.
+        /// </summary>
+        /// <param name="alignedDeviceAddress">Device address to write to</param>
+        /// <param name="numBytesFlushed">Number of bytes flushed if the alignment hit end of buffer</param>
+        /// <returns>Whether we hit end of buffer; if so, the <see cref="CircularFlushWriteBuffer"/> will move to the next buffer.</returns>
+        internal bool OnRecordComplete(ulong alignedDeviceAddress, out int numBytesFlushed)
         {
             // The buffer is aligned to sector size, which will be a multiple of kRecordAlignment, so this should always be true.
             // We might align such that we are right at the end of the buffer, which is OK but we need to move to the next buffer if that happens.
@@ -103,7 +109,16 @@ namespace Tsavorite.core
                 new Span<byte>(memory.GetValidPointer() + currentPosition, alignmentIncrease).Clear();
                 currentPosition = newCurrentPosition;
             }
-            return currentPosition >= memory.AlignedTotalCapacity;
+
+            if (currentPosition >= memory.AlignedTotalCapacity)
+            {
+                FlushToDevice(memory.TotalValidSpan.Slice(0, currentPosition), alignedDeviceAddress);
+                numBytesFlushed = currentPosition;
+                return true;
+            }
+
+            numBytesFlushed = 0;
+            return false;
         }
 
         public void Dispose()
@@ -168,10 +183,10 @@ namespace Tsavorite.core
             return buffer2;
         }
 
-        internal FlushWriteBuffer OnRecordComplete()
+        internal FlushWriteBuffer OnRecordComplete(ulong alignedDeviceAddress, out int numBytesFlushed)
         {
             // We might align such that we are right at the end of the buffer, which is OK but we need to move to the next buffer if that happens.
-            if (buffers[currentIndex].OnRecordComplete())
+            if (buffers[currentIndex].OnRecordComplete(alignedDeviceAddress, out numBytesFlushed))
             {
                 currentIndex = (currentIndex + 1) % NumBuffers;
                 return GetAndInitializeCurrentBuffer();
