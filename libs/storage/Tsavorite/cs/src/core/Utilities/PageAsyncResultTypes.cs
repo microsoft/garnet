@@ -17,8 +17,12 @@ namespace Tsavorite.core
         internal long offset;
         internal TContext context;
         internal CountdownEvent handle;
+
+        /// <summary>
+        /// This is the record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.
+        /// </summary>
         internal SectorAlignedMemory freeBuffer1;
-        internal SectorAlignedMemory freeBuffer2;   // TODO apparently unused
+
         internal DeviceIOCompletionCallback callback;
         internal object frame;
         internal CancellationTokenSource cts;
@@ -38,12 +42,6 @@ namespace Tsavorite.core
             {
                 freeBuffer1.Return();
                 freeBuffer1 = null;
-            }
-
-            if (freeBuffer2 != null)
-            {
-                freeBuffer2.Return();
-                freeBuffer2 = null;
             }
         }
     }
@@ -116,12 +114,24 @@ namespace Tsavorite.core
         /// </summary>
         public int count;
 
+        /// <summary>
+        /// If true, this is a flush of a partial page.
+        /// </summary>
         internal bool partial;
+
         internal long fromAddress;
         internal long untilAddress;
+
+        /// <summary>
+        /// This is the record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.
+        /// </summary>
         internal SectorAlignedMemory freeBuffer1;
-        internal SectorAlignedMemory freeBuffer2;
+
+        /// <summary>
+        /// The event that is signaled by the callback so any waiting thread knows the IO has completed.
+        /// </summary>
         internal AutoResetEvent done;
+
         internal FlushCompletionTracker flushCompletionTracker;
 
         /// <summary>
@@ -133,11 +143,6 @@ namespace Tsavorite.core
             {
                 freeBuffer1.Return();
                 freeBuffer1 = null;
-            }
-            if (freeBuffer2 != null)
-            {
-                freeBuffer2.Return();
-                freeBuffer2 = null;
             }
 
             flushCompletionTracker?.CompleteFlush();

@@ -401,7 +401,7 @@ namespace Tsavorite.core
 
             // Object keys and values are serialized into this Stream.
             var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
-            var diskBuffer = new DiskStreamWriteBuffer(device, bufferPool.Get(IStreamBuffer.DiskWriteBufferSize), valueObjectSerializer, AsyncSimpleFlushPageCallback);
+            var diskBuffer = new DiskStreamWriteBuffer(device, logger, bufferPool, IStreamBuffer.DiskWriteBufferSize, valueObjectSerializer, callback, asyncResult);
             PinnedMemoryStream<DiskStreamWriteBuffer> pinnedMemoryStream = new(diskBuffer);
 
             try
@@ -416,7 +416,7 @@ namespace Tsavorite.core
                         using var countdownEvent = new CountdownEvent(1);
                         PageAsyncReadResult<Empty> result = new() { handle = countdownEvent };
                         alignedDestinationAddress += (ulong)alignedStartOffset;
-                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.buffer.GetValidPointer(), (uint)sectorSize, AsyncSimpleReadPageCallback, result);
+                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.flushBuffer.memory.GetValidPointer(), (uint)sectorSize, AsyncSimpleReadPageCallback, result);
                         result.handle.Wait();
                         if (result.numBytesRead != (uint)sectorSize)    // Our writes should always have written at least a sector
                             throw new TsavoriteException($"Expected number of bytes read {sectorSize}, actual {result.numBytesRead}");

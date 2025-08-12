@@ -86,7 +86,7 @@ namespace Tsavorite.core
 
         /* Segmented addressing API */
         /// <summary>
-        /// Write
+        /// Write to the file. The alignedSourceAddress must be pinned.
         /// </summary>
         /// <param name="sourceAddress"></param>
         /// <param name="segmentId"></param>
@@ -97,7 +97,7 @@ namespace Tsavorite.core
         void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
-        /// Read
+        /// Read from the file. The alignedSourceAddress must be pinned.
         /// </summary>
         /// <param name="segmentId"></param>
         /// <param name="sourceAddress"></param>
@@ -110,7 +110,7 @@ namespace Tsavorite.core
         /* Direct addressing API */
 
         /// <summary>
-        /// Write
+        /// Write to the file. The alignedSourceAddress must be pinned.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>
@@ -120,7 +120,7 @@ namespace Tsavorite.core
         void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
-        /// Read
+        /// Read from the file. The alignedSourceAddress must be pinned.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>

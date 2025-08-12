@@ -5,13 +5,14 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using static VarbyteLengthUtility;
     using static LogAddress;
+    using static VarbyteLengthUtility;
 
     /// <summary>
     /// The class that manages IO writing of ObjectAllocator records. It manages the write buffer at two levels:
@@ -23,13 +24,14 @@ namespace Tsavorite.core
     internal unsafe class DiskStreamWriteBuffer : IStreamBuffer
     {
         readonly IDevice logDevice;
-        internal readonly SectorAlignedMemory buffer;
         readonly IObjectSerializer<IHeapObject> valueObjectSerializer;
 
-        /// <summary>Current write position (we do not support read in this buffer). This class only supports Write and no Seek,
-        /// so currentPosition equals the current length. Relevant for object serialization only; reset to 0 at start of DoSerialize().</summary>
-        /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
-        int currentPosition;
+        /// <summary>The circular buffer we cycle through for parallelization of writes.</summary>
+        internal CircularFlushWriteBuffer flushBuffers;
+
+        /// <summary>The current buffer being written to in the circular buffer list.</summary>
+        internal FlushWriteBuffer flushBuffer;
+
         /// <summary>Cumulative length of data written to the buffer before the current buffer contents</summary>
         long priorCumulativeLength;
 
@@ -60,34 +62,39 @@ namespace Tsavorite.core
         /// object chunk is serialized to the buffer (this two-step approach is needed so we know the chunk length).</summary>
         PinnedSpanByte keyInteriorSpan;
 
-        /// <summary>
-        /// When we write the buffer this callback will be used and must signal the <see cref="PageAsyncFlushResult{T}.done"/> event so we can continue.
-        /// </summary>
-        readonly DeviceIOCompletionCallback ioCompletionCallback;
-
-        private int RemainingCapacity => buffer.AlignedTotalCapacity - currentPosition;
-
         /// <summary>The amount of bytes we wrote. Used by the caller (e.g. <see cref="ObjectAllocatorImpl{TStoreFunctions}"/> to track actual file output length.</summary>
-        /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer. Subtract the intermediate chain-chunk length markers.</remarks>
-        public long TotalWrittenLength => priorCumulativeLength + currentPosition;
+        /// <remarks><see cref="FlushWriteBuffer.currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer. Subtract the intermediate chain-chunk length markers.</remarks>
+        public long TotalWrittenLength => priorCumulativeLength + flushBuffer.currentPosition;
 
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => true;
 
-        int SectorSize => (int)logDevice.SectorSize;
+        int SectorSize => flushBuffers.SectorSize;
 
-        public DiskStreamWriteBuffer(IDevice logDevice, SectorAlignedMemory buffer, IObjectSerializer<IHeapObject> valueObjectSerializer, DeviceIOCompletionCallback ioCompletionCallback)
+        /// <summary>Constructor. Creates the circular buffer pool.</summary>
+        /// <param name="logDevice">The device to write to</param>
+        /// <param name="logger">The logger to write to</param>
+        /// <param name="bufferPool">The pool for creating memory buffers</param>
+        /// <param name="bufferSize">The size to use for memory buffers</param>
+        /// <param name="valueObjectSerializer">Serialized value objects to the underlying stream</param>
+        /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this flush operation. 
+        ///     It usually signals the <see cref="PageAsyncFlushResult{T}.done"/> event so the caller knows the flush is complete and it can continue.</param>
+        /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
+        /// <exception cref="ArgumentNullException"></exception>
+        public DiskStreamWriteBuffer(IDevice logDevice, ILogger logger, SectorAlignedBufferPool bufferPool, int bufferSize, IObjectSerializer<IHeapObject> valueObjectSerializer, DeviceIOCompletionCallback externalCallback, object externalContext)
         {
             this.logDevice = logDevice ?? throw new ArgumentNullException(nameof(logDevice));
-            this.buffer = buffer ?? throw new ArgumentNullException(nameof(buffer));
-            this.ioCompletionCallback = ioCompletionCallback ?? throw new ArgumentNullException(nameof(ioCompletionCallback));
             this.valueObjectSerializer = valueObjectSerializer;
+
+            flushBuffers = new CircularFlushWriteBuffer(bufferPool, bufferSize, logDevice, logger, externalCallback, externalContext);
+            flushBuffer = flushBuffers.GetAndInitializeCurrentBuffer();
+
             valueLengthPosition = NoPosition;
         }
 
         internal void SetAlignedDeviceAddress(ulong alignedDeviceAddress) => this.alignedDeviceAddress = alignedDeviceAddress;
 
-        internal void OnInitialSectorReadComplete(int position) => currentPosition = position;
+        internal void OnInitialSectorReadComplete(int position) => flushBuffer.currentPosition = position;
 
         /// <inheritdoc/>
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Flushing must only be done under control of the Write() methods, due to possible Value length adjustments.");
@@ -161,8 +168,8 @@ namespace Tsavorite.core
 
             // 3. We can't trust valueObject.SerializedSize here because the object cannot accurately track it (e.g. JsonObject), so we must chain chunks.
             // Ensure there is space in the to fit a key (usually not too large) and a reasonably-sized first ValueObject serialized chunk and still be able to update Value length.
-            if (RemainingCapacity < buffer.AlignedTotalCapacity / 4)
-                FlushPartialBuffer();
+            if (flushBuffer.RemainingCapacity < flushBuffer.memory.AlignedTotalCapacity / 4)
+                FlushPartialBufferAndShift();
 
             // Initiate chunking. ValueLength will always be an int. There are two possibilities regarding handling of the first chunk:
             //  a. The key can be copied to the buffer in its entirety, so we only need to track the amount of key data between the value length and start of value bytes
@@ -177,7 +184,7 @@ namespace Tsavorite.core
             //  After the first chunk, all we need to track is the valueLengthPosition, which we update as we write each chunk (or the final partial buffer).
 
             // 3a. If the key is "small", we'll just copy it to the buffer in its entirety, then track valueLengthPosition while we do ValueObject serialization.
-            if (keySpan.Length < buffer.AlignedTotalCapacity / 8)
+            if (keySpan.Length < flushBuffer.memory.AlignedTotalCapacity / 8)
             {
                 // Max value chunk size is limited to a single buffer so fits in an int. Use int.MaxValue to get the int varbyte size, but we won't write a chunk that large.
                 WriteIndicatorByteAndLengths(keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
@@ -197,7 +204,7 @@ namespace Tsavorite.core
             WriteIndicatorByteAndLengths(keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
 
             // Copy the beginning sector-aligning "cap" bytes to the buffer.
-            var beginCapLength = RoundUp(currentPosition, SectorSize) - currentPosition;
+            var beginCapLength = RoundUp(flushBuffer.currentPosition, SectorSize) - flushBuffer.currentPosition;
             var capSpan = keySpan.Slice(0, beginCapLength);
             if (capSpan.Length > 0)
                 Write(capSpan);
@@ -207,7 +214,7 @@ namespace Tsavorite.core
             keyInteriorSpan = PinnedSpanByte.FromPinnedSpan(keySpan.Slice(beginCapLength, interiorLength));
 
             // Copy the ending sector-aligning "cap" bytes to the buffer
-            keyEndSectorCapPosition = currentPosition;
+            keyEndSectorCapPosition = flushBuffer.currentPosition;
             capSpan = keySpan.Slice(beginCapLength + interiorLength);
             if (capSpan.Length > 0)
                 Write(capSpan);
@@ -226,7 +233,7 @@ namespace Tsavorite.core
             if (isChunked)
             {
                 SetChunkedValueIndicator(ref indicatorByte);
-                valueLengthPosition = currentPosition + 1 + keyByteCount;   // skip indicator byte and key length varbytes
+                valueLengthPosition = flushBuffer.currentPosition + 1 + keyByteCount;   // skip indicator byte and key length varbytes
             }
 
             var ptr = indicatorBuffer;
@@ -265,21 +272,22 @@ namespace Tsavorite.core
             var dataStart = 0;
             while (data.Length - dataStart > 0)
             {
-                Debug.Assert(RemainingCapacity - lengthSpaceReserve > 0, "RemainingCapacity  - lengthSpaceReserve == 0 should have already triggered an OnChunkComplete call, which would have reset the buffer");
+                Debug.Assert(flushBuffer.RemainingCapacity - lengthSpaceReserve > 0, 
+                        $"RemainingCapacity {flushBuffer.RemainingCapacity} - lengthSpaceReserve {lengthSpaceReserve} == 0 (data.Length {data.Length}, dataStart {dataStart}) should have already triggered an OnChunkComplete call, which would have reset the buffer");
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
 
                 // If it won't all fit in the remaining buffer, write as much as will.
                 var requestLength = data.Length - dataStart;
-                if (requestLength > RemainingCapacity - lengthSpaceReserve)
-                    requestLength = RemainingCapacity - lengthSpaceReserve;
+                if (requestLength > flushBuffer.RemainingCapacity - lengthSpaceReserve)
+                    requestLength = flushBuffer.RemainingCapacity - lengthSpaceReserve;
 
-                data.Slice(dataStart, requestLength).CopyTo(buffer.TotalValidSpan.Slice(currentPosition));
+                data.Slice(dataStart, requestLength).CopyTo(flushBuffer.memory.TotalValidSpan.Slice(flushBuffer.currentPosition));
                 dataStart += requestLength;
-                currentPosition += requestLength;
+                flushBuffer.currentPosition += requestLength;
                 currentChunkLength += requestLength;    // This is ignored if we are not in the middle of Serialize() (DoSerialize() resets it to 0)
 
                 // See if we're at the end of the buffer.
-                if (RemainingCapacity - lengthSpaceReserve == 0)
+                if (flushBuffer.RemainingCapacity - lengthSpaceReserve == 0)
                     OnChunkComplete(lengthSpaceReserve);
             }
         }
@@ -292,22 +300,24 @@ namespace Tsavorite.core
         {
             // This should only be called when the object serialization hits the end of the buffer; for partial buffers we will call
             // OnSerializeComplete() after the Serialize() call has returned.
-            Debug.Assert(currentPosition == buffer.AlignedTotalCapacity - lengthSpaceReserve, "Current position must be at end of buffer.");
+            Debug.Assert(flushBuffer.currentPosition == flushBuffer.memory.AlignedTotalCapacity - lengthSpaceReserve, "Current position must be at end of buffer.");
             UpdateValueLength(IStreamBuffer.ValueChunkContinuationBit);
 
             // If this is the first chunk we may need to flush the key interior, which also flushes the rest of the buffer. Otherwise just flush the buffer.
             if (!FlushKeyInteriorIfNeeded())
-                FlushPartialBuffer();
+                FlushPartialBufferAndShift();
 
             // If we're doing chunk chaining, the next chunk's length starts at the end of the sector we moved to the start of the buffer.
             // Note that if serialization ends right on the end of the sector, we'll call OnSerializeComplete which will set this to zero with
             // no continuation bit; that's fine, just a wasted int we can't avoid.
             if (valueLengthPosition != NoPosition)
             {
-                valueLengthPosition = currentPosition;
-                currentPosition += sizeof(int);
+                valueLengthPosition = flushBuffer.currentPosition;
+                flushBuffer.currentPosition += sizeof(int);
                 numBytesInChainedChunkLengths += sizeof(int);
             }
+            Debug.Assert(flushBuffer.RemainingCapacity - lengthSpaceReserve > 0,
+                    $"RemainingCapacity {flushBuffer.RemainingCapacity} - lengthSpaceReserve {lengthSpaceReserve} == 0 at end of OnChunkComplete");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -320,7 +330,7 @@ namespace Tsavorite.core
                 // Note that currentChunkLength is at the end of the current chunk's data and the next-chunk length is *after* that, so add sizeof(int)
                 // if there is a continuation bit.
                 var lengthSpaceReserve = continuationBit == 0 ? 0 : sizeof(int);
-                *(int*)(buffer.GetValidPointer() + valueLengthPosition) = (currentChunkLength + lengthSpaceReserve) | continuationBit;
+                *(int*)(flushBuffer.memory.GetValidPointer() + valueLengthPosition) = (currentChunkLength + lengthSpaceReserve) | continuationBit;
             }
             valueCumulativeLength += currentChunkLength;
             currentChunkLength = 0;
@@ -339,13 +349,17 @@ namespace Tsavorite.core
             // Caller has updated the value length, so write everything including the key start cap for sector alignment
             // (this ends on keyEndSectorCapPosition). Then write the key span, which is sector-aligned size.
             FlushPartialBuffer(0, keyEndSectorCapPosition);
-            FlushToDevice(keyInteriorSpan);
+
+            // When writing to a device we must have a pinned buffer. This means we have to wait until the write completes. We should only be
+            // here for extremely large keys which we hope are extremely unusual.
+            FlushToDevice(keyInteriorSpan, wait: true);
 
             // Write the end cap of the key and the value; keyEndSectorCapPosition is sector-aligned so flushLength will be also.
-            var flushLength = RoundDown(currentPosition, SectorSize) - keyEndSectorCapPosition;
+            // This is basically FlushPartialBufferAndShift with a start position > 0.
+            var flushLength = RoundDown(flushBuffer.currentPosition, SectorSize) - keyEndSectorCapPosition;
             Debug.Assert(RoundUp(flushLength, SectorSize) == flushLength, $"flushLength {flushLength} should be sector-aligned and was not");
             FlushPartialBuffer(keyEndSectorCapPosition, keyEndSectorCapPosition + flushLength);
-            ShiftUnflushedDataToStartOfBuffer(keyEndSectorCapPosition + flushLength);
+            flushBuffer = flushBuffers.ShiftTailToNextBuffer(keyEndSectorCapPosition + flushLength);
 
             // We no longer want these; remaining chunks will just Flush as below.
             keyEndSectorCapPosition = NoPosition;
@@ -353,28 +367,20 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void ShiftUnflushedDataToStartOfBuffer(int startPosition)
+        /// <summary>Flush the buffer up to sector alignment below <see cref="FlushWriteBuffer.currentPosition"/>,
+        /// then copy any remaining data to the start of the next buffer and set <see cref="flushBuffer"/> to that next buffer.</summary>
+        private void FlushPartialBufferAndShift()
         {
-            var copyLength = currentPosition - startPosition;
-            if (copyLength > 0)
-                buffer.TotalValidSpan.Slice(startPosition, copyLength).CopyTo(buffer.TotalValidSpan);
-            currentPosition = copyLength;
-        }
+            if (flushBuffer.currentPosition == 0)
+                return; // Nothing to flush and a full buffer available
 
-        /// <summary>Flush the buffer up to sector alignment below <see cref="currentPosition"/>,
-        /// then copy any remaining data to the start of the buffer and update <see cref="currentPosition"/></summary>
-        private void FlushPartialBuffer()
-        {
-            if (currentPosition == 0)
-                return; // Nothing to flush
-
-            var flushLength = RoundDown(currentPosition, SectorSize);
-            FlushToDevice(buffer.TotalValidSpan.Slice(0, flushLength));
-            ShiftUnflushedDataToStartOfBuffer(flushLength);
+            var flushLength = RoundDown(flushBuffer.currentPosition, SectorSize);
+            FlushToDevice(flushBuffer.memory.TotalValidSpan.Slice(0, flushLength));
+            flushBuffer = flushBuffers.ShiftTailToNextBuffer(flushLength);
         }
 
         /// <summary>Flush the buffer from <paramref name="startPosition"/> to <paramref name="endPosition"/>; both should be sector-aligned.
-        /// Do not shift the buffer or update <see cref="currentPosition"/>; subsequent operations will handle that</summary>
+        /// Do not shift the buffer or update <see cref="FlushWriteBuffer.currentPosition"/>; subsequent operations will handle that</summary>
         private void FlushPartialBuffer(int startPosition, int endPosition)
         {
             if (endPosition - startPosition == 0)
@@ -385,43 +391,29 @@ namespace Tsavorite.core
             Debug.Assert(RoundUp(endPosition, SectorSize) == endPosition, $"endPosition {endPosition} should be sector-aligned and was not");
             Debug.Assert(RoundUp(flushLength, SectorSize) == flushLength, $"flushLength {flushLength} should be sector-aligned and was not");
 
-            FlushToDevice(buffer.TotalValidSpan.Slice(startPosition, flushLength));
+            FlushToDevice(flushBuffer.memory.TotalValidSpan.Slice(startPosition, flushLength));
         }
 
         /// <summary>Write the span directly to the device without changing the buffer.</summary>
-        private void FlushToDevice(ReadOnlySpan<byte> span)
+        private void FlushToDevice(ReadOnlySpan<byte> span, bool wait = false)
         {
             Debug.Assert(RoundUp(span.Length, SectorSize) == span.Length, $"span.Length {span.Length} should be sector-aligned and was not");
-            PageAsyncFlushResult<Empty> asyncResult = new() { done = new AutoResetEvent(false) };
+            flushBuffer.FlushToDevice(span, alignedDeviceAddress, wait);
 
-            // We may be writing a ReadOnlySpan that's around an unpinned byte[], so pin the buffer to do the write.
-            fixed (byte* spanPtr = span)
-                logDevice.WriteAsync((IntPtr)spanPtr, alignedDeviceAddress, (uint)span.Length, ioCompletionCallback, asyncResult);
-            _ = asyncResult.done.WaitOne();
-            asyncResult.done = default;
+            // This does not alter currentPosition; that is the caller's responsibility, e.g. it may ShiftTailToNextBuffer if this is called for partial flushes.
+            // Note: When we trigger a flush for a flushBuffer, it will either be a series of partial flushes followed by a ShiftTailToNextBuffer, or a
+            // single flush. Either way, we will then leave the buffer we flushed and move to the next one. I.e., we will never start a flush in a buffer
+            // and then start adding more into that buffer. This saves us having to track a lastFlushedPosition for the chunk; the only time we would enqueue
+            // multiple flushes currently is for keyInterior which should be quite rare.
             priorCumulativeLength += span.Length;
             alignedDeviceAddress += (ulong)span.Length;
-            // This does not alter currentPosition; that is the caller's responsibility, e.g. ShiftUnflushedDataToStartOfBuffer, as this is called for partial flushes.
         }
 
         /// <inheritdoc/>
         public void OnFlushComplete(DeviceIOCompletionCallback originalCallback, object originalContext)
         {
-            // Flush the last of the buffer, sector-aligning and zeroing the end. (All chunk-length updates have been done if we were chunk-chaining).
-            if (currentPosition == 0)
-            {
-                // Nothing to flush. TODO: TotalWrittenLength may exceed uint.MaxValue so the callback's numBytes will be incorrect.
-                originalCallback(errorCode: 0, (uint)TotalWrittenLength, originalContext);
-                return;
-            }
-
-            // Flush the final piece to disk, using the caller's original callback and context.
-            var flushLength = RoundUp(currentPosition, SectorSize);
-            if (flushLength > currentPosition)
-                new Span<byte>(buffer.GetValidPointer() + currentPosition, flushLength - currentPosition).Clear();
-
-            // TODO: This will send flushLength, not TotalWrittenLength, to the callback as numBytes.
-            logDevice.WriteAsync((IntPtr)buffer.GetValidPointer(), alignedDeviceAddress, (uint)flushLength, originalCallback, originalContext);
+            // TODO: TotalWrittenLength may exceed uint.MaxValue so the callback's numBytes will be incorrect.
+            flushBuffers.BeginFlushComplete(alignedDeviceAddress, (uint)TotalWrittenLength);
 
             priorCumulativeLength = 0;
             valueCumulativeLength = 0;
@@ -430,10 +422,6 @@ namespace Tsavorite.core
 
         void DoSerialize(IHeapObject valueObject)
         {
-            // TODO: For multi-buffer, consider using a circular buffer array (possibly of size 2), with the full buffers being flushed to disk in sequence
-            // on a background thread while the foreground thread populates the "current" one in parallel, sets it to flush to disk, and Wait()s for a free
-            // one to continue the population.
-
             // valueCumulativeLength is only relevant for object serialization; we increment it on all device writes to avoid "if", so here we reset it to the appropriate
             // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have Length and Position = (-currentPosition + currentPosition + 4).
             valueCumulativeLength = 0;
@@ -467,18 +455,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void OnRecordComplete()
         {
-            // The buffer is aligned to sector size, which will be a multiple of kRecordAlignment, so this should always be true.
-            var newCurrentPosition = RoundUp(currentPosition, Constants.kRecordAlignment);
-            Debug.Assert(newCurrentPosition < buffer.AlignedTotalCapacity);
-
-            var alignmentIncrease = newCurrentPosition - currentPosition;
-            if (alignmentIncrease > 0)
-            {
-                // Zeroinit the extra and update current position.
-                new Span<byte>(buffer.GetValidPointer() + currentPosition, alignmentIncrease).Clear();
-                currentPosition = newCurrentPosition;
-            }
-
+            flushBuffer = flushBuffers.OnRecordComplete();
             Debug.Assert(TotalWrittenLength % Constants.kRecordAlignment == 0, $"TotalWrittenLength {TotalWrittenLength} is not record-aligned");
         }
 
@@ -488,7 +465,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            buffer.Return();
+            // Currently nothing to do
         }
     }
 }

@@ -228,6 +228,7 @@ namespace Tsavorite.core
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
+            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
                 _ = Task.Run(FlushRunner);
             else
@@ -1741,13 +1742,15 @@ namespace Tsavorite.core
                     // Perform work from shared queue if possible: When a flush completes it updates FlushedUntilAddress. If there
                     // is an item in the shared queue that starts at FlushedUntilAddress, it can now be flushed. Flush callbacks
                     // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
+                    // This will issue a write that completes in the background as we move to the next adjacent chunk (or page if
+                    // this is the last chunk on the current page).
                     if (PendingFlush[index].RemoveNextAdjacent(FlushedUntilAddress, out PageAsyncFlushResult<Empty> request))
                         WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
                 }
                 else
                 {
-                    // Write the entire page up to asyncResult.untilAddress (there can be no previous items in the queue). Flush callbacks
-                    // will RemoveNextAdjacent(FlushedUntilAddress, ...) to continue the chain of flushes until the queue is empty.
+                    // Write the entire page. This will issue a write that completes in the background as we move to the next page,
+                    // which may be partial and will enter into PendingFlush.
                     WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);                     // Call the overridden WriteAsync for the derived allocator class
                 }
             }
@@ -1797,8 +1800,7 @@ namespace Tsavorite.core
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
-            // If throttled, convert rest of the method into a truly async task run
-            // because issuing IO can take up synchronous time
+            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
                 _ = Task.Run(FlushRunner);
             else
@@ -1861,16 +1863,6 @@ namespace Tsavorite.core
             var result = (PageAsyncReadResult<Empty>)context;
             result.numBytesRead = numBytes;
             _ = result.handle.Signal();
-        }
-
-        private protected void AsyncSimpleFlushPageCallback(uint errorCode, uint numBytes, object context)
-        {
-            if (errorCode != 0)
-                logger?.LogError($"{nameof(AsyncSimpleFlushPageCallback)} error: {{errorCode}}", errorCode);
-
-            // Signal the event so the waiter can continue
-            var result = (PageAsyncFlushResult<Empty>)context;
-            _ = result.done.Set();
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
