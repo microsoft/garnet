@@ -17,7 +17,7 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.");
+                return AbortWithWrongNumberOfArguments("latency|help");
             }
 
             var latencyCommands = RespLatencyHelp.GetLatencyCommands();
