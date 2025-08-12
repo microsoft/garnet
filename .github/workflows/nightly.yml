@@ -66,18 +66,18 @@ jobs:
           allure --version
           pwd
           ls
-          allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
+          allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
 
       - name: Verify Allure Report Output
         if: always()
         run: |
-          dir build/allure-report/allure-report-${{ runner.os }}
+          dir build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           
       - name: Upload Allure Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-${{ runner.os }}
+          name: allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: build/allure-report
 
       - name: Upload test results
@@ -153,7 +153,7 @@ jobs:
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
           allure --version
           dir 
-          allure generate "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
+          allure generate "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Install Allure and Generate Report (Linux only)
         if: runner.os == 'Linux' && always()
@@ -167,18 +167,18 @@ jobs:
           allure --version
           pwd
           ls
-          allure generate "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
+          allure generate "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Verify Allure Report Output
         if: always()
         run: |
-          dir build/allure-report/allure-report-${{ runner.os }}
+          dir build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           
       - name: Upload Allure Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-${{ runner.os }}
+          name: allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: build/allure-report
 
 
