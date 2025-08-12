@@ -123,36 +123,13 @@ namespace Garnet.test.Resp.ACL
             response = await c.ExecuteAsync("ACL", "GENPASS", "5");
             ClassicAssert.AreEqual(2, response.Length);
 
-            try
-            {
-                await c.ExecuteAsync("ACL", "GENPASS", "abcd");
-                Assert.Fail("Should throw and not reach this point");
-            }
-            catch (Exception e)
-            {
-                ClassicAssert.AreEqual("ERR value is not an integer or out of range.", e.Message);
-            }
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "abcd"),
+                                          "ERR value is not an integer or out of range.");
 
             var error = "ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096";
-            try
-            {
-                await c.ExecuteAsync("ACL", "GENPASS", "4097");
-                Assert.Fail("Should throw and not reach this point");
-            }
-            catch (Exception e)
-            {
-                ClassicAssert.AreEqual(error, e.Message);
-            }
 
-            try
-            {
-                await c.ExecuteAsync("ACL", "GENPASS", "0");
-                Assert.Fail("Should throw and not reach this point");
-            }
-            catch (Exception e)
-            {
-                ClassicAssert.AreEqual(error, e.Message);
-            }
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "4097"), error);
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "0"), error);
         }
 
         /// <summary>
