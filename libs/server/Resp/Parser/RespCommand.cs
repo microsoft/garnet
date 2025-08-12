@@ -59,6 +59,7 @@ namespace Garnet.server
         LLEN,
         LPOS,
         LRANGE,
+        MEMORY_HELP,
         MEMORY_USAGE,
         MGET,
         PEXPIRETIME,
@@ -2425,9 +2426,14 @@ namespace Garnet.server
                     return RespCommand.MEMORY_USAGE;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.MEMORY));
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
+                {
+                    return RespCommand.MEMORY_HELP;
+                }
+
+                var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                           Encoding.UTF8.GetString(subCommand),
+                                           nameof(RespCommand.MEMORY));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
             }

@@ -219,6 +219,7 @@ namespace CommandInfoUpdater
             new("LTRIM", RespCommand.LTRIM),
             new("MEMORY", RespCommand.MEMORY,
             [
+                new("MEMORY|HELP", RespCommand.MEMORY_HELP),
                 new("MEMORY|USAGE", RespCommand.MEMORY_USAGE),
             ]),
             new("MGET", RespCommand.MGET),

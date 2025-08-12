@@ -1451,6 +1451,27 @@ namespace Garnet.server
             return true;
         }
 
+        //MEMORY HELP
+        private bool NetworkMemoryHelp()
+        {
+            // No arguments allowed
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("memory|help");
+            }
+
+            WriteHelp(
+                 "MEMORY <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                 "USAGE <key> [SAMPLES <count>]",
+                 "\tReturn memory in bytes used by <key> and its value. Nested values are",
+                 "\tsampled up to <count> times (default: 5, 0 means sample all).",
+                 "HELP",
+                 "\tPrint this help."
+            );
+
+            return true;
+        }
+
         //MEMORY USAGE key [SAMPLES count]
         private bool NetworkMemoryUsage<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
