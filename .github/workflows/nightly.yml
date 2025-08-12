@@ -18,10 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
         os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -64,14 +64,16 @@ jobs:
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
 
-      - name: Run tests ${{ matrix.test }}
+      - name: Build and Run Tests ${{ matrix.test }}
+        shell: bash
         run: |
-          if (${{ matrix.test }} -eq 'Tsavorite.test') {
+          if [ "${{ matrix.test }}" = "Tsavorite.test" ]; then
             dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-            dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
-          } else {
-            dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
-          }
+            dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+          else
+            dotnet build test/${{ matrix.test }} --configuration ${{ matrix.configuration }}
+            dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+          fi
 
       - name: Install Allure and Generate Report (Windows only)
         if: runner.os == 'Windows' && always()
@@ -81,8 +83,8 @@ jobs:
           scoop bucket add extras
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
           allure --version
-          dir 
-          allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          dir
+          allure generate "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Install Allure and Generate Report (Linux only)
         if: runner.os == 'Linux' && always()
@@ -96,23 +98,23 @@ jobs:
           allure --version
           pwd
           ls
-          allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          allure generate "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Verify Allure Report Output
         if: always()
         run: |
-          dir build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          dir build/allure-report/allure-report-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           
       - name: Upload Allure Report Artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: allure-report-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: build/allure-report
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-          path: TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: dotnet-garnet-results-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
