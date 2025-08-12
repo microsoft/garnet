@@ -111,6 +111,27 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.Contains("default", users);
         }
 
+        [Test]
+        public async Task BasicGenPassTest()
+        {
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var response = await c.ExecuteAsync("ACL", "GENPASS");
+            ClassicAssert.AreEqual(64, response.Length);
+
+            response = await c.ExecuteAsync("ACL", "GENPASS", "5");
+            ClassicAssert.AreEqual(2, response.Length);
+
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "abcd"),
+                                          "ERR value is not an integer or out of range.");
+
+            var error = "ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096";
+
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "4097"), error);
+            Assert.ThrowsAsync<Exception>(async () => await c.ExecuteAsync("ACL", "GENPASS", "0"), error);
+        }
+
         /// <summary>
         /// Tests that an error is returned when an invalid subcommand is specified
         /// </summary>

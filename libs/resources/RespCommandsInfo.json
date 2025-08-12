@@ -79,6 +79,13 @@
         "Arity": 3,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Admin, Dangerous, Slow"
+      },
+      {
+        "Command": "ACL_GENPASS",
+        "Name": "ACL|GENPASS",
+        "Arity": -2,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Slow"
       }
     ]
   },
