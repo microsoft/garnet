@@ -3843,6 +3843,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HelloAuthErrorTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+
+            // Failed HELLO should not change current protocol
+            Assert.Throws<RedisServerException>(() => db.Execute("HELLO", "3", "AUTH", "NX", "NX"),
+                           Encoding.ASCII.GetString(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD));
+            var result = db.Execute("HELLO");
+
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp2Type);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp3Type);
+            var resultDict = result.ToDictionary();
+            ClassicAssert.IsNotNull(resultDict);
+
+            // Should remain 2 since protocol change failed
+            ClassicAssert.AreEqual(2, (int)resultDict["proto"]);
+        }
+
+        [Test]
         [TestCase([2, "$-1\r\n", "$1\r\n", "*4", '*'], Description = "RESP2 output")]
         [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
         public async Task RespOutputTests(byte respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
