@@ -3849,21 +3849,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void HelloTest2()
+        public void HelloAuthErrorTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
             var db = redis.GetDatabase(0);
 
             // Failed HELLO should not change current protocol
-            try
-            {
-                db.Execute("HELLO", "3", "AUTH", "NX", "NX");
-                ClassicAssert.Fail("Should never reach this line, user does not exist");
-            }
-            catch
-            {
-                // Passthrough
-            }
+            Assert.Throws<RedisServerException>(() => db.Execute("HELLO", "3", "AUTH", "NX", "NX"),
+                           Encoding.ASCII.GetString(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD));
             var result = db.Execute("HELLO");
 
             ClassicAssert.IsNotNull(result);
