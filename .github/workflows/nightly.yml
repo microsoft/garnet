@@ -52,7 +52,7 @@ jobs:
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
           allure --version
           dir 
-          allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ runner.os }}
+          allure generate "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
 
       - name: Install Allure and Generate Report (Linux only)
         if: runner.os == 'Linux' && always()
