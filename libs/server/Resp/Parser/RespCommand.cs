@@ -2574,7 +2574,7 @@ namespace Garnet.server
                 {
                     return RespCommand.PUBSUB_CHANNELS;
                 }
-                
+
                 if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
                 {
                     return RespCommand.PUBSUB_NUMSUB;
