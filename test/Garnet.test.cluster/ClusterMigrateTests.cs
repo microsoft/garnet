@@ -1618,8 +1618,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForMigrationCleanup(srcNodeIndex, logger: context.logger);
             srcDBsize = context.clusterTestUtils.DBSize(srcNodeIndex, context.logger);
             dstDBsize = context.clusterTestUtils.DBSize(dstNodeIndex, context.logger);
-            ClassicAssert.AreEqual(0, srcDBsize);
-            ClassicAssert.AreEqual(keyCount, dstDBsize);
+            ClassicAssert.AreEqual(0, srcDBsize, $"{srcDBsize} > {dstDBsize}");
+            ClassicAssert.AreEqual(keyCount, dstDBsize, $"{srcDBsize} > {dstDBsize}");
 
             foreach (var key in keys)
             {
