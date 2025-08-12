@@ -2809,8 +2809,8 @@
         "Command": "LATENCY_HELP",
         "Name": "LATENCY|HELP",
         "Arity": 2,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Slow, Garnet"
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       },
       {
         "Command": "LATENCY_HISTOGRAM",

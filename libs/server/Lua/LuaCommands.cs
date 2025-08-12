@@ -280,13 +280,13 @@ namespace Garnet.server
         {
             if (parseState.Count != 0)
             {
-                return AbortWithWrongNumberOfArguments("client|help");
+                return AbortWithWrongNumberOfArguments("script|help");
             }
 
             WriteHelp(
                 "SCRIPT <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                 "EXISTS <sha1> [<sha1> ...]",
-                "\tReturn the name of the current connection.",
+                "\tReturn information about the existence of the scripts in the script cache.",
                 "FLUSH [ASYNC|SYNC]",
                 "\tFlush the Lua scripts cache. Very dangerous on replicas. Valid modes are:",
                 "\t* ASYNC: Asynchronously flush the scripts cache.",

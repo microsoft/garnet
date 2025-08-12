@@ -777,6 +777,12 @@ namespace Garnet.server
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
+                if (parseState.Count != 1)
+                {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
                 WriteHelp(
                     "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                     "ERROR <string>",
