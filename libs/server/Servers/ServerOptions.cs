@@ -259,7 +259,7 @@ namespace Garnet.server
                             result *= (long)Math.Pow(1024, s + 1);
                             bytesRead++;
 
-                            if (i + 1 < value.Length && value[i + 1] == 'b')
+                            if (i + 1 < value.Length && char.ToLower(value[i + 1]) == 'b')
                                 bytesRead++;
 
                             return result;
