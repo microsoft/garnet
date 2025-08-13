@@ -1,11 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Threading;
 using CommandLine;
 using Garnet.client;
 using Garnet.common;
@@ -173,7 +169,8 @@ namespace Resp.benchmark
 
             loggerFactory = CreateLoggerFactory(opts);
 
-            WaitForServer(opts);
+            if (opts.Client != ClientType.InProc)
+                WaitForServer(opts);
 
             if (opts.SaveFreqSecs > 0)
             {
