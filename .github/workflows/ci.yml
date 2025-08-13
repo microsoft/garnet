@@ -87,7 +87,7 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
       - name: Install dependencies
         run: dotnet restore
@@ -128,7 +128,7 @@ jobs:
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
