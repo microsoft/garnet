@@ -435,11 +435,10 @@ namespace Garnet.test
                 RespCommand.MODULE_HELP,
                 RespCommand.MODULE_LOADCS,
                 RespCommand.REGISTERCS,
-                RespCommand.SCRIPT_HELP,
                 RespCommand.INFO,
                 RespCommand.TIME,
                 RespCommand.LASTSAVE,
-                RespCommand.PUBSUB_HELP,
+
                 // ACL
                 RespCommand.ACL_CAT,
                 RespCommand.ACL_DELUSER,
@@ -470,7 +469,6 @@ namespace Garnet.test
                 RespCommand.COMMAND_GETKEYS,
                 RespCommand.COMMAND_GETKEYSANDFLAGS,
                 RespCommand.COMMAND_HELP,
-                RespCommand.MEMORY_HELP,
                 RespCommand.MEMORY_USAGE,
                 // Config
                 RespCommand.CONFIG_HELP,

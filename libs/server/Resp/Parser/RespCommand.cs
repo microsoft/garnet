@@ -59,7 +59,6 @@ namespace Garnet.server
         LLEN,
         LPOS,
         LRANGE,
-        MEMORY_HELP,
         MEMORY_USAGE,
         MGET,
         PEXPIRETIME,
@@ -258,6 +257,8 @@ namespace Garnet.server
         CLIENT_SETNAME,
         CLIENT_SETINFO,
         CLIENT_UNBLOCK,
+
+        MEMORY_HELP,
 
         MONITOR,
         MODULE,
