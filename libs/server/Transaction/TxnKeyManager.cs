@@ -378,7 +378,7 @@ namespace Garnet.server
                 RespCommand.LINSERT => SingleKey(StoreType.Object, LockType.Exclusive),
                 RespCommand.LLEN => SingleKey(StoreType.Object, LockType.Shared),
                 RespCommand.LMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
-                RespCommand.LMPOP => ListReadKeysWithCount(LockType.Exclusive),
+                RespCommand.LMPOP => ListReadKeysWithCount(LockType.Exclusive, mandatoryArgs: 1),
                 RespCommand.LPOP => SingleKey(StoreType.Object, LockType.Exclusive),
                 RespCommand.LPOS => SingleKey(StoreType.Object, LockType.Shared),
                 RespCommand.LPUSH => SingleKey(StoreType.Object, LockType.Exclusive),
@@ -487,17 +487,20 @@ namespace Garnet.server
         /// <summary>
         /// Returns a list of keys for LMPOP command
         /// </summary>
-        private int ListReadKeysWithCount(LockType type, bool isObject = true)
+        private int ListReadKeysWithCount(LockType type, bool isObject = true, int mandatoryArgs = 0)
         {
-            var numKeysArg = respSession.GetCommandAsArgSlice(out var success);
-            if (!success) return -2;
+            if (respSession.parseState.Count == 0)
+                return -2;
 
-            if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
+            if (!respSession.parseState.TryGetInt(0, out var numKeys))
+                return -2;
 
-            for (var i = 0; i < numKeys; i++)
+            if (numKeys + mandatoryArgs + 1 > respSession.parseState.Count)
+                return -2;
+
+            for (var i = 1; i < numKeys + 1; i++)
             {
-                var key = respSession.GetCommandAsArgSlice(out success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
