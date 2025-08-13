@@ -34,7 +34,6 @@ namespace Resp.benchmark
         volatile bool done = false;
         long total_ops_done = 0;
 
-
         public RespPerfBench(Options opts, int Start, IConnectionMultiplexer redis)
         {
             this.opts = opts;
@@ -320,12 +319,12 @@ namespace Resp.benchmark
             }
 
             // Query database
-            Thread[] workers = new Thread[NumThreads];
+            var workers = new Thread[NumThreads];
 
             // Run the experiment.
-            for (int idx = 0; idx < NumThreads; ++idx)
+            for (var idx = 0; idx < NumThreads; ++idx)
             {
-                int x = idx;
+                var x = idx;
                 workers[idx] = opts.Client switch
                 {
 
@@ -337,7 +336,7 @@ namespace Resp.benchmark
             }
 
             // Start threads.
-            foreach (Thread worker in workers)
+            foreach (var worker in workers)
                 worker.Start();
 
             waiter.Set();
@@ -355,8 +354,8 @@ namespace Resp.benchmark
 
             swatch.Stop();
 
-            double seconds = swatch.ElapsedMilliseconds / 1000.0;
-            double opsPerSecond = total_ops_done / seconds;
+            var seconds = swatch.ElapsedMilliseconds / 1000.0;
+            var opsPerSecond = total_ops_done / seconds;
 
             if (verbose)
             {
@@ -379,8 +378,8 @@ namespace Resp.benchmark
             client.Connect();
             client.Authenticate(opts.Auth);
 
-            int maxReqs = (NumOps / rg.BatchCount);
-            int numReqs = 0;
+            var maxReqs = (NumOps / rg.BatchCount);
+            var numReqs = 0;
 
             waiter.Wait();
 
@@ -416,8 +415,8 @@ namespace Resp.benchmark
                 c.CompletePending();
             }
 
-            int maxReqs = NumOps / rg.BatchCount;
-            int numReqs = 0;
+            var maxReqs = NumOps / rg.BatchCount;
+            var numReqs = 0;
 
             waiter.Wait();
 
@@ -448,8 +447,8 @@ namespace Resp.benchmark
             }
             var db = redis.GetDatabase(0);
 
-            int maxReqs = NumOps / rg.BatchCount;
-            int numReqs = 0;
+            var maxReqs = NumOps / rg.BatchCount;
+            var numReqs = 0;
 
             waiter.Wait();
 
@@ -458,7 +457,7 @@ namespace Resp.benchmark
             while (!done)
             {
                 var reqArgs = rg.GetRequestArgs();
-                for (int i = 0; i < reqArgs.Count; i += 2)
+                for (var i = 0; i < reqArgs.Count; i += 2)
                     db.StringSet(reqArgs[i], reqArgs[i + 1]);
                 numReqs++;
                 if (numReqs == maxReqs) break;
@@ -470,20 +469,20 @@ namespace Resp.benchmark
 
         private void MGetThreadRunner(int threadid, int NumOps, int BatchSize = 1 << 12)
         {
-            bool checkResults = false;
-            int DbSize = database.Length;
+            var checkResults = false;
+            var DbSize = database.Length;
 
             using var redis = ConnectionMultiplexer.Connect($"{opts.Address}:{opts.Port},connectTimeout=999999,syncTimeout=999999");
-            IDatabase db = redis.GetDatabase(0);
+            var db = redis.GetDatabase(0);
 
             Random r = new(threadid);
             Random r2 = new(threadid);
 
             Stopwatch sw = new();
             sw.Start();
-            int idx = 0;
+            var idx = 0;
             var getBatch = new RedisKey[BatchSize];
-            for (int b = 0; b < NumOps; b++)
+            for (var b = 0; b < NumOps; b++)
             {
                 getBatch[idx++] = database[r.Next(DbSize)].Key;
                 if (idx == BatchSize)
@@ -491,7 +490,7 @@ namespace Resp.benchmark
                     var result = db.StringGet(getBatch);
                     if (checkResults)
                     {
-                        for (int k = 0; k < idx; k++)
+                        for (var k = 0; k < idx; k++)
                         {
                             if (database[r2.Next(DbSize)].Value != result[k])
                                 Console.WriteLine("OperateThreadRunner: Error");
@@ -505,7 +504,7 @@ namespace Resp.benchmark
                 var result = db.StringGet([.. getBatch.Take(idx)]);
                 if (checkResults)
                 {
-                    for (int k = 0; k < idx; k++)
+                    for (var k = 0; k < idx; k++)
                     {
                         if (database[r2.Next(DbSize)].Value != result[k])
                             Console.WriteLine("OperateThreadRunner: Error");
@@ -521,7 +520,7 @@ namespace Resp.benchmark
         {
             Console.WriteLine($"Creating database of size {opts.DbSize}");
             database = new KeyValuePair<RedisKey, RedisValue>[opts.DbSize];
-            for (int k = 0; k < opts.DbSize; k++)
+            for (var k = 0; k < opts.DbSize; k++)
             {
                 database[k] = new KeyValuePair<RedisKey, RedisValue>(new RedisKey(k.ToString()), new RedisValue(k.ToString()));
             }
@@ -533,16 +532,16 @@ namespace Resp.benchmark
             using var redis = ConnectionMultiplexer.Connect($"{opts.Address}:{opts.Port},connectTimeout=999999,syncTimeout=999999");
             var db = redis.GetDatabase(0);
 
-            int DbSize = database.Length;
+            var DbSize = database.Length;
 
             Console.WriteLine($"Loading database of size {database.Length}");
 
             Stopwatch sw = new();
             sw.Start();
-            bool MSet = true;
+            var MSet = true;
             if (MSet)
             {
-                for (int b = 0; b < DbSize; b += BatchSize)
+                for (var b = 0; b < DbSize; b += BatchSize)
                 {
                     db.StringSet([.. database.Skip(b).Take(BatchSize)]);
                     if (b > 0 && b % 1000000 == 0)
@@ -552,8 +551,8 @@ namespace Resp.benchmark
             else
             {
                 var tasks = new Task[BatchSize];
-                int idx = 0;
-                for (int b = 0; b < DbSize; b++)
+                var idx = 0;
+                for (var b = 0; b < DbSize; b++)
                 {
                     tasks[idx] = db.StringSetAsync(database[b].Key, database[b].Value);
                     idx++;
