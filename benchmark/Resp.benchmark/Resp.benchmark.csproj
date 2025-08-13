@@ -13,16 +13,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" />
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
-    <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />     
+    <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
+    <ProjectReference Include="..\BDN.benchmark\BDN.benchmark.csproj" />     
   </ItemGroup>
-
+	
 </Project>
