@@ -69,6 +69,16 @@ Simple string reply: OK.
 
 ---
 
+### SCRIPT HELP
+
+```bash
+    SCRIPT HELP
+```
+
+The SCRIPT HELP command returns a helpful text describing the different subcommands.
+
+---
+
 ### SCRIPT LOAD
 
 #### Syntax
