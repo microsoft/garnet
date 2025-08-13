@@ -96,6 +96,7 @@ jobs:
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
           allure --version
           dir
+          Copy-Item "categories.json" "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -Force
           allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Install Allure and Generate Report (Linux only)
@@ -110,6 +111,7 @@ jobs:
           allure --version
           pwd
           ls
+          cp categories.json "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
           allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Verify Allure Report Output
