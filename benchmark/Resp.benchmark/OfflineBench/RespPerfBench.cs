@@ -1,16 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Net;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+using Embedded.server;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using StackExchange.Redis;
 
 namespace Resp.benchmark
@@ -25,6 +22,8 @@ namespace Resp.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly Options opts;
         readonly IConnectionMultiplexer redis;
+        internal EmbeddedRespServer server;
+        internal RespServerSession[] sessions;
 
         KeyValuePair<RedisKey, RedisValue>[] database;
 
@@ -40,6 +39,16 @@ namespace Resp.benchmark
             this.Start = Start;
             if (opts.Client == ClientType.SERedis)
                 this.redis = redis;
+
+            if (opts.Client == ClientType.InProc)
+            {
+                var serverOptions = new GarnetServerOptions
+                {
+                    QuietMode = true,
+                };
+                server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
+                sessions = server.GetRespSessions(opts.NumThreads.Max());
+            }
         }
 
         /// <summary>
@@ -75,7 +84,8 @@ namespace Resp.benchmark
                 LightOperate(OpType.SET, opts.DbSize, loadBatchSize, loadDbThreads, opts.DbSize / loadDbThreads, default, load_rg, false, false, keyLen, valueLen, numericValue: numericValue);
             load_rg = null;
 
-            GetDBSIZE(loadDbThreads);
+            if (opts.Client != ClientType.InProc)
+                GetDBSIZE(loadDbThreads);
         }
 
         private unsafe void GetDBSIZE(int loadDbThreads)
@@ -331,6 +341,7 @@ namespace Resp.benchmark
                     ClientType.LightClient => new Thread(() => LightOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.GarnetClientSession => new Thread(() => GarnetClientSessionOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.SERedis => new Thread(() => SERedisOperateThreadRunner(OpsPerThread, opType, rg)),
+                    ClientType.InProc => new Thread(() => InProcOperateThreadRunner(x, OpsPerThread, opType, rg)),
                     _ => throw new Exception($"ClientType {opts.Client} not supported"),
                 };
             }
@@ -459,6 +470,29 @@ namespace Resp.benchmark
                 var reqArgs = rg.GetRequestArgs();
                 for (var i = 0; i < reqArgs.Count; i += 2)
                     db.StringSet(reqArgs[i], reqArgs[i + 1]);
+                numReqs++;
+                if (numReqs == maxReqs) break;
+            }
+            sw.Stop();
+
+            Interlocked.Add(ref total_ops_done, numReqs * rg.BatchCount);
+        }
+
+        private unsafe void InProcOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)
+        {
+            var maxReqs = (NumOps / rg.BatchCount);
+            var numReqs = 0;
+
+            waiter.Wait();
+
+            Stopwatch sw = new();
+            sw.Start();
+            while (!done)
+            {
+                var buf = rg.GetRequest(out var len);
+                fixed (byte* ptr = buf)
+                    _ = sessions[threadId].TryConsumeMessages(ptr, len);
+
                 numReqs++;
                 if (numReqs == maxReqs) break;
             }
