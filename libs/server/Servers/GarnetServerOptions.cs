@@ -620,7 +620,7 @@ namespace Garnet.server
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
             kvSettings.MinEmptyPageCount = storeEmptyPageCount;
 
-            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.MemorySize;
+            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.PageSize;
             if (storeEmptyPageCount == 0)
                 logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
             else
@@ -660,8 +660,8 @@ namespace Garnet.server
             if (EnableReadCache)
             {
                 kvSettings.ReadCacheEnabled = true;
-                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize);
-                kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize);
+                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize, out _);
+                kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize, out _);
                 logger?.LogInformation("[Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
                     PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
             }
@@ -739,12 +739,12 @@ namespace Garnet.server
         public static int MemorySizeBits(string memorySize, string storePageSize, out int emptyPageCount)
         {
             emptyPageCount = 0;
-            long size = ParseSize(memorySize);
+            long size = ParseSize(memorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
             {
                 adjustedSize *= 2;
-                long pageSize = ParseSize(storePageSize);
+                long pageSize = ParseSize(storePageSize, out _);
                 pageSize = PreviousPowerOf2(pageSize);
                 emptyPageCount = (int)((adjustedSize - size) / pageSize);
             }
@@ -808,7 +808,7 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
 
-            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize);
+            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize, out _);
             logger?.LogInformation("[Object Store] Heap memory size is {objHeapMemorySize}", objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited");
 
             // Read cache related settings
@@ -820,12 +820,12 @@ namespace Garnet.server
             if (EnableObjectStoreReadCache)
             {
                 kvSettings.ReadCacheEnabled = true;
-                kvSettings.ReadCachePageSize = ParseSize(ObjectStoreReadCachePageSize);
-                kvSettings.ReadCacheMemorySize = ParseSize(ObjectStoreReadCacheLogMemorySize);
+                kvSettings.ReadCachePageSize = ParseSize(ObjectStoreReadCachePageSize, out _);
+                kvSettings.ReadCacheMemorySize = ParseSize(ObjectStoreReadCacheLogMemorySize, out _);
                 logger?.LogInformation("[Object Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
                     PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
 
-                objReadCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize);
+                objReadCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize, out _);
                 logger?.LogInformation("[Object Store] Read cache heap memory size is {objReadCacheHeapMemorySize}", objReadCacheHeapMemorySize > 0 ? PrettySize(objReadCacheHeapMemorySize) : "unlimited");
             }
 
@@ -916,7 +916,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int AofMemorySizeBits()
         {
-            long size = ParseSize(AofMemorySize);
+            long size = ParseSize(AofMemorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
@@ -929,7 +929,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int AofPageSizeBits()
         {
-            long size = ParseSize(AofPageSize);
+            long size = ParseSize(AofPageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF page size than specified (power of 2)");
@@ -942,7 +942,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int AofSizeLimitSizeBits()
         {
-            long size = ParseSize(AofSizeLimit);
+            long size = ParseSize(AofSizeLimit, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
@@ -955,7 +955,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int ObjectStorePageSizeBits()
         {
-            long size = ParseSize(ObjectStorePageSize);
+            long size = ParseSize(ObjectStorePageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower object store page size than specified (power of 2)");
@@ -967,7 +967,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         public long ReplicaDisklessSyncFullSyncAofThresholdValue()
-            => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold);
+            => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold, out _);
 
         /// <summary>
         /// Get object store segment size
@@ -975,7 +975,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int ObjectStoreSegmentSizeBits()
         {
-            long size = ParseSize(ObjectStoreSegmentSize);
+            long size = ParseSize(ObjectStoreSegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower object store disk segment size than specified (power of 2)");

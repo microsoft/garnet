@@ -62,22 +62,26 @@ namespace Garnet.server
 
         private void PopulateMemoryInfo(StoreWrapper storeWrapper)
         {
-            var main_store_index_size = -1L;
-            var main_store_log_memory_size = -1L;
-            var main_store_read_cache_size = -1L;
-            var total_main_store_size = -1L;
+            var main_store_index_size = 0L;
+            var main_store_log_memory_size = 0L;
+            var main_store_read_cache_size = 0L;
+            long total_main_store_size;
 
-            var object_store_index_size = -1L;
-            var object_store_log_memory_size = -1L;
-            var object_store_read_cache_log_memory_size = -1L;
-            var object_store_heap_memory_size = -1L;
-            var object_store_read_cache_heap_memory_size = -1L;
-            var total_object_store_size = -1L;
+            var disableObj = storeWrapper.serverOptions.DisableObjects;
 
-            var aof_log_memory_size = -1L;
+            var initialSize = disableObj ? -1L : 0L;
+            var object_store_index_size = initialSize;
+            var object_store_log_memory_size = initialSize;
+            var object_store_read_cache_log_memory_size = initialSize;
+            var object_store_heap_memory_target_size = initialSize;
+            var object_store_heap_memory_size = initialSize;
+            var object_store_read_cache_heap_memory_size = initialSize;
+            var total_object_store_size = initialSize;
+
+            var enableAof = storeWrapper.serverOptions.EnableAOF;
+            var aof_log_memory_size = enableAof ? 0 : -1L;
 
             var databases = storeWrapper.GetDatabasesSnapshot();
-            var disableObj = storeWrapper.serverOptions.DisableObjects;
 
             foreach (var db in databases)
             {
@@ -85,14 +89,14 @@ namespace Garnet.server
                 main_store_log_memory_size += db.MainStore.Log.MemorySizeBytes;
                 main_store_read_cache_size += db.MainStore.ReadCache?.MemorySizeBytes ?? 0;
 
-
-                aof_log_memory_size = db.AppendOnlyFile?.MemorySizeBytes ?? -1;
+                aof_log_memory_size += db.AppendOnlyFile?.MemorySizeBytes ?? 0;
 
                 if (!disableObj)
                 {
                     object_store_index_size += db.ObjectStore.IndexSize * 64;
                     object_store_log_memory_size += db.ObjectStore.Log.MemorySizeBytes;
                     object_store_read_cache_log_memory_size += db.ObjectStore.ReadCache?.MemorySizeBytes ?? 0;
+                    object_store_heap_memory_target_size += db.ObjectStoreSizeTracker?.mainLogTracker.TargetSize ?? 0;
                     object_store_heap_memory_size += db.ObjectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
                     object_store_read_cache_heap_memory_size += db.ObjectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
                 }
@@ -143,6 +147,7 @@ namespace Garnet.server
                 new("total_main_store_size", total_main_store_size.ToString()),
                 new("object_store_index_size", object_store_index_size.ToString()),
                 new("object_store_log_memory_size", object_store_log_memory_size.ToString()),
+                new("object_store_heap_memory_target_size", object_store_heap_memory_target_size.ToString()),
                 new("object_store_heap_memory_size", object_store_heap_memory_size.ToString()),
                 new("object_store_read_cache_log_memory_size", object_store_read_cache_log_memory_size.ToString()),
                 new("object_store_read_cache_heap_memory_size", object_store_read_cache_heap_memory_size.ToString()),
@@ -244,6 +249,7 @@ namespace Garnet.server
             new($"Log.BeginAddress", db.MainStore.Log.BeginAddress.ToString()),
             new($"Log.BufferSize", db.MainStore.Log.BufferSize.ToString()),
             new($"Log.EmptyPageCount", db.MainStore.Log.EmptyPageCount.ToString()),
+            new($"Log.MinEmptyPageCount", db.MainStore.Log.MinEmptyPageCount.ToString()),
             new($"Log.FixedRecordSize", db.MainStore.Log.FixedRecordSize.ToString()),
             new($"Log.HeadAddress", db.MainStore.Log.HeadAddress.ToString()),
             new($"Log.MemorySizeBytes", db.MainStore.Log.MemorySizeBytes.ToString()),
@@ -279,6 +285,7 @@ namespace Garnet.server
             new($"Log.BeginAddress", db.ObjectStore.Log.BeginAddress.ToString()),
             new($"Log.BufferSize", db.ObjectStore.Log.BufferSize.ToString()),
             new($"Log.EmptyPageCount", db.ObjectStore.Log.EmptyPageCount.ToString()),
+            new($"Log.MinEmptyPageCount", db.ObjectStore.Log.MinEmptyPageCount.ToString()),
             new($"Log.FixedRecordSize", db.ObjectStore.Log.FixedRecordSize.ToString()),
             new($"Log.HeadAddress", db.ObjectStore.Log.HeadAddress.ToString()),
             new($"Log.MemorySizeBytes", db.ObjectStore.Log.MemorySizeBytes.ToString()),
