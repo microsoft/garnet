@@ -8,5 +8,16 @@
     "name": "Infrastructure problems",
     "messageRegex": ".*RuntimeException.*",
     "matchedStatuses": ["broken"]
+  },
+  {
+    "name": "Cluster tests",
+    "messageRegex": ".*Cluster.*",
+    "matchedStatuses": ["passed"]
+  },
+  {
+    "name": "Tsavorite tests",
+    "messageRegex": ".*Tsavorite.*",
+    "matchedStatuses": ["passed"]
   }
+
 ]
