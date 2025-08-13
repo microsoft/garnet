@@ -30,6 +30,10 @@
     "@docusaurus/module-type-aliases": "3.5.2",
     "@docusaurus/types": "3.5.2"
   },
+  "overrides": {
+    "webpack-dev-server": "^5.2.1",
+    "on-headers": "^1.1.0"
+  },
   "browserslist": {
     "production": [
       ">0.5%",
