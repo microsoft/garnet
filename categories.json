@@ -18,6 +18,30 @@
     "name": "Tsavorite tests",
     "messageRegex": ".*Tsavorite.*",
     "matchedStatuses": ["passed"]
+  },
+  {
+    "name": "Assertion Failure",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*Assertion.*"
+  },
+  {
+    "name": "Timeout",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*timeout.*"
+  },
+  {
+    "name": "Cluster Error",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*Cluster.*"
+  },
+  {
+    "name": "Assertion Failure 2",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*Assert\\.That\\(.*Is\\.True\\).*"
+  },
+  {
+    "name": "All Skipped Tests",
+    "matchedStatuses": ["skipped"]
   }
 
 ]

@@ -97,6 +97,7 @@ jobs:
           allure --version
           dir
           Copy-Item "categories.json" "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -Force
+          allure --version
           dir TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
@@ -113,6 +114,7 @@ jobs:
           pwd
           ls
           cp categories.json "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+          allure --version
           ls TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
