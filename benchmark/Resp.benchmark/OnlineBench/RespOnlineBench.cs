@@ -65,7 +65,6 @@ namespace Resp.benchmark
         readonly CancellationTokenSource cts = new();
         volatile int workerCount = 0;
 
-
         public RespOnlineBench(Options opts, int resetInterval = 30, int runDuration = int.MaxValue, ILoggerFactory loggerFactory = null)
         {
             this.runDuration = runDuration;
