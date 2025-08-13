@@ -314,8 +314,12 @@ namespace Tsavorite.test
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
+        //[Repeat(300)]
         public void ObjectDiskWriteReadLargeKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeValueSizeMode serSizeMode, [Values] SerializeKeyValueSize serializeValueSize)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 

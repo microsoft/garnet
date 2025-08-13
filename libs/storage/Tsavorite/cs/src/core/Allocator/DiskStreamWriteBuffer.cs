@@ -62,6 +62,9 @@ namespace Tsavorite.core
         /// object chunk is serialized to the buffer (this two-step approach is needed so we know the chunk length).</summary>
         PinnedSpanByte keyInteriorSpan;
 
+        /// <summary>If true, we are in the Serialize call. If not we ignore things like <see cref="currentChunkLength"/> etc.</summary>
+        bool inSerialize;
+
         /// <summary>The amount of bytes we wrote. Used by the caller (e.g. <see cref="ObjectAllocatorImpl{TStoreFunctions}"/> to track actual file output length.</summary>
         /// <remarks><see cref="FlushWriteBuffer.currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer. Subtract the intermediate chain-chunk length markers.</remarks>
         public long TotalWrittenLength => priorCumulativeLength + flushBuffer.currentPosition;
@@ -105,7 +108,7 @@ namespace Tsavorite.core
             // Initialize to not track the value length position (not serializing an object, or we know its exact length up-front so are not doing chunk chaining)
             valueLengthPosition = NoPosition;
             keyEndSectorCapPosition = NoPosition;
-            expectedSerializedLength = 0;
+            expectedSerializedLength = (long)NoPosition;
 
             // Everything writes the RecordInfo first. Update to on-disk address if it's not done already (the OnPagesClosed thread may have already done it).
             var tempInfo = logRecord.Info;
@@ -255,7 +258,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
         {
-            // This is called by valueObjectSerializer.Serialize().
+            // This is called by valueObjectSerializer.Serialize() as well as internally.
 
             // Copy to the buffer. If it does not fit in the remaining capacity, we will write as much as does, update the previous length int to include
             // ValueChunkContinuationIndicator if we are chunk chaining, do any deferred key processing, flush the buffer, then start the next chunk off
@@ -284,7 +287,8 @@ namespace Tsavorite.core
                 data.Slice(dataStart, requestLength).CopyTo(flushBuffer.memory.TotalValidSpan.Slice(flushBuffer.currentPosition));
                 dataStart += requestLength;
                 flushBuffer.currentPosition += requestLength;
-                currentChunkLength += requestLength;    // This is ignored if we are not in the middle of Serialize() (DoSerialize() resets it to 0)
+                if (inSerialize)
+                    currentChunkLength += requestLength;
 
                 // See if we're at the end of the buffer.
                 if (flushBuffer.RemainingCapacity - lengthSpaceReserve == 0)
@@ -323,6 +327,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void UpdateValueLength(int continuationBit)
         {
+            if (!inSerialize)
+                return;
+
             // If we are not chaining chunks, we already wrote the SerializedSizeIsExact length, so there is nothing to do here.
             if (valueLengthPosition != NoPosition)
             {
@@ -426,6 +433,7 @@ namespace Tsavorite.core
             // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have Length and Position = (-currentPosition + currentPosition + 4).
             valueCumulativeLength = 0;
             currentChunkLength = 0;
+            inSerialize = true;
             valueObjectSerializer.Serialize(valueObject);
             OnSerializeComplete(valueObject);
         }
@@ -434,8 +442,10 @@ namespace Tsavorite.core
         {
             // Update value length with the continuation bit NOT set. This may set it to zero if we did not have any more data in the object after the last buffer flush.
             UpdateValueLength(IStreamBuffer.NoValueChunkContinuationBit);
+            valueLengthPosition = NoPosition;
+            inSerialize = false;
 
-            if (valueLengthPosition == NoPosition)
+            if (expectedSerializedLength != (long)NoPosition)
             {
                 if (valueCumulativeLength != expectedSerializedLength)
                     throw new TsavoriteException($"Expected value length {expectedSerializedLength} does not match actual value length {valueCumulativeLength}.");
@@ -458,6 +468,9 @@ namespace Tsavorite.core
             var newCurrentPosition = RoundUp(flushBuffer.currentPosition, Constants.kRecordAlignment);
             Debug.Assert(newCurrentPosition <= flushBuffer.memory.AlignedTotalCapacity, $"newCurrentPosition {newCurrentPosition} exceeds memory.AlignedTotalCapacity {flushBuffer.memory.AlignedTotalCapacity}");
 
+            // CurrentPosition should be sector-aligned at the start of each buffer; either the initial page0 FirstValidAddress offset, or the
+            // result of having rounded down to sector alignment when writing the prior buffer. So aligning currentPosition the kRecordAlignment
+            // also aligns TotalBytesWritten (since kRecordAlignment is smaller than sector size).
             var alignmentIncrease = newCurrentPosition - flushBuffer.currentPosition;
             if (alignmentIncrease > 0)
             {
