@@ -8,6 +8,7 @@ namespace Resp.benchmark
         LightClient,
         SERedis,
         GarnetClientSession,
-        GarnetClient
+        GarnetClient,
+        InProc
     }
 }
