@@ -455,9 +455,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void OnRecordComplete()
         {
-            flushBuffer = flushBuffers.OnRecordComplete(alignedDeviceAddress, out var numBytesFlushed);
-            priorCumulativeLength += numBytesFlushed;
-            alignedDeviceAddress += (ulong)numBytesFlushed;
+            var newCurrentPosition = RoundUp(flushBuffer.currentPosition, Constants.kRecordAlignment);
+            Debug.Assert(newCurrentPosition <= flushBuffer.memory.AlignedTotalCapacity, $"newCurrentPosition {newCurrentPosition} exceeds memory.AlignedTotalCapacity {flushBuffer.memory.AlignedTotalCapacity}");
+
+            var alignmentIncrease = newCurrentPosition - flushBuffer.currentPosition;
+            if (alignmentIncrease > 0)
+            {
+                // Write a zero'd span to align to end of record (this is automatically zero'd because we don't specify SkipLocalsInit).
+                Span<byte> padSpan = stackalloc byte[alignmentIncrease];
+                Write(padSpan);
+            }
             Debug.Assert(TotalWrittenLength % Constants.kRecordAlignment == 0, $"TotalWrittenLength {TotalWrittenLength} is not record-aligned");
         }
 
@@ -467,7 +474,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            // Currently nothing to do
+            // Currently nothing to do. In particular, do not Dispose() the FlushWriteBuffers; those must remain alive until flush completes.
         }
     }
 }

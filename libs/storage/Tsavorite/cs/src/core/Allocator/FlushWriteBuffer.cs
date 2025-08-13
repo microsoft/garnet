@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -35,11 +34,10 @@ namespace Tsavorite.core
             this.logger = logger;
         }
 
-        internal void Initialize(SectorAlignedBufferPool bufferPool, int bufferSize)
+        internal void Initialize()
         {
-            // First wait for any pending write in this buffer to complete.
+            // First wait for any pending write in this buffer to complete. If this is our first time in this buffer there won't be a CountdownEvent yet.
             countdownEvent?.Wait();
-            memory ??= bufferPool.Get(bufferSize);
             memory.valid_offset = memory.available_bytes = 0;
             currentPosition = 0;
         }
@@ -67,8 +65,8 @@ namespace Tsavorite.core
                 countdownEvent.Reset(1);
             }
 
-            // Pin the span to get a pointer; also, we may be writing a ReadOnlySpan that's around an unpinned byte[], e.g. KeyInterior, in which case
-            // "wait" is true so we don't let the buffer unpin until the write is done.
+            // Pin the span to get a pointer; also, we may be writing a ReadOnlySpan that's around an unpinned byte[], which currently only
+            // happens for KeyInterior which should be very rare. For this case "wait" is true to keep the buffer pinned until the write is done.
             fixed (byte* spanPtr = span)
             {
                 device.WriteAsync((IntPtr)spanPtr, alignedDeviceAddress, (uint)span.Length, FlushToDeviceCallback, context);
@@ -82,43 +80,11 @@ namespace Tsavorite.core
             if (errorCode != 0)
                 logger?.LogError($"{nameof(FlushToDeviceCallback)} error: {{errorCode}}", errorCode);
 
-            // Try to signal the event; if we have finished the last write, the count will hit zero and Set the event so any Waits we do on it will succeed.
+            // Try to signal the event; if we have finished the last write for this buffer, the count will hit zero and Set the event so any Waits we do on it will succeed.
             // We don't currently wait on the result of intermediate buffer flushes. If context is non-null, then it is the circular buffer owner and it
             // called this flush for OnFlushComplete, so we need to call it back to complete the original callback sequence.
             if (countdownEvent.Signal() && context is CircularFlushWriteBuffer buffers)
                 buffers.EndFlushComplete();
-        }
-
-        /// <summary>
-        /// End of record, so align <see cref="currentPosition"/> to record alignment, flushing if we hit end of buffer.
-        /// </summary>
-        /// <param name="alignedDeviceAddress">Device address to write to</param>
-        /// <param name="numBytesFlushed">Number of bytes flushed if the alignment hit end of buffer</param>
-        /// <returns>Whether we hit end of buffer; if so, the <see cref="CircularFlushWriteBuffer"/> will move to the next buffer.</returns>
-        internal bool OnRecordComplete(ulong alignedDeviceAddress, out int numBytesFlushed)
-        {
-            // The buffer is aligned to sector size, which will be a multiple of kRecordAlignment, so this should always be true.
-            // We might align such that we are right at the end of the buffer, which is OK but we need to move to the next buffer if that happens.
-            var newCurrentPosition = RoundUp(currentPosition, Constants.kRecordAlignment);
-            Debug.Assert(newCurrentPosition <= memory.AlignedTotalCapacity, $"newCurrentPosition {newCurrentPosition} exceeds memory.AlignedTotalCapacity {memory.AlignedTotalCapacity}");
-
-            var alignmentIncrease = newCurrentPosition - currentPosition;
-            if (alignmentIncrease > 0)
-            {
-                // Zeroinit the extra and update current position.
-                new Span<byte>(memory.GetValidPointer() + currentPosition, alignmentIncrease).Clear();
-                currentPosition = newCurrentPosition;
-            }
-
-            if (currentPosition >= memory.AlignedTotalCapacity)
-            {
-                FlushToDevice(memory.TotalValidSpan.Slice(0, currentPosition), alignedDeviceAddress);
-                numBytesFlushed = currentPosition;
-                return true;
-            }
-
-            numBytesFlushed = 0;
-            return false;
         }
 
         public void Dispose()
@@ -166,7 +132,7 @@ namespace Tsavorite.core
             var buffer = buffers[currentIndex];
             if (buffer is null)
                 buffer = buffers[currentIndex] = new FlushWriteBuffer(bufferPool.Get(bufferSize), device, logger);
-            buffer.Initialize(bufferPool, bufferSize);
+            buffer.Initialize();
             return buffer;
         }
 
@@ -183,17 +149,6 @@ namespace Tsavorite.core
             return buffer2;
         }
 
-        internal FlushWriteBuffer OnRecordComplete(ulong alignedDeviceAddress, out int numBytesFlushed)
-        {
-            // We might align such that we are right at the end of the buffer, which is OK but we need to move to the next buffer if that happens.
-            if (buffers[currentIndex].OnRecordComplete(alignedDeviceAddress, out numBytesFlushed))
-            {
-                currentIndex = (currentIndex + 1) % NumBuffers;
-                return GetAndInitializeCurrentBuffer();
-            }
-            return buffers[currentIndex];
-        }
-
         /// <summary>
         /// Finish all pending flushes and enqueue an invocation of the original callback. When this function exits, there will be IOs in flight.
         /// </summary>
@@ -205,7 +160,7 @@ namespace Tsavorite.core
             // will let this circular buffer object go out of scope, so by passing "this" as the object we keep a reference alive.
             // When that flush is complete, it will call EndFlushComplete(). Note: we will never write data to a buffer after we have
             // issued a Flush() on it, until we wrap around the circular buffer and get to it again and Wait(). So if the currentPosition
-            // is nonzero, we know there is unflushed data.
+            // of the current buffer is nonzero, we know there is unflushed data.
             var buffer = buffers[currentIndex];
             if (buffer.currentPosition != 0)
             {
@@ -225,6 +180,8 @@ namespace Tsavorite.core
 
         internal void EndFlushComplete()
         {
+            // We don't clear the callback info in Dispose() so it is safe to call before we call the original callback.
+            Dispose();
             _ = Task.Run(() => originalCallback(0, totalWrittenLength, originalContext));
         }
 
@@ -234,7 +191,7 @@ namespace Tsavorite.core
         public void Dispose()
         {
             foreach (var buffer in buffers)
-                buffer.Dispose();
+                buffer?.Dispose();
         }
     }
 }

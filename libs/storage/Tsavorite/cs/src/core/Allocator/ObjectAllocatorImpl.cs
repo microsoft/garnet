@@ -466,7 +466,7 @@ namespace Tsavorite.core
                         var streamRecordSize = diskBuffer.TotalWrittenLength - prevPosition;
 
                         var streamExpansion = streamRecordSize - logRecordSize;
-                        Debug.Assert(streamExpansion % Constants.kRecordAlignment == 0, $"streamExpansion {streamExpansion} is not record-aligned");
+                        Debug.Assert(streamExpansion % Constants.kRecordAlignment == 0, $"streamExpansion {streamExpansion} is not record-aligned (streamRecordSize {streamRecordSize})");
 #if DEBUG
                         // Note: It is OK for the "expansion" to be negative; we don't preserve Filler here, we just write only the actual data.
                         var logRecExpansion = logRecord.CalculateExpansion();

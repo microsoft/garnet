@@ -349,12 +349,12 @@ namespace Tsavorite.test
                     key.Fill((byte)(ii + 100));
 
                     var status = bContext.Read(key, ref input, ref output, Empty.Default);
-                    if (status.IsPending)
+                    Assert.That(status.IsPending, Is.EqualTo(onDisk));
+                    if (onDisk)
                         (status, output) = bContext.GetSinglePendingResult();
                     Assert.That(status.Found, Is.True);
 
-                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)));
-                    var numLongs = output.valueObject.value.Length % 8;
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)), $"ii {ii}");
                     var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
                     if (badIndex != -1)
                         Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
