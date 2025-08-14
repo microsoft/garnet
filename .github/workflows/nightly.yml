@@ -18,7 +18,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
         os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
@@ -64,17 +63,6 @@ jobs:
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
 
-
-      #- name: Build and Run Tests ${{ matrix.test }}
-      #  shell: bash
-       # run: |
-        #  if [ "${{ matrix.test }}" = "Tsavorite.test" ]; then
-         #   dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-          #  dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-          #else
-            #dotnet build test/${{ matrix.test }} --configuration ${{ matrix.configuration }}
-            #dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-          #fi
       - name: Build and Run Tsavorite Tests
         shell: bash
         run: |
@@ -100,11 +88,7 @@ jobs:
           scoop install allure
           scoop bucket add extras
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
-          allure --version
-          dir
           Copy-Item "categories.json" "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -Force
-          allure --version
-          dir TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Install Allure and Generate Report (Linux only)
@@ -116,12 +100,7 @@ jobs:
           echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install allure
-          allure --version
-          pwd
-          ls
           cp categories.json "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-          allure --version
-          ls TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 
       - name: Verify Allure Report Output
