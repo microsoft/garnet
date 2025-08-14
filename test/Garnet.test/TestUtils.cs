@@ -352,6 +352,7 @@ namespace Garnet.test
                 LoadModuleCS = loadModulePaths,
                 EnableCluster = enableCluster,
                 EnableDebugCommand = enableDebugCommand,
+                EnableInlineCommands = ConnectionProtectionOption.Local,
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
@@ -710,6 +711,7 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
+                EnableInlineCommands = ConnectionProtectionOption.Local,
                 EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
                 IndexSize = "1m",
@@ -887,7 +889,8 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool rawResult = false,
+                                                                 EndPoint endPoint = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -900,7 +903,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions, rawResult: raw);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions, rawResult: rawResult);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

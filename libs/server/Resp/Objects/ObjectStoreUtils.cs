@@ -114,7 +114,7 @@ namespace Garnet.server
             if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
                 return OperationDirection.Right;
             // Rare case: try making upper case and retry
-            MakeUpperCase(input.ptr);
+            MakeUpperCase(input.ptr, input.length);
             if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
                 return OperationDirection.Left;
             if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
