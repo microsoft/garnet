@@ -115,5 +115,11 @@ namespace Resp.benchmark
 
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
+
+        [Option("aof", Required = false, Default = false, HelpText = "Enable AOF")]
+        public bool EnableAOF { get; set; }
+
+        [Option("cluster", Required = false, Default = false, HelpText = "Enable Cluster")]
+        public bool EnableCluster { get; set; }
     }
 }
