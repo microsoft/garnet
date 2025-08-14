@@ -50,6 +50,9 @@ namespace Resp.benchmark
                     QuietMode = true,
                     EnableAOF = opts.EnableAOF,
                     EnableCluster = opts.EnableCluster,
+                    IndexSize = opts.IndexSize,
+                    ClusterConfigFlushFrequencyMs = -1,
+                    UseAofNullDevice = opts.UseAofNullDevice,
                 };
                 server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
@@ -501,7 +504,7 @@ namespace Resp.benchmark
 
         private unsafe void InProcOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)
         {
-            var maxReqs = (NumOps / rg.BatchCount);
+            var maxReqs = NumOps / rg.BatchCount;
             var numReqs = 0;
 
             waiter.Wait();

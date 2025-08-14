@@ -90,6 +90,16 @@ namespace Resp.benchmark
             Console.WriteLine($"minWorkerThreads: {minWorkerThreads}");
             Console.WriteLine($"minCompletionPortThreads: {minCompletionPortThreads}");
             Console.WriteLine("----------------------------------");
+
+            if (opts.Client == ClientType.InProc)
+            {
+                Console.WriteLine("------EMBEDDED-SERVER-CONFIG------");
+                Console.WriteLine($"aof:{opts.EnableAOF}");
+                Console.WriteLine($"aof-null-device:{opts.UseAofNullDevice}");
+                Console.WriteLine($"cluster:{opts.EnableCluster}");
+                Console.WriteLine($"index:{opts.IndexSize}");
+                Console.WriteLine("----------------------------------");
+            }
         }
 
         static bool DisabledFeatures(Options opts)
@@ -258,7 +268,7 @@ namespace Resp.benchmark
                 if (!opts.SkipLoad)
                     bench.LoadData(keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
 
-                foreach (int BatchSize in opts.BatchSize)
+                foreach (var BatchSize in opts.BatchSize)
                     bench.Run(
                         opts.Op,
                         opts.TotalOps,
