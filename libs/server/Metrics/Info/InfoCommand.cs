@@ -77,7 +77,6 @@ namespace Garnet.server
                 }
             }
             return true;
-
         }
 
         private void GetHelpMessage()
