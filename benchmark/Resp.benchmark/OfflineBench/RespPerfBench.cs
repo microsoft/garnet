@@ -42,12 +42,33 @@ namespace Resp.benchmark
 
             if (opts.Client == ClientType.InProc)
             {
+                if (opts.EnableCluster && !opts.SkipLoad && !opts.LSet)
+                    throw new Exception("Use --lset when running InProc and with cluster enabled to load data!");
+
                 var serverOptions = new GarnetServerOptions
                 {
                     QuietMode = true,
+                    EnableAOF = opts.EnableAOF,
+                    EnableCluster = opts.EnableCluster,
                 };
                 server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
+
+                if (opts.EnableCluster)
+                {
+                    AddSlotRange([(0, 16383)]);
+                    unsafe void AddSlotRange(List<(int, int)> slotRanges)
+                    {
+                        foreach (var slotRange in slotRanges)
+                        {
+                            var clusterAddSlotsRange = Encoding.ASCII.GetBytes($"*4\r\n$7\r\nCLUSTER\r\n$13\r\nADDSLOTSRANGE\r\n" +
+                                $"${Garnet.common.NumUtils.CountDigits(slotRange.Item1)}\r\n{slotRange.Item1}\r\n" +
+                                $"${Garnet.common.NumUtils.CountDigits(slotRange.Item2)}\r\n{slotRange.Item2}\r\n");
+                            fixed (byte* req = clusterAddSlotsRange)
+                                _ = sessions[0].TryConsumeMessages(req, clusterAddSlotsRange.Length);
+                        }
+                    }
+                }
             }
         }
 
