@@ -53,7 +53,7 @@ namespace Resp.benchmark
                     IndexSize = opts.IndexSize,
                     ClusterConfigFlushFrequencyMs = -1,
                     UseAofNullDevice = opts.UseAofNullDevice,
-                    MetricsSamplingFrequency = 10,
+                    CommitFrequencyMs = opts.CommitFrequencyMs,
                 };
                 server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
