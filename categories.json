@@ -20,5 +20,13 @@
   {
     "name": "All Passed Tests",
     "matchedStatuses": ["passed"]
+  },
+   {
+    "name": "All Broken Tests",
+    "matchedStatuses": ["broken"]
+  },
+   {
+    "name": "All Unknown Tests",
+    "matchedStatuses": ["unknown"]
   }
 ]
