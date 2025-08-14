@@ -146,7 +146,7 @@ jobs:
           
       - name: Copy categories.json
         run: |
-          Copy-Item categories.json final-results/allure-results -Force
+          Copy-Item categories.json final-results -Force
 
       - name: Install Allure and Generate the Report
         run: |
@@ -154,22 +154,8 @@ jobs:
           scoop install allure
           scoop bucket add extras
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
-          allure generate final-results/allure-results --clean -o final-report
-
-
-
-#      - name: Convert .trx to Allure format
-#        run: |
-#          # Assuming you use allure-trx or similar converter
-#          dotnet tool install --global Allure.Commons
-#          dotnet tool install --global allure-trx
-#          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
-#          allure-trx -i final-results -o final-results/allure-results
-
-
-#      - name: Generate Unified Allure Report
-#        run: |
-#          allure generate final-results/allure-results --clean -o final-report
+          allure generate final-results --clean -o final-report
+          dir final-report /s
 
       - name: Upload Unified Allure Report
         uses: actions/upload-artifact@v4
