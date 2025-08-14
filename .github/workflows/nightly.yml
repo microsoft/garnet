@@ -75,17 +75,23 @@ jobs:
             #dotnet build test/${{ matrix.test }} --configuration ${{ matrix.configuration }}
             #dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
           #fi
-      - name: Build and Run Tests
+      - name: Build and Run Tsavorite Tests
         shell: bash
         run: |
             dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
             dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+
+      - name: Build and Run Garnet Tests
+        shell: bash
+        run: |
             dotnet build test/Garnet.test --configuration ${{ matrix.configuration }}
             dotnet test test/Garnet.test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+
+      - name: Build and Run Cluster Tests
+        shell: bash
+        run: |
             dotnet build test/Garnet.test.cluster --configuration ${{ matrix.configuration }}
             dotnet test test/Garnet.test.cluster -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-
-
 
       - name: Install Allure and Generate Report (Windows only)
         if: runner.os == 'Windows' && always()
