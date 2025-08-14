@@ -81,43 +81,98 @@ jobs:
             dotnet build test/Garnet.test.cluster --configuration ${{ matrix.configuration }}
             dotnet test test/Garnet.test.cluster -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 
-      - name: Install Allure and Generate Report (Windows only)
-        if: runner.os == 'Windows' && always()
-        run: |
-          iex "& {$(irm get.scoop.sh)}"
-          scoop install allure
-          scoop bucket add extras
-          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
-          Copy-Item "categories.json" "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -Force
-          allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-
-      - name: Install Allure and Generate Report (Linux only)
-        if: runner.os == 'Linux' && always()
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential curl file git
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install allure
-          cp categories.json "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-          allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-
-      - name: Verify Allure Report Output
-        if: always()
-        run: |
-          dir build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          
-      - name: Upload Allure Report Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          path: build/allure-report
-
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
           name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
+
+
+#      - name: Install Allure and Generate Report (Windows only)
+#        if: runner.os == 'Windows' && always()
+#        run: |
+#          iex "& {$(irm get.scoop.sh)}"
+#          scoop install allure
+#          scoop bucket add extras
+#          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
+#          Copy-Item "categories.json" "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" -Force
+#          allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+
+#      - name: Install Allure and Generate Report (Linux only)
+#        if: runner.os == 'Linux' && always()
+#        run: |
+#          sudo apt-get update
+#          sudo apt-get install -y build-essential curl file git
+#          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+#          echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.profile
+#          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+#          brew install allure
+#          cp categories.json "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+#          allure generate "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}" --clean -o build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+
+#      - name: Verify Allure Report Output
+#        if: always()
+#        run: |
+#          dir build/allure-report/allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          
+#      - name: Upload Allure Report Artifact
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: allure-report-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+#          path: build/allure-report
+
+  merge-results-and-generate-report:
+    name: Merge Results & Generate Unified Allure Report
+    runs-on: windows-2022
+    needs: build-test-garnet
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Download all test result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: merged-results
+
+      - name: Flatten .trx files into one directory
+        run: |
+          mkdir final-results
+          Get-ChildItem -Recurse -Filter *.trx -Path merged-results | ForEach-Object {
+            Copy-Item $_.FullName -Destination final-results
+          }
+          dir final-results  
+          
+      - name: Copy categories.json
+        run: |
+          Copy-Item categories.json final-results/allure-results -Force
+
+      - name: Install Allure and Generate the Report
+        run: |
+          iex "& {$(irm get.scoop.sh)}"
+          scoop install allure
+          scoop bucket add extras
+          $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
+          allure generate final-results/allure-results --clean -o final-report
+
+
+
+#      - name: Convert .trx to Allure format
+#        run: |
+#          # Assuming you use allure-trx or similar converter
+#          dotnet tool install --global Allure.Commons
+#          dotnet tool install --global allure-trx
+#          $env:PATH += ";$env:USERPROFILE\.dotnet\tools"
+#          allure-trx -i final-results -o final-results/allure-results
+
+
+#      - name: Generate Unified Allure Report
+#        run: |
+#          allure generate final-results/allure-results --clean -o final-report
+
+      - name: Upload Unified Allure Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-allure-report
+          path: final-report
