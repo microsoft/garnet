@@ -378,6 +378,7 @@ namespace Garnet.server
                 RespCommand.LINSERT => SingleKey(StoreType.Object, LockType.Exclusive),
                 RespCommand.LLEN => SingleKey(StoreType.Object, LockType.Shared),
                 RespCommand.LMOVE => ListKeys(2, StoreType.Object, LockType.Exclusive),
+                // Account for mandatory LEFT/RIGHT argument
                 RespCommand.LMPOP => ListReadKeysWithCount(LockType.Exclusive, mandatoryArgs: 1),
                 RespCommand.LPOP => SingleKey(StoreType.Object, LockType.Exclusive),
                 RespCommand.LPOS => SingleKey(StoreType.Object, LockType.Shared),
