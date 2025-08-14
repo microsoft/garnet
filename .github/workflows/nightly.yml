@@ -57,37 +57,36 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-      - name: Check style format
-        run: dotnet format --verify-no-changes --verbosity diagnostic
-
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
 
       - name: Build and Run Tsavorite Tests
+        if: ${{ always() }}
         shell: bash
         run: |
             dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
             dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 
       - name: Build and Run Garnet Tests
+        if: ${{ always() }}
         shell: bash
         run: |
             dotnet build test/Garnet.test --configuration ${{ matrix.configuration }}
             dotnet test test/Garnet.test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 
       - name: Build and Run Cluster Tests
+        if: ${{ always() }}
         shell: bash
         run: |
             dotnet build test/Garnet.test.cluster --configuration ${{ matrix.configuration }}
             dotnet test test/Garnet.test.cluster -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 
       - name: Upload test results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
           path: TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-        if: ${{ always() }}
-
 
 #      - name: Install Allure and Generate Report (Windows only)
 #        if: runner.os == 'Windows' && always()
@@ -127,6 +126,7 @@ jobs:
     name: Merge Results & Generate Unified Allure Report
     runs-on: windows-2022
     needs: build-test-garnet
+    if: always()
     steps:
       - name: Check out code
         uses: actions/checkout@v4
