@@ -38,7 +38,7 @@ namespace Tsavorite.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal const int kValueDataSize = SpanByteYcsbBenchmark.kValueDataSize;
+        internal const int kValueDataSize = SpanByteYcsbConstants.kValueDataSize;
 
         internal ObjectYcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
         {

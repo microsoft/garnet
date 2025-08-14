@@ -13,6 +13,10 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using FixedLenStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+
     internal interface IKeySetter<TKey>
     {
         void Set(TKey[] vector, long idx, long value);
@@ -87,6 +91,11 @@ namespace Tsavorite.benchmark
                 Console.WriteLine($"Can only specify UseOverflowValues or UseObjectValues with BenchmarkType.Object");
                 return;
             }
+            if (Options.UseSBA && BenchmarkType == BenchmarkType.Object)
+            {
+                Console.WriteLine($"SpanByteAllocator is not supported with BenchmarkType.Object");
+                return;
+            }
             ReadPercent = rumdPercents[0];
             UpsertPercent = ReadPercent + rumdPercents[1];
             RmwPercent = UpsertPercent + rumdPercents[2];
@@ -117,12 +126,18 @@ namespace Tsavorite.benchmark
             switch (BenchmarkType)
             {
                 case BenchmarkType.FixedLen:
-                    FixedLenYcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
-                    LoadData(this, init_keys, txn_keys, new FixedLenYcsbBenchmark.KeySetter());
+                    if (Options.UseSBA)
+                        FixedLenYcsbBenchmark<SpanByteAllocator<FixedLenStoreFunctions>>.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    else
+                        FixedLenYcsbBenchmark<ObjectAllocator<FixedLenStoreFunctions>>.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    LoadData(this, init_keys, txn_keys, new FixedLenYcsbKeySetter());
                     break;
                 case BenchmarkType.SpanByte:
-                    SpanByteYcsbBenchmark.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
-                    LoadData(this, init_span_keys, txn_span_keys, new SpanByteYcsbBenchmark.KeySetter());
+                    if (Options.UseSBA)
+                        SpanByteYcsbBenchmark<SpanByteAllocator<SpanByteStoreFunctions>>.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
+                    else
+                        SpanByteYcsbBenchmark<ObjectAllocator<SpanByteStoreFunctions>>.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
+                    LoadData(this, init_span_keys, txn_span_keys, new SpanByteYcsbKeySetter());
                     break;
                 case BenchmarkType.Object:
                     ObjectYcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);

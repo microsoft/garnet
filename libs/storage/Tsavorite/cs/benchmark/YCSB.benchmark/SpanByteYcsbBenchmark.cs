@@ -14,7 +14,13 @@ namespace Tsavorite.benchmark
 #pragma warning disable IDE0065 // Misplaced using directive
     using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    internal class SpanByteYcsbBenchmark
+    internal static class SpanByteYcsbConstants
+    {
+        internal const int kValueDataSize = 96;     // 100 minus 4-byte length prefix.
+    }
+
+    internal class SpanByteYcsbBenchmark<TAllocator>
+        where TAllocator : IAllocator<SpanByteStoreFunctions>
     {
         // Ensure sizes are aligned to chunk sizes
         static long InitCount;
@@ -36,8 +42,6 @@ namespace Tsavorite.benchmark
         long idx_ = 0;
         long total_ops_done = 0;
         volatile bool done = false;
-
-        internal const int kValueDataSize = 96;     // 100 minus 4-byte length prefix.
 
         internal SpanByteYcsbBenchmark(KeySpanByte[] i_keys_, KeySpanByte[] t_keys_, TestLoader testLoader)
         {
@@ -72,7 +76,7 @@ namespace Tsavorite.benchmark
                         [
                             new RevivificationBin()
                             {
-                                RecordSize = RecordInfo.GetLength() + KeySpanByte.TotalSize + kValueDataSize + 8,    // extra to ensure rounding up of value
+                                RecordSize = RecordInfo.GetLength() + KeySpanByte.TotalSize + SpanByteYcsbConstants.kValueDataSize + 8,    // extra to ensure rounding up of value
                                 NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                                 BestFitScanLimit = RevivificationBin.UseFirstFit
                             }
@@ -133,9 +137,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Span<byte> value = stackalloc byte[kValueDataSize];
-            Span<byte> input = stackalloc byte[kValueDataSize];
-            Span<byte> output = stackalloc byte[kValueDataSize];
+            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> input = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> output = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
 
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
@@ -229,9 +233,9 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
-            Span<byte> value = stackalloc byte[kValueDataSize];
-            Span<byte> input = stackalloc byte[kValueDataSize];
-            Span<byte> output = stackalloc byte[kValueDataSize];
+            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> input = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
+            Span<byte> output = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
 
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
             SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
@@ -431,7 +435,7 @@ namespace Tsavorite.benchmark
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
-            Span<byte> value = stackalloc byte[kValueDataSize];
+            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
 
             try
             {
@@ -474,7 +478,7 @@ namespace Tsavorite.benchmark
             using var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
-            Span<byte> value = stackalloc byte[kValueDataSize];
+            Span<byte> value = stackalloc byte[SpanByteYcsbConstants.kValueDataSize];
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < InitCount;
@@ -497,8 +501,6 @@ namespace Tsavorite.benchmark
             bContext.CompletePending(true);
         }
 
-        #region Load Data
-
         internal static void CreateKeyVectors(TestLoader testLoader, out KeySpanByte[] i_keys, out KeySpanByte[] t_keys)
         {
             InitCount = YcsbConstants.kChunkSize * (testLoader.InitCount / YcsbConstants.kChunkSize);
@@ -507,12 +509,9 @@ namespace Tsavorite.benchmark
             i_keys = new KeySpanByte[InitCount];
             t_keys = new KeySpanByte[TxnCount];
         }
-
-        internal class KeySetter : IKeySetter<KeySpanByte>
-        {
-            public void Set(KeySpanByte[] vector, long idx, long value) => vector[idx].value = value;
-        }
-
-        #endregion
+    }
+    internal class SpanByteYcsbKeySetter : IKeySetter<KeySpanByte>
+    {
+        public void Set(KeySpanByte[] vector, long idx, long value) => vector[idx].value = value;
     }
 }

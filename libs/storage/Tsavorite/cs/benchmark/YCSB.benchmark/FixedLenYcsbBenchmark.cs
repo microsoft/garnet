@@ -12,9 +12,10 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using StructStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
+    using FixedLenStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
 
-    internal class FixedLenYcsbBenchmark
+    internal class FixedLenYcsbBenchmark<TAllocator>
+        where TAllocator : IAllocator<FixedLenStoreFunctions>
     {
         RevivificationSettings FixedLengthBins = new()
         {
@@ -43,7 +44,7 @@ namespace Tsavorite.benchmark
         readonly FixedLengthKey[] txn_keys_;
 
         readonly IDevice device;
-        readonly TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
+        readonly TsavoriteKV<FixedLenStoreFunctions, SpanByteAllocator<FixedLenStoreFunctions>> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
@@ -491,9 +492,6 @@ namespace Tsavorite.benchmark
 
             _ = bContext.CompletePending(true);
         }
-
-        #region Load Data
-
         internal static void CreateKeyVectors(TestLoader testLoader, out FixedLengthKey[] i_keys, out FixedLengthKey[] t_keys)
         {
             InitCount = YcsbConstants.kChunkSize * (testLoader.InitCount / YcsbConstants.kChunkSize);
@@ -502,12 +500,10 @@ namespace Tsavorite.benchmark
             i_keys = new FixedLengthKey[InitCount];
             t_keys = new FixedLengthKey[TxnCount];
         }
+    }
 
-        internal class KeySetter : IKeySetter<FixedLengthKey>
-        {
-            public void Set(FixedLengthKey[] vector, long idx, long value) => vector[idx].value = value;
-        }
-
-        #endregion
+    internal class FixedLenYcsbKeySetter : IKeySetter<FixedLengthKey>
+    {
+        public void Set(FixedLengthKey[] vector, long idx, long value) => vector[idx].value = value;
     }
 }
