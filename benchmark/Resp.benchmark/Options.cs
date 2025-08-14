@@ -116,10 +116,19 @@ namespace Resp.benchmark
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
 
+        /*
+         * InProc server options
+         */
         [Option("aof", Required = false, Default = false, HelpText = "Enable AOF")]
         public bool EnableAOF { get; set; }
 
         [Option("cluster", Required = false, Default = false, HelpText = "Enable Cluster")]
         public bool EnableCluster { get; set; }
+
+        [Option('i', "index", Required = false, Default = "1g", HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
+        public string IndexSize { get; set; }
+
+        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        public bool UseAofNullDevice { get; set; }
     }
 }
