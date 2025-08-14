@@ -1,47 +1,24 @@
 [
   {
-    "name": "Ignored tests",
-    "messageRegex": ".*ignored.*",
-    "matchedStatuses": ["skipped"]
-  },
-  {
-    "name": "Infrastructure problems",
-    "messageRegex": ".*RuntimeException.*",
-    "matchedStatuses": ["broken"]
-  },
-  {
-    "name": "Cluster tests",
-    "messageRegex": ".*Cluster.*",
-    "matchedStatuses": ["passed"]
-  },
-  {
-    "name": "Tsavorite tests",
-    "messageRegex": ".*Tsavorite.*",
-    "matchedStatuses": ["passed"]
+    "name": "Timeout",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*Failed to connect within.*"
   },
   {
     "name": "Assertion Failure",
-    "matchedStatuses": ["failed"],
-    "messageRegex": ".*Assertion.*"
-  },
-  {
-    "name": "Timeout",
-    "matchedStatuses": ["failed"],
-    "messageRegex": ".*timeout.*"
-  },
-  {
-    "name": "Cluster Error",
-    "matchedStatuses": ["failed"],
-    "messageRegex": ".*Cluster.*"
-  },
-  {
-    "name": "Assertion Failure 2",
     "matchedStatuses": ["failed"],
     "messageRegex": ".*Assert\\.That\\(.*Is\\.True\\).*"
   },
   {
     "name": "All Skipped Tests",
     "matchedStatuses": ["skipped"]
+  },
+  {
+    "name": "All Failed Tests",
+    "matchedStatuses": ["failed"]
+  },
+  {
+    "name": "All Passed Tests",
+    "matchedStatuses": ["passed"]
   }
-
 ]
