@@ -53,6 +53,7 @@ namespace Resp.benchmark
                     IndexSize = opts.IndexSize,
                     ClusterConfigFlushFrequencyMs = -1,
                     UseAofNullDevice = opts.UseAofNullDevice,
+                    MetricsSamplingFrequency = 10,
                 };
                 server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
@@ -396,6 +397,11 @@ namespace Resp.benchmark
             {
                 Console.WriteLine($"Total time: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
                 Console.WriteLine($"Throughput: {opsPerSecond:N2} ops/sec");
+                if (ClientType.InProc == opts.Client)
+                {
+                    var count = sessions[0].DbSize();
+                    Console.WriteLine($"[DB Size: {count}]");
+                }
             }
 
             done = false;
