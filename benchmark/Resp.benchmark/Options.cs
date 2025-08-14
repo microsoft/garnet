@@ -130,5 +130,8 @@ namespace Resp.benchmark
 
         [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool UseAofNullDevice { get; set; }
+
+        [Option("aof-commit-freq", Required = false, Default = 0, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
+        public int CommitFrequencyMs { get; set; }
     }
 }
