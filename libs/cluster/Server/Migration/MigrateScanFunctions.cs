@@ -37,7 +37,7 @@ namespace Garnet.cluster
                     return true;
 
                 var s = HashSlotUtils.HashSlot(ref key);
-                // Check if key belongs to slot that is being migrated
+                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
                 if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
                     return false;
 
@@ -79,8 +79,8 @@ namespace Garnet.cluster
                     return true;
 
                 var s = HashSlotUtils.HashSlot(key);
-                // Check if key belongs to slot that is being migrated
-                if (mss.Contains(s) && mss.sketch.TryHashAndStore(key.AsSpan()))
+                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
+                if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
                     return false;
 
                 return true;
