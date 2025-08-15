@@ -150,35 +150,57 @@ jobs:
         run: |
           Copy-Item categories.json final-results -Force
 
-      # TO DO: GitHub Actions doesn't support referring back to previous history - so need to check it in or something
-      # TO DO: Problem is that there are thousands of test cases
-      - name: Download previous history from artifacts
+      # DEBUG - a test to see if history already being checked in can be copied to the final results 
+      # DEBUG - for now the saved history folder is in root ... maybe move it all to a different folder if going to go with this   
+      - name: Copy checked-in history folder to final-results
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: allure-history
-          path: previous-history
-
-      - name: Restore history
-        if: always()
         shell: pwsh
         run: |
-          $source = "previous-history"
+          $source = "history"
           $target = "final-results/history"
+          dir $source
 
-          Write-Host "Contents of previous-history before restore:"
-          dir $source -Recurse
-          
-          New-Item -ItemType Directory -Force -Path $target
+          Write-Host "Copying checked-in history from $source to $target"
 
-          if (Test-Path "$source") {
+          if (Test-Path $source) {
+              New-Item -ItemType Directory -Force -Path $target
               Copy-Item "$source/*" -Destination $target -Recurse -Force
+              Write-Host "History copied successfully"
+              dir $target -Recurse
           } else {
-              Write-Host "No previous history found"
+              Write-Host "No history folder found in repo"
           }
-          Write-Host "Contents of final-results/history after restore:"
-          dir $target -Recurse
+
+      # TO DO: GitHub Actions doesn't support referring back to previous history - so need to check it in or something
+      # TO DO: Problem is that there are thousands of test cases
+#      - name: Download previous history from artifacts
+#        if: always()
+#        continue-on-error: true
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: allure-history
+#          path: previous-history
+
+#      - name: Restore history
+#        if: always()
+#        shell: pwsh
+#        run: |
+#          $source = "previous-history"
+#          $target = "final-results/history"
+
+#          Write-Host "Contents of previous-history before restore:"
+#          dir $source -Recurse
+          
+#          New-Item -ItemType Directory -Force -Path $target
+
+#          if (Test-Path "$source") {
+#              Copy-Item "$source/*" -Destination $target -Recurse -Force
+#          } else {
+#              Write-Host "No previous history found"
+#          }
+#          Write-Host "Contents of final-results/history after restore:"
+#          dir $target -Recurse
 
       - name: Install Allure and Generate the Report
         if: always()
@@ -198,9 +220,8 @@ jobs:
           path: final-report
 
       # TO DO:  Can upload it but GitHub Actions doesn't support referring back to previous history
-      - name: Upload Allure history to Artifacts for next run
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: allure-history
-          path: final-report/history
+#      - name: Upload Allure history to Artifacts for next run
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          path: final-report/history
