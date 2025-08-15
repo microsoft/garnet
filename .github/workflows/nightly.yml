@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         #os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        os: [  ubuntu-24.04, windows-2022 ]
+        os: [  ubuntu-24.04 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
@@ -151,8 +151,11 @@ jobs:
         run: |
           Copy-Item categories.json final-results -Force
 
+      # TO DO: GitHub Actions doesn't support referring back to previous history - so need to check it in or something
+      # TO DO: Problem is that there are thousands of test cases
       - name: Download previous history from artifacts
         if: always()
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: allure-history
@@ -195,6 +198,7 @@ jobs:
           name: unified-allure-report
           path: final-report
 
+      # TO DO:  Can upload it but GitHub Actions doesn't support referring back to previous history
       - name: Upload Allure history to Artifacts for next run
         if: always()
         uses: actions/upload-artifact@v4

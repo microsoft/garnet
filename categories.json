@@ -1,15 +1,5 @@
 [
   {
-    "name": "Timeout",
-    "matchedStatuses": ["failed"],
-    "messageRegex": ".*Failed to connect within.*"
-  },
-  {
-    "name": "Assertion Failure",
-    "matchedStatuses": ["failed"],
-    "messageRegex": ".*Assert\\.That\\(.*Is\\.True\\).*"
-  },
-  {
     "name": "All Skipped Tests",
     "matchedStatuses": ["skipped"]
   },
