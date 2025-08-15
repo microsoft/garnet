@@ -7479,10 +7479,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVAddAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "bar", "CAS", "Q8", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]);
-                ClassicAssert.AreEqual("OK", val);
+                long val = await client.ExecuteForLongResultAsync("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "bar", "CAS", "Q8", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]);
+                ClassicAssert.AreEqual(1, val);
             }
         }
 
@@ -7524,16 +7522,14 @@ namespace Garnet.test.Resp.ACL
         public async Task VEmbACLsAsync()
         {
             await CheckCommandsAsync(
-                "VEmb",
+                "VEMB",
                 [DoVEmbAsync]
             );
 
             static async Task DoVEmbAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VEMB", ["foo"]);
-                ClassicAssert.AreEqual("OK", val);
+                string[] val = await client.ExecuteForStringArrayResultAsync("VEMB", ["foo", "bar"]);
+                ClassicAssert.AreEqual(0, val.Length);
             }
         }
 
@@ -7649,10 +7645,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVSimAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VSIM", ["foo"]);
-                ClassicAssert.AreEqual("OK", val);
+                string[] val = await client.ExecuteForStringArrayResultAsync("VSIM", ["foo", "ELE", "bar"]);
+                ClassicAssert.AreEqual(0, val.Length);
             }
         }
 
