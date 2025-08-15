@@ -489,15 +489,18 @@ namespace Garnet.server
         /// </summary>
         private int ListReadKeysWithCount(LockType type, bool isObject = true)
         {
-            var numKeysArg = respSession.GetCommandAsArgSlice(out var success);
-            if (!success) return -2;
+            if (respSession.parseState.Count == 0)
+                return -2;
 
-            if (!NumUtils.TryParse(numKeysArg.ReadOnlySpan, out int numKeys)) return -2;
+            if (!respSession.parseState.TryGetInt(0, out var numKeys))
+                return -2;
 
-            for (var i = 0; i < numKeys; i++)
+            if (numKeys + 1 > respSession.parseState.Count)
+                return -2;
+
+            for (var i = 1; i < numKeys + 1; i++)
             {
-                var key = respSession.GetCommandAsArgSlice(out success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
