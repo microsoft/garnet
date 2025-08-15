@@ -28,15 +28,5 @@
    {
     "name": "All Unknown Tests",
     "matchedStatuses": ["unknown"]
-  },
-  {
-    "name": "Tsavorite Tests",
-    "messageRegex": ".*Tsavorite.*"
-  },
-  {
-    "name": "Cluster Tests",
-    "messageRegex": ".*Cluster.*"
   }
-
-
 ]
