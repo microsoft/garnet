@@ -38,6 +38,8 @@ Delete all the specified ACL users and terminate all the connections that are au
 
 Integer reply: the number of users that were deleted. This number will not always match the number of arguments since certain users may not exist.
 
+---
+
 ### ACL GETUSER
 
 #### Syntax
@@ -75,6 +77,16 @@ in the form of a single hex character.
 
 Bulk string reply: pseudorandom data. By default it contains 64 bytes, representing 256 bits of data.
 If bits was given, the output string length is the number of specified bits (rounded to the next multiple of 4) divided by 4.
+
+---
+
+### ACL HELP
+
+```bash
+    ACL HELP
+```
+
+The ACL HELP command returns a helpful text describing the different subcommands.
 
 ---
 
