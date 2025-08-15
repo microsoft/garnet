@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload Allure history to Artifacts for next run
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: allure-history
           path: final-report/history
