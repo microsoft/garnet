@@ -358,13 +358,12 @@ namespace Tsavorite.test
                         (status, output) = bContext.GetSinglePendingResult();
                     Assert.That(status.Found, Is.True);
 
-                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)), $"ii {ii}");
+                    Assert.That(output.valueObject.value.Length, Is.EqualTo(valueSize + (ii * 4096)), $"record# ii {ii}");
                     var badIndex = new ReadOnlySpan<byte>(output.valueObject.value).IndexOfAnyExcept((byte)0x42);
                     if (badIndex != -1)
                         Assert.Fail($"Unexpected byte value at index {badIndex}, onDisk {onDisk}, record# {ii}: {output.valueObject.value[badIndex]}");
                 }
             }
         }
-
     }
 }

@@ -87,6 +87,8 @@ namespace Tsavorite.core
                 buffers.EndFlushComplete();
         }
 
+        internal void Wait() => countdownEvent?.Wait();
+
         public void Dispose()
         {
             memory?.Return();
@@ -191,7 +193,13 @@ namespace Tsavorite.core
         public void Dispose()
         {
             foreach (var buffer in buffers)
-                buffer?.Dispose();
+            {
+                if (buffer is not null)
+                {
+                    buffer.Wait();  // Make sure any pending writes complete
+                    buffer.Dispose();
+                }
+            }
         }
     }
 }

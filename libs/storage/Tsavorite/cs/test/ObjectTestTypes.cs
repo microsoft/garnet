@@ -218,7 +218,11 @@ namespace Tsavorite.test
                 var value = new TestLargeObjectValue();
                 obj = value;
                 int size = reader.ReadInt32();
+                Assert.That(size, Is.Not.EqualTo(0));
+
                 value.value = reader.ReadBytes(size);
+                Assert.That(value.value.Length, Is.EqualTo(size));
+
                 value.SetSizes();
             }
 
