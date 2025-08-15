@@ -13,9 +13,9 @@ namespace Garnet.cluster
         #region mainStoreScan
         internal sealed unsafe class MainStoreScan : IScanIteratorFunctions<SpanByte, SpanByte>
         {
-            readonly MigrateSession.MigrateOperation mss;
+            readonly MigrateOperation mss;
 
-            internal MainStoreScan(MigrateSession.MigrateOperation mss)
+            internal MainStoreScan(MigrateOperation mss)
             {
                 this.mss = mss;
             }
@@ -30,12 +30,14 @@ namespace Garnet.cluster
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
+                mss.ThrowIfCancelled();
+
                 // Do not send key if it is expired
                 if (ClusterSession.Expired(ref value))
                     return true;
 
                 var s = HashSlotUtils.HashSlot(ref key);
-                // Check if key belongs to slot that is being migrated
+                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
                 if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
                     return false;
 
@@ -50,9 +52,9 @@ namespace Garnet.cluster
         #region objectStoreScan
         internal sealed unsafe class ObjectStoreScan : IScanIteratorFunctions<byte[], IGarnetObject>
         {
-            readonly MigrateSession.MigrateOperation mss;
+            readonly MigrateOperation mss;
 
-            internal ObjectStoreScan(MigrateSession.MigrateOperation mss)
+            internal ObjectStoreScan(MigrateOperation mss)
             {
                 this.mss = mss;
             }
@@ -70,13 +72,15 @@ namespace Garnet.cluster
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
 
+                mss.ThrowIfCancelled();
+
                 // Do not send key if it is expired
                 if (ClusterSession.Expired(ref value))
                     return true;
 
                 var s = HashSlotUtils.HashSlot(key);
-                // Check if key belongs to slot that is being migrated
-                if (mss.Contains(s) && mss.sketch.TryHashAndStore(key.AsSpan()))
+                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
+                if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
                     return false;
 
                 return true;

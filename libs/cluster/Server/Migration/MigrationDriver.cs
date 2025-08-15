@@ -80,7 +80,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 // Migrate actual data
-                if (!MigrateSlotsDriverInline())
+                if (!await MigrateSlotsDriverInline())
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
