@@ -247,53 +247,110 @@ namespace Garnet.server
 
         private static int ReadCallbackManaged(ulong context, ReadOnlySpan<byte> key, Span<byte> value)
         {
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-            var keySpan = SpanByte.FromPinnedSpan(key);
-            VectorInput input = new();
-            var outputSpan = SpanByte.FromPinnedSpan(value);
+            Span<byte> distinctKey = stackalloc byte[128];
+            DistinguishVectorKey(context, key, ref distinctKey, out var rentedBuffer);
 
-            var status = ctx.Read(ref keySpan, ref input, ref outputSpan);
-            if (status.IsPending)
+            try
             {
-                CompletePending(ref status, ref outputSpan, ref ctx);
-            }
+                ref var ctx = ref ActiveThreadSession.vectorContext;
+                var keySpan = SpanByte.FromPinnedSpan(distinctKey);
+                VectorInput input = new();
+                var outputSpan = SpanByte.FromPinnedSpan(value);
 
-            if (status.Found)
+                var status = ctx.Read(ref keySpan, ref input, ref outputSpan);
+                if (status.IsPending)
+                {
+                    CompletePending(ref status, ref outputSpan, ref ctx);
+                }
+
+                if (status.Found)
+                {
+                    return outputSpan.Length;
+                }
+
+                return 0;
+            }
+            finally
             {
-                return outputSpan.Length;
+                if (rentedBuffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(rentedBuffer);
+                }
             }
-
-            return 0;
         }
 
         private static bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-            var keySpan = SpanByte.FromPinnedSpan(key);
-            VectorInput input = new();
-            var valueSpan = SpanByte.FromPinnedSpan(value);
-
-            Span<byte> output = stackalloc byte[1];
-            var outputSpan = SpanByte.FromPinnedSpan(output);
-
-            var status = ctx.Upsert(ref keySpan, ref input, ref valueSpan, ref outputSpan);
-            if (status.IsPending)
+            Span<byte> distinctKey = stackalloc byte[128];
+            DistinguishVectorKey(context, key, ref distinctKey, out var rentedBuffer);
+            try
             {
-                CompletePending(ref status, ref outputSpan, ref ctx);
-            }
+                ref var ctx = ref ActiveThreadSession.vectorContext;
+                var keySpan = SpanByte.FromPinnedSpan(distinctKey);
+                VectorInput input = new();
+                var valueSpan = SpanByte.FromPinnedSpan(value);
 
-            return status.IsCompletedSuccessfully;
+                Span<byte> output = stackalloc byte[1];
+                var outputSpan = SpanByte.FromPinnedSpan(output);
+
+                var status = ctx.Upsert(ref keySpan, ref input, ref valueSpan, ref outputSpan);
+                if (status.IsPending)
+                {
+                    CompletePending(ref status, ref outputSpan, ref ctx);
+                }
+
+                return status.IsCompletedSuccessfully;
+            }
+            finally
+            {
+                if (rentedBuffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(rentedBuffer);
+                }
+            }
         }
 
         private static bool DeleteCallbackManaged(ulong context, ReadOnlySpan<byte> key)
         {
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-            var keySpan = SpanByte.FromPinnedSpan(key);
+            Span<byte> distinctKey = stackalloc byte[128];
+            DistinguishVectorKey(context, key, ref distinctKey, out var rentedBuffer);
+            try
+            {
+                ref var ctx = ref ActiveThreadSession.vectorContext;
+                var keySpan = SpanByte.FromPinnedSpan(distinctKey);
 
-            var status = ctx.Delete(ref keySpan);
-            Debug.Assert(!status.IsPending, "Deletes should never go async");
+                var status = ctx.Delete(ref keySpan);
+                Debug.Assert(!status.IsPending, "Deletes should never go async");
 
-            return status.IsCompletedSuccessfully;
+                return status.IsCompletedSuccessfully;
+            }
+            finally
+            {
+                if (rentedBuffer != null)
+                {
+                    ArrayPool<byte>.Shared.Return(rentedBuffer);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Mutate <paramref name="key"/> so that the same value with different <paramref name="context"/>'s won't clobber each other.
+        /// </summary>
+        private static void DistinguishVectorKey(ulong context, ReadOnlySpan<byte> key, ref Span<byte> distinguishedKey, out byte[] rented)
+        {
+            if (key.Length + sizeof(ulong) > distinguishedKey.Length)
+            {
+                distinguishedKey = rented = ArrayPool<byte>.Shared.Rent(key.Length + sizeof(ulong));
+                distinguishedKey = distinguishedKey[..^sizeof(ulong)];
+            }
+            else
+            {
+                rented = null;
+                distinguishedKey = distinguishedKey[..(key.Length + sizeof(ulong))];
+            }
+
+            key.CopyTo(distinguishedKey);
+            BinaryPrimitives.WriteUInt64LittleEndian(distinguishedKey[^sizeof(ulong)..], context);
         }
 
         private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext objectContext)
@@ -360,7 +417,7 @@ namespace Garnet.server
             out nint indexPtr
         )
         {
-            Debug.Assert(indexValue.Length == Index.Size, "Index value is incorrect, implies vector set index is probably corrupted");
+            Debug.Assert(indexValue.Length == Index.Size, "Index size is incorrect, implies vector set index is probably corrupted");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
 

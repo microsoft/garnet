@@ -85,6 +85,8 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res4);
         }
 
+        // TODO: Gets on Vector Set elements should fail
+
         // TODO: Test that gets on vector sets also fail
 
         [Test]
