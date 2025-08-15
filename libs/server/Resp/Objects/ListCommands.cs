@@ -354,8 +354,7 @@ namespace Garnet.server
             var dstKey = parseState.GetArgSliceByRef(1);
 
             if (!parseState.TryGetOperationDirection(2, out var srcDir) ||
-                !parseState.TryGetOperationDirection(3, out var dstDir)
-                )
+                !parseState.TryGetOperationDirection(3, out var dstDir))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
@@ -772,8 +771,7 @@ namespace Garnet.server
             var dstKey = parseState.GetArgSliceByRef(1);
 
             if (!parseState.TryGetOperationDirection(2, out var sourceDirection) ||
-                !parseState.TryGetOperationDirection(3, out var destinationDirection)
-                )
+                !parseState.TryGetOperationDirection(3, out var destinationDirection))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
