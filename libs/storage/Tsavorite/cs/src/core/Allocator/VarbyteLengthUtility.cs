@@ -58,6 +58,7 @@ namespace Tsavorite.core
         internal static long GetVersion(byte indicatorByte) => (indicatorByte & kVersionBitMask) >> 6;
 
         /// <summary>Read var-length bytes at the given location.</summary>
+        /// <remark>This is compatible with little-endian 'long'; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long ReadVarbyteLength(int numBytes, byte* ptrToFirstByte)
         {
@@ -73,12 +74,13 @@ namespace Tsavorite.core
         /// <param name="word">The word being queried</param>
         /// <param name="precedingNumBytes">If we are querying for value, this is the number of bytes in the key; otherwise it is 0</param>
         /// <param name="targetNumBytes">The number of bytes in the target (key or value)</param>
-        /// <remark>This assumes little-endian</remark>
+        /// <remark>This assumes little-endian; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int ReadVarbyteLengthInWord(long word, int precedingNumBytes, int targetNumBytes)
-            => (int)(word >> ((1 + precedingNumBytes) * 8) & ((1L << targetNumBytes * 8) - 1));
+            => (int)((word >> ((1 + precedingNumBytes) * 8)) & ((1L << (targetNumBytes * 8)) - 1));
 
         /// <summary>Write var-length bytes at the given location.</summary>
+        /// <remark>This is compatible with little-endian 'long'; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void WriteVarbyteLength(long value, int numBytes, byte* ptrToFirstByte)
         {
@@ -97,7 +99,7 @@ namespace Tsavorite.core
         /// <param name="value">The value being set into the word</param>
         /// <param name="precedingNumBytes">If we are setting the value, this is the number of bytes in the key; otherwise it is 0</param>
         /// <param name="targetNumBytes">The number of bytes in the target (key or value)</param>
-        /// <remark>This assumes little-endian</remark>
+        /// <remark>This assumes little-endian; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void WriteVarbyteLengthInWord(ref long word, int value, int precedingNumBytes, int targetNumBytes)
         {
@@ -166,29 +168,28 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (int length, long dataAddress) GetKeyFieldInfo(long indicatorAddress)
         {
-            var ptr = (byte*)indicatorAddress;
-            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*ptr);
+            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
 
             // Move past the indicator byte; the next bytes are key length
-            var keyLength = ReadVarbyteLength(keyLengthBytes, ++ptr);
+            var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
 
             // Move past the key and value length bytes to the start of the key data
-            return ((int)keyLength, (long)(ptr + keyLengthBytes + valueLengthBytes));
+            return (keyLength, indicatorAddress + 1 + keyLengthBytes + valueLengthBytes);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (long length, long dataAddress) GetValueFieldInfo(long indicatorAddress)
         {
-            var ptr = (byte*)indicatorAddress;
-            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*ptr);
+            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
 
             // Move past the indicator byte; the next bytes are key length
-            var keyLength = ReadVarbyteLength(keyLengthBytes, ++ptr);
+            var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
 
             // Move past the key length bytes; the next bytes are valueLength
-            var valueLength = ReadVarbyteLength(valueLengthBytes, ptr += keyLengthBytes);
+            var valueLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: keyLengthBytes, valueLengthBytes);
 
             // Move past the key and value length bytes and the key data to the start of the value data
-            return (valueLength, (long)(ptr + valueLengthBytes + keyLength));
+            return (valueLength, indicatorAddress + 1 + keyLengthBytes + valueLengthBytes + keyLength);
         }
 
         /// <summary>
@@ -199,9 +200,10 @@ namespace Tsavorite.core
         {
             var ptr = (byte*)indicatorAddress;
             var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*ptr);
+            ptr++;
 
             // Move past the indicator byte; the next bytes are key length
-            var keyLength = ReadVarbyteLength(keyLengthBytes, ++ptr);
+            var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
             if (isKey)
             {
                 lengthPtr = ptr;
@@ -213,7 +215,7 @@ namespace Tsavorite.core
             // Move past the key length bytes; the next bytes are valueLength. Read those, then skip over the key bytes to get the value data pointer.
             lengthPtr = ptr + keyLengthBytes;
             lengthBytes = valueLengthBytes;
-            length = ReadVarbyteLength(lengthBytes, lengthPtr);
+            length = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: keyLengthBytes, lengthBytes);
             return lengthPtr + lengthBytes + keyLength;
         }
 
@@ -227,10 +229,10 @@ namespace Tsavorite.core
             var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValueOrHasFiller*/) = DeconstructIndicatorByte(*ptr);
 
             // Move past the indicator byte; the next bytes are key length
-            var keyLength = (int)ReadVarbyteLength(keyLengthBytes, ++ptr);
+            var keyLength = (int)ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
 
             // Move past the key bytes; the next bytes are valueLength
-            var valueLength = ReadVarbyteLength(valueLengthBytes, ptr + keyLengthBytes);
+            var valueLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             return (keyLength, (int)valueLength, RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes);
         }
 
