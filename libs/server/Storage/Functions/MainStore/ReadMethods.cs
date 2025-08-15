@@ -25,6 +25,22 @@ namespace Garnet.server
 
             var cmd = input.header.cmd;
 
+            // Hidden from main store ops
+            // This is currently only used for vector set members
+            if (readInfo.RecordInfo.Hidden)
+            {
+                // TODO: We should make this impossible probably?
+                return false;
+            }
+
+            // Vector sets themselves can only be read by vector ops
+            if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            {
+                // Attempted an illegal op on a VectorSet
+                CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
+                return true;
+            }
+
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
                 if (handleGetIfNotMatch(ref input, ref value, ref dst, ref readInfo))
@@ -94,6 +110,22 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
+
+            // Hidden from main store ops
+            // This is currently only used for vector set members
+            if (readInfo.RecordInfo.Hidden)
+            {
+                // TODO: We should make this impossible probably?
+                return false;
+            }
+
+            // Vector sets themselves can only be read by vector ops
+            if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            {
+                // Attempted an illegal op on a VectorSet
+                CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
+                return true;
+            }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
             {

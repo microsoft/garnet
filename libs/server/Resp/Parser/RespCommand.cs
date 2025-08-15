@@ -635,6 +635,12 @@ namespace Garnet.server
             bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
+
+        /// <summary>
+        /// Returns true if this command can operate on a Vector Set.
+        /// </summary>
+        public static bool IsLegalOnVectorSet(this RespCommand cmd)
+        => cmd is RespCommand.DEL or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
     }
 
     /// <summary>

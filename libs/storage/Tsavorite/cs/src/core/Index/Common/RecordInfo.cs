@@ -24,10 +24,11 @@ namespace Tsavorite.core
         internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
         // Leftover bits (that were reclaimed from locking)
-        const int kLeftoverBitCount = 7;
+        const int kLeftoverBitCount = 6;
 
         // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
-        const int kTombstoneBitOffset = kPreviousAddressBits + kLeftoverBitCount;
+        const int kVectorSetBitOffset = kPreviousAddressBits + kLeftoverBitCount;
+        const int kTombstoneBitOffset = kVectorSetBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kSealedBitOffset = kValidBitOffset + 1;
         const int kEtagBitOffset = kSealedBitOffset + 1;
@@ -35,8 +36,9 @@ namespace Tsavorite.core
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        const int kUnused1BitOffset = kModifiedBitOffset + 1;
+        const int kHiddenBitOffset = kModifiedBitOffset + 1;
 
+        const long kVectorSetBitMask = 1L << kVectorSetBitOffset;
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
@@ -45,7 +47,7 @@ namespace Tsavorite.core
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
-        const long kUnused1BitMask = 1L << kUnused1BitOffset;
+        const long kHiddenBitMask = 1L << kHiddenBitOffset;
 
         [FieldOffset(0)]
         private long word;
@@ -269,10 +271,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength() => kTotalSizeInBytes;
 
-        internal bool Unused1
+        public bool VectorSet
         {
-            readonly get => (word & kUnused1BitMask) != 0;
-            set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask;
+            readonly get => (word & kVectorSetBitMask) != 0;
+            set => word = value ? word | kVectorSetBitMask : word & ~kVectorSetBitMask;
+        }
+
+        public bool Hidden
+        {
+            readonly get => (word & kHiddenBitMask) != 0;
+            set => word = value ? word | kHiddenBitMask : word & ~kHiddenBitMask;
         }
 
         public bool ETag
@@ -289,7 +297,7 @@ namespace Tsavorite.core
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {AbsoluteAddress(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, etag {bstr(ETag)}, Un1 {bstr(Unused1)}";
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, etag {bstr(ETag)}, hid {bstr(Hidden)}, vecset {bstr(VectorSet)}";
         }
     }
 }

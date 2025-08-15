@@ -35,6 +35,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo)
         {
+            Debug.Assert(readInfo.RecordInfo.Hidden, "Should never read a non-hidden value with VectorSessionFunctions");
             Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
 
             dst.Length = value.Length;
@@ -45,6 +46,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
+            Debug.Assert(readInfo.RecordInfo.Hidden, "Should never read a non-hidden value with VectorSessionFunctions");
             Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
 
             dst.Length = value.Length;
@@ -71,12 +73,19 @@ namespace Garnet.server
         #region Writes
         /// <inheritdoc />
         public bool SingleWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-        => SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
+        {
+            recordInfo.Hidden = true;
+            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
+        }
+
         /// <inheritdoc />
         public void PostSingleWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, WriteReason reason) { }
         /// <inheritdoc />
         public bool ConcurrentWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-        => SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
+        {
+            recordInfo.Hidden = true;
+            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
+        }
         #endregion
 
         #region RMW

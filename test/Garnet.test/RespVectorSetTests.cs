@@ -52,7 +52,6 @@ namespace Garnet.test
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-
             var res2 = (string[])db.Execute("VEMB", ["foo", "abc"]);
             ClassicAssert.AreEqual(4, res2.Length);
             ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res2[0]));
@@ -62,6 +61,19 @@ namespace Garnet.test
 
             var res3 = (string[])db.Execute("VEMB", ["foo", "def"]);
             ClassicAssert.AreEqual(0, res3.Length);
+        }
+
+        [Test]
+        public void VectorSetOpacity()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = ClassicAssert.Throws<RedisServerException>(() => db.StringGet("foo"));
+            ClassicAssert.True(res2.Message.Contains("WRONGTYPE"));
         }
 
         [Test]
@@ -83,6 +95,8 @@ namespace Garnet.test
 
             var res4 = db.StringSet("abc", "def", when: When.NotExists);
             ClassicAssert.IsTrue(res4);
+
+            // TODO: We know the munging we're doing, what about when we GET the element post-munging
         }
 
         // TODO: Gets on Vector Set elements should fail

@@ -286,6 +286,8 @@ namespace Garnet.server
                         var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(7).Span);
 
                         VectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
+
+                        recordInfo.VectorSet = true;
                     }
                     break;
             }
