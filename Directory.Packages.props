@@ -26,7 +26,7 @@
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.6.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
     <PackageVersion Include="System.Text.Json" Version="9.0.3" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.3" />
   </ItemGroup>
 </Project>
