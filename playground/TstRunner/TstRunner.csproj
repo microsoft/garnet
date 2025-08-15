@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis" />
     <ProjectReference Include="..\..\test\Garnet.test.cluster\Garnet.test.cluster.csproj" />
     <ProjectReference Include="..\..\test\Garnet.test\Garnet.test.csproj" />
   </ItemGroup>
