@@ -1983,10 +1983,10 @@
     cssesc "^3.0.0"
     immediate "^3.2.3"
 
-"@easyops-cn/docusaurus-search-local@^0.44.5":
-  version "0.44.6"
-  resolved "https://registry.yarnpkg.com/@easyops-cn/docusaurus-search-local/-/docusaurus-search-local-0.44.6.tgz#d1a64bbf602bc8313ce766e1e79075b1c1bcecc9"
-  integrity sha512-DiCz6Ag7Xbj27NFaKzvJEfMCW5o7/Ad9ZYuJ7TShwk8XmMnyr1nxJYLn1WpmJ2pzvR20Wt0zcn4u5MfpiLuFLw==
+"@easyops-cn/docusaurus-search-local@^0.52.1":
+  version "0.52.1"
+  resolved "https://registry.yarnpkg.com/@easyops-cn/docusaurus-search-local/-/docusaurus-search-local-0.52.1.tgz#b2ba5007472ec9d30572228fc1368f03a4404dbb"
+  integrity sha512-pwfANjTLOQyAPc2Iz93WbG4OQM5C4COCWARbLAs79FIpIS38gHq3PrbDIX8f7oDhGQp1u6f8fr3K3u3+yZXZTA==
   dependencies:
     "@docusaurus/plugin-content-docs" "^2 || ^3"
     "@docusaurus/theme-translations" "^2 || ^3"
@@ -1996,7 +1996,8 @@
     "@easyops-cn/autocomplete.js" "^0.38.1"
     "@node-rs/jieba" "^1.6.0"
     cheerio "^1.0.0"
-    clsx "^1.1.1"
+    clsx "^2.1.1"
+    comlink "^4.4.2"
     debug "^4.2.0"
     fs-extra "^10.0.0"
     klaw-sync "^6.0.0"
@@ -3769,11 +3770,6 @@ clone-deep@^4.0.1:
     kind-of "^6.0.2"
     shallow-clone "^3.0.0"
 
-clsx@^1.1.1:
-  version "1.2.1"
-  resolved "https://registry.yarnpkg.com/clsx/-/clsx-1.2.1.tgz#0ddc4a20a549b59c93a4116bb26f5294ca17dc12"
-  integrity sha512-EcR6r5a8bj6pu3ycsa/E/cKVGuTgZJZdsyUYHOksG/UHIiKfjxzRxYJpyVBwYaQeOvghal9fcc4PidlgzugAQg==
-
 clsx@^2.0.0, clsx@^2.1.1:
   version "2.1.1"
   resolved "https://registry.yarnpkg.com/clsx/-/clsx-2.1.1.tgz#eed397c9fd8bd882bfb18deab7102049a2f32999"
@@ -3810,6 +3806,11 @@ combine-promises@^1.1.0:
   version "1.2.0"
   resolved "https://registry.yarnpkg.com/combine-promises/-/combine-promises-1.2.0.tgz#5f2e68451862acf85761ded4d9e2af7769c2ca6a"
   integrity sha512-VcQB1ziGD0NXrhKxiwyNbCDmRzs/OShMs2GqW2DlU2A/Sd0nQxE1oWDAE5O0ygSx5mgQOn9eIFh7yKPgFRVkPQ==
+
+comlink@^4.4.2:
+  version "4.4.2"
+  resolved "https://registry.yarnpkg.com/comlink/-/comlink-4.4.2.tgz#cbbcd82742fbebc06489c28a183eedc5c60a2bca"
+  integrity sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==
 
 comma-separated-tokens@^2.0.0:
   version "2.0.3"
