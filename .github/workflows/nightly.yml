@@ -209,7 +209,7 @@ jobs:
           scoop install allure
           scoop bucket add extras
           $env:PATH += ";$env:USERPROFILE\scoop\apps\allure\current\bin"
-          allure generate final-results --clean -o final-report
+          allure -v generate final-results --clean -o final-report --single-file
           dir final-report -Recurse
 
       - name: Upload Unified Allure Report
