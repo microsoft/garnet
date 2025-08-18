@@ -93,7 +93,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = VectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, values, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks);
+                    result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, values, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks);
 
                     return GarnetStatus.OK;
                 }
@@ -150,7 +150,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = VectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
+                    result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
 
                     return GarnetStatus.OK;
                 }
@@ -206,7 +206,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = VectorManager.ElementSimilarity(this, indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
+                    result = vectorManager.ElementSimilarity(this, indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
 
                     return GarnetStatus.OK;
                 }
@@ -259,7 +259,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    if (!VectorManager.TryGetEmbedding(this, indexConfig.AsReadOnlySpan(), element, ref outputDistances))
+                    if (!vectorManager.TryGetEmbedding(this, indexConfig.AsReadOnlySpan(), element, ref outputDistances))
                     {
                         return GarnetStatus.NOTFOUND;
                     }

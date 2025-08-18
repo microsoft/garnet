@@ -285,7 +285,7 @@ namespace Garnet.server
                         // Attributes is here, skipping during index creation
                         var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(7).Span);
 
-                        VectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
 
                         recordInfo.Hidden = true;
                     }

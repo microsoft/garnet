@@ -278,10 +278,10 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(parseState.Count == 2);
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var value = parseState.GetArgSliceByRef(1).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
 
-            storageApi.SET(ref key, ref value);
+            storageApi.SET(key, value);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -296,9 +296,9 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(parseState.Count == 2);
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
-            return NetworkSET_Conditional(RespCommand.SET, 0, ref key, true,
+            return NetworkSET_Conditional(RespCommand.SET, 0, key, true,
                                           false, false, ref storageApi);
         }
 
@@ -377,7 +377,7 @@ namespace Garnet.server
         private bool NetworkSETEX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             // Validate expiry
             if (!parseState.TryGetInt(1, out var expiry))
@@ -398,7 +398,7 @@ namespace Garnet.server
             var sbVal = parseState.GetArgSliceByRef(2).SpanByte;
 
             var input = new RawStringInput(RespCommand.SETEX, 0, valMetadata);
-            _ = storageApi.SET(ref key, ref input, ref sbVal);
+            _ = storageApi.SET(key, ref input, ref sbVal);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -418,10 +418,9 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var sbKey = key.SpanByte;
-
+            
             var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
-            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+            var status = storageApi.SET_Conditional(key, ref input);
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
             var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
@@ -573,14 +572,14 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue || withEtag
-                                ? NetworkSET_Conditional(RespCommand.SET, expiry, ref sbKey, getValue,
+                                ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue,
                                     isHighPrecision, withEtag, ref storageApi)
-                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, ref sbKey, ref sbVal, ref storageApi); // Can perform a blind update
+                                : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, ref sbVal, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, ref sbKey,
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, expiry, key,
                                 getValue, isHighPrecision, withEtag, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key,
                                 getValue, isHighPrecision, withEtag, ref storageApi);
                     }
                     break;
@@ -590,13 +589,13 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, ref sbKey
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, expiry, key
                                 , getValue, highPrecision: false, withEtag, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, ref sbKey,
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, expiry, key,
                                 getValue, highPrecision: false, withEtag, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, ref sbKey,
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, expiry, key,
                                 getValue, highPrecision: false, withEtag, ref storageApi);
                     }
                     break;
@@ -608,7 +607,7 @@ namespace Garnet.server
         }
 
         private unsafe bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, ExpirationOption expOption, int expiry,
-            ref SpanByte key, ref SpanByte val, ref TGarnetApi storageApi)
+            ArgSlice key, ref SpanByte val, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
@@ -621,14 +620,14 @@ namespace Garnet.server
 
             var input = new RawStringInput(cmd, 0, valMetadata);
 
-            storageApi.SET(ref key, ref input, ref val);
+            storageApi.SET(key, ref input, ref val);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ref SpanByte key, bool getValue, bool highPrecision, bool withEtag, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, int expiry, ArgSlice key, bool getValue, bool highPrecision, bool withEtag, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var inputArg = expiry == 0
@@ -645,7 +644,7 @@ namespace Garnet.server
                 // the following debug assertion is the catch any edge case leading to SETIFMATCH, or SETIFGREATER skipping the above block
                 Debug.Assert(cmd is not (RespCommand.SETIFMATCH or RespCommand.SETIFGREATER), "SETIFMATCH should have gone though pointing to right output variable");
 
-                var status = storageApi.SET_Conditional(ref key, ref input);
+                var status = storageApi.SET_Conditional(key, ref input);
 
                 // KEEPTTL without flags doesn't care whether it was found or not.
                 if (cmd == RespCommand.SETKEEPTTL)
@@ -684,7 +683,7 @@ namespace Garnet.server
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
                 SpanByteAndMemory outputBuffer = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                GarnetStatus status = storageApi.SET_Conditional(ref key, ref input, ref outputBuffer);
+                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref outputBuffer);
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 bool ok = status != GarnetStatus.NOTFOUND || withEtag;

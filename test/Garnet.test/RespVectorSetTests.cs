@@ -1,7 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Buffers;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -96,12 +100,42 @@ namespace Garnet.test
             var res4 = db.StringSet("abc", "def", when: When.NotExists);
             ClassicAssert.IsTrue(res4);
 
-            // TODO: We know the munging we're doing, what about when we GET the element post-munging
+            Span<byte> buffer = stackalloc byte[128];
+
+            // Attempt read and writes against the "true" element key names
+            var manager = GetVectorManager(server);
+            var ctx = manager.HighestContext();
+            for (var i = 0UL; i <= ctx; i++)
+            {
+                VectorManager.DistinguishVectorElementKey(i, "abc"u8, ref buffer, out var rented);
+
+                try
+                {
+                    var mangled = buffer.ToArray();
+
+                    var res5 = (string)db.StringGet(mangled);
+                    ClassicAssert.IsNull(res5);
+
+                    var res6 = db.StringSet(mangled, "!!!!", when: When.NotExists);
+                    ClassicAssert.IsTrue(res6);
+                }
+                finally
+                {
+                    if (rented != null)
+                    {
+                        ArrayPool<byte>.Shared.Return(rented);
+                    }
+                }
+            }
+
+            // Check we haven't messed up the element
+            var res7 = (string[])db.Execute("VEMB", ["foo", "abc"]);
+            ClassicAssert.AreEqual(4, res7.Length);
+            ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res7[0]));
+            ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res7[1]));
+            ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res7[2]));
+            ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res7[3]));
         }
-
-        // TODO: Gets on Vector Set elements should fail
-
-        // TODO: Test that gets on vector sets also fail
 
         [Test]
         public void VSIM()
@@ -128,5 +162,8 @@ namespace Garnet.test
             // TODO: WITHSCORES
             // TODO: WITHATTRIBS
         }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
+        private static extern ref VectorManager GetVectorManager(GarnetServer server);
     }
 }

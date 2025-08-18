@@ -26,17 +26,12 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET(ref SpanByte key, ref SpanByte value);
-
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value);
+        GarnetStatus SET(ArgSlice key, ref RawStringInput input, ref SpanByte value);
 
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input);
+        GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input);
 
         /// <summary>
         /// DEL Conditional
@@ -46,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+        GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// SET

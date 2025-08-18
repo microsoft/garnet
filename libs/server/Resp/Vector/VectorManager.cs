@@ -184,7 +184,7 @@ namespace Garnet.server
     /// <summary>
     /// Methods for managing an implementation of various vector operations.
     /// </summary>
-    internal static class VectorManager
+    public sealed class VectorManager
     {
         internal const int IndexSizeBytes = Index.Size;
 
@@ -209,17 +209,17 @@ namespace Garnet.server
             public VectorQuantType QuantType;
         }
 
-        private static readonly unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, int> ReadCallbackPtr = &ReadCallbackUnmanaged;
-        private static readonly unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, bool> WriteCallbackPtr = &WriteCallbackUnmanaged;
-        private static readonly unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, bool> DeleteCallbackPtr = &DeleteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, int> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, bool> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, bool> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
 
-        private static readonly VectorReadDelegate ReadCallbackDel = ReadCallbackManaged;
-        private static readonly VectorWriteDelegate WriteCallbackDel = WriteCallbackManaged;
-        private static readonly VectorDeleteDelegate DeleteCallbackDel = DeleteCallbackManaged;
+        private VectorReadDelegate ReadCallbackDel { get; } = ReadCallbackManaged;
+        private VectorWriteDelegate WriteCallbackDel { get; } = WriteCallbackManaged;
+        private VectorDeleteDelegate DeleteCallbackDel { get; } = DeleteCallbackManaged;
 
-        private static readonly IVectorService Service = new DummyService();
+        private IVectorService Service { get; } = new DummyService();
 
-        private static ulong NextContextValue;
+        private ulong nextContextValue;
 
         [ThreadStatic]
         private static StorageSession ActiveThreadSession;
@@ -230,8 +230,17 @@ namespace Garnet.server
         /// This value is guaranteed to not be shared by any other vector set in the store.
         /// </summary>
         /// <returns></returns>
-        private static ulong NextContext()
-        => Interlocked.Add(ref NextContextValue, 4);
+        private ulong NextContext()
+        {
+            var ret = Interlocked.Add(ref nextContextValue, 4);
+
+            Debug.Assert(ret != 0, "0 is special, cannot use it as vector set context");
+
+            return ret;
+        }
+
+        public ulong HighestContext()
+        => nextContextValue;
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe int ReadCallbackUnmanaged(ulong context, byte* keyData, nuint keyLength, byte* writeData, nuint writeLength)
@@ -338,11 +347,8 @@ namespace Garnet.server
         /// <summary>
         /// Mutate <paramref name="key"/> so that the same value with different <paramref name="context"/>'s won't clobber each other.
         /// </summary>
-        private static void DistinguishVectorElementKey(ulong context, ReadOnlySpan<byte> key, ref Span<byte> distinguishedKey, out byte[] rented)
+        public static void DistinguishVectorElementKey(ulong context, ReadOnlySpan<byte> key, ref Span<byte> distinguishedKey, out byte[] rented)
         {
-            // TODO: we can make this work for everything
-            Debug.Assert(context is < 0b1100_0000 and > 0, "Context out of expected range");
-
             if (key.Length + sizeof(byte) > distinguishedKey.Length)
             {
                 distinguishedKey = rented = ArrayPool<byte>.Shared.Rent(key.Length + sizeof(byte));
@@ -375,7 +381,7 @@ namespace Garnet.server
         /// <summary>
         /// Construct a new index, and stash enough data to recover it with <see cref="ReadIndex"/>.
         /// </summary>
-        internal static void CreateIndex(
+        internal void CreateIndex(
             uint dimensions,
             uint reduceDims,
             VectorQuantType quantType,
@@ -445,7 +451,7 @@ namespace Garnet.server
         /// Assumes that the index is locked in the Tsavorite store.
         /// </summary>
         /// <returns>Result of the operaiton.</returns>
-        internal static VectorManagerResult TryAdd(
+        internal VectorManagerResult TryAdd(
             StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
@@ -512,7 +518,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal static VectorManagerResult ValueSimilarity(
+        internal VectorManagerResult ValueSimilarity(
             StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<float> values,
@@ -574,7 +580,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
-        internal static VectorManagerResult ElementSimilarity(
+        internal VectorManagerResult ElementSimilarity(
             StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
@@ -633,7 +639,7 @@ namespace Garnet.server
             }
         }
 
-        internal static bool TryGetEmbedding(StorageSession currentStorageSession, ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        internal bool TryGetEmbedding(StorageSession currentStorageSession, ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
             ActiveThreadSession = currentStorageSession;
             try

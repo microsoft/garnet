@@ -61,6 +61,8 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        public readonly VectorManager vectorManager;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             GarnetSessionMetrics sessionMetrics,
@@ -74,6 +76,7 @@ namespace Garnet.server
             this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            vectorManager = storeWrapper.vectorManager;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);

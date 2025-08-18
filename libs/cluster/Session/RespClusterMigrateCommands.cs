@@ -94,9 +94,13 @@ namespace Garnet.cluster
                         TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                         while (i < keyCount)
                         {
+                            // TODO: need VectorManager mangling space
+
                             ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                            var keyArgSlice = ArgSlice.FromPinnedSpan(key.AsReadOnlySpan());
                             payloadPtr += key.TotalSize;
                             ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                            var valArgSlice = ArgSlice.FromPinnedSpan(value.AsReadOnlySpan());
                             payloadPtr += value.TotalSize;
 
                             // An error has occurred
@@ -117,7 +121,7 @@ namespace Garnet.cluster
                             // Set if key replace flag is set or key does not exist
                             var keySlice = new ArgSlice(key.ToPointer(), key.Length);
                             if (replaceOption || !Exists(ref keySlice))
-                                _ = basicGarnetApi.SET(ref key, ref value);
+                                _ = basicGarnetApi.SET(keyArgSlice, valArgSlice);
                             i++;
                         }
                     }
