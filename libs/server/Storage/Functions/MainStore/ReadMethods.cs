@@ -25,16 +25,9 @@ namespace Garnet.server
 
             var cmd = input.header.cmd;
 
-            // Hidden from main store ops
-            // This is currently only used for vector set members
-            if (readInfo.RecordInfo.Hidden)
-            {
-                // TODO: We should make this impossible probably?
-                return false;
-            }
-
-            // Vector sets themselves can only be read by vector ops
-            if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            // Vector sets are reachable (key not mangled) and hidden.
+            // So we can use that to detect type mismatches.
+            if (readInfo.RecordInfo.Hidden && !cmd.IsLegalOnVectorSet())
             {
                 // Attempted an illegal op on a VectorSet
                 CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
@@ -111,16 +104,9 @@ namespace Garnet.server
 
             var cmd = input.header.cmd;
 
-            // Hidden from main store ops
-            // This is currently only used for vector set members
-            if (readInfo.RecordInfo.Hidden)
-            {
-                // TODO: We should make this impossible probably?
-                return false;
-            }
-
-            // Vector sets themselves can only be read by vector ops
-            if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            // Vector sets are reachable (key not mangled) and hidden.
+            // So we can use that to detect type mismatches.
+            if (recordInfo.Hidden && !cmd.IsLegalOnVectorSet())
             {
                 // Attempted an illegal op on a VectorSet
                 CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);

@@ -22,7 +22,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("VADD");
             }
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            ref var key = ref parseState.GetArgSliceByRef(0);
 
             var curIx = 1;
 
@@ -271,7 +271,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("VSIM");
             }
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            ref var key = ref parseState.GetArgSliceByRef(0);
             var kind = parseState.GetArgSliceByRef(1);
 
             var curIx = 2;
@@ -613,7 +613,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("VEMB");
             }
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            ref var key = ref parseState.GetArgSliceByRef(0);
             var elem = parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
             var raw = false;

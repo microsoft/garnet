@@ -51,8 +51,14 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
-            => storageSession.GET(ref key, ref input, ref output, ref context);
+        public GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
+        {
+            VectorManager.UnsafeMangleMainKey(ref key);
+
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.GET(ref asSpanByte, ref input, ref output, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus GET_WithPending(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending)
@@ -71,7 +77,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public unsafe GarnetStatus GET(ArgSlice key, out ArgSlice value)
-            => storageSession.GET(key, out value, ref context);
+        {
+            VectorManager.UnsafeMangleMainKey(ref key);
+
+            return storageSession.GET(key, out value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value)
@@ -487,20 +497,20 @@ namespace Garnet.server
         #region VectorSet commands
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
-        => storageSession.VectorSetAdd(key, reduceDims, values, element, quantizer, buildExplorationFactor, attributes, numLinks, out result);
+        public unsafe GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
+        => storageSession.VectorSetAdd(SpanByte.FromPinnedPointer(key.ptr, key.length), reduceDims, values, element, quantizer, buildExplorationFactor, attributes, numLinks, out result);
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetValueSimilarity(SpanByte key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
-        => storageSession.VectorSetValueSimilarity(key, values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+        public unsafe GarnetStatus VectorSetValueSimilarity(ArgSlice key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        => storageSession.VectorSetValueSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
-        => storageSession.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+        public unsafe GarnetStatus VectorSetElementSimilarity(ArgSlice key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        => storageSession.VectorSetElementSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
-        => storageSession.VectorEmbedding(key, element, ref outputDistances);
+        public unsafe GarnetStatus VectorEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        => storageSession.VectorEmbedding(SpanByte.FromPinnedPointer(key.ptr, key.length), element, ref outputDistances);
 
         #endregion
     }

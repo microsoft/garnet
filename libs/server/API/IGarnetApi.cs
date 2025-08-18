@@ -1214,26 +1214,26 @@ namespace Garnet.server
         /// <summary>
         /// Adds to (and may create) a vector set with the given parameters.
         /// </summary>
-        GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result);
+        GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.
         /// 
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
         /// </summary>
-        GarnetStatus VectorSetValueSimilarity(SpanByte key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
+        GarnetStatus VectorSetValueSimilarity(ArgSlice key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
 
         /// <summary>
         /// Perform a similarity search given an element already in the vector set and these parameters.
         /// 
         /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
         /// </summary>
-        GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
+        GarnetStatus VectorSetElementSimilarity(ArgSlice key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
 
         /// <summary>
         /// Fetch the embedding of a given element in a Vector set.
         /// </summary>
-        GarnetStatus VectorEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances);
+        GarnetStatus VectorEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances);
 
         #endregion
     }
@@ -1247,7 +1247,7 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+        GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// GET

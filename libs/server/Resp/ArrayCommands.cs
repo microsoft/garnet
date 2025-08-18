@@ -30,9 +30,9 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var key = parseState.GetArgSliceByRef(c);
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref key, ref input, ref o);
+                var status = storageApi.GET(key, ref input, ref o);
 
                 switch (status)
                 {

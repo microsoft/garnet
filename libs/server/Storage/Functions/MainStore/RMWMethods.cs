@@ -287,7 +287,7 @@ namespace Garnet.server
 
                         VectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
 
-                        recordInfo.VectorSet = true;
+                        recordInfo.Hidden = true;
                     }
                     break;
             }

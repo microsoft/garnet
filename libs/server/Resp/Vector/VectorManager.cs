@@ -248,7 +248,7 @@ namespace Garnet.server
         private static int ReadCallbackManaged(ulong context, ReadOnlySpan<byte> key, Span<byte> value)
         {
             Span<byte> distinctKey = stackalloc byte[128];
-            DistinguishVectorKey(context, key, ref distinctKey, out var rentedBuffer);
+            DistinguishVectorElementKey(context, key, ref distinctKey, out var rentedBuffer);
 
             try
             {
@@ -282,7 +282,8 @@ namespace Garnet.server
         private static bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             Span<byte> distinctKey = stackalloc byte[128];
-            DistinguishVectorKey(context, key, ref distinctKey, out var rentedBuffer);
+            DistinguishVectorElementKey(context, key, ref distinctKey, out var rentedBuffer);
+
             try
             {
                 ref var ctx = ref ActiveThreadSession.vectorContext;
@@ -313,7 +314,8 @@ namespace Garnet.server
         private static bool DeleteCallbackManaged(ulong context, ReadOnlySpan<byte> key)
         {
             Span<byte> distinctKey = stackalloc byte[128];
-            DistinguishVectorKey(context, key, ref distinctKey, out var rentedBuffer);
+            DistinguishVectorElementKey(context, key, ref distinctKey, out var rentedBuffer);
+
             try
             {
                 ref var ctx = ref ActiveThreadSession.vectorContext;
@@ -336,21 +338,26 @@ namespace Garnet.server
         /// <summary>
         /// Mutate <paramref name="key"/> so that the same value with different <paramref name="context"/>'s won't clobber each other.
         /// </summary>
-        private static void DistinguishVectorKey(ulong context, ReadOnlySpan<byte> key, ref Span<byte> distinguishedKey, out byte[] rented)
+        private static void DistinguishVectorElementKey(ulong context, ReadOnlySpan<byte> key, ref Span<byte> distinguishedKey, out byte[] rented)
         {
-            if (key.Length + sizeof(ulong) > distinguishedKey.Length)
+            // TODO: we can make this work for everything
+            Debug.Assert(context is < 0b1100_0000 and > 0, "Context out of expected range");
+
+            if (key.Length + sizeof(byte) > distinguishedKey.Length)
             {
-                distinguishedKey = rented = ArrayPool<byte>.Shared.Rent(key.Length + sizeof(ulong));
-                distinguishedKey = distinguishedKey[..^sizeof(ulong)];
+                distinguishedKey = rented = ArrayPool<byte>.Shared.Rent(key.Length + sizeof(byte));
+                distinguishedKey = distinguishedKey[..^sizeof(byte)];
             }
             else
             {
                 rented = null;
-                distinguishedKey = distinguishedKey[..(key.Length + sizeof(ulong))];
+                distinguishedKey = distinguishedKey[..(key.Length + sizeof(byte))];
             }
 
             key.CopyTo(distinguishedKey);
-            BinaryPrimitives.WriteUInt64LittleEndian(distinguishedKey[^sizeof(ulong)..], context);
+
+            var suffix = (byte)(0b1100_0000 | (byte)context);
+            distinguishedKey[^1] = suffix;
         }
 
         private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext objectContext)
@@ -660,6 +667,33 @@ namespace Garnet.server
             {
                 ActiveThreadSession = null;
             }
+        }
+
+        /// <summary>
+        /// Returns true if the key (as found in main store) is somehow related to some Vector Set.
+        /// </summary>
+        internal static bool IsVectorSetRelatedKey(ReadOnlySpan<byte> keyInStore)
+        => !keyInStore.IsEmpty && (keyInStore[^1] > 0b1100_0000);
+
+        /// <summary>
+        /// If a key going into the main store would be interpreted as a Vector Set (via <see cref="IsVectorSetRelatedKey"/>) key,
+        /// mangles it so that it no longer will.
+        /// 
+        /// This is unsafe because it ASSUMES there's an extra free byte at the end
+        /// of the key.
+        /// </summary>
+        internal static unsafe void UnsafeMangleMainKey(ref ArgSlice rawKey)
+        {
+            if (!IsVectorSetRelatedKey(rawKey.ReadOnlySpan))
+            {
+                return;
+            }
+
+            *(rawKey.ptr + rawKey.length) = 0b1100_0000;
+            rawKey.length++;
+
+            Debug.Assert(!IsVectorSetRelatedKey(rawKey.ReadOnlySpan), "Mangling did not work");
+            return;
         }
     }
 }

@@ -22,10 +22,10 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 1);
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
             var input = new RawStringInput(RespCommand.GETWITHETAG);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(ref key, ref input, ref output);
+            var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
@@ -53,10 +53,10 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
             var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
             var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(ref key, ref input, ref output);
+            var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {

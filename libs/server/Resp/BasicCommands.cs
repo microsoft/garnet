@@ -31,9 +31,9 @@ namespace Garnet.server
 
             RawStringInput input = default;
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            ref var key = ref parseState.GetArgSliceByRef(0);
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(ref key, ref input, ref o);
+            var status = storageApi.GET(key, ref input, ref o);
 
             switch (status)
             {
