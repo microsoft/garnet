@@ -450,5 +450,10 @@
     "WARN-ON-FAIL_SInterCard_None": 36800,
     "WARN-ON-FAIL_SDiff_None": 45600,
     "WARN-ON-FAIL_SDiffStore_None": 75200
+  },
+  "BDN.benchmark.Operations.TxnOperations.*": {
+    "expected_MultiExec_ACL": 4,
+	"expected_MultiExec_AOF": 4,
+	"expected_MultiExec_None": 4,
   }
 }
