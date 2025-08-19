@@ -15,6 +15,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Represents a simplified version of RESP command's information
+    /// </summary>
     public struct SimpleRespCommandInfo
     {
         /// <summary>
@@ -191,7 +194,7 @@ namespace Garnet.server
                 var arity = cmdInfo.Arity;
 
                 // Verify that arity is in the signed byte range (-128 to 127)
-                Debug.Assert((arity > 0 && arity < sbyte.MaxValue) || (arity < 0 && arity > sbyte.MinValue));
+                Debug.Assert(arity <= sbyte.MaxValue && arity >= sbyte.MinValue);
 
                 tmpSimpleRespCommandInfo[cmdId].Arity = (sbyte)arity;
                 tmpSimpleRespCommandInfo[cmdId].AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
@@ -340,26 +343,6 @@ namespace Garnet.server
                      && cmdsInfo.TryGetValue(cmdName, out respCommandsInfo)) ||
                     ((includeSubCommands && TryGetRespSubCommandsInfo(out var subCmdsInfo, externalOnly, logger))
                      && subCmdsInfo.TryGetValue(cmdName, out respCommandsInfo)));
-        }
-
-        /// <summary>
-        /// Gets command's simplified info
-        /// </summary>
-        /// <param name="cmdName">Command name</param>
-        /// <param name="cmdInfo">Arity</param>
-        /// <param name="cmd">Parsed command</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>True if valid command</returns>
-        public static bool TryGetSimpleRespCommandInfo(string cmdName, out SimpleRespCommandInfo cmdInfo, out RespCommand cmd,
-            ILogger logger = null)
-        {
-            cmdInfo = SimpleRespCommandInfo.Default;
-
-            if (!RespCommandExtensions.TryParseCommand(cmdName, out cmd) ||
-                !TryGetSimpleRespCommandInfo(cmd, out cmdInfo, logger))
-                return false;
-
-            return true;
         }
 
         /// <summary>

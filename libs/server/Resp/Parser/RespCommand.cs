@@ -628,12 +628,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns command name
-        /// </summary>
-        public static string GetCommandName(this RespCommand cmd) => 
-            cmd.ToString().Replace('_', '|').ToLowerInvariant();
-
-        /// <summary>
         /// Try to parse a RespCommand from command name
         /// </summary>
         public static bool TryParseCommand(string name, out RespCommand cmd) =>

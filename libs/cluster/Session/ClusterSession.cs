@@ -78,9 +78,10 @@ namespace Garnet.cluster
 
             try
             {
+                RespCommandsInfo commandInfo = null;
                 if (command.IsClusterSubCommand())
                 {
-                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out var commandInfo) && commandInfo.KeySpecifications != null)
+                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo) && commandInfo.KeySpecifications != null)
                     {
                         csvi.keyNumOffset = -1;
                         clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
@@ -103,7 +104,11 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, command.GetCommandName());
+                    var cmdName = commandInfo != null || RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo)
+                            ? commandInfo.Name
+                            : "unknown";
+
+                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName);
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
                 }

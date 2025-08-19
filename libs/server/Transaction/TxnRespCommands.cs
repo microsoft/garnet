@@ -113,7 +113,7 @@ namespace Garnet.server
             var arity = cmdInfo.Arity > 0 ? cmdInfo.Arity - 1 : cmdInfo.Arity + 1;
             if (cmdInfo.IsParent)
                 arity = arity > 0 ? arity - 1 : arity + 1;
-            var invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
+            var invalidNumArgs = arity > 0 ? count != arity : count < -arity;
 
             // Watch not allowed during TXN
             var isWatch = cmd == RespCommand.WATCH || cmd == RespCommand.WATCHMS || cmd == RespCommand.WATCHOS;

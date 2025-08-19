@@ -2825,15 +2825,15 @@ namespace Garnet.server
             // any arguments
 
             var cmdStr = Encoding.UTF8.GetString(cmdSpan);
-            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmdStr, out var info, out var cmd))
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmdStr, out var info))
             {
                 return LuaWrappedError(1, constStrs.ErrInvalidCommand);
             }
 
             var providedRespArgCount = luaArgCount - 1;
 
-            var isBitOpParent = cmd == RespCommand.BITOP && providedRespArgCount == 0;
-            var hasSubCommands = info.IsParent;
+            var isBitOpParent = info.Command == RespCommand.BITOP && providedRespArgCount == 0;
+            var hasSubCommands = (info.SubCommands?.Length ?? 0) > 0;
             var providesSubCommand = hasSubCommands && providedRespArgCount >= 1;
 
             bool success;
@@ -2861,7 +2861,7 @@ namespace Garnet.server
                         default: throw new InvalidOperationException($"Unexpected BITOP sub command: {subCommand}");
                     }
 
-                    var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, info.Arity, cmdSpan, luaArgCount: 2);
+                    var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, info, cmdSpan, luaArgCount: 2);
 
                     // Remove the BITOP sub command
                     state.Pop(1);
@@ -2897,11 +2897,6 @@ namespace Garnet.server
                 // This matches intention behind redis.acl_check_cmd calls, in that a subsequent call
                 // with that parent command will always succeed if we return true here.
 
-                if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var cmdInfo))
-                {
-                    return LuaWrappedError(1, constStrs.ErrInvalidCommand);
-                }
-
                 // Going to push the subcommand text onto the stack, so reserve some space
                 const int NeededStackSpace = 1;
                 if (!state.TryEnsureMinimumStackCapacity(NeededStackSpace))
@@ -2915,7 +2910,7 @@ namespace Garnet.server
                 Span<byte> subCommandScratch = stackalloc byte[64];
                 try
                 {
-                    foreach (var subCommand in cmdInfo.SubCommands)
+                    foreach (var subCommand in info.SubCommands)
                     {
                         var subCommandStr = subCommand.Name.AsSpan()[(subCommand.Name.IndexOf('|') + 1)..];
 
@@ -2947,7 +2942,7 @@ namespace Garnet.server
                         }
 
                         var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession,
-                            scratchBufferBuilder, (sbyte)subCommand.Arity, cmdSpan, luaArgCount: 2);
+                            scratchBufferBuilder, subCommand, cmdSpan, luaArgCount: 2);
 
                         // Remove the extra sub-command
                         state.Pop(1);
@@ -2984,7 +2979,7 @@ namespace Garnet.server
             }
             else
             {
-                var (parsedCommand, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, info.Arity, cmdSpan, luaArgCount);
+                var (parsedCommand, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, info, cmdSpan, luaArgCount);
 
                 if (badArg)
                 {
@@ -3011,7 +3006,7 @@ namespace Garnet.server
                 ref LuaStateWrapper state,
                 RespServerSession respServerSession,
                 ScratchBufferBuilder scratchBufferManager,
-                sbyte cmdArity,
+                RespCommandsInfo cmdInfo,
                 ReadOnlySpan<byte> cmdSpan,
                 int luaArgCount
             )
@@ -3019,8 +3014,8 @@ namespace Garnet.server
                 var providedRespArgCount = luaArgCount - 1;
 
                 // Figure out what the RESP command array should look like
-                var minRespArgCount = Math.Abs(cmdArity) - 1;
-                var maxRespArgCount = cmdArity < 0 ? int.MaxValue : cmdArity - 1;
+                var minRespArgCount = Math.Abs(cmdInfo.Arity) - 1;
+                var maxRespArgCount = cmdInfo.Arity < 0 ? int.MaxValue : cmdInfo.Arity - 1;
                 var actualRespArgCount = Math.Min(Math.Max(providedRespArgCount, minRespArgCount), maxRespArgCount);
 
                 // RESP format the args so we can parse the command (and sub-command, and maybe keys down the line?)
