@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using CommandLine;
 using Tsavorite.core;
@@ -13,7 +14,8 @@ namespace Tsavorite.benchmark
             HelpText = "Benchmark to run:" +
                         "\n    0 = YCSB" +
                         "\n    1 = YCSB with SpanByte" +
-                        "\n    2 = ConcurrentDictionary")]
+                        "\n    2 = ConcurrentDictionary " +
+                        "\n    3 = TsavoriteLog")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
@@ -105,6 +107,130 @@ namespace Tsavorite.benchmark
         [Option("dumpdist", Required = false, Default = false,
             HelpText = "Dump the distribution of each non-empty bucket in the hash table")]
         public bool DumpDistribution { get; set; }
+
+        [Option("aof-memory", Required = false, Default = "64m", HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit")]
+        public string AofMemorySize { get; set; }
+
+        [Option("aof-page-size", Required = false, Default = "4m", HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        public string AofPageSize { get; set; }
+
+        [Option("aof-null-device", Required = false, Default = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        public bool UseAofNullDevice { get; set; }
+
+        [Option("aof-commit-freq", Required = false, Default = 0, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
+        public int CommitFrequencyMs { get; set; }
+
+        [Option('c', "checkpointdir", Required = false, HelpText = "Storage directory for checkpoints. Uses logdir if unspecified.")]
+        public string CheckpointDir { get; set; }
+
+        /// <summary>
+        /// Get AOF memory size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int AofMemorySizeBits()
+        {
+            var size = ParseSize(AofMemorySize, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Get AOF Page size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int AofPageSizeBits()
+        {
+            var size = ParseSize(AofPageSize, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Parse size from string specification
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="bytesRead"></param>
+        /// <returns></returns>
+        public static long ParseSize(string value, out int bytesRead)
+        {
+            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            long result = 0;
+            bytesRead = 0;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var c = value[i];
+                if (char.IsDigit(c))
+                {
+                    result = (result * 10) + (byte)c - '0';
+                    bytesRead++;
+                }
+                else
+                {
+                    for (var s = 0; s < suffix.Length; s++)
+                    {
+                        if (char.ToLower(c) == suffix[s])
+                        {
+                            result *= (long)Math.Pow(1024, s + 1);
+                            bytesRead++;
+
+                            if (i + 1 < value.Length && char.ToLower(value[i + 1]) == 'b')
+                                bytesRead++;
+
+                            return result;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Previous power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static long PreviousPowerOf2(long v)
+        {
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v - (v >> 1);
+        }
+
+        /// <summary>
+        /// Instance of interface to create named device factories
+        /// </summary>
+        INamedDeviceFactoryCreator DeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator();
+
+        /// <summary>
+        /// Get device for AOF
+        /// </summary>
+        /// <returns></returns>
+        public IDevice GetAofDevice()
+        {
+            if (UseAofNullDevice) return new NullDevice();
+
+            return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                .Get(new FileDescriptor("AOF", "aof.log"));
+        }
+
+        /// <summary>
+        /// Gets a new instance of device factory initialized with the supplied baseName.
+        /// </summary>
+        /// <param name="baseName"></param>
+        /// <returns></returns>
+        public INamedDeviceFactory GetInitializedDeviceFactory(string baseName)
+        {
+            return DeviceFactoryCreator.Create(baseName);
+        }
+
+        /// <summary>
+        /// Gets the base directory for storing AOF commits
+        /// </summary>
+        public string AppendOnlyFileBaseDirectory => CheckpointDir ?? string.Empty;
 
         internal CheckpointType PeriodicCheckpointType => PeriodicCheckpointUseSnapshot ? CheckpointType.Snapshot : CheckpointType.FoldOver;
 

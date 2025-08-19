@@ -101,6 +101,8 @@ namespace Tsavorite.benchmark
 
         internal static string GetTotalOpsString(long totalOps, double seconds) => $"Total {totalOps:N0} ops done in {seconds:N3} seconds";
 
+        internal static string GetBandwidthString(double MiBperSecond) => $"Total bandwidth {MiBperSecond:N3} MiB/s";
+
         internal static string GetLoadingTimeLine(double insertsPerSec, long elapsedMs)
             => $"##00; {InsPerSec}: {insertsPerSec:N2}; sec: {(double)elapsedMs / 1000:N3}";
 

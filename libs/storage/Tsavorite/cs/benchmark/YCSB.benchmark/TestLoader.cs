@@ -118,6 +118,10 @@ namespace Tsavorite.benchmark
                     ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
                     LoadData(this, init_keys, txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());
                     break;
+                case BenchmarkType.TsavoriteLog:
+                    TsavoriteLogFixedLenYcsbBenchmark.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
+                    LoadData(this, init_span_keys, txn_span_keys, new TsavoriteLogFixedLenYcsbBenchmark.KeySetter());
+                    break;
                 default:
                     throw new ApplicationException("Unknown benchmark type");
             }

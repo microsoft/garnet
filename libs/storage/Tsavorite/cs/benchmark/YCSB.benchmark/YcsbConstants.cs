@@ -9,7 +9,8 @@ namespace Tsavorite.benchmark
     {
         Ycsb = 0,
         SpanByte,
-        ConcurrentDictionaryYcsb
+        ConcurrentDictionaryYcsb,
+        TsavoriteLog
     };
 
     enum AddressLineNum : int

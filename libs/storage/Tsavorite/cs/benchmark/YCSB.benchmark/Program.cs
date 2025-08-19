@@ -49,6 +49,13 @@ namespace Tsavorite.benchmark
                             tester.Dispose();
                         }
                         break;
+                    case BenchmarkType.TsavoriteLog:
+                        {
+                            var tester = new TsavoriteLogFixedLenYcsbBenchmark(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
+                            testStats.AddResult(tester.Run());
+                            tester.Dispose();
+                        }
+                        break;
                     default:
                         throw new ApplicationException("Unknown benchmark type");
                 }
