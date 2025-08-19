@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "3.8.1",
-    "@docusaurus/types": "3.5.2"
+    "@docusaurus/types": "3.8.1"
   },
   "overrides": {
     "webpack-dev-server": "^5.2.1",
