@@ -2825,7 +2825,7 @@ namespace Garnet.server
             // any arguments
 
             var cmdStr = Encoding.UTF8.GetString(cmdSpan);
-            if (!RespCommandsInfo.TryGetRespCommandInfo(cmdStr, out var info))
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmdStr, out var info, externalOnly: false, includeSubCommands: true))
             {
                 return LuaWrappedError(1, constStrs.ErrInvalidCommand);
             }
@@ -2941,8 +2941,7 @@ namespace Garnet.server
                             return LuaWrappedError(1, constStrs.OutOfMemory);
                         }
 
-                        var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession,
-                            scratchBufferBuilder, subCommand, cmdSpan, luaArgCount: 2);
+                        var (parsedCmd, badArg) = PrepareAndCheckRespRequest(ref state, respServerSession, scratchBufferBuilder, subCommand, cmdSpan, luaArgCount: 2);
 
                         // Remove the extra sub-command
                         state.Pop(1);
@@ -3015,7 +3014,7 @@ namespace Garnet.server
 
                 // Figure out what the RESP command array should look like
                 var minRespArgCount = Math.Abs(cmdInfo.Arity) - 1;
-                var maxRespArgCount = cmdInfo.Arity < 0 ? int.MaxValue : cmdInfo.Arity - 1;
+                var maxRespArgCount = cmdInfo.Arity < 0 ? int.MaxValue : (cmdInfo.Arity - 1);
                 var actualRespArgCount = Math.Min(Math.Max(providedRespArgCount, minRespArgCount), maxRespArgCount);
 
                 // RESP format the args so we can parse the command (and sub-command, and maybe keys down the line?)

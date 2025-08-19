@@ -99,7 +99,7 @@ namespace Garnet.server
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
             // Normalize will turn internal "not-real commands" such as SETEXNX, and SETEXXX to the command info parent
             cmd = cmd.NormalizeForACLs();
-            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo, logger: logger) || !cmdInfo.AllowedInTxn)
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var commandInfo, logger: logger) || !commandInfo.AllowedInTxn)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
@@ -110,8 +110,8 @@ namespace Garnet.server
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
             var count = parseState.Count;
-            var arity = cmdInfo.Arity > 0 ? cmdInfo.Arity - 1 : cmdInfo.Arity + 1;
-            if (cmdInfo.IsParent)
+            var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
+            if (commandInfo.IsParent)
                 arity = arity > 0 ? arity - 1 : arity + 1;
             var invalidNumArgs = arity > 0 ? count != arity : count < -arity;
 
@@ -133,8 +133,7 @@ namespace Garnet.server
 
                 if (invalidNumArgs)
                 {
-                    var cmdName = cmd.ToString().Replace('_', '|');
-                    var err = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName);
+                    var err = string.Format(CmdStrings.GenericErrWrongNumArgs, RespCommandsInfo.GetRespCommandName(cmd));
                     while (!RespWriteUtils.TryWriteError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();

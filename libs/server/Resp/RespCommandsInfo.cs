@@ -123,6 +123,7 @@ namespace Garnet.server
         public RespCommandsInfo Parent { get; set; }
 
         private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
+        private const string UnknownCommandName = "UNKNOWN";
 
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
@@ -346,28 +347,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets command's simplified info
-        /// </summary>
-        /// <param name="cmd">Resp command</param>
-        /// <param name="cmdInfo">Arity</param>
-        /// <param name="logger">Logger</param>
-        /// <returns>True if valid command</returns>
-        public static bool TryGetSimpleRespCommandInfo(RespCommand cmd, out SimpleRespCommandInfo cmdInfo, ILogger logger = null)
-        {
-            cmdInfo = SimpleRespCommandInfo.Default;
-
-            if (!IsInitialized && !TryInitialize(logger))
-                return false;
-
-            var cmdId = (ushort)cmd;
-            if (cmdId > SimpleRespCommandsInfo.Length)
-                return false;
-
-            cmdInfo = SimpleRespCommandsInfo[cmdId];
-            return true;
-        }
-
-        /// <summary>
         /// Gets command info by RespCommand enum and sub-command byte, if applicable
         /// </summary>
         /// <param name="cmd">The RespCommand enum</param>
@@ -427,6 +406,37 @@ namespace Garnet.server
             respSubCommandsInfo = externalOnly ? ExternalRespSubCommandsInfo : AllRespSubCommandsInfo;
             return true;
         }
+
+        /// <summary>
+        /// Gets command's simplified info
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="cmdInfo">Arity</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if valid command</returns>
+        public static bool TryGetSimpleRespCommandInfo(RespCommand cmd, out SimpleRespCommandInfo cmdInfo, ILogger logger = null)
+        {
+            cmdInfo = SimpleRespCommandInfo.Default;
+
+            if (!IsInitialized && !TryInitialize(logger))
+                return false;
+
+            var cmdId = (ushort)cmd;
+            if (cmdId > SimpleRespCommandsInfo.Length)
+                return false;
+
+            cmdInfo = SimpleRespCommandsInfo[cmdId];
+            return true;
+        }
+
+        /// <summary>
+        /// Gets command's name
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Command name</returns>
+        public static string GetRespCommandName(RespCommand cmd, ILogger logger = null)
+            => TryGetRespCommandInfo(cmd, out var commandInfo, logger: logger) ? commandInfo.Name : UnknownCommandName;
 
         /// <summary>
         /// Serializes the current object to RESP format

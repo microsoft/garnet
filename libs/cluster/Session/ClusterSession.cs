@@ -104,10 +104,7 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var cmdName = commandInfo != null || RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo)
-                            ? commandInfo.Name
-                            : "unknown";
-
+                    var cmdName = commandInfo?.Name ?? RespCommandsInfo.GetRespCommandName(command);
                     var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName);
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
