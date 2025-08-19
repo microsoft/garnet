@@ -356,7 +356,7 @@ namespace Garnet.server
         {
             cmdInfo = SimpleRespCommandInfo.Default;
 
-            if (!IsInitialized && !TryInitialize(logger)) 
+            if (!IsInitialized && !TryInitialize(logger))
                 return false;
 
             var cmdId = (ushort)cmd;
