@@ -89,12 +89,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Sort the passed key array for use in <see cref="ILockableContext{TKey}.Lock{TLockableKey}(TLockableKey[])"/>
-        /// and <see cref="ILockableContext{TKey}.Unlock{TLockableKey}(TLockableKey[])"/>
+        /// Sort the passed key array for use in <see cref="ILockableContext{TKey}.Lock"/>
+        /// and <see cref="ILockableContext{TKey}.Unlock"/>
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="context"></param>
-        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortKeyHashes(keys);
+        public static void Sort(FixedLengthLockableKeyStruct<TKey>[] keys, ILockableContext<TKey> context) => context.SortKeyHashes<FixedLengthLockableKeyStruct<TKey>>(keys);
 
         /// <inheritdoc/>
         public override string ToString()
