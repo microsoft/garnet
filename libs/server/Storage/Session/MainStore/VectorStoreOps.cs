@@ -57,7 +57,6 @@ namespace Garnet.server
             tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
 
-                // TODO: ew, allocs
                 if (!lockableContext.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
@@ -125,7 +124,6 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                // TODO: allocs, ew
                 if (!lockableContext.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
@@ -182,7 +180,6 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                // TODO: allocs, ew
                 if (!lockableContext.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
@@ -221,8 +218,10 @@ namespace Garnet.server
             }
         }
 
-        /// <inheritdoc/>
-        public GarnetStatus VectorEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        /// <summary>
+        /// Get the approximate vector associated with an element, after (approximately) reversing any transformation.
+        /// </summary>
+        public GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -236,7 +235,6 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                // TODO: allocs, ew
                 if (!lockableContext.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
@@ -263,6 +261,59 @@ namespace Garnet.server
                     {
                         return GarnetStatus.NOTFOUND;
                     }
+
+                    return GarnetStatus.OK;
+                }
+                finally
+                {
+                    lockableContext.Unlock([vectorLockEntry]);
+                }
+            }
+            finally
+            {
+                lockableContext.EndLockable();
+            }
+        }
+
+        internal GarnetStatus VectorSetDimensions(SpanByte key, out int dimensions)
+        {
+            // Need to lock to prevent the index from being dropped while we read against it
+            //
+            // Note that this does not block adding vectors to the set, as that can also be done under
+            // a shared lock
+            lockableContext.BeginLockable();
+            try
+            {
+                TxnKeyEntry vectorLockEntry = new();
+                vectorLockEntry.isObject = false;
+                vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
+                vectorLockEntry.lockType = LockType.Shared;
+
+                if (!lockableContext.TryLock([vectorLockEntry]))
+                {
+                    throw new GarnetException("Couldn't acquire shared lock on Vector Set");
+                }
+
+                try
+                {
+                    parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+
+                    var input = new RawStringInput(RespCommand.VDIM, ref parseState);
+
+                    Span<byte> resSpan = stackalloc byte[128];
+                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    if (readRes != GarnetStatus.OK)
+                    {
+                        dimensions = 0;
+                        return readRes;
+                    }
+
+                    // After a successful read we add the vector while holding a shared lock
+                    // That lock prevents deletion, but everything else can proceed in parallel
+                    VectorManager.ReadIndex(indexConfig.AsReadOnlySpan(), out _, out _, out var dimensionsUS, out _, out _, out _, out _);
+                    dimensions = (int)dimensionsUS;
 
                     return GarnetStatus.OK;
                 }

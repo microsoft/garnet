@@ -239,6 +239,9 @@ namespace Garnet.server
             return ret;
         }
 
+        /// <summary>
+        /// For testing purposes.
+        /// </summary>
         public ulong HighestContext()
         => nextContextValue;
 

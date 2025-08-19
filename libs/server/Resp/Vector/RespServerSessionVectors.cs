@@ -742,7 +742,7 @@ namespace Garnet.server
 
             try
             {
-                var res = storageApi.VectorEmbedding(key, elem, ref distanceResult);
+                var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
 
                 if (res == GarnetStatus.OK)
                 {
@@ -788,10 +788,28 @@ namespace Garnet.server
         private bool NetworkVDIM<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // TODO: implement!
+            if (parseState.Count != 1)
+                return AbortWithWrongNumberOfArguments("VDIM");
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+
+            var res = storageApi.VectorSetDimensions(key, out var dimensions);
+
+            if(res == GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR Key not found"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else if(res == GarnetStatus.WRONGTYPE)
+            {
+                while (!RespWriteUtils.TryWriteError("ERR Not a Vector Set"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteInt32(dimensions, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }

@@ -1228,7 +1228,14 @@ namespace Garnet.server
         /// <summary>
         /// Fetch the embedding of a given element in a Vector set.
         /// </summary>
-        GarnetStatus VectorEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances);
+        GarnetStatus VectorSetEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances);
+
+        /// <summary>
+        /// Fetch the dimensionality of the given Vector Set.
+        /// 
+        /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
+        /// </summary>
+        GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions);
 
         #endregion
     }

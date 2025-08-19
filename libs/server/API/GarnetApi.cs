@@ -534,8 +534,12 @@ namespace Garnet.server
         => storageSession.VectorSetElementSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
 
         /// <inheritdoc/>
-        public unsafe GarnetStatus VectorEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
-        => storageSession.VectorEmbedding(SpanByte.FromPinnedPointer(key.ptr, key.length), element, ref outputDistances);
+        public unsafe GarnetStatus VectorSetEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        => storageSession.VectorSetEmbedding(SpanByte.FromPinnedPointer(key.ptr, key.length), element, ref outputDistances);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions)
+        => storageSession.VectorSetDimensions(SpanByte.FromPinnedPointer(key.ptr, key.length), out dimensions);
 
         #endregion
     }

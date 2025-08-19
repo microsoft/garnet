@@ -163,6 +163,28 @@ namespace Garnet.test
             // TODO: WITHATTRIBS
         }
 
+        [Test]
+        public void VDIM()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VDIM", "foo");
+            ClassicAssert.AreEqual(3, (int)res2);
+
+            var res3 = db.Execute("VADD", ["bar", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            var res4 = db.Execute("VDIM", "bar");
+            ClassicAssert.AreEqual(4, (int)4);
+
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", "fizz"));
+            ClassicAssert.IsTrue(exc.Message.Contains("Key not found"));
+        }
+
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
         private static extern ref VectorManager GetVectorManager(GarnetServer server);
     }
