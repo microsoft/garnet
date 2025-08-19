@@ -776,7 +776,7 @@ namespace Garnet.test
                 LoggingFrequency = loggingFrequencySecs,
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
-                ReplicaSyncTimeout = replicaSyncTimeout,
+                ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
             };
 
             if (lowMemory)

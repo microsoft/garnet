@@ -66,15 +66,12 @@ namespace Garnet.test.cluster
         ClusterTestContext context;
         readonly string authPassword = null;
         readonly int defaultShards = 3;
-        readonly Dictionary<string, LogLevel> authenticationTests = new()
-        {
-            {"ClusterSimpleMigrateWithAuth", LogLevel.Error }
-        };
 
         readonly Dictionary<string, LogLevel> monitorTests = new()
         {
             {"ClusterTLSSlotChangeStatus", LogLevel.Error },
-            {"ClusterMigrateSlotWalk", LogLevel.Warning }
+            {"ClusterMigrateSlotWalk", LogLevel.Warning },
+            {"ClusterMigrateDataSlotsRange", LogLevel.Warning }
         };
 
         public TextWriter logTextWriter = TestContext.Progress;
@@ -1618,8 +1615,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForMigrationCleanup(srcNodeIndex, logger: context.logger);
             srcDBsize = context.clusterTestUtils.DBSize(srcNodeIndex, context.logger);
             dstDBsize = context.clusterTestUtils.DBSize(dstNodeIndex, context.logger);
-            ClassicAssert.AreEqual(0, srcDBsize);
-            ClassicAssert.AreEqual(keyCount, dstDBsize);
+            ClassicAssert.AreEqual(0, srcDBsize, $"{srcDBsize} > {dstDBsize}");
+            ClassicAssert.AreEqual(keyCount, dstDBsize, $"{srcDBsize} > {dstDBsize}");
 
             foreach (var key in keys)
             {
