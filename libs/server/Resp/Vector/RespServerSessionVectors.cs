@@ -104,48 +104,76 @@ namespace Garnet.server
                 var element = parseState.GetArgSliceByRef(curIx);
                 curIx++;
 
-                if (curIx < parseState.Count)
+                // Order for everything after element is unspecified
+                var cas = false;
+                VectorQuantType? quantType = null;
+                int? buildExplorationFactor = null;
+                ArgSlice? attributes = null;
+                int? numLinks = null;
+
+                while (curIx < parseState.Count)
                 {
+                    // Look for CAS
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("CAS"u8))
                     {
-                        // We ignore CAS
-                        curIx++;
-                    }
-                }
+                        if (cas)
+                        {
+                            return AbortWithErrorMessage("CAS specified multiple times");
+                        }
 
-                VectorQuantType quantType;
-                if (curIx < parseState.Count)
-                {
+                        // We ignore CAS, just remember we saw it
+                        cas = true;
+                        curIx++;
+
+                        continue;
+                    }
+
+                    // Look for quantizer specs
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8))
                     {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
                         quantType = VectorQuantType.NoQuant;
                         curIx++;
+
+                        continue;
                     }
                     else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("Q8"u8))
                     {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
                         quantType = VectorQuantType.Q8;
                         curIx++;
+
+                        continue;
                     }
                     else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("BIN"u8))
                     {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
                         quantType = VectorQuantType.Bin;
                         curIx++;
-                    }
-                    else
-                    {
-                        return AbortWithErrorMessage("Unrecogized quantization"u8);
-                    }
-                }
-                else
-                {
-                    quantType = VectorQuantType.Invalid;
-                }
 
-                var buildExplorationFactor = 0;
-                if (curIx < parseState.Count)
-                {
+                        continue;
+                    }
+
+                    // Look for build-exploration-factor
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("EF"u8))
                     {
+                        if (buildExplorationFactor != null)
+                        {
+                            return AbortWithErrorMessage("EF specified multiple times");
+                        }
+
                         curIx++;
 
                         if (curIx >= parseState.Count)
@@ -153,20 +181,24 @@ namespace Garnet.server
                             return AbortWithWrongNumberOfArguments("VADD");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out buildExplorationFactor) || buildExplorationFactor <= 0)
+                        if (!parseState.TryGetInt(curIx, out var buildExplorationFactorNonNull) || buildExplorationFactorNonNull <= 0)
                         {
                             return AbortWithErrorMessage("EF must be > 0");
                         }
 
+                        buildExplorationFactor = buildExplorationFactorNonNull;
                         curIx++;
+                        continue;
                     }
-                }
 
-                ArgSlice attributes = default;
-                if (curIx < parseState.Count)
-                {
+                    // Look for attributes
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("SETATTR"u8))
                     {
+                        if (attributes != null)
+                        {
+                            return AbortWithErrorMessage("SETATTR specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
@@ -177,35 +209,46 @@ namespace Garnet.server
                         curIx++;
 
                         // TODO: Validate attributes
-                    }
-                }
 
-                var numLinks = 0;
-                if (curIx < parseState.Count)
-                {
+                        continue;
+                    }
+
+                    // Look for num links
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("M"u8))
                     {
+                        if (numLinks != null)
+                        {
+                            return AbortWithErrorMessage("M specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VADD");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out numLinks) || numLinks <= 0)
+                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull <= 0)
                         {
                             return AbortWithErrorMessage("M must be > 0");
                         }
 
+                        numLinks = numLinksNonNull;
                         curIx++;
+
+                        continue;
                     }
+
+                    // Didn't recognize this option, error out
+                    return AbortWithErrorMessage("Unknown option");
                 }
 
-                if (parseState.Count != curIx)
-                {
-                    return AbortWithWrongNumberOfArguments("VADD");
-                }
+                // Default unspecified options
+                quantType ??= VectorQuantType.Q8;
+                buildExplorationFactor ??= 200;
+                attributes ??= default;
+                numLinks ??= 16;
 
-                var res = storageApi.VectorSetAdd(key, reduceDim, values, element, quantType, buildExplorationFactor, attributes, numLinks, out var result);
+                var res = storageApi.VectorSetAdd(key, reduceDim, values, element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out var result);
 
                 if (res == GarnetStatus.OK)
                 {
@@ -347,142 +390,202 @@ namespace Garnet.server
                     }
                 }
 
-                var withScores = false;
-                if (curIx < parseState.Count)
+                bool? withScores = null;
+                bool? withAttributes = null;
+                int? count = null;
+                float? delta = null;
+                int? searchExplorationFactor = null;
+                ArgSlice? filter = null;
+                int? maxFilteringEffort = null;
+                var truth = false;
+                var noThread = false;
+
+                while (curIx < parseState.Count)
                 {
+                    // Check for withScores
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
                     {
+                        if (withScores != null)
+                        {
+                            return AbortWithErrorMessage("WITHSCORES specified multiple times");
+                        }
+
                         withScores = true;
                         curIx++;
+                        continue;
                     }
-                }
 
-                var withAttributes = false;
-                if (curIx < parseState.Count)
-                {
+                    // Check for withAttributes
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("WITHATTRIBS"u8))
                     {
+                        if (withAttributes != null)
+                        {
+                            return AbortWithErrorMessage("WITHATTRIBS specified multiple times");
+                        }
+
                         withAttributes = true;
                         curIx++;
+                        continue;
                     }
-                }
 
-                var count = 0;
-                if (curIx < parseState.Count)
-                {
+                    // Check for count
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
                     {
+                        if (count != null)
+                        {
+                            return AbortWithErrorMessage("COUNT specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out count) || count < 0)
+                        if (!parseState.TryGetInt(curIx, out var countNonNull) || countNonNull < 0)
                         {
                             return AbortWithErrorMessage("COUNT must be integer >= 0");
                         }
-                        curIx++;
-                    }
-                }
 
-                var delta = 0f;
-                if (curIx < parseState.Count)
-                {
+                        count = countNonNull;
+                        curIx++;
+                        continue;
+                    }
+
+                    // Check for delta
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("EPSILON"u8))
                     {
+                        if (delta != null)
+                        {
+                            return AbortWithErrorMessage("EPSILON specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetFloat(curIx, out delta) || delta <= 0)
+                        if (!parseState.TryGetFloat(curIx, out var deltaNonNull) || deltaNonNull <= 0)
                         {
                             return AbortWithErrorMessage("EPSILON must be float > 0");
                         }
-                        curIx++;
-                    }
-                }
 
-                var searchExplorationFactor = 0;
-                if (curIx < parseState.Count)
-                {
+                        delta = deltaNonNull;
+                        curIx++;
+                        continue;
+                    }
+
+                    // Check for search exploration factor
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("EF"u8))
                     {
+                        if (searchExplorationFactor != null)
+                        {
+                            return AbortWithErrorMessage("EF specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out searchExplorationFactor) || searchExplorationFactor < 0)
+                        if (!parseState.TryGetInt(curIx, out var searchExplorationFactorNonNull) || searchExplorationFactorNonNull < 0)
                         {
                             return AbortWithErrorMessage("EF must be >= 0");
                         }
-                        curIx++;
-                    }
-                }
 
-                ReadOnlySpan<byte> filter = default;
-                if (curIx < parseState.Count)
-                {
+                        searchExplorationFactor = searchExplorationFactorNonNull;
+                        curIx++;
+                        continue;
+                    }
+
+                    // Check for filter
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("FILTER"u8))
                     {
+                        if (filter != null)
+                        {
+                            return AbortWithErrorMessage("FILTER specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        filter = parseState.GetArgSliceByRef(curIx).ReadOnlySpan;
+                        filter = parseState.GetArgSliceByRef(curIx);
                         curIx++;
 
                         // TODO: validate filter
-                    }
-                }
 
-                var maxFilteringEffort = 0;
-                if (curIx < parseState.Count)
-                {
+                        continue;
+                    }
+
+                    // Check for max filtering effort
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("FILTER-EF"u8))
                     {
+                        if (maxFilteringEffort != null)
+                        {
+                            return AbortWithErrorMessage("FILTER-EF specified multiple times");
+                        }
+
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out maxFilteringEffort) || maxFilteringEffort < 0)
+                        if (!parseState.TryGetInt(curIx, out var maxFilteringEffortNonNull) || maxFilteringEffortNonNull < 0)
                         {
                             return AbortWithErrorMessage("FILTER-EF must be >= 0");
                         }
-                        curIx++;
-                    }
-                }
 
-                if (curIx < parseState.Count)
-                {
+                        maxFilteringEffort = maxFilteringEffortNonNull;
+                        curIx++;
+                        continue;
+                    }
+
+                    // Check for truth
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("TRUTH"u8))
                     {
-                        // TODO: should we implement TRUTH?
-                        curIx++;
-                    }
-                }
+                        if (truth)
+                        {
 
-                if (curIx < parseState.Count)
-                {
+                        }
+
+                        // TODO: should we implement TRUTH?
+                        truth = true;
+                        curIx++;
+                        continue;
+                    }
+
+                    // Check for no thread
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("NOTHREAD"u8))
                     {
+                        if (noThread)
+                        {
+                            return AbortWithErrorMessage("NOTHREAD specified multiple times");
+                        }
+
                         // We ignore NOTHREAD
+                        noThread = true;
                         curIx++;
+                        continue;
                     }
+
+                    // Didn't recognize this option, error out
+                    return AbortWithErrorMessage("Unknown option");
                 }
 
-                if (curIx != parseState.Count)
-                {
-                    return AbortWithWrongNumberOfArguments("VSIM");
-                }
+                // Default unspecified options
+                withScores ??= false;
+                withAttributes ??= false;
+                count ??= 10;
+                delta ??= 2f;
+                searchExplorationFactor ??= 100;
+                filter ??= default;
+                maxFilteringEffort ??= count.Value * 100;
 
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];
                 Span<float> distanceSpace = stackalloc float[DefaultResultSetSize];
@@ -496,11 +599,11 @@ namespace Garnet.server
                     VectorManagerResult vectorRes;
                     if (element.IsEmpty)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref idResult, ref distanceResult, out vectorRes);
+                        res = storageApi.VectorSetValueSimilarity(key, values, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, ref idResult, ref distanceResult, out vectorRes);
                     }
                     else
                     {
-                        res = storageApi.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref idResult, ref distanceResult, out vectorRes);
+                        res = storageApi.VectorSetElementSimilarity(key, element, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, ref idResult, ref distanceResult, out vectorRes);
                     }
 
                     if (res == GarnetStatus.NOTFOUND)
@@ -531,11 +634,11 @@ namespace Garnet.server
                                 var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
 
                                 var arrayItemCount = distancesSpan.Length;
-                                if (withScores)
+                                if (withScores.Value)
                                 {
                                     arrayItemCount += distancesSpan.Length;
                                 }
-                                if (withAttributes)
+                                if (withAttributes.Value)
                                 {
                                     throw new NotImplementedException();
                                 }
@@ -552,7 +655,7 @@ namespace Garnet.server
                                     while (!RespWriteUtils.TryWriteBulkString(elementData, ref dcurr, dend))
                                         SendAndReset();
 
-                                    if (withScores)
+                                    if (withScores.Value)
                                     {
                                         var distance = distancesSpan[resultIndex];
 
@@ -560,7 +663,7 @@ namespace Garnet.server
                                             SendAndReset();
                                     }
 
-                                    if (withAttributes)
+                                    if (withAttributes.Value)
                                     {
                                         throw new NotImplementedException();
                                     }
