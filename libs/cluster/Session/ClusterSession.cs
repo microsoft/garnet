@@ -75,7 +75,6 @@ namespace Garnet.cluster
             this.dend = dend;
             this.parseState = parseState;
             var invalidParameters = false;
-            string respCommandName = default;
 
             try
             {
@@ -90,14 +89,6 @@ namespace Garnet.cluster
                     }
 
                     ProcessClusterCommands(command, out invalidParameters);
-
-                    if (invalidParameters)
-                    {
-                        // Have to lookup the RESP name now that we're in the failure case
-                        respCommandName = RespCommandsInfo.TryGetRespCommandInfo(command, out var info)
-                            ? info.Name.ToLowerInvariant()
-                            : "unknown";
-                    }
                 }
                 else
                 {
@@ -112,8 +103,7 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        respCommandName ?? command.ToString());
+                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, command.GetCommandName());
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
                 }

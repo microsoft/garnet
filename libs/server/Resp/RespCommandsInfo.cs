@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text.Json.Serialization;
@@ -14,6 +15,29 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
+    public struct SimpleRespCommandInfo
+    {
+        /// <summary>
+        /// Command Arity
+        /// </summary>
+        public sbyte Arity;
+
+        /// <summary>
+        /// If command is allowed in a transaction context
+        /// </summary>
+        public bool AllowedInTxn;
+
+        /// <summary>
+        /// If command has sub-commands
+        /// </summary>
+        public bool IsParent;
+
+        /// <summary>
+        /// Default SimpleRespCommandInfo
+        /// </summary>
+        public static SimpleRespCommandInfo Default = new();
+    }
+
     /// <summary>
     /// Represents a RESP command's information
     /// </summary>
@@ -107,6 +131,7 @@ namespace Garnet.server
         private static IReadOnlySet<string> AllRespCommandNames = null;
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
         private static IReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>> AclCommandInfo = null;
+        private static SimpleRespCommandInfo[] SimpleRespCommandsInfo = null;
 
         private static RespCommandsInfo[] FastBasicRespCommandsInfo = null;
 
@@ -154,6 +179,25 @@ namespace Garnet.server
                 }
             }
 
+            var tmpSimpleRespCommandInfo = new SimpleRespCommandInfo[(int)RespCommandExtensions.LastValidCommand + 1];
+            for (var cmdId = (int)RespCommandExtensions.FirstReadCommand; cmdId < tmpSimpleRespCommandInfo.Length; cmdId++)
+            {
+                if (!tmpFlattenedRespCommandsInfo.TryGetValue((RespCommand)cmdId, out var cmdInfo))
+                {
+                    tmpSimpleRespCommandInfo[cmdId] = SimpleRespCommandInfo.Default;
+                    continue;
+                }
+
+                var arity = cmdInfo.Arity;
+
+                // Verify that arity is in the signed byte range (-128 to 127)
+                Debug.Assert((arity > 0 && arity < sbyte.MaxValue) || (arity < 0 && arity > sbyte.MinValue));
+
+                tmpSimpleRespCommandInfo[cmdId].Arity = (sbyte)arity;
+                tmpSimpleRespCommandInfo[cmdId].AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
+                tmpSimpleRespCommandInfo[cmdId].IsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
+            }
+
             var tmpAllSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             var tmpExternalSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in tmpAllRespCommandsInfo)
@@ -177,6 +221,7 @@ namespace Garnet.server
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. AllRespCommandsInfo.Keys]);
             ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. ExternalRespCommandsInfo.Keys]);
             FlattenedRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpFlattenedRespCommandsInfo);
+            SimpleRespCommandsInfo = tmpSimpleRespCommandInfo;
 
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
@@ -295,6 +340,48 @@ namespace Garnet.server
                      && cmdsInfo.TryGetValue(cmdName, out respCommandsInfo)) ||
                     ((includeSubCommands && TryGetRespSubCommandsInfo(out var subCmdsInfo, externalOnly, logger))
                      && subCmdsInfo.TryGetValue(cmdName, out respCommandsInfo)));
+        }
+
+        /// <summary>
+        /// Gets command's simplified info
+        /// </summary>
+        /// <param name="cmdName">Command name</param>
+        /// <param name="cmdInfo">Arity</param>
+        /// <param name="cmd">Parsed command</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if valid command</returns>
+        public static bool TryGetSimpleRespCommandInfo(string cmdName, out SimpleRespCommandInfo cmdInfo, out RespCommand cmd,
+            ILogger logger = null)
+        {
+            cmdInfo = SimpleRespCommandInfo.Default;
+
+            if (!RespCommandExtensions.TryParseCommand(cmdName, out cmd) ||
+                !TryGetSimpleRespCommandInfo(cmd, out cmdInfo, logger))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Gets command's simplified info
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="cmdInfo">Arity</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if valid command</returns>
+        public static bool TryGetSimpleRespCommandInfo(RespCommand cmd, out SimpleRespCommandInfo cmdInfo, ILogger logger = null)
+        {
+            cmdInfo = SimpleRespCommandInfo.Default;
+
+            if (!IsInitialized && !TryInitialize(logger)) 
+                return false;
+
+            var cmdId = (ushort)cmd;
+            if (cmdId > SimpleRespCommandsInfo.Length)
+                return false;
+
+            cmdInfo = SimpleRespCommandsInfo[cmdId];
+            return true;
         }
 
         /// <summary>

@@ -626,6 +626,18 @@ namespace Garnet.server
             bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
+
+        /// <summary>
+        /// Returns command name
+        /// </summary>
+        public static string GetCommandName(this RespCommand cmd) => 
+            cmd.ToString().Replace('_', '|').ToLowerInvariant();
+
+        /// <summary>
+        /// Try to parse a RespCommand from command name
+        /// </summary>
+        public static bool TryParseCommand(string name, out RespCommand cmd) =>
+            Enum.TryParse(name.Replace('|', '_'), true, out cmd);
     }
 
     /// <summary>
