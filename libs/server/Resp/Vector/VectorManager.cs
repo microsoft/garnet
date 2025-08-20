@@ -302,9 +302,7 @@ namespace Garnet.server
                 var keySpan = SpanByte.FromPinnedSpan(distinctKey);
                 VectorInput input = new();
                 var valueSpan = SpanByte.FromPinnedSpan(value);
-
-                Span<byte> output = stackalloc byte[1];
-                var outputSpan = SpanByte.FromPinnedSpan(output);
+                SpanByte outputSpan = default;
 
                 var status = ctx.Upsert(ref keySpan, ref input, ref valueSpan, ref outputSpan);
                 if (status.IsPending)
