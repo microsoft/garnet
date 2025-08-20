@@ -422,7 +422,7 @@ namespace Garnet.server
                 return false;
 
             var cmdId = (ushort)cmd;
-            if (cmdId > SimpleRespCommandsInfo.Length)
+            if (cmdId >= SimpleRespCommandsInfo.Length)
                 return false;
 
             cmdInfo = SimpleRespCommandsInfo[cmdId];
