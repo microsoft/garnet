@@ -7513,8 +7513,15 @@ namespace Garnet.test.Resp.ACL
             {
                 // TODO: this is a placeholder implementation
 
-                string val = await client.ExecuteForStringResultAsync("VDIM", ["foo"]);
-                ClassicAssert.AreEqual("OK", val);
+                try
+                {
+                    _ = await client.ExecuteForStringResultAsync("VDIM", ["foo"]);
+                    ClassicAssert.Fail("Shouldn't be reachable");
+                }
+                catch(Exception e) when (e.Message.Equals("ERR Key not found"))
+                {
+                    // Excepted
+                }
             }
         }
 
