@@ -179,10 +179,32 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = db.Execute("VDIM", "bar");
-            ClassicAssert.AreEqual(4, (int)4);
+            ClassicAssert.AreEqual(4, (int)res4);
 
             var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", "fizz"));
             ClassicAssert.IsTrue(exc.Message.Contains("Key not found"));
+        }
+
+        [Test]
+        public void DeleteVectorSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.KeyDelete("foo");
+            ClassicAssert.IsTrue(res2);
+
+            var res3 = db.Execute("VADD", ["fizz", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            var res4 = db.StringSet("buzz", "abc");
+            ClassicAssert.IsTrue(res4);
+
+            var res5 = db.KeyDelete(["fizz", "buzz"]);
+            ClassicAssert.AreEqual(2, res5);
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]

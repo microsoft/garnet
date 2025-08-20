@@ -13,6 +13,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
+            if (recordInfo.Hidden)
+            {
+                // Implies this is a vector set, needs special handling
+                deleteInfo.Action = DeleteAction.CancelOperation;
+                return false;
+            }
+
             recordInfo.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
@@ -28,6 +35,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
+            if (recordInfo.Hidden)
+            {
+                // Implies this is a vector set, needs special handling
+                deleteInfo.Action = DeleteAction.CancelOperation;
+                return false;
+            }
+
             recordInfo.ClearHasETag();
             if (!deleteInfo.RecordInfo.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);

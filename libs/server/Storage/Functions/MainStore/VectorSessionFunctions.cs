@@ -24,11 +24,29 @@ namespace Garnet.server
 
         #region Deletes
         /// <inheritdoc />
-        public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
+        public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        {
+            if (recordInfo.Hidden)
+            {
+                // Implies this is a vector set, needs special handling
+                deleteInfo.Action = DeleteAction.CancelOperation;
+                return false;
+            }
+
+            recordInfo.ClearHasETag();
+            functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            return true;
+        }
         /// <inheritdoc />
-        public void PostSingleDeleter(ref SpanByte key, ref DeleteInfo deleteInfo) => throw new NotImplementedException();
+        public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        {
+            recordInfo.ClearHasETag();
+            if (!deleteInfo.RecordInfo.Modified)
+                functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            return true;
+        }
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
+        public void PostSingleDeleter(ref SpanByte key, ref DeleteInfo deleteInfo) { }
         #endregion
 
         #region Reads

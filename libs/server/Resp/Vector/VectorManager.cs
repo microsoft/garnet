@@ -68,9 +68,18 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void DropIndex(ulong context, nint index)
         {
-            if (!data.TryRemove(index, out _))
+            if (!data.TryRemove(index, out var state))
             {
                 throw new InvalidOperationException("Attempted to drop index that was already dropped");
+            }
+
+            // It isn't required that an implementer clean up after itself, but this tests callbacks are still valid
+            foreach (var key in state.Members.Keys)
+            {
+                _ = state.Delete(context + 0, key);
+                _ = state.Delete(context + 1, key);
+                _ = state.Delete(context + 2, key);
+                _ = state.Delete(context + 3, key);
             }
         }
 
@@ -420,6 +429,24 @@ namespace Garnet.server
             asIndex.IndexPtr = (ulong)indexPtr;
         }
 
+        /// <summary>
+        /// Drop an index previously constructed with <see cref="CreateIndex"/>.
+        /// </summary>
+        internal void DropIndex(StorageSession currentStorageSession, ReadOnlySpan<byte> indexValue)
+        {
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr);
+
+            ActiveThreadSession = currentStorageSession;
+            try
+            {
+                Service.DropIndex(context, indexPtr);
+            }
+            finally
+            {
+                ActiveThreadSession = null;
+            }
+        }
+
         internal static void ReadIndex(
             ReadOnlySpan<byte> indexValue,
             out ulong context,
@@ -451,7 +478,7 @@ namespace Garnet.server
         /// 
         /// Assumes that the index is locked in the Tsavorite store.
         /// </summary>
-        /// <returns>Result of the operaiton.</returns>
+        /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryAdd(
             StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,

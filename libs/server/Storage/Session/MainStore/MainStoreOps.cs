@@ -589,6 +589,13 @@ namespace Garnet.server
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 var status = context.Delete(ref key);
+
+                if (status.IsCanceled)
+                {
+                    // May be a Vector Set, try delete with that logic
+                    status = TryDeleteVectorSet(ref key);
+                }
+
                 Debug.Assert(!status.IsPending);
                 if (status.Found) found = true;
             }
@@ -600,10 +607,11 @@ namespace Garnet.server
                 Debug.Assert(!status.IsPending);
                 if (status.Found) found = true;
             }
+
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus DELETE<TContext, TObjectContext>(byte[] key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
+        public unsafe GarnetStatus DELETE<TContext, TObjectContext>(byte[] key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
@@ -612,6 +620,16 @@ namespace Garnet.server
             if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
                 var status = objectContext.Delete(key);
+                if (status.IsCanceled)
+                {
+                    // May be a Vector Set, try delete with that logic
+                    fixed (byte* keyPtr = key)
+                    {
+                        SpanByte keySpan = new(key.Length, (nint)keyPtr);
+                        status = TryDeleteVectorSet(ref keySpan);
+                    }
+                }
+
                 Debug.Assert(!status.IsPending);
                 if (status.Found) found = true;
             }

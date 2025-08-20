@@ -345,7 +345,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus DELETE(ref SpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.DELETE(ref key, storeType, ref context, ref objectContext);
+        => storageSession.DELETE(ref key, storeType, ref context, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus DELETE(byte[] key, StoreType storeType = StoreType.All)

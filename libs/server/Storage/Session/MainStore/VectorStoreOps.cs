@@ -312,10 +312,66 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    VectorManager.ReadIndex(indexConfig.AsReadOnlySpan(), out _, out _, out var dimensionsUS, out _, out _, out _, out _);
-                    dimensions = (int)dimensionsUS;
+                    VectorManager.ReadIndex(indexConfig.AsReadOnlySpan(), out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _);
+
+                    dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
                     return GarnetStatus.OK;
+                }
+                finally
+                {
+                    lockableContext.Unlock([vectorLockEntry]);
+                }
+            }
+            finally
+            {
+                lockableContext.EndLockable();
+            }
+        }
+
+        /// <summary>
+        /// Deletion of a Vector Set needs special handling.
+        /// 
+        /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
+        /// </summary>
+        private Status TryDeleteVectorSet(ref SpanByte key)
+        {
+            lockableContext.BeginLockable();
+
+            try
+            {
+                // An exclusive lock is needed to prevent any active readers while the Vector Set is deleted
+                TxnKeyEntry vectorLockEntry = new();
+                vectorLockEntry.isObject = false;
+                vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
+                vectorLockEntry.lockType = LockType.Exclusive;
+
+                if (!lockableContext.TryLock([vectorLockEntry]))
+                {
+                    throw new GarnetException("Couldn't acquire shared lock on potential Vector Set");
+                }
+
+                try
+                {
+                    Span<byte> resSpan = stackalloc byte[128];
+                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+
+                    parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+
+                    var input = new RawStringInput(RespCommand.VADD, ref parseState);
+
+                    // Get the index
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    if (readRes != GarnetStatus.OK)
+                    {
+                        // This can happen is something else successfully deleted before we acquired the lock
+                        return Status.CreateNotFound();
+                    }
+
+                    // We shouldn't read a non-Vector Set value if we read anything, so this is unconditional
+                    vectorManager.DropIndex(this, indexConfig.AsSpan());
+
+                    return Status.CreateFound();
                 }
                 finally
                 {
