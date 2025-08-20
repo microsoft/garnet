@@ -614,6 +614,21 @@ namespace Garnet.server
             return true;
         }
 
+        internal static bool TryGetOperationDirection(this SessionParseState parseState, int idx, out OperationDirection value)
+        {
+            value = OperationDirection.Unknown;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("LEFT"u8))
+                value = OperationDirection.Left;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("RIGHT"u8))
+                value = OperationDirection.Right;
+            else
+                return false;
+
+            return true;
+        }
+
         /// <summary>
         /// Parse sorted set add option from parse state at specified index
         /// </summary>
