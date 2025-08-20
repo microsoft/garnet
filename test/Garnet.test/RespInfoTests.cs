@@ -82,10 +82,11 @@ namespace Garnet.test
 
             // hydrate main store
             var startingHA = server.Provider.StoreWrapper.store.Log.HeadAddress;
-            HydrateStore(db, (db, key, value) => db.StringSet(key, value), () => startingHA != server.Provider.StoreWrapper.store.Log.HeadAddress);
+            HydrateStore(db, (db, key, value) => db.StringSet(key, value), () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress);
+
             // hydrate object store
             var startingHAObj = server.Provider.StoreWrapper.objectStore.Log.HeadAddress;
-            HydrateStore(db, (db, key, value) => db.SetAdd(key, value), () => startingHAObj != server.Provider.StoreWrapper.objectStore.Log.HeadAddress);
+            HydrateStore(db, (db, key, value) => db.SetAdd(key, value), () => startingHAObj == server.Provider.StoreWrapper.objectStore.Log.HeadAddress);
 
             await Task.Delay(5);
 
@@ -98,7 +99,7 @@ namespace Garnet.test
             // now we have a differentiated region for mutable and immutable region in object store and main store
             var result = db.Execute("INFO", "HLOGSCAN");
 
-            // HK TODO: Use regex to assert more info
+            // HK TODO: Why does object store scan not show us tombstoned records? Need to fix this.
             ClassicAssert.IsTrue(!result.IsNull);
         }
 
@@ -107,8 +108,8 @@ namespace Garnet.test
             const int numKeysToAtleastMake = 1000;
             const int percentKeysWithExpirationsButNotExpired = 30;
             const int percentKeysWithExpirationAndExpired = 30;
-            const int percentageKeysToDeleteLater = 40;
-            const int percentageKeysWeRcuLater = 20;
+            const int percentKeysToDeleteLater = 40;
+            const int percentKeysWeRcuLater = 20;
 
             var random = new Random();
 
@@ -117,7 +118,8 @@ namespace Garnet.test
 
             // add data till there is an immutable region, and atleast 500 records
             int totalRecords = 0;
-            while (predicate() && totalRecords < numKeysToAtleastMake)
+            // keep going till head and tail departur and min key insertions hitting
+            while (predicate() || totalRecords < numKeysToAtleastMake)
             {
                 totalRecords++;
                 var chance = random.Next(0, 100);
@@ -148,11 +150,11 @@ namespace Garnet.test
                 {
                     chance = random.Next(0, 100);
                     // now decide whether we RCU or Delete this guy
-                    if (chance < percentageKeysToDeleteLater)
+                    if (chance < percentKeysToDeleteLater)
                     {
                         keysWeDelete.Add(key);
                     }
-                    else if (chance > percentageKeysToDeleteLater && chance < percentageKeysToDeleteLater + percentageKeysWeRcuLater)
+                    else if (chance > percentKeysToDeleteLater && chance < percentKeysToDeleteLater + percentKeysWeRcuLater)
                     {
                         keysWeRcuOn.Add(key);
                     }
