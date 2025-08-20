@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using Garnet.common;
+using Garnet.server.Metrics;
 
 namespace Garnet.server
 {
@@ -393,14 +394,22 @@ namespace Garnet.server
 
         private void PopulateHlogScanInfo(StoreWrapper storeWrapper)
         {
-            (string mainStoreMetrics, string objectStoreMetrics)[] res = storeWrapper.HybridLogDistributionScan();
-            var result = new MetricsItem[res.Length * 2];
+            (HybridLogScanMetrics mainStoreMetrics, HybridLogScanMetrics objectStoreMetrics)[] res = storeWrapper.HybridLogDistributionScan();
+            var result = new List<MetricsItem[]>();
             for (int i = 0; i < res.Length; i++)
             {
-                result[i * 2] = new($"MainStore_HLog_{i}", res[i].mainStoreMetrics);
-                result[i * 2 + 1] = new($"ObjectStore_HLog_{i}", res[i].objectStoreMetrics);
+                var mainStoreMetric = res[i].mainStoreMetrics.DumpScanMetricsInfo();
+                mainStoreMetric = string.IsNullOrEmpty(mainStoreMetric) ? "Empty" : mainStoreMetric;
+                var objectStoreMetric = res[i].objectStoreMetrics.DumpScanMetricsInfo();
+                objectStoreMetric = string.IsNullOrEmpty(objectStoreMetric) ? "Empty" : objectStoreMetric;
+                result.Add(
+                    [
+                        new MetricsItem($"MainStore_HLog_{i}", mainStoreMetric),
+                        new MetricsItem($"ObjectStore_HLog_{i}", objectStoreMetric)
+                    ]);
             }
-            hlogScanStats = result;
+
+            hlogScanStats = result.ToArray();
         }
 
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
@@ -513,7 +522,7 @@ namespace Garnet.server
                     return GetSectionRespInfo(header, checkpointStats);
                 case InfoMetricsType.HLOGSCAN:
                     PopulateHlogScanInfo(storeWrapper);
-                    return GetSectionRespInfo(header, storeRevivInfo[dbId]);
+                    return GetSectionRespInfo(header, hlogScanStats[dbId]);
                 default:
                     return "";
             }

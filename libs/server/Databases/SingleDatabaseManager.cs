@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -405,7 +406,7 @@ namespace Garnet.server
             return (k1 + k2, t1 + t2);
         }
 
-        public override (string mainStore, string objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
+        public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {

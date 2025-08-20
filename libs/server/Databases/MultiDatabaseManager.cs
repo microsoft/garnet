@@ -7,6 +7,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -1070,10 +1071,10 @@ namespace Garnet.server
             return databasesMapSnapshot[dbId];
         }
 
-        public override (string mainStore, string objectStore)[] CollectHybridLogStats()
+        public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats()
         {
             var databasesMapSnapshot = databases.Map;
-            var result = new (string mainStore, string objectStore)[databasesMapSnapshot.Length];
+            var result = new (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[databasesMapSnapshot.Length];
             for (int i = 0; i < databasesMapSnapshot.Length; i++)
             {
                 var db = databasesMapSnapshot[i];
