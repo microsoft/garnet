@@ -47,7 +47,7 @@ jobs:
           - framework: net8.0
             gh-pages-branch: continuousbenchmark_net80
         configuration: [ 'Release' ]
-        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Operations.TxnOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
