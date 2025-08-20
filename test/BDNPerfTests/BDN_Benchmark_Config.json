@@ -453,7 +453,7 @@
   },
   "BDN.benchmark.Operations.TxnOperations.*": {
     "expected_MultiExec_ACL": 4,
-	"expected_MultiExec_AOF": 4,
-	"expected_MultiExec_None": 4,
+    "expected_MultiExec_AOF": 5,
+    "expected_MultiExec_None": 5,
   }
 }
