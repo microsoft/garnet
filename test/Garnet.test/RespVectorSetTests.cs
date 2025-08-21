@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -48,10 +49,72 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VADDErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var vectorSetKey = $"{nameof(VADDErrors)}_{Guid.NewGuid()}";
+
+            // Bad arity
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD"));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc1.Message);
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc2.Message);
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc3.Message);
+            var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc4.Message);
+            var exc5 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc5.Message);
+            var exc6 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VADD' command", exc6.Message);
+
+            // Reduce after vector
+            var exc7 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "bar", "REDUCE", "1"]));
+            ClassicAssert.AreEqual("ERR invalid option after element", exc7.Message);
+
+            // Duplicate flags
+            // TODO: Redis doesn't error on these which seems... wrong, confirm with them
+            //var exc8 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "CAS", "CAS"]));
+            //var exc9 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "NOQUANT", "Q8"]));
+            //var exc10 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "1", "EF", "1"]));
+            //var exc11 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR", "abc", "SETATTR", "abc"]));
+            //var exc12 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "5", "M", "5"]));
+
+            // M out of range (Redis imposes M >= 4 and m <= 4096
+            var exc13 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "1"]));
+            ClassicAssert.AreEqual("ERR invalid M", exc13.Message);
+            var exc14 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "10000"]));
+            ClassicAssert.AreEqual("ERR invalid M", exc14.Message);
+
+            // Malformed FP32
+            var binary = new float[] { 1, 2, 3 };
+            var blob = MemoryMarshal.Cast<float, byte>(binary)[..^1].ToArray();
+            var exc15 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "FP32", blob, "bar"]));
+            ClassicAssert.AreEqual("ERR invalid vector specification", exc15.Message);
+
+            // Mismatch after creating a vector set
+            _ = db.KeyDelete(vectorSetKey);
+
+            _ = db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0", "bar", "NOQUANT", "EF", "6", "M", "10"]);
+
+            // TODO: Redis returns the same error for all these mismatches which also seems... wrong, confirm with them
+            var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc16.Message);
+            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "Q8"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc17.Message);
+            var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "EF", "12"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc18.Message);
+            var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "M", "20"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc19.Message);
+        }
+
+        [Test]
         public void VEMB()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
@@ -71,7 +134,7 @@ namespace Garnet.test
         public void VectorSetOpacity()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
@@ -86,7 +149,7 @@ namespace Garnet.test
             // Check that we can't touch an element with GET despite it also being in the main store
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
@@ -141,7 +204,7 @@ namespace Garnet.test
         public void VSIM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
@@ -167,7 +230,7 @@ namespace Garnet.test
         public void VDIM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
@@ -189,7 +252,7 @@ namespace Garnet.test
         public void DeleteVectorSet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
