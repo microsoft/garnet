@@ -69,6 +69,13 @@
         ]
       },
       {
+        "Command": "ACL_HELP",
+        "Name": "ACL|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Summary": "Dumps the effective rules in ACL file format.",
@@ -945,6 +952,13 @@
         "Complexity": "O(1)"
       },
       {
+        "Command": "CLIENT_HELP",
+        "Name": "CLIENT|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLIENT_ID",
         "Name": "CLIENT|ID",
         "Summary": "Returns the unique client ID of the connection.",
@@ -1723,6 +1737,13 @@
         ]
       },
       {
+        "Command": "COMMAND_HELP",
+        "Name": "COMMAND|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "COMMAND_INFO",
         "Name": "COMMAND|INFO",
         "Summary": "Returns information about one, multiple or all commands.",
@@ -1778,6 +1799,13 @@
             "ArgumentFlags": "Multiple"
           }
         ]
+      },
+      {
+        "Command": "CONFIG_HELP",
+        "Name": "CONFIG|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
       },
       {
         "Command": "CONFIG_REWRITE",
@@ -5336,6 +5364,13 @@
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
       {
+        "Command": "MEMORY_HELP",
+        "Name": "MEMORY|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "MEMORY_USAGE",
         "Name": "MEMORY|USAGE",
         "Summary": "Estimates the memory usage of a key.",
@@ -5499,6 +5534,13 @@
     "Group": "Server",
     "Complexity": "Depends on subcommand.",
     "SubCommands": [
+      {
+        "Command": "MODULE_HELP",
+        "Name": "MODULE|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
+      },
       {
         "Command": "MODULE_LOADCS",
         "Name": "MODULE|LOADCS",
@@ -5930,6 +5972,13 @@
             "ArgumentFlags": "Optional"
           }
         ]
+      },
+      {
+        "Command": "PUBSUB_HELP",
+        "Name": "PUBSUB|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
       },
       {
         "Command": "PUBSUB_NUMPAT",
@@ -6589,6 +6638,13 @@
             ]
           }
         ]
+      },
+      {
+        "Command": "SCRIPT_HELP",
+        "Name": "SCRIPT|HELP",
+        "Summary": "Show helpful text about the different subcommands",
+        "Group": "Server",
+        "Complexity": "O(1)"
       },
       {
         "Command": "SCRIPT_LOAD",

@@ -476,5 +476,48 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Processes ACL HELP subcommand.
+        /// </summary>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclHelp()
+        {
+            // No arguments allowed
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("acl|help");
+            }
+
+            WriteHelp(
+                "ACL <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "CAT [<category>]",
+                "\tList all commands that belong to <category>, or all command categories",
+                "\twhen no category is specified.",
+                "DELUSER <username> [<username> ...]",
+                "\tDelete a list of users.",
+                "GETUSER <username>",
+                "\tGet the user's details.",
+                "GENPASS [<bits>]",
+                "\tGenerate a secure 256-bit user password. The optional `bits` argument can",
+                "\tbe used to specify a different size.",
+                "LIST",
+                "\tShow users details in config file format.",
+                "LOAD",
+                "\tReload users from the ACL file.",
+                "SAVE",
+                "\tSave the current config to the ACL file.",
+                "SETUSER <username> <attribute> [<attribute> ...]",
+                "\tCreate or modify a user with the specified attributes.",
+                "USERS",
+                "\tList all the registered usernames.",
+                "WHOAMI",
+                "\tReturn the current connection username.",
+                "HELP",
+                "\tPrint this help."
+                );
+
+            return true;
+        }
     }
 }
