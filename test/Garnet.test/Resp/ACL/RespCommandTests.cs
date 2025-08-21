@@ -7511,8 +7511,6 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVDimAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
                 try
                 {
                     _ = await client.ExecuteForStringResultAsync("VDIM", ["foo"]);
