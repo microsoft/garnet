@@ -236,6 +236,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
                 extensionBinPaths: [_extTestDir1, _extTestDir2],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
@@ -500,6 +501,28 @@ namespace Garnet.test
             // Delete should have happened, as value matches
             retValue = db.StringGet(key);
             ClassicAssert.AreEqual(null, retValue);
+        }
+
+        [Test]
+        public async Task CustomCommandCaseInsensitiveTest()
+        {
+            server.Register.NewCommand("A.SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), new RespCommandsInfo { Arity = 4 });
+
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var key = "mykey";
+            var origValue = "foovalue0";
+            c.Execute("SET", key, origValue);
+
+            var newValue1 = "foovalue1";
+            var response = await c.ExecuteAsync("a.setifpm", key, newValue1, "foo");
+            // Test the command was recognized.
+            ClassicAssert.AreEqual("OK", response);
+
+            // Test the command did something.
+            var retValue = await c.ExecuteAsync("GET", key);
+            ClassicAssert.AreEqual(newValue1, retValue);
         }
 
         [Test]
@@ -1019,7 +1042,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
+                ClassicAssert.AreEqual(Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, "REGISTERCS")), rse.Message);
             }
             ClassicAssert.IsNull(resp);
 

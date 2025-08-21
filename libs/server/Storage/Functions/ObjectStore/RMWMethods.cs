@@ -22,8 +22,8 @@ namespace Garnet.server
             switch (type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
+                case GarnetObjectType.DelIfExpIm:
                     return false;
                 default:
                     if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
@@ -60,6 +60,8 @@ namespace Garnet.server
                 _ = logRecord.TrySetValueObject(value, in sizeInfo);
                 return true;
             }
+            else
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
             Debug.Assert(type is not GarnetObjectType.Expire and not GarnetObjectType.PExpire and not GarnetObjectType.Persist, "Expire and Persist commands should have returned false from NeedInitialUpdate.");
 
@@ -116,35 +118,20 @@ namespace Garnet.server
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.MemorySize);
+
+                // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                functionsState.objectStoreFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+                logRecord.ClearValueObject(obj => { });
+                rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return false;
             }
 
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(0);
-
-                    var optionType = (ExpireOption)input.arg1;
-                    var expireAt = input.arg2 == 1;
-
-                    long expiryTicks;
-                    if (expireAt)
-                    {
-                        expiryTicks = input.header.type == GarnetObjectType.PExpire
-                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
-                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
-                    }
-                    else
-                    {
-                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
-                            ? TimeSpan.FromMilliseconds(expiryValue)
-                            : TimeSpan.FromSeconds(expiryValue);
-                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    }
-
-                    if (!EvaluateObjectExpireInPlace(ref logRecord, optionType, expiryTicks, ref output))
+                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
+                    if (!EvaluateObjectExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
                         return false;
                     return true;    // The options may or may not produce a result that matches up with what sizeInfo has, so return rather than drop down to AssertOptionals
                 case GarnetObjectType.Persist:
@@ -156,6 +143,8 @@ namespace Garnet.server
                     else
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     return true;
+                case GarnetObjectType.DelIfExpIm:
+                    return true;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
@@ -164,6 +153,12 @@ namespace Garnet.server
                             return true;
                         if (output.HasRemoveKey)
                         {
+                            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.MemorySize);
+
+                            // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                            functionsState.objectStoreFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+                            logRecord.ClearValueObject(obj => { });
+
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
@@ -202,7 +197,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => true;
+        {
+            if (input.header.type == GarnetObjectType.DelIfExpIm && srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+            return true;
+        }
 
         /// <inheritdoc />
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
@@ -236,31 +238,12 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(0);
-
-                    var optionType = (ExpireOption)input.arg1;
-                    var expireAt = input.arg2 == 1;
-
-                    long expiryTicks;
-                    if (expireAt)
-                    {
-                        expiryTicks = input.header.type == GarnetObjectType.PExpire
-                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
-                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
-                    }
-                    else
-                    {
-                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
-                            ? TimeSpan.FromMilliseconds(expiryValue)
-                            : TimeSpan.FromSeconds(expiryValue);
-                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    }
+                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
                     // Expire will have allocated space for the expiration, so copy it over and do the "in-place" logic to replace it in the new record
                     if (srcLogRecord.Info.HasExpiration)
                         dstLogRecord.TrySetExpiration(srcLogRecord.Expiration);
-                    if (!EvaluateObjectExpireInPlace(ref dstLogRecord, optionType, expiryTicks, ref output))
+                    if (!EvaluateObjectExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
                         return false;
                     break;
 
@@ -274,6 +257,8 @@ namespace Garnet.server
                     }
                     else
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                    break;
+                case GarnetObjectType.DelIfExpIm:
                     break;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)

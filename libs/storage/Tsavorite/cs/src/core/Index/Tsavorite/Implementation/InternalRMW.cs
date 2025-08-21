@@ -252,21 +252,27 @@ namespace Tsavorite.core
             try
             {
                 var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
+                ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
                 if (logRecord.TrySetValueLength(in sizeInfo))
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();
+
                     if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                     {
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically).
+                        // OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
+                        stats.inChainSuccesses++;
                         ok = true;
                         return true;
                     }
                 }
                 // Did not revivify; restore the tombstone in 'finally' and leave the deleted record there.
+                stats.inChainFailures++;
             }
             finally
             {
@@ -492,6 +498,7 @@ namespace Tsavorite.core
                             stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
                         goto RetryNow;
                     }
+                    addTombstone = newLogRecord.Info.Tombstone;
                     goto DoCAS;
                 }
                 else
@@ -519,7 +526,8 @@ namespace Tsavorite.core
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    sessionFunctions.PostInitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                    if (!addTombstone)
+                        sessionFunctions.PostInitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                 }
                 else
                 {

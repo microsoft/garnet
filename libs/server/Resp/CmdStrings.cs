@@ -31,6 +31,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
+        public static ReadOnlySpan<byte> Memory => "memory"u8;
+        public static ReadOnlySpan<byte> ObjLogMemory => "obj-log-memory"u8;
+        public static ReadOnlySpan<byte> ObjHeapMemory => "obj-heap-memory"u8;
+        public static ReadOnlySpan<byte> Index => "index"u8;
+        public static ReadOnlySpan<byte> ObjIndex => "obj-index"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
@@ -158,6 +163,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> MEMBERS => "MEMBERS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
+        public static ReadOnlySpan<byte> LOG => "LOG"u8;
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
         public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
         public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
@@ -207,6 +213,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_WITHETAG_AND_GETVALUE => "ERR WITHETAG option not allowed with GET inside of SET"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY => "ERR value is NaN or Infinity"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY_INCR => "ERR increment would produce NaN or Infinity"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SCORE_NAN => "ERR resulting score is not a number (NaN)"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "ERR offset is out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER => "ERR bit is not an integer or out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER => "ERR bit offset is not an integer or out of range"u8;
@@ -219,6 +228,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "ERR one or more binary file are not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS => "ERR command info file is not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "ERR unable to load one or more assemblies."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MUST_DEFINE_ASSEMBLY_BINPATH => "To enable client-side assembly loading, you must specify a list of allowed paths from which assemblies can potentially be loaded using the ExtensionBinPath directive."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ACCESSING_ASSEMBLIES => "ERR unable to access one or more assemblies to check if it's digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "ERR one or more assemblies loaded is not digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS => "ERR unable to register one or more unsupported classes."u8;
@@ -253,11 +264,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_RADIUS_IS_NEGATIVE => "ERR radius cannot be negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_NEGATIVE => "ERR timeout is negative"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_NOT_VALID_FLOAT => "ERR timeout is not a float or out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_OUT_OF_RANGE => "ERR timeout is out of range"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
         public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_NOT_POSITIVE => "ERR COUNT must be > 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_OUT_OF_RANGE_N1 => "ERR count should be greater than or equal to -1."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_LOADED_TYPES => "ERR Unable to load types from module. Ensure that the module is compatible with the current runtime."u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_NO_INTERFACE => "ERR Module does not implement the required interface"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_MULTIPLE_INTERFACES => "ERR Multiple modules present"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
@@ -267,6 +281,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_UBLOCKING_CLINET => "ERR Unable to unblock client because of error."u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SUCH_CLIENT => "ERR No such client"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_NAME => "ERR Client names cannot contain spaces, newlines or special characters."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_DISABLED => "ERR ACL Authenticator is disabled."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_FILE_DISABLED => "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option."u8;
         public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
@@ -286,17 +301,19 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ETAG must be a numerical value greater than or equal to 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_DEUBG_DISALLOWED =>
-            @"ERR DEBUG command not allowed. If the EnableDebugCommand option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
+
         /// <summary>
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
         public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
+        public const string GenericErrUnsupportedOption = "ERR Unsupported option {0}";
         public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
         public const string GenericErrUnknownSubCommandNoHelp = "ERR unknown subcommand '{0}'.";
+        public const string GenericErrUnknownSubCommandOrWrongNumberOfArguments = "ERR unknown subcommand or wrong number of arguments for '{0}'. Try {1} HELP";
         public const string GenericErrWrongNumArgsTxn =
             "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
         public const string GenericSyntaxErrorOption = "ERR Syntax error in {0} option '{1}'";
@@ -312,6 +329,15 @@ namespace Garnet.server
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
         public const string GenericErrLonLat = "ERR invalid longitude,latitude pair {0:F6},{1:F6}";
         public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
+        public const string GenericErrCommandDisallowedWithOption =
+            @"ERR {0} command not allowed. If the {1} option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server.";
+        public const string GenericErrIncorrectSizeFormat = "ERR Incorrect size format in (option: '{0}')";
+        public const string GenericErrIndexSizePowerOfTwo = "ERR Index size must be a power of 2 (option: '{0}')";
+        public const string GenericErrIndexSizeAutoGrow = "ERR Cannot adjust index size when auto-grow task is running (option: '{0}')";
+        public const string GenericErrIndexSizeSmallerThanCurrent = "ERR Cannot set dynamic index size smaller than current index size (option: '{0}')";
+        public const string GenericErrIndexSizeGrowFailed = "ERR failed to grow index size beyond current size (option: '{0}')";
+        public const string GenericErrMemorySizeGreaterThanBuffer = "ERR Cannot set dynamic memory size greater than configured circular buffer size (option: '{0}')";
+        public const string GenericErrHeapMemorySizeTrackerNotRunning = "ERR Cannot adjust object store heap memory size when size tracker is not running (option: '{0}')";
 
         /// <summary>
         /// Response errors while scripting
@@ -361,6 +387,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
         public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
         public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
+        public static ReadOnlySpan<byte> GENPASS => "GENPASS"u8;
         public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
@@ -465,6 +492,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_bad_arg_decode => "bad argument to decode"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_pack => "bad argument to pack"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_unpack => "bad argument to unpack"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_format => "bad argument to format"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_bor => "bad argument to bor"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_band => "bad argument to band"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_bxor => "bad argument to bxor"u8;
@@ -498,5 +526,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_NOT => "NOT"u8;
         public static ReadOnlySpan<byte> LUA_KEYS => "KEYS"u8;
         public static ReadOnlySpan<byte> LUA_ARGV => "ARGV"u8;
+        public static ReadOnlySpan<byte> EXPDELSCAN => "EXPDELSCAN"u8;
     }
 }

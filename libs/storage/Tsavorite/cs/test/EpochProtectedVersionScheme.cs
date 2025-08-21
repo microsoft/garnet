@@ -55,6 +55,10 @@ namespace Tsavorite.test
         /// <returns>whether EPVS is in intermediate state now (transitioning between two states)</returns>
         public bool IsIntermediate() => (Phase & kIntermediateMask) != 0;
 
+        public bool IsError() => Word == long.MaxValue;
+
+        public static VersionSchemeState Error => new VersionSchemeState { Word = long.MaxValue };
+
         /// <summary>
         /// Version number of the current state
         /// </summary>
@@ -288,6 +292,9 @@ namespace Tsavorite.test
         /// <returns> the state of the EPVS as of protection, which extends until the end of protection </returns>
         public VersionSchemeState Enter()
         {
+            if (epoch.ThisInstanceProtected())
+                return VersionSchemeState.Error;
+
             epoch.Resume();
             TryStepStateMachine();
 

@@ -1,0 +1,115 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.server;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
+
+namespace Garnet.cluster
+{
+    internal sealed unsafe partial class MigrateSession : IDisposable
+    {
+        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, out GarnetStatus status)
+        {
+            // Must initialize this here because we use the network buffer as output.
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+
+            // Read the value for the key. This will populate output with the entire serialized record.
+            status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
+            return WriteRecord(gcs, ref output, status, isMainStore: true);
+        }
+
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref GarnetObjectStoreOutput output, out GarnetStatus status)
+        {
+            // Must initialize this here because we use the network buffer as output.
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+
+            ObjectInput input = default;
+            status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref output);
+            return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isMainStore: true);
+        }
+
+        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status, bool isMainStore)
+        {
+            // Skip (do not fail) if key NOTFOUND
+            if (status == GarnetStatus.NOTFOUND)
+                return true;
+
+            // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, so increment curr and
+            // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
+            if (output.IsSpanByte)
+            {
+                gcs.IncrementRecordDirect(output.SpanByte.TotalSize);
+                return true;
+            }
+            return WriteOrSendRecordSpan(gcs, ref output, isMainStore);
+        }
+
+        /// <summary>
+        /// Write a serialized record directly to the client buffer; if there is not enough room, flush the buffer and retry writing.
+        /// </summary>
+        /// <param name="gcs">The client session</param>
+        /// <param name="output">Output buffer from Read(), containing the full serialized record</param>
+        /// <param name="isMainStore">Whether this is the main or object store</param>
+        /// <returns>True on success, else false</returns>
+        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, ref SpanByteAndMemory output, bool isMainStore)
+        {
+            // Check if we need to initialize cluster migrate command arguments
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+
+            fixed (byte* ptr = output.MemorySpan)
+            {
+                // Try to write serialized record to client buffer
+                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))
+                {
+                    // Flush records in the buffer
+                    if (!HandleMigrateTaskResponse(task))
+                        return false;
+
+                    // Re-initialize cluster migrate command parameters for the next loop iteration
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Handle response from migrate data task
+        /// </summary>
+        /// <param name="task"></param>
+        /// <returns>True on successful completion of data send, otherwise false</returns>
+        public bool HandleMigrateTaskResponse(Task<string> task)
+        {
+            if (task != null)
+            {
+                try
+                {
+                    return task.ContinueWith(resp =>
+                    {
+                        // Check if setslotsrange executed correctly
+                        if (!resp.Result.Equals("OK", StringComparison.Ordinal))
+                        {
+                            logger?.LogError("ClusterMigrate Keys failed with error:{error}.", resp);
+                            Status = MigrateState.FAIL;
+                            return false;
+                        }
+                        return true;
+                    }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "An error has occurred");
+                    Status = MigrateState.FAIL;
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+}

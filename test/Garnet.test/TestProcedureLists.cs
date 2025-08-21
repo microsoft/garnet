@@ -24,12 +24,14 @@ namespace Garnet
             var offset = 0;
             var lstKey = GetNextArg(ref procInput, ref offset);
             var lstKeyB = GetNextArg(ref procInput, ref offset);
+            var lstKeyC = GetNextArg(ref procInput, ref offset);
 
-            if (lstKey.Length == 0 || lstKeyB.Length == 0)
+            if (lstKey.Length == 0 || lstKeyB.Length == 0 || lstKeyC.Length == 0)
                 return false;
 
             AddKey(lstKey, LockType.Exclusive, true);
             AddKey(lstKeyB, LockType.Exclusive, true);
+            AddKey(lstKeyC, LockType.Exclusive, true);
 
             return true;
         }
@@ -47,8 +49,9 @@ namespace Garnet
 
             var lstKeyA = GetNextArg(ref procInput, ref offset);
             var lstKeyB = GetNextArg(ref procInput, ref offset);
+            var lstKeyC = GetNextArg(ref procInput, ref offset);
 
-            if (lstKeyA.Length == 0 || lstKeyB.Length == 0)
+            if (lstKeyA.Length == 0 || lstKeyB.Length == 0 || lstKeyC.Length == 0)
                 return false;
 
             for (var i = 0; i < elements.Length; i++)
@@ -90,6 +93,11 @@ namespace Garnet
 
             status = api.ListLength(lstKeyB, out count);
             if (status != GarnetStatus.OK || count != 3)
+                return false;
+
+            // LPOP when list is empty
+            status = api.ListLeftPop(lstKeyC, out var elementNotFound);
+            if (status != GarnetStatus.NOTFOUND || elementNotFound.Length != 0)
                 return false;
 
             return true;

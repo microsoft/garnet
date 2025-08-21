@@ -190,7 +190,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifference(PinnedSpanByte[] keys, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetDifference(PinnedSpanByte[] keys, out SortedSet<(double, byte[])> pairs)
         {
             foreach (var key in keys)
             {
@@ -200,7 +200,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             foreach (var key in keys)
             {
@@ -232,7 +232,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIntersect(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             foreach (var key in keys)
             {
@@ -611,18 +611,18 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => garnetApi.IterateMainStore(ref scanFunctions, untilAddress);
+            => garnetApi.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator IterateMainStore()
             => garnetApi.IterateMainStore();
 
         /// <inheritdoc />
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => garnetApi.IterateObjectStore(ref scanFunctions, untilAddress);
+            => garnetApi.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator IterateObjectStore()

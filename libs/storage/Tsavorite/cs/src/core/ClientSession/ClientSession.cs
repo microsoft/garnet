@@ -118,8 +118,7 @@ namespace Tsavorite.core
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
             _ = CompletePending(bContext.sessionFunctions, true);
 
-            if (store.RevivificationManager.IsEnabled)
-                MergeRevivificationStatsTo(ref store.RevivificationManager.stats, reset: true);
+            store.DisposeClientSession(ID);
         }
 
         /// <summary>
@@ -425,14 +424,19 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="scanFunctions">Functions receiving pushed records</param>
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
+        /// <param name="cursor">Cursor to scan from</param>
+        /// <param name="validateCursor">Cursor to scan from</param>
+        /// <param name="maxAddress">Max address to search for keys when conditionally pushing</param>
+        /// <param name="resetCursor">Whether to reset cursor at the end of the iteration</param>
+        /// <param name="includeTombstones">Whether to include tombstoned record when iterating</param>
         /// <returns>True if Iteration completed; false if Iteration ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateLookup<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, bool validateCursor = false, long maxAddress = long.MaxValue,
+                bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
         {
             if (untilAddress == -1)
                 untilAddress = store.Log.TailAddress;
-            var cursor = 0L;
-            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress);
+            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }
 
         /// <summary>
@@ -450,12 +454,15 @@ namespace Tsavorite.core
         ///     TailAddress). A snapshot can be taken by calling ShiftReadOnlyToTail() and then using that TailAddress as endAddress and maxAddress.</param>
         /// <param name="validateCursor">If true, validate that the cursor is on a valid address boundary, and snap it to the highest lower address if it is not.</param>
         /// <param name="maxAddress">Maximum address for determining liveness, records after this address are not considered when checking validity.</param>
+        /// <param name="resetCursor">Whether to set cursor to zero at the end of iteration.</param>
+        /// <param name="includeTombstones">Whether to include tombstoned records while iterating.</param>
         /// <returns>True if Scan completed and pushed <paramref name="count"/> records and there may be more records; false if Scan ended early due to finding less than <paramref name="count"/> records
         /// or one of the TScanIterator reader functions returning false, or if we determined that there are no records remaining. In other words, if this returns true,
         /// there may be more records satisfying the iteration criteria beyond <paramref name="count"/>.</returns>
-        public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false, long maxAddress = long.MaxValue)
+        public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false,
+                long maxAddress = long.MaxValue, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress);
+            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.

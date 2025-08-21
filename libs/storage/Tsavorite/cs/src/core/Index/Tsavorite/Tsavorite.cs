@@ -61,6 +61,11 @@ namespace Tsavorite.core
         public LogAccessor<TStoreFunctions, TAllocator> Log { get; }
 
         /// <summary>
+        /// Readonly accessor for StoreFunctions
+        /// </summary>
+        public TStoreFunctions StoreFunctions => storeFunctions;
+
+        /// <summary>
         /// Read cache used by this Tsavorite instance
         /// </summary>
         public LogAccessor<TStoreFunctions, TAllocator> ReadCache { get; }
@@ -74,6 +79,18 @@ namespace Tsavorite.core
         internal RevivificationManager<TStoreFunctions, TAllocator> RevivificationManager;
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
+
+        /// <summary>
+        /// Pause Revivification
+        /// </summary>
+        public void PauseRevivification()
+            => RevivificationManager.PauseRevivification();
+
+        /// <summary>
+        /// Resume Revivification
+        /// </summary>
+        public void ResumeRevivification()
+            => RevivificationManager.ResumeRevivification();
 
         /// <summary>
         /// Create TsavoriteKV instance

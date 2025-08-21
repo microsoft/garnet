@@ -33,8 +33,11 @@ RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/de
 WORKDIR /src/main/GarnetServer
 RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
+# Delete xmldoc files
+RUN find /app -name '*.xml' -delete
+
 # Separate stage to install libaio1 on amd64 (avoiding QEMU issues on arm64)
-FROM --platform=linux/amd64 ubuntu:22.04 AS builder
+FROM --platform=linux/amd64 mcr.microsoft.com/mirror/docker/library/ubuntu:22.04 AS builder
 RUN apt-get update && apt-get install -y libaio1
 
 # Final stage/image

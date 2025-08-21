@@ -93,7 +93,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            MigratingKeysWorkingSet keys = null;
+            Sketch sketch = null;
             HashSet<int> slots = null;
 
             ClusterConfig current = null;
@@ -115,8 +115,8 @@ namespace Garnet.cluster
             if (keySlice.Length > 0)
             {
                 transferOption = TransferOption.KEYS;
-                keys = new();
-                _ = keys.TryAdd(keySlice, KeyMigrationStatus.QUEUED);
+                sketch = new();
+                sketch.HashAndStore(keySlice);
             }
 
             var currTokenIdx = 5;
@@ -144,7 +144,7 @@ namespace Garnet.cluster
                         pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
 
                     transferOption = TransferOption.KEYS;
-                    keys ??= new();
+                    sketch ??= new();
                     while (currTokenIdx < parseState.Count)
                     {
                         var currKeySlice = parseState.GetArgSliceByRef(currTokenIdx++);
@@ -174,13 +174,8 @@ namespace Garnet.cluster
                             continue;
                         }
 
-                        // Add pointer of current parsed key
-                        if (!keys.TryAdd(currKeySlice, KeyMigrationStatus.QUEUED))
-                        {
-                            logger?.LogWarning("Failed to add {key}", Encoding.ASCII.GetString(keySlice.ReadOnlySpan));
-                            pstate = MigrateCmdParseState.FAILEDTOADDKEY;
-                            continue;
-                        }
+                        // Add key to sketch
+                        sketch.HashAndStore(currKeySlice);
                         _ = slots.Add(slot);
                     }
                 }
@@ -293,7 +288,7 @@ namespace Garnet.cluster
 
             #endregion
 
-            logger?.LogDebug("MIGRATE COPY:{copyOption} REPLACE:{replaceOption} OpType:{opType}", copyOption, replaceOption, (keys != null ? "KEYS" : "SLOTS"));
+            logger?.LogDebug("MIGRATE COPY:{copyOption} REPLACE:{replaceOption} OpType:{opType}", copyOption, replaceOption, (sketch != null ? "KEYS" : "SLOTS"));
 
             #region scheduleMigration
             if (!clusterProvider.migrationManager.TryAddMigrationTask(
@@ -308,7 +303,7 @@ namespace Garnet.cluster
                 replaceOption,
                 timeout,
                 slots,
-                keys,
+                sketch,
                 transferOption,
                 out var mSession))
             {

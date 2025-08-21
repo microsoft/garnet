@@ -401,10 +401,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public double GetDouble(int i)
+        public double GetDouble(int i, bool canBeInfinite = true)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.ReadDouble(*(bufferPtr + i));
+            return ParseUtils.ReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
         }
 
         /// <summary>
@@ -412,10 +412,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if double parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetDouble(int i, out double value)
+        public bool TryGetDouble(int i, out double value, bool canBeInfinite = true)
         {
             Debug.Assert(i < Count);
-            return ParseUtils.TryReadDouble(*(bufferPtr + i), out value);
+            return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
         }
 
         /// <summary>

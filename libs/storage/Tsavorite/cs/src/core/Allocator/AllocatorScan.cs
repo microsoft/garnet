@@ -18,7 +18,7 @@ namespace Tsavorite.core
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
         /// <returns>Pull Scan iterator instance</returns>
-        public abstract ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false);
+        public abstract ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false);
 
         /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
@@ -182,11 +182,13 @@ namespace Tsavorite.core
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and use DiskLogRecord.GetSerializedRecordLength as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
-        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions,
+                long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions;
 
         private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store,
-                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress)
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress,
+                bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
@@ -209,7 +211,7 @@ namespace Tsavorite.core
             long numPending = 0;
             while (iter.GetNext())
             {
-                if (!iter.Info.Tombstone)
+                if (!iter.Info.Tombstone || includeTombstones)
                 {
                     var status = bContext.ConditionalScanPush(scanCursorState, in iter, iter.CurrentAddress, iter.NextAddress, maxAddress);
                     if (status.IsPending)
@@ -244,7 +246,7 @@ namespace Tsavorite.core
                 _ = bContext.CompletePending(wait: true);
 
             IterationComplete:
-            cursor = 0;
+            if (resetCursor) cursor = 0;
             scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }
@@ -279,18 +281,26 @@ namespace Tsavorite.core
             {
                 // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
                 // and this is the previous record in the tag chain. Push this record to the user.
-                RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
-                var stop = !scanCursorState.functions.Reader(in srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
-                if (stop)
-                    scanCursorState.stop = true;
-                else
+                epoch.Suspend();
+                try
                 {
-                    if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
-                        _ = Interlocked.Increment(ref scanCursorState.acceptedCount);
-                    if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
-                        scanCursorState.endBatch = true;
-                    if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
-                        scanCursorState.retryLastRecord = true;
+                    RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
+                    var stop = !scanCursorState.functions.Reader(in srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
+                    if (stop)
+                        scanCursorState.stop = true;
+                    else
+                    {
+                        if ((cursorRecordResult & CursorRecordResult.Accept) != 0)
+                            _ = Interlocked.Increment(ref scanCursorState.acceptedCount);
+                        if ((cursorRecordResult & CursorRecordResult.EndBatch) != 0)
+                            scanCursorState.endBatch = true;
+                        if ((cursorRecordResult & CursorRecordResult.RetryLastRecord) != 0)
+                            scanCursorState.retryLastRecord = true;
+                    }
+                }
+                finally
+                {
+                    epoch.Resume();
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }

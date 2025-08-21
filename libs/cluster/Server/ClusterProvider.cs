@@ -75,10 +75,22 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public bool AllowDataLoss
+            => serverOptions.UseAofNullDevice || (serverOptions.FastAofTruncate && !serverOptions.OnDemandCheckpoint);
+
+        /// <inheritdoc />
         public void Recover()
         {
             replicationManager.Recover();
         }
+
+        /// <inheritdoc />
+        public bool PreventRoleChange()
+        => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
+
+        /// <inheritdoc />
+        public void AllowRoleChange()
+        => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
 
         /// <inheritdoc />
         public void Start()
@@ -415,13 +427,13 @@ namespace Garnet.cluster
         public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
             => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
 
-        internal ReplicationLogCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
+        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
         {
             Debug.Assert(serverOptions.EnableCluster);
             return storeType switch
             {
-                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
+                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }
@@ -438,14 +450,14 @@ namespace Garnet.cluster
         internal bool BumpAndWaitForEpochTransition()
         {
             BumpCurrentEpoch();
+            // Acquire latest bumped epoch
+            var currentEpoch = GarnetCurrentEpoch;
             foreach (var server in storeWrapper.Servers)
             {
                 while (true)
                 {
                 retry:
                     Thread.Yield();
-                    // Acquire latest bumped epoch
-                    var currentEpoch = GarnetCurrentEpoch;
                     var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
                     foreach (var s in sessions)
                     {
@@ -459,5 +471,8 @@ namespace Garnet.cluster
             }
             return true;
         }
+
+        /// <inheritdoc />
+        public string GetRunId() => replicationManager.PrimaryReplId;
     }
 }

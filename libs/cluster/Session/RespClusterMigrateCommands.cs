@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,13 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
+    using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+        /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+        SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+    BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+        ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
+
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         long lastLog = 0;
@@ -50,93 +58,108 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var replaceSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-            var storeTypeSpan = parseState.GetArgSliceByRef(2).ReadOnlySpan;
-            var payload = parseState.GetArgSliceByRef(3);
-            var payloadPtr = payload.ToPointer();
+            var replace = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            var storeType = parseState.GetArgSliceByRef(2).ReadOnlySpan;
+            var payloadStartPtr = parseState.GetArgSliceByRef(3).ToPointer();
             var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
+            var replaceOption = replace.EqualsUpperCaseSpanIgnoringCase("T"u8);
 
-            var replaceOption = replaceSpan.EqualsUpperCaseSpanIgnoringCase("T"u8);
+            var storeTypeStr = Encoding.ASCII.GetString(storeType);
+            var buffer = new Span<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)).ToArray();
+
+            if (clusterProvider.serverOptions.FastMigrate)
+                _ = Task.Run(() => Process(basicGarnetApi, buffer, storeTypeStr, replaceOption));
+            else
+                Process(basicGarnetApi, buffer, storeTypeStr, replaceOption);
+
+            void Process(BasicGarnetApi basicGarnetApi, byte[] input, string storeTypeSpan, bool replaceOption)
+            {
+                var currentConfig = clusterProvider.clusterManager.CurrentConfig;
+                byte migrateState = 0;
+
+                fixed (byte* ptr = input)
+                {
+                    var payloadPtr = ptr;
+                    var payloadEndPtr = ptr + input.Length;
+                    if (storeTypeSpan.Equals("SSTORE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var keyCount = *(int*)payloadPtr;
+                        payloadPtr += 4;
+                        var i = 0;
+
+                        TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
+                        while (i < keyCount)
+                        {
+                            if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
+                                return;
+
+                            // An error has occurred
+                            if (migrateState > 0)
+                            {
+                                i++;
+                                continue;
+                            }
+
+                            var diskLogRecord = new DiskLogRecord(startAddress, length);
+                            var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
+                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                            {
+                                migrateState = 1;
+                                i++;
+                                continue;
+                            }
+
+                            // Set if key replace flag is set or key does not exist
+                            var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
+                            if (replaceOption || !Exists(keySlice))
+                                _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
+                            i++;
+                        }
+                    }
+                    else if (storeTypeSpan.Equals("OSTORE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var keyCount = *(int*)payloadPtr;
+                        payloadPtr += 4;
+                        var i = 0;
+                        TrackImportProgress(keyCount, isMainStore: false, keyCount == 0);
+                        while (i < keyCount)
+                        {
+                            if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
+                                return;
+
+                            // An error has occurred
+                            if (migrateState > 0)
+                                continue;
+
+                            var diskLogRecord = new DiskLogRecord(startAddress, length);
+                            var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
+                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                            {
+                                migrateState = 1;
+                                continue;
+                            }
+
+                            _ = diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);
+
+                            // Set if key replace flag is set or key does not exist
+                            var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
+                            if (replaceOption || !Exists(keySlice))
+                                _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
+                            i++;
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception("CLUSTER MIGRATE STORE TYPE ERROR!");
+                    }
+                }
+            }
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
-            var migrateError = false;
 
-            if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
-            {
-                var keyCount = *(int*)payloadPtr;
-                payloadPtr += 4;
-                TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
-
-                for (var ii = 0; ii < keyCount; ii++)
-                {
-                    if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
-                        return false;
-
-                    // If an error has occurred, continue to drain all records
-                    if (migrateError)
-                        continue;
-
-                    var diskLogRecord = new DiskLogRecord(startAddress, length);
-                    var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
-                    if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
-                    {
-                        migrateError = true;
-                        continue;
-                    }
-
-                    // Set if key replace flag is set or key does not exist
-                    if (replaceOption || !Exists(PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key)))
-                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
-                }
-            }
-            else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
-            {
-                var keyCount = *(int*)payloadPtr;
-                payloadPtr += 4;
-                TrackImportProgress(keyCount, isMainStore: false, keyCount == 0);
-
-                for (var ii = 0; ii < keyCount; ii++)
-                {
-                    if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
-                        return false;
-
-                    // If an error has occurred, continue to drain all records
-                    if (migrateError)
-                        continue;
-
-                    var diskLogRecord = new DiskLogRecord(startAddress, length);
-                    var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
-                    if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
-                    {
-                        migrateError = true;
-                        continue;
-                    }
-
-                    // Set if key replace flag is set or key does not exist
-                    if (replaceOption || !Exists(PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key)))
-                    {
-                        _ = diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);
-                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
-                    }
-                }
-            }
-            else
-            {
-                throw new Exception("CLUSTER MIGRATE STORE TYPE ERROR!");
-            }
-
-            if (migrateError)
-            {
-                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE));
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
-            }
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }

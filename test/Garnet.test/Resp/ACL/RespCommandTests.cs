@@ -32,7 +32,9 @@ namespace Garnet.test.Resp.ACL
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true, enableLua: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword,
+                                                  useAcl: true, enableLua: true,
+                                                  enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
@@ -105,7 +107,7 @@ namespace Garnet.test.Resp.ACL
                 IEnumerable<RespCommand> allValues = Enum.GetValues<RespCommand>().Select(static x => x.NormalizeForACLs()).Distinct();
                 IEnumerable<RespCommand> testableValues =
                     allValues
-                    .Except([RespCommand.NONE, RespCommand.INVALID])
+                    .Except([RespCommand.NONE, RespCommand.INVALID, RespCommand.DELIFEXPIM])
                     .Where(cmd => !withOnlySubCommands.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
                     .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
                 IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
@@ -176,6 +178,21 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("ACL", ["DELUSER", "does-not-exist-1", "does-not-exist-2"]);
                 ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task AclGenPassACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GENPASS",
+                [DoAclGenPassAsync]
+            );
+
+            static async Task DoAclGenPassAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringResultAsync("ACL", ["GENPASS"]);
+                ClassicAssert.AreEqual(64, result.Length);
             }
         }
 
@@ -316,6 +333,20 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("ACL", ["WHOAMI"]);
                 ClassicAssert.AreNotEqual("", (string)val);
+            }
+        }
+
+        [Test]
+        public async Task ExpDelScanACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EXPDELSCAN",
+                [DoExpDelScanAsync]
+            );
+
+            static async Task DoExpDelScanAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("EXPDELSCAN");
             }
         }
 
@@ -5224,7 +5255,7 @@ namespace Garnet.test.Resp.ACL
                 }
                 catch (Exception e)
                 {
-                    if (e.Message == "ERR malformed REGISTERCS command.")
+                    if (e.Message == "ERR wrong number of arguments for 'REGISTERCS' command")
                     {
                         return;
                     }

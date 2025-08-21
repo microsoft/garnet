@@ -279,8 +279,8 @@ namespace Tsavorite.core
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
         public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeSealedRecords)
-            => new RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeSealedRecords: includeSealedRecords, logger: logger);
+                long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeClosedRecords)
+            => new RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
@@ -296,10 +296,12 @@ namespace Tsavorite.core
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,
-                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
         {
-            using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering, logger: logger);
-            return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress);
+            using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
+                includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
+            return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, 
+                ref cursor, count, scanFunctions, iter, validateCursor, maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }
 
         /// <summary>
@@ -316,7 +318,7 @@ namespace Tsavorite.core
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator> observer)
         {
             using var iter = new RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
-                    includeSealedRecords: false, assumeInMemory: true, logger: logger);
+                    includeClosedRecords: false, assumeInMemory: true, logger: logger);
             observer?.OnNext(iter);
         }
     }

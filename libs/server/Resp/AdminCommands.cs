@@ -9,8 +9,8 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
-using Garnet.server.Auth.Settings;
 using Garnet.server.Custom;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -54,6 +54,7 @@ namespace Garnet.server
                 RespCommand.SLOWLOG_RESET => NetworkSlowLogReset(),
                 RespCommand.ROLE => NetworkROLE(),
                 RespCommand.SAVE => NetworkSAVE(),
+                RespCommand.EXPDELSCAN => NetworkEXPDELSCAN(),
                 RespCommand.LASTSAVE => NetworkLASTSAVE(),
                 RespCommand.BGSAVE => NetworkBGSAVE(),
                 RespCommand.COMMITAOF => NetworkCOMMITAOF(),
@@ -62,6 +63,7 @@ namespace Garnet.server
                 RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_GENPASS => NetworkAclGenPass(),
                 RespCommand.ACL_GETUSER => NetworkAclGetUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
@@ -354,6 +356,16 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkRegisterCs(CustomCommandManager customCommandManager)
         {
+            if (parseState.Count < 6)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.REGISTERCS));
+            }
+
+            if (!CanRunModule())
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.REGISTERCS, "enable-module-command");
+            }
+
             var readPathsOnly = false;
             var optionalParamsRead = 0;
 
@@ -365,9 +377,6 @@ namespace Garnet.server
             var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
 
             ReadOnlySpan<byte> errorMsg = null;
-
-            if (parseState.Count < 6)
-                errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands
             // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
@@ -518,8 +527,12 @@ namespace Garnet.server
         {
             if (parseState.Count < 1) // At least module path is required
             {
-                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
-                return true;
+                return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}");
+            }
+
+            if (!CanRunModule())
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
             }
 
             // Read path to module file
@@ -543,8 +556,7 @@ namespace Garnet.server
             {
                 if (!errorMsg.IsEmpty)
                 {
-                    while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                        SendAndReset();
+                    WriteError(errorMsg);
                 }
 
                 return true;
@@ -567,8 +579,7 @@ namespace Garnet.server
 
             if (!errorMsg.IsEmpty)
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                WriteError(errorMsg);
             }
 
             return true;
@@ -614,9 +625,7 @@ namespace Garnet.server
             {
                 if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage("ERR Invalid GC generation."u8);
                 }
             }
 
@@ -691,9 +700,7 @@ namespace Garnet.server
         {
             if (clusterSession == null)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
             clusterSession.ProcessClusterCommands(command, ref parseState, ref dcurr, ref dend);
@@ -704,77 +711,71 @@ namespace Garnet.server
         {
             if (parseState.Count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEBUG));
             }
 
-            if (
-                    (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.No)
-                 || (
-                        (storeWrapper.serverOptions.EnableDebugCommand == ConnectionProtectionOption.Local)
-                      && !networkSender.IsLocalConnection()
-                    )
-               )
+            if (!CanRunDebug())
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DEUBG_DISALLOWED, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.DEBUG, "enable-debug-command");
             }
 
             var command = parseState.GetArgSliceByRef(0).ReadOnlySpan;
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PANIC))
                 // Throwing an exception is intentional and desirable for this command.
-                throw new GarnetException(Microsoft.Extensions.Logging.LogLevel.Debug, panic: true);
+                throw new GarnetException(LogLevel.Debug, panic: true);
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ERROR))
             {
                 if (parseState.Count != 2)
                 {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
                 }
 
-                while (!RespWriteUtils.TryWriteError(parseState.GetString(1), ref dcurr, dend))
-                    SendAndReset();
+                WriteError(parseState.GetString(1));
+                return true;
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LOG))
+            {
+                if (parseState.Count != 2)
+                {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
+                logger?.LogInformation("DEBUG LOG: {LOG}", parseState.GetString(1));
+
+                WriteDirect(CmdStrings.RESP_OK);
                 return true;
             }
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
-                var help = new List<string>()
+                var help = new string[]
                 {
                     "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
-                    "PANIC",
-                    "\tCrash the server simulating a panic.",
                     "ERROR <string>",
                     "\tReturn a Redis protocol error with <string> as message. Useful for clients",
                     "\tunit tests to simulate Redis errors.",
+                    "LOG <message>",
+                    "\tWrite <message> to the server log.",
+                    "PANIC",
+                    "\tCrash the server simulating a panic.",
                     "HELP",
                     "\tPrints this help"
                 };
 
-                while (!RespWriteUtils.TryWriteArrayLength(help.Count, ref dcurr, dend))
-                    SendAndReset();
-
+                WriteArrayLength(help.Length);
                 foreach (var line in help)
                 {
-                    while (!RespWriteUtils.TryWriteSimpleString(line, ref dcurr, dend))
-                        SendAndReset();
+                    WriteSimpleString(line);
                 }
-
                 return true;
             }
 
-            var error = string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG));
-            while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
-                SendAndReset();
-
+            WriteError(string.Format(CmdStrings.GenericErrUnknownSubCommand, parseState.GetString(0), nameof(RespCommand.DEBUG)));
             return true;
         }
 
@@ -887,6 +888,49 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// EXPDELSCAN [DBID]
+        /// Scan the mutable region and delete all expired keys.
+        /// This is meant to be able to let users do on-demand expiration, and even build their own schedulers
+        /// for calling expiration based on their known workload patterns.
+        /// </summary>
+        private bool NetworkEXPDELSCAN()
+        {
+            if (parseState.Count > 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.EXPDELSCAN));
+            }
+
+            if (storeWrapper.serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_EXPDELSCAN_INVALID);
+            }
+
+            // Default database as default choice.
+            int dbId = 0;
+            if (parseState.Count > 0)
+            {
+                if (!TryParseDatabaseId(0, out dbId))
+                    return true;
+            }
+
+            (var recordsExpired, var recordsScanned) = storeWrapper.ExpiredKeyDeletionScan(dbId);
+
+            // Resp Response Format => *2\r\n$NUM1\r\n$NUM2\r\n
+            int requiredSpace = 5 + NumUtils.CountDigits(recordsExpired) + 3 + NumUtils.CountDigits(recordsScanned) + 2;
+
+            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsExpired, ref dcurr, dend))
+                SendAndReset();
+
+            while (!RespWriteUtils.TryWriteArrayItem(recordsScanned, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }

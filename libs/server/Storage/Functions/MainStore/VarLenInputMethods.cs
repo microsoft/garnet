@@ -114,7 +114,6 @@ namespace Garnet.server
                     fieldInfo.ValueDataSize = BitmapManager.Length(bOffset);
                     return fieldInfo;
                 case RespCommand.BITFIELD:
-                case RespCommand.BITFIELD_RO:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     fieldInfo.ValueDataSize = BitmapManager.LengthFromType(bitFieldArgs);
                     return fieldInfo;
@@ -174,9 +173,8 @@ namespace Garnet.server
                     return fieldInfo;
 
                 case RespCommand.INCRBYFLOAT:
-                    fieldInfo.ValueDataSize = input.parseState.TryGetDouble(0, out var incrByFloat)
-                        ? NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _)
-                        : sizeof(int);
+                    var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
+                    fieldInfo.ValueDataSize = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
                     return fieldInfo;
 
                 default:
@@ -243,8 +241,7 @@ namespace Garnet.server
                         }
                         return fieldInfo;
                     case RespCommand.INCRBYFLOAT:
-                        // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
-                        var incrByFloat = input.parseState.GetDouble(0);
+                        var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
 
                         value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueDataSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
@@ -263,7 +260,6 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.BITFIELD:
-                    case RespCommand.BITFIELD_RO:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
                         fieldInfo.ValueDataSize = BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, srcLogRecord.ValueSpan.Length);
                         return fieldInfo;

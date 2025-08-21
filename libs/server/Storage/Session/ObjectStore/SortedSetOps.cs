@@ -178,7 +178,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(min.Length + max.Length);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(min.Length + max.Length);
             var paramsSpan = paramsSlice.Span;
 
             // Store parameters to buffer
@@ -200,7 +200,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectStoreContext);
             countRemoved = output.result1;
 
-            scratchBufferManager.RewindScratchBuffer(paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
             return status;
         }
@@ -225,7 +225,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(min.Length + max.Length);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(min.Length + max.Length);
             var paramsSpan = paramsSlice.Span;
 
             // Store parameters to buffer
@@ -249,7 +249,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext,
                 ref output);
 
-            scratchBufferManager.RewindScratchBuffer(paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
             if (status == GarnetStatus.OK)
             {
@@ -286,7 +286,7 @@ namespace Garnet.server
             var stopLen = NumUtils.CountDigits(stop);
 
             // Get buffer from scratch buffer manager
-            var paramsSlice = scratchBufferManager.CreateArgSlice(startLen + stopLen);
+            var paramsSlice = scratchBufferBuilder.CreateArgSlice(startLen + stopLen);
             var paramsSpan = paramsSlice.Span;
 
             // Store parameters to buffer
@@ -309,7 +309,7 @@ namespace Garnet.server
             status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext,
                 ref output);
 
-            scratchBufferManager.RewindScratchBuffer(paramsSlice);
+            scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 
             if (status == GarnetStatus.OK)
             {
@@ -339,7 +339,7 @@ namespace Garnet.server
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(header, count, 2);
 
             var output = new GarnetObjectStoreOutput();
 
@@ -374,7 +374,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var strIncr = increment.ToString(CultureInfo.InvariantCulture);
-            var incrSlice = scratchBufferManager.CreateArgSlice(strIncr);
+            var incrSlice = scratchBufferBuilder.CreateArgSlice(strIncr);
             Encoding.UTF8.GetBytes(strIncr, incrSlice.Span);
 
             // Prepare the parse state
@@ -382,7 +382,7 @@ namespace Garnet.server
 
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(header, ref parseState, arg2: 2);
 
             var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext,
@@ -391,11 +391,12 @@ namespace Garnet.server
             // Process output
             if (status == GarnetStatus.OK)
             {
-                var result = ProcessRespArrayOutput(output, out var error);
-                if (error == default)
+                var result = ProcessRespSingleTokenOutput(output);
+                if (result.length > 0)
                 {
+                    var sbResult = result.ReadOnlySpan;
                     // get the new score
-                    _ = NumUtils.TryParse(result[0].ReadOnlySpan, out newScore);
+                    _ = NumUtils.TryParseWithInfinity(sbResult, out newScore);
                 }
             }
 
@@ -476,14 +477,14 @@ namespace Garnet.server
             // Limit parameter
             if (limit != default && (sortedSetOrderOperation == SortedSetOrderOperation.ByScore || sortedSetOrderOperation == SortedSetOrderOperation.ByLex))
             {
-                arguments.Add(scratchBufferManager.CreateArgSlice("LIMIT"u8));
+                arguments.Add(scratchBufferBuilder.CreateArgSlice("LIMIT"u8));
 
                 // Offset
-                arguments.Add(scratchBufferManager.CreateArgSlice(limit.Item1));
+                arguments.Add(scratchBufferBuilder.CreateArgSlice(limit.Item1));
 
                 // Count
                 var limitCountLength = NumUtils.CountDigits(limit.Item2);
-                var limitCountSlice = scratchBufferManager.CreateArgSlice(limitCountLength);
+                var limitCountSlice = scratchBufferBuilder.CreateArgSlice(limitCountLength);
                 NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
                 arguments.Add(limitCountSlice);
             }
@@ -500,7 +501,7 @@ namespace Garnet.server
             for (var i = arguments.Count - 1; i > 1; i--)
             {
                 var currSlice = arguments[i];
-                scratchBufferManager.RewindScratchBuffer(currSlice);
+                scratchBufferBuilder.RewindScratchBuffer(currSlice);
             }
 
             if (status == GarnetStatus.OK)
@@ -516,7 +517,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="pairs"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<PinnedSpanByte> keys, out Dictionary<byte[], double> pairs)
+        public unsafe GarnetStatus SortedSetDifference(ReadOnlySpan<PinnedSpanByte> keys, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -538,7 +539,17 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetDifference(keys, ref objectContext, out pairs);
+                var status = SortedSetDifference(keys, ref objectContext, out var result);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new(SortedSetComparer.Instance);
+                    foreach (var pair in result)
+                    {
+                        pairs.Add((pair.Value, pair.Key));
+                    }
+                }
+
+                return status;
             }
             finally
             {
@@ -1012,7 +1023,7 @@ namespace Garnet.server
          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
 
-        public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -1034,7 +1045,18 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetUnion(keys, ref objectContext, out pairs, weights, aggregateType);
+                var status = SortedSetUnion(keys, ref objectContext, out var result, weights, aggregateType);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new(SortedSetComparer.Instance);
+
+                    foreach (var pair in result)
+                    {
+                        pairs.Add((pair.Value, pair.Key));
+                    }
+                }
+
+                return status;
             }
             finally
             {
@@ -1199,9 +1221,9 @@ namespace Garnet.server
             if (firstObj.GarnetObject is not SortedSetObject firstSortedSet)
                 return GarnetStatus.WRONGTYPE;
 
+            pairs = SortedSetObject.CopyDiff(firstSortedSet, null);
             if (keys.Length == 1)
             {
-                pairs = firstSortedSet.Dictionary;
                 return GarnetStatus.OK;
             }
 
@@ -1220,10 +1242,7 @@ namespace Garnet.server
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                if (pairs == default)
-                    pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
-                else
-                    SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
+                SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
             }
 
             return GarnetStatus.OK;
@@ -1293,7 +1312,7 @@ namespace Garnet.server
             var status = SortedSetIntersect(keys, null, SortedSetAggregateType.Sum, out var pairs);
             if (status == GarnetStatus.OK && pairs != null)
             {
-                count = limit.HasValue ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
+                count = limit > 0 ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
             }
 
             return status;
@@ -1363,7 +1382,7 @@ namespace Garnet.server
         /// <summary>
         /// Computes the intersection of multiple sorted sets and returns the result with optional weights and aggregate type.
         /// </summary>
-        public GarnetStatus SortedSetIntersect(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
         {
             pairs = default;
 
@@ -1385,7 +1404,20 @@ namespace Garnet.server
 
             try
             {
-                return SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out pairs);
+                var status = SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out var result);
+                if (status == GarnetStatus.OK)
+                {
+                    pairs = new(SortedSetComparer.Instance);
+                    if (result != null)
+                    {
+                        foreach (var pair in result)
+                        {
+                            pairs.Add((pair.Value, pair.Key));
+                        }
+                    }
+                }
+
+                return status;
             }
             finally
             {
@@ -1450,7 +1482,7 @@ namespace Garnet.server
                 if (statusOp != GarnetStatus.OK)
                 {
                     pairs = default;
-                    return statusOp;
+                    return GarnetStatus.OK;
                 }
 
                 if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
@@ -1475,6 +1507,12 @@ namespace Garnet.server
                         SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
                         _ => kvp.Value + weightedScore // Default to SUM
                     };
+
+                    // That's what the references do. Arguably we're doing bug compatible behaviour here.
+                    if (double.IsNaN(pairs[kvp.Key]))
+                    {
+                        pairs[kvp.Key] = 0;
+                    }
                 }
 
                 // If intersection becomes empty, we can stop early
@@ -1517,19 +1555,14 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             results = default;
-            var expireMillisecs = expireAt.ToUnixTimeMilliseconds();
-            var expiryLength = NumUtils.CountDigits(expireMillisecs);
-            var expiryArg = scratchBufferManager.CreateArgSlice(expiryLength);
-            var expirySpan = expiryArg.Span;
-            NumUtils.WriteInt64(expireMillisecs, expirySpan);
+            var expirationTimeInTicks = expireAt.UtcTicks;
 
-            parseState.Initialize(1 + members.Length);
-            parseState.SetArgument(0, expiryArg);
-            parseState.SetArguments(1, members);
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
+
+            parseState.InitializeWithArguments(members);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var inputFlag = SortedSetExpireInputFlags.InMilliseconds | SortedSetExpireInputFlags.InTimestamp | SortedSetExpireInputFlags.NoSkip;
-            var innerInput = new ObjectInput(header, ref parseState, startIdx: 0, arg1: (int)expireOption, arg2: (int)inputFlag);
+            var innerInput = new ObjectInput(header, ref parseState, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
             var output = new GarnetObjectStoreOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);

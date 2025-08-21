@@ -59,6 +59,11 @@ namespace Tsavorite.core
         Deleted,
 
         /// <summary>
+        /// Record expiration
+        /// </summary>
+        Expired,
+
+        /// <summary>
         /// Elided from hash chain but not put into Revivification free list
         /// </summary>
         Elided,

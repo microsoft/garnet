@@ -117,6 +117,7 @@ namespace Garnet.server
         DECR,
         DECRBY,
         DEL,
+        DELIFEXPIM,
         DELIFGREATER,
         EXPIRE,
         EXPIREAT,
@@ -275,6 +276,7 @@ namespace Garnet.server
         TIME,
         ROLE,
         SAVE,
+        EXPDELSCAN,
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
@@ -297,6 +299,7 @@ namespace Garnet.server
         ACL,
         ACL_CAT,
         ACL_DELUSER,
+        ACL_GENPASS,
         ACL_GETUSER,
         ACL_LIST,
         ACL_LOAD,
@@ -416,6 +419,7 @@ namespace Garnet.server
             // ACL
             RespCommand.ACL_CAT,
             RespCommand.ACL_DELUSER,
+            RespCommand.ACL_GENPASS,
             RespCommand.ACL_GETUSER,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
@@ -693,7 +697,6 @@ namespace Garnet.server
                 // Extract total element count from the array header.
                 // NOTE: Subtracting one to account for first token being parsed.
                 count = ptr[1] - '1';
-                Debug.Assert(count is >= 0 and < 9);
 
                 // Extract length of the first string header
                 var length = ptr[5] - '0';
@@ -826,7 +829,6 @@ namespace Garnet.server
                 {
                     // Extract length from string header
                     var length = ptr[1] - '0';
-                    Debug.Assert(length is > 0 and <= 9);
 
                     // Ensure that the complete command string is contained in the package. Otherwise exit early.
                     // Include 6 bytes to account for command string header and name terminator.
@@ -1544,7 +1546,6 @@ namespace Garnet.server
                 {
                     // Extract length from string header
                     var length = ptr[2] - '0' + 10;
-                    Debug.Assert(length is >= 10 and <= 19);
 
                     // Ensure that the complete command string is contained in the package. Otherwise exit early.
                     // Include 7 bytes to account for command string header and name terminator.
@@ -2331,6 +2332,10 @@ namespace Garnet.server
             {
                 return RespCommand.SAVE;
             }
+            else if (command.SequenceEqual(CmdStrings.EXPDELSCAN))
+            {
+                return RespCommand.EXPDELSCAN;
+            }
             else if (command.SequenceEqual(CmdStrings.LASTSAVE))
             {
                 return RespCommand.LASTSAVE;
@@ -2425,6 +2430,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
                 {
                     return RespCommand.ACL_DELUSER;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.GENPASS))
+                {
+                    return RespCommand.ACL_GENPASS;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
                 {
@@ -2759,7 +2768,7 @@ namespace Garnet.server
             var ptr = recvBufferPtr + readHead;
 
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
-            if (MakeUpperCase(ptr))
+            if (MakeUpperCase(ptr, bytesRead - readHead))
             {
                 cmd = FastParseCommand(out count);
                 if (cmd != RespCommand.NONE)

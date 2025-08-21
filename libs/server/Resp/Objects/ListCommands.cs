@@ -22,9 +22,7 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             var key = parseState.GetArgSliceByRef(0);
 
@@ -71,9 +69,7 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 1)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -83,12 +79,8 @@ namespace Garnet.server
             if (parseState.Count == 2)
             {
                 // Read count
-                if (!parseState.TryGetInt(1, out popCount))
-                {
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
-                }
+                if (!parseState.TryGetInt(1, out popCount) || (popCount < 0))
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
             }
 
             var lop =
@@ -139,9 +131,7 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.LPOS));
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -199,9 +189,7 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count < 3)
-            {
                 return AbortWithWrongNumberOfArguments("LMPOP");
-            }
 
             var currTokenId = 0;
 
@@ -213,26 +201,17 @@ namespace Garnet.server
             }
 
             if (parseState.Count != numKeys + 2 && parseState.Count != numKeys + 4)
-            {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
 
             // Get the keys for Lists
             var keys = new PinnedSpanByte[numKeys];
 
             for (var i = 0; i < keys.Length; i++)
-            {
                 keys[i] = parseState.GetArgSliceByRef(currTokenId++);
-            }
 
             // Get the direction
-            var dir = parseState.GetArgSliceByRef(currTokenId++);
-            var popDirection = GetOperationDirection(dir);
-
-            if (popDirection == OperationDirection.Unknown)
-            {
+            if (!parseState.TryGetOperationDirection(currTokenId++, out var popDirection))
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
 
             var popCount = 1;
 
@@ -242,9 +221,7 @@ namespace Garnet.server
                 var countKeyword = parseState.GetArgSliceByRef(currTokenId++);
 
                 if (!countKeyword.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
-                {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                }
 
                 // Read count
                 if (!parseState.TryGetInt(currTokenId, out popCount))
@@ -278,8 +255,7 @@ namespace Garnet.server
 
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                     break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -293,23 +269,15 @@ namespace Garnet.server
         private bool ListBlockingPop(RespCommand command)
         {
             if (parseState.Count < 2)
-            {
                 return AbortWithWrongNumberOfArguments(command.ToString());
-            }
 
             var keysBytes = new byte[parseState.Count - 1][];
 
             for (var i = 0; i < keysBytes.Length; i++)
-            {
                 keysBytes[i] = parseState.GetArgSliceByRef(i).ToArray();
-            }
 
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
+                return AbortWithErrorMessage(error);
 
             if (storeWrapper.objectStore == null)
                 throw new GarnetException("Object store is disabled");
@@ -331,10 +299,7 @@ namespace Garnet.server
             }
 
             if (!result.Found)
-            {
-                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                    SendAndReset();
-            }
+                WriteNullArray();
             else
             {
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
@@ -353,21 +318,17 @@ namespace Garnet.server
         private unsafe bool ListBlockingMove()
         {
             if (parseState.Count != 5)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMOVE));
-            }
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-            var srcDir = parseState.GetArgSliceByRef(2);
-            var dstDir = parseState.GetArgSliceByRef(3);
 
-            if (!parseState.TryGetDouble(4, out var timeout))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            if (!parseState.TryGetOperationDirection(2, out var srcDir) ||
+                    !parseState.TryGetOperationDirection(3, out var dstDir))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
+            if (!parseState.TryGetTimeout(4, out var timeout, out var error))
+                return AbortWithErrorMessage(error);
 
             return ListBlockingMove(srcKey, dstKey, srcDir, dstDir, timeout);
         }
@@ -379,39 +340,30 @@ namespace Garnet.server
         private bool ListBlockingPopPush()
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BRPOPLPUSH));
-            }
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-            var rightOption = PinnedSpanByte.FromPinnedSpan(CmdStrings.RIGHT);
-            var leftOption = PinnedSpanByte.FromPinnedSpan(CmdStrings.LEFT);
 
-            if (!parseState.TryGetDouble(2, out var timeout))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            if (!parseState.TryGetTimeout(2, out var timeout, out var error))
+                return AbortWithErrorMessage(error);
 
-            return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
+            return ListBlockingMove(srcKey, dstKey, OperationDirection.Right,
+                                    OperationDirection.Left, timeout);
         }
 
-        private bool ListBlockingMove(PinnedSpanByte srcKey, PinnedSpanByte dstKey, PinnedSpanByte srcDir, PinnedSpanByte dstDir, double timeout)
+        private bool ListBlockingMove(PinnedSpanByte srcKey, PinnedSpanByte dstKey,
+                                      OperationDirection sourceDirection,
+                                      OperationDirection destinationDirection,
+                                      double timeout)
         {
             var cmdArgs = new PinnedSpanByte[] { default, default, default };
 
             // Read destination key
             cmdArgs[0] = dstKey;
 
-            var sourceDirection = GetOperationDirection(srcDir);
-            var destinationDirection = GetOperationDirection(dstDir);
-
             if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
-            {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
 
             var pSrcDir = (byte*)&sourceDirection;
             var pDstDir = (byte*)&destinationDirection;
@@ -462,9 +414,7 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 1)
-            {
                 return AbortWithWrongNumberOfArguments("LLEN");
-            }
 
             var key = parseState.GetArgSliceByRef(0);
 
@@ -505,9 +455,7 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments("LTRIM");
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -555,9 +503,7 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments("LRANGE");
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -609,9 +555,7 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 2)
-            {
                 return AbortWithWrongNumberOfArguments("LINDEX");
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -664,9 +608,7 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 4)
-            {
                 return AbortWithWrongNumberOfArguments("LINSERT");
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -711,9 +653,7 @@ namespace Garnet.server
         {
             // if params are missing return error
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments("LREM");
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -765,26 +705,16 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 4)
-            {
                 return AbortWithWrongNumberOfArguments("LMOVE");
-            }
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
 
-            var srcDirSlice = parseState.GetArgSliceByRef(2);
-            var dstDirSlice = parseState.GetArgSliceByRef(3);
-
-            var sourceDirection = GetOperationDirection(srcDirSlice);
-            var destinationDirection = GetOperationDirection(dstDirSlice);
-
-            if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
-            {
+            if (!parseState.TryGetOperationDirection(2, out var sourceDirection) ||
+                    !parseState.TryGetOperationDirection(3, out var destinationDirection))
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-            }
 
-            if (!ListMove(srcKey, dstKey, sourceDirection, destinationDirection, out var node,
-                    ref storageApi, out var garnetStatus))
+            if (!ListMove(srcKey, dstKey, sourceDirection, destinationDirection, out var node, ref storageApi, out var garnetStatus))
                 return false;
 
             switch (garnetStatus)
@@ -819,15 +749,12 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 2)
-            {
                 return AbortWithWrongNumberOfArguments("RPOPLPUSH");
-            }
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
 
-            if (!ListMove(srcKey, dstKey, OperationDirection.Right, OperationDirection.Left,
-                    out var node, ref storageApi, out var garnetStatus))
+            if (!ListMove(srcKey, dstKey, OperationDirection.Right, OperationDirection.Left, out var node, ref storageApi, out var garnetStatus))
                 return false;
 
             switch (garnetStatus)
@@ -865,7 +792,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="garnetStatus"></param>
         /// <returns></returns>
-        private bool ListMove<TGarnetApi>(PinnedSpanByte sourceKey, PinnedSpanByte destinationKey,
+        private static bool ListMove<TGarnetApi>(PinnedSpanByte sourceKey, PinnedSpanByte destinationKey,
             OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] node,
             ref TGarnetApi storageApi, out GarnetStatus garnetStatus)
             where TGarnetApi : IGarnetApi
@@ -885,9 +812,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 3)
-            {
                 return AbortWithWrongNumberOfArguments("LSET");
-            }
 
             // Get the key for List
             var key = parseState.GetArgSliceByRef(0);
@@ -927,17 +852,13 @@ namespace Garnet.server
         private unsafe bool ListBlockingPopMultiple()
         {
             if (parseState.Count < 4)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMPOP));
-            }
 
             var currTokenId = 0;
 
             // Read timeout
-            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
-            }
+            if (!parseState.TryGetTimeout(currTokenId++, out var timeout, out var error))
+                return AbortWithErrorMessage(error);
 
             // Read count of keys
             if (!parseState.TryGetInt(currTokenId++, out var numKeys))
@@ -959,10 +880,7 @@ namespace Garnet.server
             var cmdArgs = new PinnedSpanByte[2];
 
             // Get the direction
-            var dir = parseState.GetArgSliceByRef(currTokenId++);
-            var popDirection = GetOperationDirection(dir);
-
-            if (popDirection == OperationDirection.Unknown)
+            if (!parseState.TryGetOperationDirection(currTokenId++, out var popDirection))
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
 
             cmdArgs[0] = PinnedSpanByte.FromPinnedPointer((byte*)&popDirection, 1);

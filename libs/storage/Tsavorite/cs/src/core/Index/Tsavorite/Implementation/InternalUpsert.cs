@@ -204,6 +204,8 @@ namespace Tsavorite.core
 
                 var sizeInfo = TValueSelector.GetUpsertRecordSize(hlog, logRecord.Key, srcStringValue, srcObjectValue, in inputLogRecord, ref input, sessionFunctions);
 
+                ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
+
                 // Type arg specification is needed because we don't pass TContext
                 ok = TValueSelector.InitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
                         ref logRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
@@ -212,10 +214,13 @@ namespace Tsavorite.core
                     // Success
                     MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                    // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
+                    stats.inChainSuccesses++;
                     return true;
                 }
                 // Did not revivify; restore the tombstone and leave the deleted record there.
+                stats.inChainFailures++;
             }
             finally
             {

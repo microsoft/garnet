@@ -21,6 +21,7 @@ namespace Garnet.server
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
+        public IStoreFunctions objectStoreFunctions;
         public ETagState etagState;
         public readonly ILogger logger;
         public byte respProtocolVersion;
@@ -28,16 +29,18 @@ namespace Garnet.server
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
-        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
-            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer, ILogger logger,
+        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
+            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, ILogger logger,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
-            this.customCommandManager = customCommandManager;
+            this.customCommandManager = storeWrapper.customCommandManager;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
-            this.garnetObjectSerializer = garnetObjectSerializer;
+            this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
+            objectStoreFunctions = storeWrapper.objectStoreFunctions;
+
             this.etagState = new ETagState();
             this.logger = logger;
             this.respProtocolVersion = respProtocolVersion;

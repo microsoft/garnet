@@ -42,6 +42,27 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Dispose session with Tsavorite
+        /// </summary>
+        /// <param name="sessionID"></param>
+        /// <returns></returns>
+        internal void DisposeClientSession(int sessionID)
+        {
+            if (_activeSessions != null)
+            {
+                lock (_activeSessions)
+                {
+                    if (_activeSessions.TryGetValue(sessionID, out SessionInfo sessionInfo))
+                    {
+                        var session = sessionInfo.session;
+                        session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+                        _ = _activeSessions.Remove(sessionID);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Dumps the revivification stats to a string.
         /// </summary>
         public string DumpRevivificationStats()
@@ -53,7 +74,6 @@ namespace Tsavorite.core
                     // Merge the session-level stats into the global stats, clear the session-level stats, and keep the cumulative stats.
                     foreach (var sessionInfo in _activeSessions.Values)
                         sessionInfo.session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
-
                 }
             }
             return RevivificationManager.stats.Dump();

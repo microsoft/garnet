@@ -84,16 +84,16 @@ namespace Garnet.server
         /// </summary>
         private unsafe struct RunnerAdapter : IResponseAdapter
         {
-            private readonly ScratchBufferManager bufferManager;
+            private readonly ScratchBufferBuilder bufferBuilder;
             private byte* origin;
             private byte* curHead;
 
-            internal RunnerAdapter(ScratchBufferManager bufferManager)
+            internal RunnerAdapter(ScratchBufferBuilder bufferBuilder)
             {
-                this.bufferManager = bufferManager;
-                this.bufferManager.Reset();
+                this.bufferBuilder = bufferBuilder;
+                this.bufferBuilder.Reset();
 
-                var scratchSpace = bufferManager.FullBuffer();
+                var scratchSpace = bufferBuilder.FullBuffer();
 
                 origin = curHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
                 BufferEnd = curHead + scratchSpace.Length;
@@ -120,7 +120,7 @@ namespace Garnet.server
                 {
                     var len = (int)(curHead - origin);
 
-                    var full = bufferManager.FullBuffer();
+                    var full = bufferBuilder.FullBuffer();
 
                     return full[..len];
                 }
@@ -135,9 +135,9 @@ namespace Garnet.server
                 //
                 // Since we're managing the start/end pointers outside of the buffer
                 // we need to signal that the buffer has data to copy
-                bufferManager.GrowBuffer(copyLengthOverride: len);
+                bufferBuilder.GrowBuffer(copyLengthOverride: len);
 
-                var scratchSpace = bufferManager.FullBuffer();
+                var scratchSpace = bufferBuilder.FullBuffer();
 
                 origin = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(scratchSpace));
                 BufferEnd = origin + scratchSpace.Length;
@@ -164,7 +164,7 @@ namespace Garnet.server
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly RespServerSession respServerSession;
 
-        readonly ScratchBufferManager scratchBufferManager;
+        readonly ScratchBufferBuilder scratchBufferBuilder;
         readonly TxnKeyEntries txnKeyEntries;
         readonly bool txnMode;
 
@@ -231,7 +231,7 @@ namespace Garnet.server
             this.allowedFunctions = allowedFunctions;
             this.logger = logger;
 
-            scratchBufferManager = respServerSession?.scratchBufferManager ?? new();
+            scratchBufferBuilder = respServerSession?.scratchBufferBuilder ?? new();
 
             // Explicitly force to RESP2 for now
             if (respServerSession != null)
@@ -300,6 +300,9 @@ namespace Garnet.server
             Register(ref state, "garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
             Register(ref state, "garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
             Register(ref state, "garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
+            Register(ref state, "garnet_struct_pack\0"u8, &LuaRunnerTrampolines.StructPack);
+            Register(ref state, "garnet_struct_unpack\0"u8, &LuaRunnerTrampolines.StructUnpack);
+            Register(ref state, "garnet_struct_size\0"u8, &LuaRunnerTrampolines.StructSize);
             Register(ref state, "garnet_call\0"u8, garnetCall);
             Register(ref state, "garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
             Register(ref state, "garnet_log\0"u8, &LuaRunnerTrampolines.Log);
@@ -418,7 +421,7 @@ namespace Garnet.server
         {
             state.ExpectLuaStackEmpty();
 
-            runnerAdapter = new RunnerAdapter(scratchBufferManager);
+            runnerAdapter = new RunnerAdapter(scratchBufferBuilder);
             try
             {
                 LuaRunnerTrampolines.SetCallbackContext(this);
@@ -1233,18 +1236,18 @@ namespace Garnet.server
                     // Add keys to the transaction
                     foreach (var key in keys)
                     {
-                        var _key = scratchBufferManager.CreateArgSlice(key);
+                        var _key = scratchBufferBuilder.CreateArgSlice(key);
                         txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
                         if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
                             txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
                     }
 
-                    adapter = new(scratchBufferManager);
+                    adapter = new(scratchBufferBuilder);
                     RunInTransaction(ref adapter);
                 }
                 else
                 {
-                    adapter = new(scratchBufferManager);
+                    adapter = new(scratchBufferBuilder);
                     RunCommon(ref adapter);
                 }
 
@@ -1426,6 +1429,9 @@ namespace Garnet.server
             var ignored = 0;
             state.RawSet(1, sandboxEnvIndex, ref ignored);
 
+            // Get sandbox_env off the stack
+            state.Pop(1);
+
             keysArrCapacity = length;
 
             return true;
@@ -1455,6 +1461,9 @@ namespace Garnet.server
             // Save it, which should have NO allocation impact because we're updating an existing slot
             var ignored = 0;
             state.RawSet(1, sandboxEnvIndex, ref ignored);
+
+            // Get sandbox_env off the stack
+            state.Pop(1);
 
             argvArrCapacity = length;
 

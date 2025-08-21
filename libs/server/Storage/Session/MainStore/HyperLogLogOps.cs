@@ -29,13 +29,13 @@ namespace Garnet.server
 
             foreach (var element in elements)
             {
-                var elementSlice = scratchBufferManager.CreateArgSlice(element);
+                var elementSlice = scratchBufferBuilder.CreateArgSlice(element);
                 parseState.SetArgument(0, elementSlice);
 
                 var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
                 _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
 
-                _ = scratchBufferManager.RewindScratchBuffer(elementSlice);
+                scratchBufferBuilder.RewindScratchBuffer(elementSlice);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)

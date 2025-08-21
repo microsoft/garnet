@@ -79,10 +79,6 @@ namespace Garnet.server
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }
 
-        internal static bool CheckExpiry<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
-
         static bool EvaluateObjectExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetObjectStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");

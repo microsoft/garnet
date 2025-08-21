@@ -47,7 +47,8 @@ namespace Garnet.test
             RespCommand.BITOP_OR,
             RespCommand.BITOP_XOR,
             RespCommand.BITOP_NOT,
-            RespCommand.INVALID
+            RespCommand.INVALID,
+            RespCommand.DELIFEXPIM
         ];
 
         [SetUp]
@@ -76,6 +77,7 @@ namespace Garnet.test
             ];
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
                 extensionBinPaths: [extTestDir]);
             server.Start();
         }
@@ -438,6 +440,7 @@ namespace Garnet.test
                 // ACL
                 RespCommand.ACL_CAT,
                 RespCommand.ACL_DELUSER,
+                RespCommand.ACL_GENPASS,
                 RespCommand.ACL_GETUSER,
                 RespCommand.ACL_LIST,
                 RespCommand.ACL_LOAD,

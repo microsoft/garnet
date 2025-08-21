@@ -5,8 +5,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using Garnet.common;
+
+using Limit = (int offset, int count);
 
 namespace Garnet.server
 {
@@ -23,9 +24,9 @@ namespace Garnet.server
             public bool ByScore { get; set; }
             public bool ByLex { get; set; }
             public bool Reverse { get; set; }
-            public (int, int) Limit { get; set; }
-            public bool ValidLimit { get; set; }
             public bool WithScores { get; set; }
+            public bool ValidLimit { get; set; }
+            public Limit Limit { get; set; }
         };
 
         private enum SpecialRanges : byte
@@ -135,6 +136,7 @@ namespace Garnet.server
                         // Don't add new member if XX flag is set
                         if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
 
+                        incrResult = score;
                         sortedSetDict.Add(member, score);
                         if (sortedSet.Add((score, member)))
                             addedOrChanged++;
@@ -149,6 +151,12 @@ namespace Garnet.server
                         {
                             score += scoreStored;
                             incrResult = score;
+
+                            if (double.IsNaN(score))
+                            {
+                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                                return;
+                            }
                         }
 
                         // No need for update
@@ -162,7 +170,15 @@ namespace Garnet.server
                         // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
                         if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
                             ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
-                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score)) continue;
+                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
+                        {
+                            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                            {
+                                writer.WriteNull();
+                                return;
+                            }
+                            continue;
+                        }
 
                         sortedSetDict[member] = score;
                         var success = sortedSet.Remove((scoreStored, member));
@@ -201,11 +217,10 @@ namespace Garnet.server
                 var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
                 var valueArray = value.ToArray();
 
-                if (!sortedSetDict.TryGetValue(valueArray, out var key))
+                if (!sortedSetDict.Remove(valueArray, out var key))
                     continue;
 
                 output.Header.result1++;
-                sortedSetDict.Remove(valueArray);
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
 
@@ -303,6 +318,10 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
+            // It's useful to fix RESP2 in the internal API as that just reads back the output.
+            if (input.arg2 > 0)
+                respProtocolVersion = (byte)input.arg2;
+
             // ZINCRBY key increment member
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -318,9 +337,17 @@ namespace Garnet.server
 
             if (sortedSetDict.TryGetValue(member, out var score))
             {
-                sortedSetDict[member] += incrValue;
+                var result = score + incrValue;
+
+                if (double.IsNaN(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                    return;
+                }
+
+                sortedSetDict[member] = result;
                 sortedSet.Remove((score, member));
-                sortedSet.Add((sortedSetDict[member], member));
+                sortedSet.Add((result, member));
             }
             else
             {
@@ -355,6 +382,11 @@ namespace Garnet.server
                 Reverse = (rangeOpts & SortedSetRangeOpts.Reverse) != 0,
                 WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
             };
+
+            // The ZRANGESTORE code will read our output and store it, it's used to RESP2 output.
+            // Since in that case isn't displayed to the user, we can override the version to let it work.
+            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOpts.Store) != 0)
+                respProtocolVersion = 2;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -560,13 +592,13 @@ namespace Garnet.server
             // Using to list to avoid modified enumerator exception
             foreach (var item in sortedSet.Skip(start).Take(elementCount).ToList())
             {
-                if (sortedSetDict.Remove(item.Item2, out var key))
+                if (sortedSetDict.Remove(item.Element, out var key))
                 {
-                    sortedSet.Remove((key, item.Item2));
+                    sortedSet.Remove((key, item.Element));
 
-                    UpdateSize(item.Item2, false);
+                    UpdateSize(item.Element, false);
                 }
-                TryRemoveExpiration(item.Item2);
+                TryRemoveExpiration(item.Element);
             }
 
             // Write the number of elements
@@ -612,23 +644,30 @@ namespace Garnet.server
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             // The count parameter can have a negative value, but the array length can't
-            var arrayLength = Math.Abs(withScores ? count * 2 : count);
+            var arrayLength = Math.Abs((withScores && respProtocolVersion == 2) ? count * 2 : count);
             if (arrayLength > 1 || (arrayLength == 1 && includedCount))
             {
                 writer.WriteArrayLength(arrayLength);
             }
+            var indexCount = Math.Abs(count);
 
-            var indexes = RandomUtils.PickKRandomIndexes(sortedSetCount, Math.Abs(count), seed, count > 0);
+            var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+            RandomUtils.PickKRandomIndexes(sortedSetCount, indexes, seed, count > 0);
 
             foreach (var item in indexes)
             {
                 var (element, score) = ElementAt(item);
 
+                if (withScores && (respProtocolVersion >= 3))
+                    writer.WriteArrayLength(2);
+
                 writer.WriteBulkString(element);
 
                 if (withScores)
                 {
-                    writer.WriteDoubleBulkString(score);
+                    writer.WriteDoubleNumeric(score);
                 }
             }
 
@@ -703,7 +742,7 @@ namespace Garnet.server
                 {
                     writer.WriteArrayLength(2); // Rank and score
                     writer.WriteInt32(rank);
-                    writer.WriteDoubleBulkString(score);
+                    writer.WriteDoubleNumeric(score);
                 }
                 else
                 {
@@ -756,6 +795,10 @@ namespace Garnet.server
             if (sortedSet.Count < count)
                 count = sortedSet.Count;
 
+            if (input.arg2 > 0)
+                respProtocolVersion = (byte)input.arg2;
+
+            // When the output will be read later by ProcessRespArrayOutputAsPairs we force RESP version to 2.
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (count == 0)
@@ -858,50 +901,14 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
 
-            var expireOption = (ExpireOption)input.arg1;
-            var inputFlags = (SortedSetExpireInputFlags)input.arg2;
-            var isInMilliseconds = inputFlags.HasFlag(SortedSetExpireInputFlags.InMilliseconds);
-            var isInTimestamp = inputFlags.HasFlag(SortedSetExpireInputFlags.InTimestamp);
-            var idx = 0;
-            var expiration = input.parseState.GetLong(idx++);
-
-            // Convert to UTC ticks
-            if (isInMilliseconds && isInTimestamp)
-            {
-                expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration);
-            }
-            else if (isInMilliseconds && !isInTimestamp)
-            {
-                expiration = ConvertUtils.UnixTimestampInMillisecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiration);
-            }
-            else if (!isInMilliseconds && isInTimestamp)
-            {
-                expiration = ConvertUtils.UnixTimestampInSecondsToTicks(expiration);
-            }
-            else if (!isInMilliseconds && !isInTimestamp)
-            {
-                expiration = ConvertUtils.UnixTimestampInSecondsToTicks(DateTimeOffset.UtcNow.ToUnixTimeSeconds() + expiration);
-            }
-
-            if (!inputFlags.HasFlag(SortedSetExpireInputFlags.NoSkip))
-            {
-                if (expireOption != ExpireOption.None)
-                {
-                    idx++;
-                }
-
-                idx += 2; // Skip `MEMBERS` and `nummembers` arguments by assuming the valudation is done in the caller
-            }
-
-            var numFields = input.parseState.Count - idx;
+            var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteArrayLength(input.parseState.Count);
 
-            writer.WriteArrayLength(numFields);
-
-            foreach (var item in input.parseState.Parameters.Slice(idx))
+            foreach (var item in input.parseState.Parameters)
             {
-                var result = SetExpiration(item.ToArray(), expiration, expireOption);
+                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
@@ -934,7 +941,7 @@ namespace Garnet.server
             bool validLimit,
             bool rem,
             out int errorCode,
-            (int, int) limit = default)
+            Limit limit = default)
         {
             var elementsInLex = new List<(double, byte[])>();
 
@@ -956,7 +963,9 @@ namespace Garnet.server
                 (maxValueExclusive, minValueExclusive) = (minValueExclusive, maxValueExclusive);
             }
 
-            if (minValueInfinity == SpecialRanges.InfiniteMax || maxValueInfinity == SpecialRanges.InfiniteMin)
+            if (minValueInfinity == SpecialRanges.InfiniteMax ||
+                maxValueInfinity == SpecialRanges.InfiniteMin ||
+                (validLimit && (limit.offset < 0 || limit.count == 0)))
             {
                 errorCode = 0;
                 return elementsInLex;
@@ -990,9 +999,8 @@ namespace Garnet.server
 
                     if (rem)
                     {
-                        if (sortedSetDict.TryGetValue(item.Element, out var _key))
+                        if (sortedSetDict.Remove(item.Element, out var _key))
                         {
-                            sortedSetDict.Remove(item.Element);
                             sortedSet.Remove((_key, item.Element));
                             TryRemoveExpiration(item.Element);
 
@@ -1007,14 +1015,16 @@ namespace Garnet.server
                 if (validLimit)
                 {
                     elementsInLex = [.. elementsInLex
-                                        .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                        .Take(limit.Item2 > 0 ? limit.Item2 : elementsInLex.Count)];
+                                        .Skip(limit.offset > 0 ? limit.offset : 0)
+                                        .Take(limit.count >= 0 ? limit.count : elementsInLex.Count)];
                 }
             }
             catch (ArgumentException)
             {
-                // this exception is thrown when the SortedSet is empty
-                Debug.Assert(sortedSet.Count == 0);
+                // this exception is thrown when the SortedSet is empty or
+                // when the supplied minimum is larger than the sortedset maximum.
+                Debug.Assert(sortedSet.Count == 0 ||
+                             new ReadOnlySpan<byte>(sortedSet.Max.Element).SequenceCompareTo(minValueChars) < 0);
             }
 
             errorCode = 0;
@@ -1035,15 +1045,17 @@ namespace Garnet.server
         /// <param name="rem"></param>
         /// <param name="limit"></param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
+        private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, Limit limit = default)
         {
             if (doReverse)
             {
                 (minValue, maxValue) = (maxValue, minValue);
+                (minExclusive, maxExclusive) = (maxExclusive, minExclusive);
             }
 
             List<(double, byte[])> scoredElements = new();
-            if (sortedSet.Max.Item1 < minValue)
+            if ((validLimit && (limit.offset < 0 || limit.count == 0)) ||
+                (sortedSet.Max.Score < minValue))
             {
                 return scoredElements;
             }
@@ -1051,25 +1063,24 @@ namespace Garnet.server
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
                 if (IsExpired(item.Element)) continue;
-                if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
-                if (minExclusive && item.Item1 == minValue) continue;
+                if (item.Score > maxValue || (maxExclusive && item.Score == maxValue)) break;
+                if (minExclusive && item.Score == minValue) continue;
                 scoredElements.Add(item);
             }
             if (doReverse) scoredElements.Reverse();
             if (validLimit)
             {
                 scoredElements = [.. scoredElements
-                                 .Skip(limit.Item1 > 0 ? limit.Item1 : 0)
-                                 .Take(limit.Item2 > 0 ? limit.Item2 : scoredElements.Count)];
+                                 .Skip(limit.offset > 0 ? limit.offset : 0)
+                                 .Take(limit.count >= 0 ? limit.count : scoredElements.Count)];
             }
 
             if (rem)
             {
                 foreach (var item in scoredElements.ToList())
                 {
-                    if (sortedSetDict.TryGetValue(item.Item2, out var _key))
+                    if (sortedSetDict.Remove(item.Item2, out var _key))
                     {
-                        sortedSetDict.Remove(item.Item2);
                         sortedSet.Remove((_key, item.Item2));
                         TryRemoveExpiration(item.Item2);
 
@@ -1086,7 +1097,7 @@ namespace Garnet.server
         #region HelperMethods
 
         /// <summary>
-        /// Helper method to parse parameters min and max
+        /// Helper method to parse parameters min and max and exclusions
         /// in commands including +inf -inf
         /// </summary>
         private static bool TryParseParameter(ReadOnlySpan<byte> val, out double valueDouble, out bool exclusive)
@@ -1100,24 +1111,13 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            if (NumUtils.TryParse(val, out valueDouble))
+            if (NumUtils.TryParseWithInfinity(val, out valueDouble))
             {
+                if (exclusive && double.IsInfinity(valueDouble))
+                    exclusive = false;
                 return true;
             }
 
-            var strVal = Encoding.ASCII.GetString(val);
-            if (string.Equals("+inf", strVal, StringComparison.OrdinalIgnoreCase))
-            {
-                valueDouble = double.PositiveInfinity;
-                exclusive = false;
-                return true;
-            }
-            else if (string.Equals("-inf", strVal, StringComparison.OrdinalIgnoreCase))
-            {
-                valueDouble = double.NegativeInfinity;
-                exclusive = false;
-                return true;
-            }
             return false;
         }
 

@@ -97,9 +97,7 @@ namespace Garnet.server
             if (cmd == RespCommand.SPUBLISH && clusterSession == null)
             {
                 // Print error message
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
             Debug.Assert(isSubscriptionSession == false);
@@ -110,9 +108,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                while (!RespWriteUtils.TryWriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage("ERR PUBLISH is disabled, enable it with --pubsub option."u8);
             }
 
             var numClients = subscribeBroker.PublishNow(key, value);
@@ -145,9 +141,7 @@ namespace Garnet.server
             if (cmd == RespCommand.SSUBSCRIBE && clusterSession == null)
             {
                 // Print error message
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
             var disabledBroker = subscribeBroker == null;
@@ -243,9 +237,7 @@ namespace Garnet.server
             {
                 if (subscribeBroker == null)
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage("ERR UNSUBSCRIBE is disabled, enable it with --pubsub option."u8);
                 }
 
                 var channels = subscribeBroker.ListAllSubscriptions(this);
@@ -325,9 +317,7 @@ namespace Garnet.server
             {
                 if (subscribeBroker == null)
                 {
-                    while (!RespWriteUtils.TryWriteError("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    return AbortWithErrorMessage("ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option."u8);
                 }
 
                 List<ByteArrayWrapper> channels = subscribeBroker.ListAllPatternSubscriptions(this);
@@ -410,9 +400,7 @@ namespace Garnet.server
 
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB CHANNELS"), ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB CHANNELS"));
             }
 
             List<ByteArrayWrapper> channels;
@@ -441,9 +429,7 @@ namespace Garnet.server
 
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMPAT"), ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMPAT"));
             }
 
             var numPatSubs = subscribeBroker.NumPatternSubscriptions();
@@ -458,9 +444,7 @@ namespace Garnet.server
         {
             if (subscribeBroker is null)
             {
-                while (!RespWriteUtils.TryWriteError(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMSUB"), ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(string.Format(CmdStrings.GenericPubSubCommandDisabled, "PUBSUB NUMSUB"));
             }
 
             var numChannels = parseState.Count;

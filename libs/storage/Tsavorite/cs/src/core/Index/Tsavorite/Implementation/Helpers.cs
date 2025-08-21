@@ -320,6 +320,7 @@ namespace Tsavorite.core
                 // tag chain" invariant.
                 srcLogRecord.InfoRef.SealAndInvalidate();
 
+                // TODO: Reviv stats are added to SessionFunction's stats and not revivification manager - check why
                 Debug.Assert(stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress || srcLogRecord.Info.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcLogRecord.Info.ToString()}");
                 var (isElided, isAdded) = TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
 

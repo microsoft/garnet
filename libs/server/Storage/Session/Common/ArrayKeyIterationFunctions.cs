@@ -7,6 +7,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+#pragma warning disable IDE0005 // Using directive is unnecessary.
+    using static LogRecordUtils;
+
     sealed partial class StorageSession : IDisposable
     {
         // These contain classes so instantiate once and re-initialize
@@ -16,6 +19,10 @@ namespace Garnet.server
         // Iterators for SCAN command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
+
+        // Iterators for expired key deletion
+        private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan mainStoreExpiredKeyDeletionScanFuncs;
+        private ArrayKeyIterationFunctions.ObjectStoreExpiredKeyDeletionScan objectStoreExpiredKeyDeletionScanFuncs;
 
         // Iterators for KEYS command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
@@ -110,15 +117,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Iterates over main store memory collecting expired records.
+        /// </summary>
+        internal (long, long) MainStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
+        {
+            mainStoreExpiredKeyDeletionScanFuncs ??= new();
+            mainStoreExpiredKeyDeletionScanFuncs.Initialize(this);
+            _ = basicContext.Session.ScanCursor(ref fromAddress, untilAddress, mainStoreExpiredKeyDeletionScanFuncs);
+            return (mainStoreExpiredKeyDeletionScanFuncs.deletedCount, mainStoreExpiredKeyDeletionScanFuncs.totalCount);
+        }
+
+        /// <summary>
+        /// Iterates over object store memory collecting expired records.
+        /// </summary>
+        internal (long, long) ObjectStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
+        {
+            objectStoreExpiredKeyDeletionScanFuncs ??= new();
+            objectStoreExpiredKeyDeletionScanFuncs.Initialize(this);
+            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, objectStoreExpiredKeyDeletionScanFuncs);
+            return (objectStoreExpiredKeyDeletionScanFuncs.deletedCount, objectStoreExpiredKeyDeletionScanFuncs.totalCount);
+        }
+
+        /// <summary>
         /// Iterate the contents of the main store (push-based)
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="validateCursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => basicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+            => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -132,10 +165,14 @@ namespace Garnet.server
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="validateCursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
-            where TScanFunctions : IScanIteratorFunctions
-            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
+           where TScanFunctions : IScanIteratorFunctions
+            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -184,7 +221,7 @@ namespace Garnet.server
                 objectStoreDbSizeFuncs ??= new();
                 objectStoreDbSizeFuncs.Initialize();
                 cursor = 0;
-                objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
+                _ = objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
                 count += objectStoreDbSizeFuncs.Count;
             }
 
@@ -210,6 +247,65 @@ namespace Garnet.server
                 }
             }
 
+            internal sealed class ObjectStoreExpiredKeyDeletionScan : ExpiredKeysBase
+            {
+                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
+                {
+                    var input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
+                    var output = new GarnetObjectStoreOutput();
+                    return GarnetStatus.OK == storageSession.RMW_ObjectStore(logRecord.Key, ref input, ref output, ref storageSession.objectStoreBasicContext);
+                }
+            }
+
+            internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase
+            {
+                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
+                {
+                    var input = new RawStringInput(RespCommand.DELIFEXPIM);
+                    return GarnetStatus.OK == storageSession.DEL_Conditional(PinnedSpanByte.FromPinnedSpan(logRecord.Key), ref input, ref storageSession.basicContext);
+                }
+            }
+
+            internal abstract class ExpiredKeysBase : IScanIteratorFunctions
+            {
+                public long totalCount;
+                public long deletedCount;
+                protected StorageSession storageSession;
+
+                public void Initialize(StorageSession storageSession)
+                    => this.storageSession = storageSession;
+
+                protected abstract bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
+                    where TSourceLogRecord : ISourceLogRecord;
+
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
+                {
+                    totalCount++;
+                    if (CheckExpiry(in logRecord))
+                    {
+                        cursorRecordResult = CursorRecordResult.Accept;
+                        if (DeleteIfExpiredInMemory(in logRecord, recordMetadata))
+                            deletedCount++;
+                    }
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Skip;
+                    }
+
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress)
+                {
+                    totalCount = deletedCount = 0;
+                    return true;
+                }
+
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
+            }
+
             internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions
             {
                 private readonly GetDBKeysInfo info;
@@ -224,7 +320,7 @@ namespace Garnet.server
                 {
                     var key = logRecord.Key;
 
-                    if (MainSessionFunctions.CheckExpiry(in logRecord))
+                    if (CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -267,7 +363,7 @@ namespace Garnet.server
                 public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
-                    if (ObjectSessionFunctions.CheckExpiry(in logRecord))
+                    if (CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
@@ -327,10 +423,8 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!MainSessionFunctions.CheckExpiry(in logRecord))
-                    {
+                    if (!CheckExpiry(in logRecord))
                         ++info.count;
-                    }
                     return true;
                 }
 
@@ -353,10 +447,8 @@ namespace Garnet.server
                     where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (!ObjectSessionFunctions.CheckExpiry(in logRecord))
-                    {
+                    if (!CheckExpiry(in logRecord))
                         ++info.count;
-                    }
                     return true;
                 }
 

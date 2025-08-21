@@ -64,8 +64,8 @@ namespace Tsavorite.core
                 if (!TryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out internalStatus))
                     return needIO = false;
             }
-            else
-                stackCtx.SetRecordSourceToHashEntry(hlogBase);
+
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
             try
             {

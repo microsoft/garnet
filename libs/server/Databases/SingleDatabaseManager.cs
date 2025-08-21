@@ -277,7 +277,7 @@ namespace Garnet.server
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
-            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, Logger);
+            var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
 
             try
             {
@@ -299,6 +299,10 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override void ExecuteObjectCollection() =>
             ExecuteObjectCollection(defaultDatabase, Logger);
+
+        /// <inheritdoc/>
+        public override void ExpiredKeyDeletionScan() =>
+            ExpiredKeyDeletionScan(defaultDatabase);
 
         /// <inheritdoc/>
         public override void StartObjectSizeTrackers(CancellationToken token = default) =>
@@ -373,8 +377,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return new(AppendOnlyFile, VersionMap, StoreWrapper.customCommandManager, null, ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, Logger, respProtocolVersion);
+            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, ObjectStoreSizeTracker, Logger, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
@@ -391,6 +394,14 @@ namespace Garnet.server
             }
 
             return checkpointsPaused;
+        }
+
+        public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
+            var (k1, t1) = MainStoreExpiredKeyDeletionScan(DefaultDatabase);
+            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(DefaultDatabase);
+            return (k1 + k2, t1 + t2);
         }
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)

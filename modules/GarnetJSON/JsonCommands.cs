@@ -135,7 +135,8 @@ namespace GarnetJSON
                         indent = GetNextString(ref input, ref offset);
                         continue;
                     }
-                    else if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.NEWLINE) && offset < parseState.Count)
+                    else if (option.EqualsUpperCaseSpanIgnoringCase(JsonCmdStrings.NEWLINE) &&
+                             offset < parseState.Count)
                     {
                         newLine = GetNextString(ref input, ref offset);
                         continue;
@@ -176,6 +177,7 @@ namespace GarnetJSON
                 writer.Realloc(outputArr.Select(x => x.Length).Sum());
                 writer.WriteBulkString(outputArr);
             }
+
             return true;
         }
     }

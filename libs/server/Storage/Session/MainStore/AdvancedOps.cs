@@ -79,7 +79,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
-            if (status.Found || status.Record.Created)
+            if (status.Found || status.Record.Created || status.Record.InPlaceUpdated)
                 return GarnetStatus.OK;
             else
                 return GarnetStatus.NOTFOUND;

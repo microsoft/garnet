@@ -2,11 +2,19 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
+using Tsavorite.core;
+
+
+#if NET9_0_OR_GREATER
+using ByteSpan = System.ReadOnlySpan<byte>;
+#else
+using ByteSpan = byte[];
+#endif
 
 namespace Garnet.server
 {
@@ -19,16 +27,11 @@ namespace Garnet.server
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var key = input.parseState.GetArgSliceByRef(0).ToArray();
-
+            var key = GetByteSpanFromInput(ref input, 0);
             if (TryGetValue(key, out var hashValue))
-            {
                 writer.WriteBulkString(hashValue);
-            }
             else
-            {
                 writer.WriteNull();
-            }
 
             output.Header.result1++;
         }
@@ -41,8 +44,7 @@ namespace Garnet.server
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).ToArray();
-
+                var key = GetByteSpanFromInput(ref input, i);
                 if (TryGetValue(key, out var hashValue))
                 {
                     writer.WriteBulkString(hashValue);
@@ -62,7 +64,7 @@ namespace Garnet.server
 
             writer.WriteMapLength(Count());
 
-            var isExpirable = HasExpirableItems();
+            var isExpirable = HasExpirableItems;
 
             foreach (var item in hash)
             {
@@ -80,8 +82,8 @@ namespace Garnet.server
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).ToArray();
-                if (Remove(key, out _))
+                var key = GetByteSpanFromInput(ref input, i);
+                if (Remove(key, out var hashValue))
                     output.Header.result1++;
             }
         }
@@ -93,13 +95,13 @@ namespace Garnet.server
 
         private void HashStrLength(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var key = input.parseState.GetArgSliceByRef(0).ToArray();
+            var key = GetByteSpanFromInput(ref input, 0);
             output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
         private void HashExists(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var field = input.parseState.GetArgSliceByRef(0).ToArray();
+            var field = GetByteSpanFromInput(ref input, 0);
             output.Header.result1 = ContainsKey(field) ? 1 : 0;
         }
 
@@ -129,11 +131,15 @@ namespace Garnet.server
                 if (countParameter > 0 && countParameter > count)
                     countParameter = count;
 
-                var absCount = Math.Abs(countParameter);
-                var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
+                var indexCount = Math.Abs(countParameter);
+
+                var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+                RandomUtils.PickKRandomIndexes(count, indexes, seed, countParameter > 0);
 
                 // Write the size of the array reply
-                writer.WriteArrayLength(withValues && (respProtocolVersion == 2) ? absCount * 2 : absCount);
+                writer.WriteArrayLength(withValues && (respProtocolVersion == 2) ? indexCount * 2 : indexCount);
 
                 foreach (var index in indexes)
                 {
@@ -174,20 +180,57 @@ namespace Garnet.server
 
         private void HashSet(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var hop = input.header.HashOp;
+            DeleteExpiredItems();
+
+            var hashOp = input.header.HashOp;
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
-                var key = input.parseState.GetArgSliceByRef(i).ToArray();
-                var value = input.parseState.GetArgSliceByRef(i + 1).ToArray();
+                var key = GetByteSpanFromInput(ref input, i);
+                var value = input.parseState.GetArgSliceByRef(i + 1).ReadOnlySpan;
 
-                if (!TryGetValue(key, out var hashValue))
+                // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+                // The ref is unsafe to read/write to if the hash dictionary is mutated.
+                ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+                if (!exists || IsExpired(key))
                 {
-                    Add(key, value);
+                    hashValueRef = value.ToArray();
+                    UpdateSize(key, value, add: true);
+
                     output.Header.result1++;
                 }
-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
+                else if (exists && (hashOp is HashOperation.HSET or HashOperation.HMSET))
                 {
-                    Set(key, value);
+                    if (hashValueRef.Length == value.Length)
+                    {
+                        value.CopyTo(hashValueRef);
+                    }
+                    else
+                    {
+                        // Adjust the size to account for the new value replacing the old one.
+                        this.MemorySize += Utility.RoundUp(value.Length, IntPtr.Size) -
+                                           Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                        this.DiskSize += value.Length - hashValueRef.Length;
+
+                        hashValueRef = value.ToArray();
+                    }
+
+                    // To persist the key, if it has an expiration
+                    if (HasExpirableItems &&
+#if NET9_0_OR_GREATER
+                        expirationTimeSpanLookup.Remove(key))
+#else
+                        expirationTimes.Remove(key))
+#endif
+                    {
+                        this.MemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        CleanupExpirationStructuresIfEmpty();
+                    }
                 }
             }
         }
@@ -208,7 +251,7 @@ namespace Garnet.server
 
             writer.WriteArrayLength(count);
 
-            var isExpirable = HasExpirableItems();
+            var isExpirable = HasExpirableItems;
 
             foreach (var item in hash)
             {
@@ -230,6 +273,7 @@ namespace Garnet.server
             }
         }
 
+        [SkipLocalsInit] // avoid zeroing the stackalloc buffer
         private void HashIncrement(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             var op = input.header.HashOp;
@@ -239,79 +283,148 @@ namespace Garnet.server
             // This value is used to indicate partial command execution
             output.Header.result1 = int.MinValue;
 
-            var key = input.parseState.GetArgSliceByRef(0).ToArray();
+            var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
 
-            var valueExists = TryGetValue(key, out var value);
-            if (op == HashOperation.HINCRBY)
+            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
             {
-                if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
-                {
-                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                    return;
-                }
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
+            }
 
-                byte[] resultBytes;
+            DeleteExpiredItems();
 
-                if (valueExists)
-                {
-                    if (!NumUtils.TryParse(value, out long result))
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
-                        return;
-                    }
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the hash dictionary is mutated.
+            ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
 
-                    result += incr;
-
-                    var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
-                    var success = Utf8Formatter.TryFormat(result, resultSpan, out var bytesWritten,
-                        format: default);
-                    Debug.Assert(success);
-
-                    resultSpan = resultSpan.Slice(0, bytesWritten);
-
-                    resultBytes = resultSpan.ToArray();
-                    SetWithoutPersist(key, resultBytes);
-                }
-                else
-                {
-                    resultBytes = incrSlice.ToArray();
-                    Add(key, resultBytes);
-                }
-
-                writer.WriteIntegerFromBytes(resultBytes);
+            if (!exists || IsExpired(key))
+            {
+                hashValueRef = incrSlice.ToArray();
+                UpdateSize(key, hashValueRef, add: true);
             }
             else
             {
-                if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out double incr))
+                if (!NumUtils.TryParse(hashValueRef, out long result))
                 {
-                    writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
                     return;
                 }
 
-                byte[] resultBytes;
+                result += incr;
 
-                if (valueExists)
+                var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
+                var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
+                Debug.Assert(success);
+
+                formattedValue = formattedValue.Slice(0, bytesWritten);
+
+                if (formattedValue.Length == hashValueRef.Length)
                 {
-                    if (!NumUtils.TryParse(value, out double result))
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
-                        return;
-                    }
-
-                    result += incr;
-
-                    resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                    SetWithoutPersist(key, resultBytes);
+                    // instead of allocating a new byte array of the same size, we can reuse the existing one
+                    formattedValue.CopyTo(hashValueRef);
                 }
                 else
                 {
-                    resultBytes = incrSlice.ToArray();
-                    Add(key, resultBytes);
+                    // Adjust the size to account for the new value replacing the old one.
+                    this.MemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
+                                       Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                    this.DiskSize += formattedValue.Length - hashValueRef.Length;
+
+                    hashValueRef = formattedValue.ToArray();
+                }
+            }
+
+            writer.WriteIntegerFromBytes(hashValueRef);
+
+            output.Header.result1 = 1;
+        }
+
+        [SkipLocalsInit] // avoid zeroing the stackalloc buffer
+        private void HashIncrementFloat(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        {
+            var op = input.header.HashOp;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            // This value is used to indicate partial command execution
+            output.Header.result1 = int.MinValue;
+
+            var key = GetByteSpanFromInput(ref input, 0);
+            var incrSlice = input.parseState.GetArgSliceByRef(1);
+
+            if (!input.parseState.TryGetDouble(1, out var incr))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                return;
+            }
+
+            if (double.IsInfinity(incr))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
+                return;
+            }
+
+            DeleteExpiredItems();
+
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the hash dictionary is mutated.
+            ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+            if (!exists || IsExpired(key))
+            {
+                hashValueRef = incrSlice.ToArray();
+                UpdateSize(key, hashValueRef, add: true);
+            }
+            else
+            {
+                if (!NumUtils.TryParseWithInfinity(hashValueRef, out var result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
+                    return;
                 }
 
-                writer.WriteBulkString(resultBytes);
+                if (double.IsInfinity(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    return;
+                }
+
+                result += incr;
+
+                var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
+                var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
+                Debug.Assert(success);
+
+                formattedValue = formattedValue.Slice(0, bytesWritten);
+
+                if (formattedValue.Length == hashValueRef.Length)
+                {
+                    // instead of allocating a new byte array of the same size, we can reuse the existing one
+                    formattedValue.CopyTo(hashValueRef);
+                }
+                else
+                {
+                    // Adjust the size to account for the new value replacing the old one.
+                    this.MemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
+                                       Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                    this.DiskSize += formattedValue.Length - hashValueRef.Length;
+
+                    hashValueRef = formattedValue.ToArray();
+                }
             }
+
+            writer.WriteBulkString(hashValueRef);
 
             output.Header.result1 = 1;
         }
@@ -322,15 +435,18 @@ namespace Garnet.server
 
             DeleteExpiredItems();
 
-            var expireOption = (ExpireOption)input.arg1;
-            var expiration = input.parseState.GetLong(0);
-            var numFields = input.parseState.Count - 1;
-            writer.WriteArrayLength(numFields);
+            var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
-            foreach (var item in input.parseState.Parameters.Slice(1))
+            writer.WriteArrayLength(input.parseState.Count);
+
+            foreach (var item in input.parseState.Parameters)
             {
-                var result = SetExpiration(item.ToArray(), expiration, expireOption);
-                writer.WriteInt32(result);
+#if NET9_0_OR_GREATER
+                var result = SetExpiration(item.ReadOnlySpan, expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
+#else
+                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
+#endif
+                writer.WriteInt32((int)result);
                 output.Header.result1++;
             }
         }
@@ -349,7 +465,11 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
+#if NET9_0_OR_GREATER
+                var result = GetExpiration(item.ReadOnlySpan);
+#else
                 var result = GetExpiration(item.ToArray());
+#endif
 
                 if (result >= 0)
                 {
@@ -388,10 +508,25 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
+#if NET9_0_OR_GREATER
+                var result = Persist(item.ReadOnlySpan);
+#else
                 var result = Persist(item.ToArray());
+#endif
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static ByteSpan GetByteSpanFromInput(ref ObjectInput input, int index)
+        {
+            return input.parseState.GetArgSliceByRef(index)
+#if NET9_0_OR_GREATER
+                .ReadOnlySpan;
+#else
+                .ToArray();
+#endif
         }
     }
 }

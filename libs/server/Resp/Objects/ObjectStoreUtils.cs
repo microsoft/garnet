@@ -4,7 +4,6 @@
 using System;
 using System.Text;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -22,6 +21,20 @@ namespace Garnet.server
         private bool AbortWithWrongNumberOfArguments(string cmdName)
         {
             var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
+
+            return AbortWithErrorMessage(errorMessage);
+        }
+
+        /// <summary>
+        /// Aborts the execution of the current object store command and outputs
+        /// an error message to indicate an unknown subcommand or wrong number of arguments for the given command.
+        /// </summary>
+        /// <param name="subCommand">Name of the subcommand that caused the error message.</param>
+        /// <param name="cmdName">Name of the command that caused the error message.</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(string subCommand, string cmdName)
+        {
+            var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrUnknownSubCommandOrWrongNumberOfArguments, subCommand, cmdName));
 
             return AbortWithErrorMessage(errorMessage);
         }
@@ -85,28 +98,6 @@ namespace Garnet.server
         private bool AbortWithErrorMessage(string format, params object[] args)
         {
             return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(format, args)));
-        }
-
-        /// <summary>
-        /// Tries to parse the input as "LEFT" or "RIGHT" and returns the corresponding OperationDirection.
-        /// If parsing fails, returns OperationDirection.Unknown.
-        /// </summary>
-        /// <param name="input">The input to parse.</param>
-        /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
-        public OperationDirection GetOperationDirection(PinnedSpanByte input)
-        {
-            // Optimize for the common case
-            if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
-                return OperationDirection.Left;
-            if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
-                return OperationDirection.Right;
-            // Rare case: try making upper case and retry
-            MakeUpperCase(input.ToPointer());
-            if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
-                return OperationDirection.Left;
-            if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
-                return OperationDirection.Right;
-            return OperationDirection.Unknown;
         }
     }
 }

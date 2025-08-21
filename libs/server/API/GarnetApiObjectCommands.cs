@@ -139,11 +139,11 @@ namespace Garnet.server
             => storageSession.SortedSetRange(key, min, max, sortedSetOrderOperation, ref objectContext, out elements, out error, withScores, reverse, limit);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetDifference(PinnedSpanByte[] keys, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetDifference(PinnedSpanByte[] keys, out SortedSet<(double, byte[])> pairs)
             => storageSession.SortedSetDifference(keys, out pairs);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetUnion(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
             => storageSession.SortedSetUnion(keys, weights, aggregateType, out pairs);
 
         /// <inheritdoc />
@@ -158,7 +158,7 @@ namespace Garnet.server
             => storageSession.ObjectScan(GarnetObjectType.SortedSet, key, cursor, match, count, out items, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetIntersect(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out Dictionary<byte[], double> pairs)
+        public GarnetStatus SortedSetIntersect(ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out SortedSet<(double, byte[])> pairs)
             => storageSession.SortedSetIntersect(keys, weights, aggregateType, out pairs);
 
         /// <inheritdoc />
@@ -542,8 +542,8 @@ namespace Garnet.server
             => storageSession.HashIncrement(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExpire(PinnedSpanByte key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output)
-            => storageSession.HashExpire(key, expireAt, isMilliseconds, expireOption, ref input, ref output, ref objectContext);
+        public GarnetStatus HashExpire(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+            => storageSession.HashExpire(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashPersist(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)

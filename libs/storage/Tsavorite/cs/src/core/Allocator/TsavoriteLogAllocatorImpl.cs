@@ -188,7 +188,7 @@ namespace Tsavorite.core
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store,
-                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 
         /// <summary>

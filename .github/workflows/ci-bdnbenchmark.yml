@@ -53,10 +53,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: | 
-            8.0.x
-            9.0.x
       - name: Install dependencies
         run: dotnet restore
 
@@ -64,7 +60,14 @@ jobs:
         run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }} ${{ matrix.framework }}
         shell: pwsh
         continue-on-error: false
-   
+  
+      - name: Random pause between tasks so multiple inserts don't run at the same time
+        run: |
+          $delay = Get-Random -Minimum 1 -Maximum 600
+          Write-Host "Sleeping for $delay seconds..."
+          Start-Sleep -Seconds $delay
+        shell: pwsh
+
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:

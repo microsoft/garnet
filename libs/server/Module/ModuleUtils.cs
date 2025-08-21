@@ -25,6 +25,7 @@ namespace Garnet.server
         /// <param name="ignoreFileNames">File names to ignore (optional)</param>
         /// <param name="searchOption">In case path is a directory, determines whether to search only top directory or all subdirectories</param>
         /// <param name="ignoreAssemblyLoadErrors">False if method should return an error when at least one assembly was not loaded correctly (false by default)</param>
+        /// <param name="ignorePathCheckWhenUndefined">Ignore path check when path is undefined (default false).</param>
         /// <returns></returns>
         public static bool LoadAssemblies(
             IEnumerable<string> binaryPaths,
@@ -34,7 +35,8 @@ namespace Garnet.server
             out ReadOnlySpan<byte> errorMessage,
             string[] ignoreFileNames = null,
             SearchOption searchOption = SearchOption.AllDirectories,
-            bool ignoreAssemblyLoadErrors = false)
+            bool ignoreAssemblyLoadErrors = false,
+            bool ignorePathCheckWhenUndefined = false)
         {
             loadedAssemblies = null;
             errorMessage = default;
@@ -46,8 +48,13 @@ namespace Garnet.server
                 return false;
             }
 
+            if ((allowedExtensionPaths == null) && !ignorePathCheckWhenUndefined)
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_MUST_DEFINE_ASSEMBLY_BINPATH;
+                return false;
+            }
             // Check that all binary files are contained in allowed binary paths
-            if (allowedExtensionPaths != null)
+            else if (allowedExtensionPaths != null)
             {
                 if (binaryFiles.Any(f =>
                         allowedExtensionPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
@@ -62,22 +69,31 @@ namespace Garnet.server
             {
                 foreach (var filePath in binaryFiles)
                 {
-                    using var fs = File.OpenRead(filePath);
-                    using var peReader = new PEReader(fs);
-
-                    var metadataReader = peReader.GetMetadataReader();
-                    var assemblyPublicKeyHandle = metadataReader.GetAssemblyDefinition().PublicKey;
-
-                    if (assemblyPublicKeyHandle.IsNil)
+                    try
                     {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
-                        return false;
+                        var isSigned = false;
+
+                        using var fs = File.OpenRead(filePath);
+                        using var peReader = new PEReader(fs);
+
+                        if (peReader.HasMetadata)
+                        {
+                            var metadataReader = peReader.GetMetadataReader();
+                            var assemblyPublicKeyHandle = metadataReader.GetAssemblyDefinition().PublicKey;
+
+                            isSigned = !assemblyPublicKeyHandle.IsNil &&
+                                       metadataReader.GetBlobBytes(assemblyPublicKeyHandle).Length > 0;
+                        }
+
+                        if (!isSigned)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                            return false;
+                        }
                     }
-
-                    var publicKeyBytes = metadataReader.GetBlobBytes(assemblyPublicKeyHandle);
-                    if (publicKeyBytes.Length == 0)
+                    catch (Exception)
                     {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ACCESSING_ASSEMBLIES;
                         return false;
                     }
                 }

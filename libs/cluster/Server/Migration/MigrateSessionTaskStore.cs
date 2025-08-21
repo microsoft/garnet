@@ -79,7 +79,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            MigratingKeysWorkingSet keysWithSize,
+            Sketch sketch,
             TransferOption transferOption,
             out MigrateSession mSession)
         {
@@ -97,7 +97,7 @@ namespace Garnet.cluster
                 replaceOption,
                 timeout,
                 slots,
-                keysWithSize,
+                sketch,
                 transferOption);
 
             try
@@ -225,7 +225,7 @@ namespace Garnet.cluster
 
                 Debug.Assert(s != null);
                 // Check owner of slot if can operate on key
-                if (!s.CanAccessKey(ref key, slot, readOnly))
+                if (!s.CanAccessKey(key, slot, readOnly))
                     return false;
             }
             finally

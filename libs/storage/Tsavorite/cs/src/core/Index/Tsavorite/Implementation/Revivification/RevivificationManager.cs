@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace Tsavorite.core
 {
@@ -14,11 +15,17 @@ namespace Tsavorite.core
 
         internal RevivificationStats stats = new();
 
-        internal readonly bool IsEnabled = false;
+        internal bool IsEnabled => revivSuspendCount == 0;
         internal bool restoreDeletedRecordsIfBinIsFull;
         internal bool useFreeRecordPoolForCTT;
 
         internal double revivifiableFraction;
+
+        internal int revivSuspendCount = -1;
+
+        public void PauseRevivification() => Interlocked.Decrement(ref revivSuspendCount);
+
+        public void ResumeRevivification() => Interlocked.Increment(ref revivSuspendCount);
 
         public RevivificationManager(TsavoriteKV<TStoreFunctions, TAllocator> store, RevivificationSettings revivSettings, LogSettings logSettings)
         {
@@ -32,7 +39,8 @@ namespace Tsavorite.core
             revivSettings.Verify(logSettings.MutableFraction);
             if (!revivSettings.EnableRevivification)
                 return;
-            IsEnabled = true;
+
+            revivSuspendCount = 0;
             if (revivSettings.FreeRecordBins?.Length > 0)
             {
                 FreeRecordPool = new FreeRecordPool<TStoreFunctions, TAllocator>(store, revivSettings);

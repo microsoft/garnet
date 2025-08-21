@@ -495,8 +495,16 @@ namespace Garnet.server
                                 SendAndReset();
                             while (!RespWriteUtils.TryWriteBulkString(member.ReadOnlySpan, ref dcurr, dend))
                                 SendAndReset();
-                            while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
-                                SendAndReset();
+
+                            if (respProtocolVersion >= 3)
+                            {
+                                WriteDoubleNumeric(double.Parse(score.ReadOnlySpan));
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
+                                    SendAndReset();
+                            }
                         }
                     }
                     break;
@@ -903,17 +911,6 @@ namespace Garnet.server
             }
 
             var includeWithScores = false;
-
-            // Read all the keys
-            if (parseState.Count <= 2)
-            {
-                //return empty array
-                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
-            }
-
             var keys = new PinnedSpanByte[nKeys];
 
             for (var i = 1; i < nKeys + 1; i++)
@@ -959,9 +956,9 @@ namespace Garnet.server
 
                         if (result != null)
                         {
-                            foreach (var (element, score) in result)
+                            foreach (var (score, element) in result)
                             {
-                                if (respProtocolVersion == 3 && includeWithScores)
+                                if (respProtocolVersion >= 3 && includeWithScores)
                                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                                         SendAndReset();
 
@@ -1124,18 +1121,26 @@ namespace Garnet.server
                     }
 
                     // write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                    var arrayLength = result.Count;
+                    if (includeWithScores && respProtocolVersion == 2)
+                        arrayLength *= 2;
+                    while (!RespWriteUtils.TryWriteArrayLength(arrayLength, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var (element, score) in result)
+                    foreach (var (score, element) in result)
                     {
+                        if (includeWithScores && respProtocolVersion >= 3)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
 
                         if (includeWithScores)
                         {
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDoubleNumeric(score);
                         }
                     }
                     break;
@@ -1405,18 +1410,26 @@ namespace Garnet.server
                     }
 
                     // write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(includeWithScores ? result.Count * 2 : result.Count, ref dcurr, dend))
+                    var arrayLength = result.Count;
+                    if (includeWithScores && respProtocolVersion == 2)
+                        arrayLength *= 2;
+                    while (!RespWriteUtils.TryWriteArrayLength(arrayLength, ref dcurr, dend))
                         SendAndReset();
 
-                    foreach (var (element, score) in result)
+                    foreach (var (score, element) in result)
                     {
+                        if (includeWithScores && respProtocolVersion >= 3)
+                        {
+                            while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                                SendAndReset();
+                        }
+
                         while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
                             SendAndReset();
 
                         if (includeWithScores)
                         {
-                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
-                                SendAndReset();
+                            WriteDoubleNumeric(score);
                         }
                     }
                     break;
@@ -1442,9 +1455,7 @@ namespace Garnet.server
             // Number of keys
             if (!parseState.TryGetInt(1, out var nKeys))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             if (nKeys < 1)
@@ -1536,9 +1547,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            if (!parseState.TryGetDouble(parseState.Count - 1, out var timeout) || (timeout < 0))
+            if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
+                return AbortWithErrorMessage(error);
             }
 
             var keysBytes = new byte[parseState.Count - 1][];
@@ -1599,14 +1610,9 @@ namespace Garnet.server
             var currTokenId = 0;
 
             // Read timeout
-            if (!parseState.TryGetDouble(currTokenId++, out var timeout))
+            if (!parseState.TryGetTimeout(currTokenId++, out var timeout, out var error))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_NOT_VALID_FLOAT);
-            }
-
-            if (timeout < 0)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_TIMEOUT_IS_NEGATIVE);
+                return AbortWithErrorMessage(error);
             }
 
             // Read count of keys
@@ -1699,8 +1705,7 @@ namespace Garnet.server
                     SendAndReset();
                 while (!RespWriteUtils.TryWriteBulkString(result.Items[i], ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteDoubleBulkString(result.Scores[i], ref dcurr, dend))
-                    SendAndReset();
+                WriteDoubleNumeric(result.Scores[i]);
             }
 
             return true;
@@ -1730,31 +1735,14 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetLong(1, out var expireAt))
+            if (!parseState.TryGetLong(1, out var expiration))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            if (expireAt < 0)
+            if (expiration < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
-            }
-
-            var inputFlag = SortedSetExpireInputFlags.Default;
-            switch (command)
-            {
-                case RespCommand.ZPEXPIRE:
-                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
-                    break;
-                case RespCommand.ZEXPIREAT:
-                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
-                    break;
-                case RespCommand.ZPEXPIREAT:
-                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
-                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
-                    break;
-                default: // RespCommand.ZEXPIRE
-                    break;
             }
 
             var currIdx = 2;
@@ -1779,8 +1767,20 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
             }
 
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = command switch
+            {
+                RespCommand.ZEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.ZPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.ZEXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+            };
+
+            // Encode expiration time and expiration option and pass them into the input object
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
+
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
+            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, expirationWithOption.WordHead, expirationWithOption.WordTail);
 
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 

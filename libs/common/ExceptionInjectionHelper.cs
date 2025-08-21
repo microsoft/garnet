@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace Garnet.common
 {
@@ -19,11 +20,26 @@ namespace Garnet.common
             Enum.GetValues<ExceptionInjectionType>().Select(_ => false).ToArray();
 
         /// <summary>
+        /// Check if exception is enabled
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static bool IsEnabled(ExceptionInjectionType exceptionType) => ExceptionInjectionTypes[(int)exceptionType];
+
+        /// <summary>
         /// Enable exception scenario (NOTE: enable at beginning of test to trigger the exception at runtime)
         /// </summary>
         /// <param name="exceptionType"></param>
         [Conditional("DEBUG")]
-        public static void EnableException(ExceptionInjectionType exceptionType) => ExceptionInjectionTypes[(int)exceptionType] = true;
+        public static void EnableException(ExceptionInjectionType exceptionType)
+        {
+            if (exceptionType == ExceptionInjectionType.None)
+            {
+                return;
+            }
+
+            ExceptionInjectionTypes[(int)exceptionType] = true;
+        }
 
         /// <summary>
         /// Disable exception scenario (NOTE: for tests you need to always call disable at the end of the test to avoid breaking other tests in the line)
@@ -40,6 +56,11 @@ namespace Garnet.common
         [Conditional("DEBUG")]
         public static void TriggerException(ExceptionInjectionType exceptionType)
         {
+            if (exceptionType == ExceptionInjectionType.None)
+            {
+                return;
+            }
+
             if (ExceptionInjectionTypes[(int)exceptionType])
                 throw new GarnetException($"Exception injection triggered {exceptionType}");
         }
@@ -52,15 +73,47 @@ namespace Garnet.common
         public static bool TriggerCondition(ExceptionInjectionType exceptionType)
         {
 #if DEBUG
-            if (ExceptionInjectionTypes[(int)exceptionType])
+            if (IsEnabled(exceptionType))
             {
-                ExceptionInjectionTypes[(int)exceptionType] = false;
+                DisableException(exceptionType);
                 return true;
             }
             return false;
 #else
             return false;
 #endif
+        }
+
+        /// <summary>
+        /// Wait on set condition
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static async Task WaitOnSet(ExceptionInjectionType exceptionType)
+        {
+            if (exceptionType == ExceptionInjectionType.None)
+            {
+                return;
+            }
+
+            if (IsEnabled(exceptionType))
+            {
+                // Reset and wait to signaled to go forward
+                DisableException(exceptionType);
+                while (!IsEnabled(exceptionType))
+                    await Task.Yield();
+            }
+        }
+
+        /// <summary>
+        /// Wait on clear condition
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static async Task WaitOnClearAsync(ExceptionInjectionType exceptionType)
+        {
+            while (ExceptionInjectionTypes[(int)exceptionType])
+                await Task.Yield();
         }
     }
 }

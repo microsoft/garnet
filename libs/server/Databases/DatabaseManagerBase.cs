@@ -80,6 +80,9 @@ namespace Garnet.server
         public abstract void ExecuteObjectCollection();
 
         /// <inheritdoc/>
+        public abstract void ExpiredKeyDeletionScan();
+
+        /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <inheritdoc/>
@@ -217,7 +220,7 @@ namespace Garnet.server
         {
             try
             {
-                DoCompaction(db);
+                DoCompaction(db, isFromCheckpoint: true, logger);
                 var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
                 var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
@@ -406,15 +409,29 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         protected void ExecuteObjectCollection(GarnetDatabase db, ILogger logger = null)
         {
-            if (db.DatabaseStorageSession == null)
+            if (db.ObjectStoreCollectionDbStorageSession == null)
             {
-                var scratchBufferManager = new ScratchBufferManager();
-                db.DatabaseStorageSession =
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.ObjectStoreCollectionDbStorageSession =
                     new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            ExecuteHashCollect(db.DatabaseStorageSession);
-            ExecuteSortedSetCollect(db.DatabaseStorageSession);
+            ExecuteHashCollect(db.ObjectStoreCollectionDbStorageSession);
+            ExecuteSortedSetCollect(db.ObjectStoreCollectionDbStorageSession);
+        }
+
+        /// <summary>
+        /// Execute a store-wide expired key deletion scan operation for the specified database
+        /// </summary>
+        /// <param name="db">Database</param>
+        protected void ExpiredKeyDeletionScan(GarnetDatabase db)
+        {
+            _ = MainStoreExpiredKeyDeletionScan(db);
+
+            if (StoreWrapper.serverOptions.DisableObjects)
+                return;
+
+            _ = ObjectStoreExpiredKeyDeletionScan(db);
         }
 
         /// <summary>
@@ -422,12 +439,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
         /// <param name="logger">Logger</param>
-        protected void DoCompaction(GarnetDatabase db, ILogger logger = null)
+        /// <param name="isFromCheckpoint">True if called from checkpointing, false if called from background task</param>
+        protected void DoCompaction(GarnetDatabase db, bool isFromCheckpoint = false, ILogger logger = null)
         {
             try
             {
-                // Periodic compaction -> no need to compact before checkpointing
-                if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
+                // If periodic compaction is enabled and this is called from checkpointing, skip compaction
+                if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
                 DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments,
                     StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
@@ -609,7 +627,10 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.EnableCluster)
                     StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
                 else
+                {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
+                    StoreWrapper.StoreCheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
+                }
 
                 if (checkpointCoveredAofAddress > 0)
                     logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
@@ -663,7 +684,7 @@ namespace Garnet.server
                 // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
                 // We can now safely remove these serialized versions as they are no longer needed.
                 using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
-                    db.ObjectStore.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeSealedRecords: true);
+                    db.ObjectStore.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
                 while (iter1.GetNext())
                 {
                     var valueObject = iter1.ValueObject;
@@ -682,13 +703,48 @@ namespace Garnet.server
 
             ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
             storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
-            storageSession.scratchBufferManager.Reset();
+            storageSession.scratchBufferBuilder.Reset();
         }
 
         private static void ExecuteSortedSetCollect(StorageSession storageSession)
         {
             storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
-            storageSession.scratchBufferManager.Reset();
+            storageSession.scratchBufferBuilder.Reset();
+        }
+
+        /// <inheritdoc/>
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) MainStoreExpiredKeyDeletionScan(GarnetDatabase db)
+        {
+            if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
+            var scanUntil = StoreWrapper.store.Log.TailAddress;
+            (var deletedCount, var totalCount) = db.MainStoreExpiredKeyDeletionDbStorageSession.MainStoreExpiredKeyDeletionScan(scanFrom, scanUntil);
+            Logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
+
+            return (deletedCount, totalCount);
+        }
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) ObjectStoreExpiredKeyDeletionScan(GarnetDatabase db)
+        {
+            if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
+            var scanUntil = StoreWrapper.objectStore.Log.TailAddress;
+            (var deletedCount, var totalCount) = db.ObjectStoreExpiredKeyDeletionDbStorageSession.ObjectStoreExpiredKeyDeletionScan(scanFrom, scanUntil);
+            Logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
+
+            return (deletedCount, totalCount);
         }
     }
 }

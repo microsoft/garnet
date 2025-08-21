@@ -107,6 +107,7 @@ Configures a server as secondary of another, or promotes it to a primary. Same a
 ### REGISTERCS
 
 This allows registering specific custom commands and transactions implemented in C\#, in a server side DLL library.
+See [this page](../dev/custom-commands.md) for details.
 
 ---
 

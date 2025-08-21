@@ -80,8 +80,7 @@ namespace Garnet.server
                 else
                 {
                     endReadHead = _origReadHead;
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                 }
 
                 return true;
@@ -113,6 +112,8 @@ namespace Garnet.server
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
             int count = parseState.Count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
+            if (commandInfo.Parent != null)
+                arity = arity > 0 ? arity - 1 : arity + 1;
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
@@ -198,9 +199,7 @@ namespace Garnet.server
         {
             if (txnManager.state == TxnState.None)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -219,10 +218,7 @@ namespace Garnet.server
             // Have to provide at least one key
             if (count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.GenericErrWrongNumArgs);
             }
 
             List<PinnedSpanByte> keys = [];
@@ -290,9 +286,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetInt(0, out var txId))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             CustomTransactionProcedure proc;
@@ -300,7 +294,8 @@ namespace Garnet.server
 
             try
             {
-                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager, scratchBufferManager, out arity);
+                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager,
+                    scratchBufferAllocator, out arity);
             }
             catch (Exception e)
             {

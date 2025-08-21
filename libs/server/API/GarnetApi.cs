@@ -243,6 +243,51 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Decrement(PinnedSpanByte key, out long output, long decrementCount = 1)
             => Increment(key, out output, -decrementCount);
+
+        /// <inheritdoc />
+        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref PinnedSpanByte output, double val)
+        {
+            SessionParseState parseState = default;
+
+            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
+            _ = Increment(key, ref input, ref output);
+
+            if (output.Length != NumUtils.MaximumFormatDoubleLength + 1)
+                return GarnetStatus.OK;
+
+            var errorFlag = (OperationError)output.Span[0];
+
+            switch (errorFlag)
+            {
+                case OperationError.INVALID_TYPE:
+                case OperationError.NAN_OR_INFINITY:
+                    return GarnetStatus.WRONGTYPE;
+                default:
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+            }
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val)
+        {
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            var _output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            var status = IncrementByFloat(key, ref _output, val);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    _ = NumUtils.TryReadDouble(_output.ReadOnlySpan, out output);
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                default:
+                    var errorFlag = (OperationError)_output.Span[0];
+                    output = errorFlag == OperationError.NAN_OR_INFINITY ? double.NaN : 0;
+                    break;
+            }
+
+            return status;
+        }
         #endregion
 
         #region DELETE
@@ -380,18 +425,18 @@ namespace Garnet.server
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />
-        public readonly bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public readonly bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => storageSession.IterateMainStore(ref scanFunctions, untilAddress);
+            => storageSession.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public readonly ITsavoriteScanIterator IterateMainStore()
             => storageSession.IterateMainStore();
 
         /// <inheritdoc />
-        public readonly bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public readonly bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => storageSession.IterateObjectStore(ref scanFunctions, untilAddress);
+            => storageSession.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public readonly ITsavoriteScanIterator IterateObjectStore()
@@ -407,11 +452,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public int GetScratchBufferOffset()
-            => storageSession.scratchBufferManager.ScratchBufferOffset;
+            => storageSession.scratchBufferBuilder.ScratchBufferOffset;
 
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
-            => storageSession.scratchBufferManager.ResetScratchBuffer(offset);
+            => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
         #endregion
     }
 }
