@@ -3,6 +3,7 @@
 
 namespace Tsavorite.core
 {
+    using System;
     using static LogAddress;
 
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -59,6 +60,19 @@ namespace Tsavorite.core
 
             if (success)
             {
+                TInput input = default;
+                TOutput output = default;
+                ReadOnlySpan<byte> srcValue = default;
+                UpsertInfo upsertInfo = new()
+                {
+                    Version = sessionFunctions.Ctx.version,
+                    SessionID = sessionFunctions.Ctx.sessionID,
+                    Address = kInvalidAddress, // stackCtx.recSrc.LogicalAddress,
+                    KeyHash = stackCtx.hei.hash
+                };
+
+                // TODO: This is called by readcache directly, but is the only ISessionFunctions call for that; the rest is internal. Clean this up, maybe as a new PostReadCacheInsert method.
+                sessionFunctions.PostInitialWriter(ref newLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
                 newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = kInvalidAddress;  // We aren't doing anything with this; and we never expose readcache addresses
                 stackCtx.ClearNewRecord();

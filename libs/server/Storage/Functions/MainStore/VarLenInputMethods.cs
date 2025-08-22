@@ -313,7 +313,6 @@ namespace Garnet.server
                     case RespCommand.PEXPIREAT:
                         {
                             // Set HasExpiration to match with EvaluateExpireInPlace.
-                            var expireOption = (ExpireOption)input.arg1;
                             if (srcLogRecord.Info.HasExpiration)
                             {
                                     // case ExpireOption.NX:                // HasExpiration is true so we will retain it
@@ -327,7 +326,8 @@ namespace Garnet.server
                             }
                             else
                             {
-                                switch (expireOption)
+                                var expirationWithOption = new ExpirationWithOption(input.arg1);
+                                switch (expirationWithOption.ExpireOption)
                                 {
                                     case ExpireOption.NX:
                                     case ExpireOption.None:

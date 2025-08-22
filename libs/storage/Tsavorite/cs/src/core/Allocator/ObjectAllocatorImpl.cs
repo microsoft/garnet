@@ -734,7 +734,8 @@ namespace Tsavorite.core
             {
                 MemoryStream ms = new(result.freeBuffer2.buffer);
                 ms.Seek(result.freeBuffer2.offset, SeekOrigin.Begin);
-                Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms);
+                // We do not track deserialization size changes if we are deserializing to a frame
+                Deserialize(result.freeBuffer1.GetValidPointer(), result.resumePtr, result.untilPtr, src, ms, result.frame != null);
                 ms.Dispose();
 
                 result.freeBuffer2.Return();
@@ -881,7 +882,7 @@ namespace Tsavorite.core
             if (ValueHasObjects())
                 valueSerializer.EndDeserialize();
 
-            if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
+            if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1 && !doNotObserve)
             {
                 using var iter = new MemoryPageScanIterator(src, start_offset, end_offset, -1, RecordSize);
                 OnDeserializationObserver.OnNext(iter);

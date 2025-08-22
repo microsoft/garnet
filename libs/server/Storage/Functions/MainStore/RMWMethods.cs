@@ -544,13 +544,10 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                     var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-                    // reset etag state that may have been initialized earlier, but don't update etag because only the metadata was updated
+                    // reset etag state that may have been initialized earlier, but don't update etag because only the expiration was updated
                     ETagState.ResetState(ref functionsState.etagState);
-                    shouldUpdateEtag = false;
+                    return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output);
 
-                    if (!EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
-                        return false;
-                    break;
                 case RespCommand.PERSIST:
                     if (logRecord.Info.HasExpiration)
                     {
@@ -764,7 +761,7 @@ namespace Garnet.server
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
                     shouldUpdateEtag = false;
-                    break;
+                    return true;
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.

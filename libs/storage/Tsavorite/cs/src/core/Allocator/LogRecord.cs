@@ -40,6 +40,9 @@ namespace Tsavorite.core
         public const int NoETag = 0;
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
+        /// <summary>Miminal length metadata size: one byte each for indicator byte, key length, value length</summary>
+        public const int MinLengthMetadataSize = 3;
+
         /// <summary>Number of bytes required to store the FillerLen</summary>
         internal const int FillerLengthSize = sizeof(int);
 

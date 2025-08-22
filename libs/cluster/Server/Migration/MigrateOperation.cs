@@ -73,8 +73,6 @@ namespace Garnet.cluster
             /// <returns></returns>
             public bool TransmitSlots(StoreType storeType)
             {
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
-
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
                 var output = new GarnetObjectStoreOutput();
@@ -83,6 +81,7 @@ namespace Garnet.cluster
                 {
                     if (storeType == StoreType.Main)
                     {
+                        var input = new RawStringInput(RespCommandAccessor.MIGRATE);
                         foreach (var key in sketch.argSliceVector)
                         {
                             if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, key, ref input, ref output.SpanByteAndMemory, out _))
@@ -91,9 +90,10 @@ namespace Garnet.cluster
                     }
                     else
                     {
+                        var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
                         foreach (var key in sketch.argSliceVector)
                         {
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, key, ref output, out _))
+                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, key, ref input, ref output, out _))
                                 return false;
                         }
                     }
@@ -138,12 +138,14 @@ namespace Garnet.cluster
                     }
                     else
                     {
+                        var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
+
                         for (var i = 0; i < keys.Count; i++)
                         {
                             if (keys[i].Item2)
                                 continue;
 
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, keys[i].Item1, ref output, out var status))
+                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
                                 return false;
 
                             // If key was FOUND, mark it for deletion

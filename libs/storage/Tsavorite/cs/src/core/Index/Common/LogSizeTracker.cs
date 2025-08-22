@@ -207,9 +207,7 @@ namespace Tsavorite.core
                     token.ThrowIfCancellationRequested();
 
                     if (logAccessor.AllocatedPageCount > logAccessor.BufferSize - logAccessor.EmptyPageCount + 1)
-                    {
                         return; // wait for allocation to stabilize
-                    }
 
                     logAccessor.EmptyPageCount++;
                     PostEmptyPageCountIncrease(logAccessor.EmptyPageCount);
@@ -225,9 +223,7 @@ namespace Tsavorite.core
                     token.ThrowIfCancellationRequested();
 
                     if (logAccessor.AllocatedPageCount < logAccessor.BufferSize - logAccessor.EmptyPageCount - 1)
-                    {
                         return; // wait for allocation to stabilize
-                    }
 
                     logAccessor.EmptyPageCount--;
                     PostEmptyPageCountDecrease(logAccessor.EmptyPageCount);

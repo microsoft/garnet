@@ -23,13 +23,12 @@ namespace Garnet.cluster
             return WriteRecord(gcs, ref output, status, isMainStore: true);
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref GarnetObjectStoreOutput output, out GarnetStatus status)
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, out GarnetStatus status)
         {
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
 
-            ObjectInput input = default;
             status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref output);
             return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isMainStore: true);
         }

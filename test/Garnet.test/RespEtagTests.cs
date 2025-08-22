@@ -2237,6 +2237,9 @@ namespace Garnet.test
             var keyWithMetadata = "keyWithMetadata";
             db.Execute("SET", [keyWithMetadata, val, "WITHETAG"]);
             db.KeyExpire(keyWithMetadata, TimeSpan.FromSeconds(10000));
+            var time = db.KeyTimeToLive(keyWithMetadata);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
+
             etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [keyWithMetadata]))[0].ToString());
             ClassicAssert.AreEqual(1, etagToCheck);
 
@@ -2246,7 +2249,7 @@ namespace Garnet.test
             _val = db.StringGet(keyWithMetadata);
             ClassicAssert.AreEqual(val + val2, _val.ToString());
 
-            var time = db.KeyTimeToLive(keyWithMetadata);
+            time = db.KeyTimeToLive(keyWithMetadata);
             ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
 
             etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [keyWithMetadata]))[0].ToString());

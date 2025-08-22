@@ -25,7 +25,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "5k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "3k");
             server.Start();
             objStore = server.Provider.StoreWrapper.objectStore;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
@@ -49,7 +49,8 @@ namespace Garnet.test
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Faster", r);
 
-            ClassicAssert.AreEqual(248, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
+            // This will count only the value object; there is no key overflow.
+            ClassicAssert.AreEqual(208, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
         }
 
         [Test, CancelAfter(40 * 1000)]
@@ -68,21 +69,22 @@ namespace Garnet.test
             string r = db.HashGet("user:user1", "Title");
             ClassicAssert.AreEqual("Faster", r);
 
-            ClassicAssert.AreEqual(248, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
+            // This will count only the value object; there is no key overflow.
+            const int MemorySizePerEntry = 208;
+            const int NumRecords = 20;
+
+            ClassicAssert.AreEqual(MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
             ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.logAccessor.EmptyPageCount); // Ensure empty page count hasn't changed as EPC is still within the min & max limits
 
-            // Have enough records (24 bytes each) to cross a page boundary (512)
-            for (int i = 2; i <= 24; i++)
-            {
+            // K/V lengths fit into a single byte each, so the record size is: RecordInfo, MinLengthMetadataSize, keyLength, valueLength; the total rounded up to record alignment.
+            // ValueLength is 4 for the ObjectId, so this becomes 8 + 3 + (10 or 11) + 4 totalling 25 or 26, both rounding up to 32 which is a even divisor for the page size.
+            // First valid address is 64, and there are 25 total records. Have enough records to cross a page boundary (512)
+            for (int i = 2; i <= NumRecords; i++)
                 db.HashSet($"user:user{i}", [new HashEntry("Title", "Faster")]);
-            }
+            ClassicAssert.AreEqual(NumRecords * MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
 
-            ClassicAssert.AreEqual(5952, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes); // 24 * 248 for each hashset object
-
-            // Wait for the resizing to happen
-            bool eventSignaled = epcEvent.Wait(
-                TimeSpan.FromSeconds(3 * LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)); // Wait for 3x resize task delay
-            if (!eventSignaled)
+            // Wait for up to 3x resize task delay for the resizing to happen
+            if (!epcEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
                 Assert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
         }
 
@@ -108,19 +110,24 @@ namespace Garnet.test
 
             // Have enough records (24 bytes each) to spill over to disk
             for (var i = 0; i < 100; i++)
-            {
                 db.HashSet($"user:user{i}", [new HashEntry("Title", "Faster")]);
-            }
 
-            for (var i = 0; i < 25; i++)
+            // This will count only the value object; there is no key overflow.
+            const int MemorySizePerEntry = 208;
+            const int NumRecords = 20;
+
+            for (var i = 0; i < NumRecords; i++)
             {
                 var value = db.HashGet($"user:user{i}", "Title");
                 ClassicAssert.AreEqual("Faster", (string)value, i.ToString());
             }
+            ClassicAssert.AreEqual(25 * MemorySizePerEntry, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
 
-            ClassicAssert.AreEqual(6200, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes); // 25 * 248 for each hashset object
+            // K/V lengths fit into a single byte each, so the record size is: RecordInfo, MinLengthMetadataSize, keyLength, valueLength; the total rounded up to record alignment.
+            // ValueLength is 4 for the ObjectId, so this becomes 8 + 3 + (10 or 11) + 4 totalling 25 or 26, both rounding up to 32 which is a even divisor for the page size.
+            // First valid address is 64, and there are 25 total records.
             var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.EndPoint), includeReadCache: true, isObjectStore: true);
-            ClassicAssert.AreEqual(632, info.ReadCacheTailAddress); // 25 (records) * 24 (rec size) + 24 (initial) + 8 (page boundary)
+            ClassicAssert.AreEqual(64 + 32 * NumRecords, info.ReadCacheTailAddress);
 
             if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
                 ClassicAssert.Fail("Timeout occurred. Resizing did not happen within the specified time.");

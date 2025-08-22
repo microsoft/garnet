@@ -43,14 +43,20 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
+            // TODO: This is called by readcache directly, but is the only ISessionFunctions call for that; the rest is internal. Clean this up, maybe as a new PostReadCacheInsert method.
+            if (upsertInfo.Address == LogAddress.kInvalidAddress)
+            {
+                functionsState.objectStoreSizeTracker?.AddReadCacheTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+                return;
+            }
+
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
             // TODO: Need to track lengths written to readcache, which is now internal in Tsavorite
-            if (logRecord.Info.ValueIsOverflow)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Length);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -62,7 +68,7 @@ namespace Garnet.server
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.MemorySize);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -79,10 +85,7 @@ namespace Garnet.server
             }
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
-            var size = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(size);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />

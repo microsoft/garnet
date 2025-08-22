@@ -65,7 +65,7 @@ namespace Garnet.server
         public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
 
         public IStoreFunctions mainStoreFunctions => store.StoreFunctions;
-        public IStoreFunctions objectStoreFunctions => objectStore.StoreFunctions;
+        public IStoreFunctions objectStoreFunctions => objectStore?.StoreFunctions;
 
         /// <summary>
         /// Server options
