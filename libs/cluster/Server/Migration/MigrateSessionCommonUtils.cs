@@ -14,23 +14,27 @@ namespace Garnet.cluster
     {
         private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, out GarnetStatus status)
         {
+            const bool isMainStore = true;
+
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
-                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
 
             // Read the value for the key. This will populate output with the entire serialized record.
             status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
-            return WriteRecord(gcs, ref output, status, isMainStore: true);
+            return WriteRecord(gcs, ref output, status, isMainStore);
         }
 
         private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, out GarnetStatus status)
         {
+            const bool isMainStore = false;
+
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
-                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
 
             status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref output);
-            return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isMainStore: true);
+            return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isMainStore);
         }
 
         bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status, bool isMainStore)
