@@ -60,19 +60,19 @@ jobs:
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
 
-      - name: Build and Run Tsavorite Tests
-        if: ${{ always() }}
-        shell: bash
-        run: |
-            dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-            dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-
       - name: Build and Run Garnet Tests
         if: ${{ always() }}
         shell: bash
         run: |
             dotnet build test/Garnet.test --configuration ${{ matrix.configuration }}
             dotnet test test/Garnet.test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+
+      - name: Build and Run Tsavorite Tests
+        if: ${{ always() }}
+        shell: bash
+        run: |
+            dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+            dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 
       - name: Build and Run Cluster Tests
         if: ${{ always() }}
