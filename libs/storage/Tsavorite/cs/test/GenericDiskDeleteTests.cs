@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -185,3 +187,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using Garnet.client;
 using Garnet.server;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -72,35 +71,29 @@ namespace Garnet.cluster
             /// </summary>
             /// <param name="storeType"></param>
             /// <returns></returns>
-            public bool TrasmitSlots(StoreType storeType)
+            public bool TransmitSlots(StoreType storeType)
             {
-                var bufferSize = 1 << 10;
-                SectorAlignedMemory buffer = new(bufferSize, 1);
-                var bufPtr = buffer.GetValidPointer();
-                var bufPtrEnd = bufPtr + bufferSize;
-                var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+                // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
+                // so we can reuse the SpanByteAndMemory.Memory across iterations.
+                var output = new GarnetObjectStoreOutput();
 
                 try
                 {
                     if (storeType == StoreType.Main)
                     {
+                        var input = new RawStringInput(RespCommandAccessor.MIGRATE);
                         foreach (var key in sketch.argSliceVector)
                         {
-                            var spanByte = key.SpanByte;
-                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, ref spanByte, ref input, ref o, out _))
+                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, key, ref input, ref output.SpanByteAndMemory, out _))
                                 return false;
-
-                            // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                            o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
                         }
                     }
                     else
                     {
+                        var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
                         foreach (var key in sketch.argSliceVector)
                         {
-                            var argSlice = key;
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, ref argSlice, out _))
+                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, key, ref input, ref output, out _))
                                 return false;
                         }
                     }
@@ -111,7 +104,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    buffer.Dispose();
+                    output.SpanByteAndMemory.Dispose();
                 }
 
                 return true;
@@ -119,55 +112,45 @@ namespace Garnet.cluster
 
             public bool TransmitKeys(StoreType storeType)
             {
-                var bufferSize = 1 << 10;
-                SectorAlignedMemory buffer = new(bufferSize, 1);
-                var bufPtr = buffer.GetValidPointer();
-                var bufPtrEnd = bufPtr + bufferSize;
-                var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
-                var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+                // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
+                // so we can reuse the SpanByteAndMemory.Memory across iterations.
+                var output = new GarnetObjectStoreOutput();
 
                 try
                 {
                     var keys = sketch.Keys;
                     if (storeType == StoreType.Main)
                     {
+                        var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+
                         for (var i = 0; i < keys.Count; i++)
                         {
                             if (keys[i].Item2)
                                 continue;
 
-                            var spanByte = keys[i].Item1.SpanByte;
-                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, ref spanByte, ref input, ref o, out var status))
+                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output.SpanByteAndMemory, out var status))
                                 return false;
 
-                            // Skip if key NOTFOUND
-                            if (status == GarnetStatus.NOTFOUND)
-                                continue;
-
-                            // Reset SpanByte for next read if any but don't dispose heap buffer as we might re-use it
-                            o.SpanByte = new SpanByte((int)(bufPtrEnd - bufPtr), (IntPtr)bufPtr);
-
-                            // Mark for deletion
-                            keys[i] = (keys[i].Item1, true);
+                            // If key was FOUND, mark it for deletion
+                            if (status != GarnetStatus.NOTFOUND)
+                                keys[i] = (keys[i].Item1, true);
                         }
                     }
                     else
                     {
+                        var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
+
                         for (var i = 0; i < keys.Count; i++)
                         {
                             if (keys[i].Item2)
                                 continue;
 
-                            var argSlice = keys[i].Item1;
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, ref argSlice, out var status))
+                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
                                 return false;
 
-                            // Skip if key NOTFOUND
-                            if (status == GarnetStatus.NOTFOUND)
-                                continue;
-
-                            // Mark for deletion
-                            keys[i] = (keys[i].Item1, true);
+                            // If key was FOUND, mark it for deletion
+                            if (status != GarnetStatus.NOTFOUND)
+                                keys[i] = (keys[i].Item1, true);
                         }
                     }
 
@@ -177,7 +160,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    buffer.Dispose();
+                    output.SpanByteAndMemory.Dispose();
                 }
                 return true;
             }
@@ -192,20 +175,16 @@ namespace Garnet.cluster
                 if (session.transferOption == TransferOption.SLOTS)
                 {
                     foreach (var key in sketch.argSliceVector)
-                    {
-                        var spanByte = key.SpanByte;
-                        _ = localServerSession.BasicGarnetApi.DELETE(ref spanByte);
-                    }
+                        _ = localServerSession.BasicGarnetApi.DELETE(key);
                 }
                 else
                 {
                     var keys = sketch.Keys;
                     for (var i = 0; i < keys.Count; i++)
                     {
-                        // Skip if key is not marked for deletion because it has not been transmitted to the target node
-                        if (!keys[i].Item2) continue;
-                        var spanByte = keys[i].Item1.SpanByte;
-                        _ = localServerSession.BasicGarnetApi.DELETE(ref spanByte);
+                        // Do not delete the key if it is not marked for deletion because it has not been transmitted to the target node
+                        if (keys[i].Item2)
+                            _ = localServerSession.BasicGarnetApi.DELETE(keys[i].Item1);
                     }
                 }
             }

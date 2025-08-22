@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet
 {
@@ -37,8 +38,8 @@ namespace Garnet
             var key1 = GetNextArg(ref procInput, ref offset);
             var key2 = GetNextArg(ref procInput, ref offset);
 
-            api.GET(key1, out var value1);
-            api.GET(key2, out var value2);
+            api.GET(key1, out PinnedSpanByte value1);
+            api.GET(key2, out PinnedSpanByte value2);
 
             // Return the two keys as an array of bulk strings
             WriteBulkStringArray(ref output, value1, value2);

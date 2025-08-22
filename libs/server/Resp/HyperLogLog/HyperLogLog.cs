@@ -605,7 +605,7 @@ namespace Garnet.server
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var currElement = input.parseState.GetArgSliceByRef(i);
-                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ptr, currElement.Length);
+                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ToPointer(), currElement.Length);
                 updated |= (dense ? UpdateDense(value, hashValue) : UpdateSparse(value, hashValue));
             }
             return updated;

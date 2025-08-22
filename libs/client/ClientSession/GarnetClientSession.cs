@@ -559,10 +559,15 @@ namespace Garnet.client
                     Dispose();
                     throw;
                 }
-                networkSender.GetResponseObject();
-                offset = networkSender.GetResponseObjectHead();
-                end = networkSender.GetResponseObjectTail();
+                ResetOffset();
             }
+        }
+
+        private unsafe void ResetOffset()
+        {
+            networkSender.GetResponseObject();
+            offset = networkSender.GetResponseObjectHead();
+            end = networkSender.GetResponseObjectTail();
         }
 
         /// <inheritdoc />

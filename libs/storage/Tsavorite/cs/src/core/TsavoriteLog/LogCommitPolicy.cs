@@ -50,7 +50,7 @@ namespace Tsavorite.core
         /// return false.
         /// </summary>
         /// <returns> policy object </returns>
-        public static LogCommitPolicy Default() => new DefaultLogCommitPolicy();
+        public static LogCommitPolicy Default() => new DefaulLogCommitPolicy();
 
         /// <summary>
         /// MaxParallel log commit policy allows k (non-strong) commit requests to be in progress at any giving time. The k commits are guaranteed
@@ -76,7 +76,7 @@ namespace Tsavorite.core
         public static LogCommitPolicy RateLimit(long thresholdMilli, long thresholdBytes) => new RateLimitLogCommitPolicy(thresholdMilli, thresholdBytes);
     }
 
-    internal sealed class DefaultLogCommitPolicy : LogCommitPolicy
+    internal sealed class DefaulLogCommitPolicy : LogCommitPolicy
     {
         /// <inheritdoc/>
         public override void OnAttached(TsavoriteLog log) { }
