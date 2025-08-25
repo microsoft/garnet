@@ -636,7 +636,6 @@ namespace Garnet.server
                             }
                             else
                             {
-
                                 var remainingIds = idResult.AsReadOnlySpan();
                                 var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
 

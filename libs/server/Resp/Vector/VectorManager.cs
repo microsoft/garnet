@@ -218,6 +218,11 @@ namespace Garnet.server
             public VectorQuantType QuantType;
         }
 
+        /// <summary>
+        /// Minimum size of an id is assumed to be at least 4 bytes + a length prefix.
+        /// </summary>
+        private const int MinimumSpacePerId = sizeof(int) + 4;
+
         private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, int> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, bool> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, bool> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
@@ -578,6 +583,19 @@ namespace Garnet.server
                 // Indicate requested # of matches
                 outputDistances.Length = count * sizeof(float);
 
+                // If we're fairly sure the ids won't fit, go ahead and grab more memory now
+                //
+                // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+                if (count * MinimumSpacePerId > outputIds.Length)
+                {
+                    if (!outputIds.IsSpanByte)
+                    {
+                        outputIds.Memory.Dispose();
+                    }
+
+                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
+                }
+
                 var found =
                     Service.SearchVector(
                         context,
@@ -642,6 +660,19 @@ namespace Garnet.server
 
                 // Indicate requested # of matches
                 outputDistances.Length = count * sizeof(float);
+
+                // If we're fairly sure the ids won't fit, go ahead and grab more memory now
+                //
+                // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+                if (count * MinimumSpacePerId > outputIds.Length)
+                {
+                    if (!outputIds.IsSpanByte)
+                    {
+                        outputIds.Memory.Dispose();
+                    }
+
+                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
+                }
 
                 var found =
                     Service.SearchElement(
