@@ -16,6 +16,9 @@ namespace Garnet.server
         {
             // VADD key [REDUCE dim] (FP32 | VALUES num) vector element [CAS] [NOQUANT | Q8 | BIN] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
 
+            const int MinM = 4;
+            const int MaxM = 4_096;
+
             // key FP32|VALUES vector element
             if (parseState.Count < 4)
             {
@@ -55,7 +58,7 @@ namespace Garnet.server
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
                     if ((asBytes.Length % sizeof(float)) != 0)
                     {
-                        return AbortWithErrorMessage("FP32 values must be multiple of 4-bytes in size");
+                        return AbortWithErrorMessage("ERR invalid vector specification");
                     }
 
                     values = MemoryMarshal.Cast<byte, float>(asBytes);
@@ -70,7 +73,7 @@ namespace Garnet.server
 
                     if (!parseState.TryGetInt(curIx, out var valueCount) || valueCount <= 0)
                     {
-                        return AbortWithErrorMessage("VALUES count must > 0");
+                        return AbortWithErrorMessage("ERR invalid vector specification");
                     }
                     curIx++;
 
@@ -89,7 +92,7 @@ namespace Garnet.server
                     {
                         if (!parseState.TryGetFloat(curIx, out values[valueIx]))
                         {
-                            return AbortWithErrorMessage("VALUES value must be valid float");
+                            return AbortWithErrorMessage("ERR invalid vector specification");
                         }
 
                         curIx++;
@@ -113,6 +116,12 @@ namespace Garnet.server
 
                 while (curIx < parseState.Count)
                 {
+                    // REDUCE is illegal after values, no matter how specified
+                    if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("REDUCE"u8))
+                    {
+                        return AbortWithErrorMessage("ERR invalid option after element");
+                    }
+
                     // Look for CAS
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("CAS"u8))
                     {
@@ -178,12 +187,12 @@ namespace Garnet.server
 
                         if (curIx >= parseState.Count)
                         {
-                            return AbortWithWrongNumberOfArguments("VADD");
+                            return AbortWithErrorMessage("ERR invalid option after element");
                         }
 
                         if (!parseState.TryGetInt(curIx, out var buildExplorationFactorNonNull) || buildExplorationFactorNonNull <= 0)
                         {
-                            return AbortWithErrorMessage("EF must be > 0");
+                            return AbortWithErrorMessage("ERR invalid EF");
                         }
 
                         buildExplorationFactor = buildExplorationFactorNonNull;
@@ -202,7 +211,7 @@ namespace Garnet.server
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
-                            return AbortWithWrongNumberOfArguments("VADD");
+                            return AbortWithErrorMessage("ERR invalid option after element");
                         }
 
                         attributes = parseState.GetArgSliceByRef(curIx);
@@ -224,12 +233,12 @@ namespace Garnet.server
                         curIx++;
                         if (curIx >= parseState.Count)
                         {
-                            return AbortWithWrongNumberOfArguments("VADD");
+                            return AbortWithErrorMessage("ERR invalid option after element");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull <= 0)
+                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull < MinM || numLinksNonNull > MaxM)
                         {
-                            return AbortWithErrorMessage("M must be > 0");
+                            return AbortWithErrorMessage("ERR invalid M");
                         }
 
                         numLinks = numLinksNonNull;
@@ -239,7 +248,7 @@ namespace Garnet.server
                     }
 
                     // Didn't recognize this option, error out
-                    return AbortWithErrorMessage("Unknown option");
+                    return AbortWithErrorMessage("ERR invalid option after element");
                 }
 
                 // Default unspecified options
@@ -280,14 +289,12 @@ namespace Garnet.server
                     }
                     else if (result == VectorManagerResult.BadParams)
                     {
-                        while (!RespWriteUtils.TryWriteError("VADD parameters did not match Vector Set construction parameters"u8, ref dcurr, dend))
-                            SendAndReset();
+                        return AbortWithErrorMessage("ERR asked quantization mismatch with existing vector set"u8);
                     }
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteError($"Unexpected GarnetStatus: {res}", ref dcurr, dend))
-                        SendAndReset();
+                    return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
                 return true;
@@ -795,12 +802,12 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetDimensions(key, out var dimensions);
 
-            if(res == GarnetStatus.NOTFOUND)
+            if (res == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("ERR Key not found"u8, ref dcurr, dend))
                     SendAndReset();
             }
-            else if(res == GarnetStatus.WRONGTYPE)
+            else if (res == GarnetStatus.WRONGTYPE)
             {
                 while (!RespWriteUtils.TryWriteError("ERR Not a Vector Set"u8, ref dcurr, dend))
                     SendAndReset();

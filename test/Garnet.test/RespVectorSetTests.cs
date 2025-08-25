@@ -88,6 +88,26 @@ namespace Garnet.test
             var exc14 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M", "10000"]));
             ClassicAssert.AreEqual("ERR invalid M", exc14.Message);
 
+            // Missing/bad option value
+            var exc20 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF"]));
+            ClassicAssert.AreEqual("ERR invalid option after element", exc20.Message);
+            var exc21 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "EF", "0"]));
+            ClassicAssert.AreEqual("ERR invalid EF", exc21.Message);
+            var exc22 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "SETATTR"]));
+            ClassicAssert.AreEqual("ERR invalid option after element", exc22.Message);
+            var exc23 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "M"]));
+            ClassicAssert.AreEqual("ERR invalid option after element", exc23.Message);
+            var exc24 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "2.0", "bar"]));
+            ClassicAssert.AreEqual("ERR invalid vector specification", exc24.Message);
+            var exc25 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "0", "bar"]));
+            ClassicAssert.AreEqual("ERR invalid vector specification", exc25.Message);
+            var exc26 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "fizz", "bar"]));
+            ClassicAssert.AreEqual("ERR invalid vector specification", exc26.Message);
+
+            // Unknown option
+            var exc27 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "FOO"]));
+            ClassicAssert.AreEqual("ERR invalid option after element", exc27.Message);
+
             // Malformed FP32
             var binary = new float[] { 1, 2, 3 };
             var blob = MemoryMarshal.Cast<float, byte>(binary)[..^1].ToArray();
