@@ -572,8 +572,11 @@ namespace Garnet.server
                         outputDistances.Memory.Dispose();
                     }
 
-                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count));
+                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
                 }
+
+                // Indicate requested # of matches
+                outputDistances.Length = count * sizeof(float);
 
                 var found =
                     Service.SearchVector(
@@ -636,6 +639,9 @@ namespace Garnet.server
 
                     outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
                 }
+
+                // Indicate requested # of matches
+                outputDistances.Length = count * sizeof(float);
 
                 var found =
                     Service.SearchElement(
