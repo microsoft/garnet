@@ -2628,32 +2628,35 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private RespCommand ParseCommand(bool writeErrorOnFailure, out bool commandReceived)
         {
-            var cmd = RespCommand.INVALID;
+            RespCommand cmd;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
             var count = -1;
             commandReceived = true;
             endReadHead = readHead;
 
-            var remainingBytes = bytesRead - readHead;
             var ptr = recvBufferPtr + readHead;
-            var end = ptr + remainingBytes;
+            var end = recvBufferPtr + bytesRead;
+            var remainingBytes = bytesRead - readHead;
 
             // Attempt parsing using fast parse pass for most common operations
             cmd = FastParseCommand(out count, ptr, remainingBytes);
 
-            // See if input command is all upper-case. If not, convert and try fast parse pass again.
-            if ((cmd == RespCommand.NONE) && MakeUpperCase(ptr, remainingBytes))
+            if (cmd == RespCommand.NONE)
             {
-                cmd = FastParseCommand(out count, ptr, remainingBytes);
-            }
+                // See if input command is all upper-case. If not, convert and try fast parse pass again.
+                if (MakeUpperCase(ptr, remainingBytes))
+                {
+                    cmd = FastParseCommand(out count, ptr, remainingBytes);
+                }
 
-            // If we have not found a command, continue parsing on slow path.
-            // But first ensure we are attempting to read a RESP array header.
-            if ((cmd == RespCommand.NONE) && (*ptr == '*'))
-            {
-                cmd = ArrayParseCommand(writeErrorOnFailure, ptr, end, out count, out commandReceived);
-                if (!commandReceived) return cmd;
+                // If we have not found a command, continue parsing on slow path.
+                // But first ensure we are attempting to read a RESP array header.
+                if ((cmd == RespCommand.NONE) && (*ptr == '*'))
+                {
+                    cmd = ArrayParseCommand(writeErrorOnFailure, ptr, end, out count, out commandReceived);
+                    if (!commandReceived) return cmd;
+                }
             }
 
             if (cmd != RespCommand.NONE)
@@ -2674,42 +2677,11 @@ namespace Garnet.server
 
                 readHead = (int)(ptr - recvBufferPtr);
             }
-            else if (CanRunInlineCommands())
+            else if (CanRunInlineCommands() && (*ptr != '*'))
             {
-                // This may be an inline command string. We'll parse it and convert a part to a RESP command string,
-                // which is then parsed to get the command.
-                SpanByteAndMemory spam = new(null);
-                if (!ParseInlineCommandline(ref spam, writeErrorOnFailure, ref ptr, out commandReceived, out var nbytes, out var result))
-                {
-                    if (commandReceived)
-                        endReadHead = readHead;
+                cmd = TryParseInlineCommandline(writeErrorOnFailure, ref ptr, out commandReceived, ref count);
+                if (!commandReceived)
                     return RespCommand.INVALID;
-                }
-
-                // If we're here, commandReceived is true, and we've reached end-of-line.
-                endReadHead = readHead;
-
-                fixed (byte* nptr = spam.Memory.Memory.Span)
-                {
-                    var nend = nptr + nbytes;
-
-                    cmd = FastParseCommand(out count, nptr, nbytes);
-
-                    // Since we're operating on a temporary buffer and not the actual receive buffer,
-                    // we don't care for its commandReceived, and we reset readHead afterwards.
-                    if (cmd == RespCommand.NONE)
-                    {
-                        cmd = ArrayParseCommand(writeErrorOnFailure, nptr, nend, out count, out _,
-                                                result[0].ReadOnlySpan, result.Length > 1 ? result[1] : default);
-                    }
-                    readHead = endReadHead;
-
-                    if (cmd == RespCommand.INVALID)
-                        logger?.LogWarning("Received malformed input message. Line is skipped.");
-                }
-
-                // Note that arguments are initialized from the actual command string, and not our made-up RESP string.
-                parseState.InitializeWithArguments(result[(result.Length - count)..]);
             }
             else
             {
@@ -2723,6 +2695,47 @@ namespace Garnet.server
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        private RespCommand TryParseInlineCommandline(bool writeErrorOnFailure, ref byte* ptr,
+                                                      out bool commandReceived, ref int count)
+        {
+            // This may be an inline command string. We'll parse it and convert a part to a RESP command string,
+            // which is then parsed to get the command.
+            SpanByteAndMemory spam = new(null);
+            if (!ParseInlineCommandline(ref spam, writeErrorOnFailure, ref ptr, out commandReceived, out var nbytes, out var result))
+            {
+                if (commandReceived)
+                    endReadHead = readHead;
+                return RespCommand.INVALID;
+            }
+
+            // If we're here, commandReceived is true, and we've reached end-of-line.
+            endReadHead = readHead;
+
+            fixed (byte* nptr = spam.Memory.Memory.Span)
+            {
+                var nend = nptr + nbytes;
+
+                var cmd = FastParseCommand(out count, nptr, nbytes);
+
+                // Since we're operating on a temporary buffer and not the actual receive buffer,
+                // we don't care for its commandReceived, and we reset readHead afterwards.
+                if (cmd == RespCommand.NONE)
+                {
+                    cmd = ArrayParseCommand(writeErrorOnFailure, nptr, nend, out count, out _,
+                                            result[0].ReadOnlySpan, result.Length > 1 ? result[1] : default);
+                }
+                readHead = endReadHead;
+
+                if (cmd == RespCommand.INVALID)
+                    logger?.LogWarning("Received malformed input message. Line is skipped.");
+                else
+                    // Note that arguments are initialized from the actual command string, and not our made-up RESP string.
+                    parseState.InitializeWithArguments(result[(result.Length - count)..]);
+
+                return cmd;
+            }
         }
 
         private bool ParseInlineCommandline(ref SpanByteAndMemory spam,
