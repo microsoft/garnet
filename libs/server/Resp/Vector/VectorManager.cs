@@ -367,7 +367,7 @@ namespace Garnet.server
             if (key.Length + sizeof(byte) > distinguishedKey.Length)
             {
                 distinguishedKey = rented = ArrayPool<byte>.Shared.Rent(key.Length + sizeof(byte));
-                distinguishedKey = distinguishedKey[..^sizeof(byte)];
+                distinguishedKey = distinguishedKey[..^(key.Length + sizeof(byte))];
             }
             else
             {
