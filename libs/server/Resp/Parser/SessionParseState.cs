@@ -418,6 +418,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get float argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float GetFloat(int i, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.ReadFloat(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), canBeInfinite);
+        }
+
+        /// <summary>
         /// Try to get double argument at the given index
         /// </summary>
         /// <returns>True if double parsed successfully</returns>
