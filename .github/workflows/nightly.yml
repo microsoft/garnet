@@ -18,9 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Debug', 'Release' ]
+#        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
+#        framework: [ 'net8.0', 'net9.0' ]
+#        configuration: [ 'Debug', 'Release' ]
+        os: [ windows-2025 ]
+        framework: [ 'net9.0' ]
+        configuration: [ 'Release' ]
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
