@@ -32,7 +32,7 @@ namespace Garnet.server
         /// <param name="writeCallback">Callback used to write values to Garnet store.</param>
         /// <param name="deleteCallback">Callback used to delete values from Garnet store.</param>
         /// <returns>Reference to constructed index.</returns>
-        nint CreateIndexUnmanaged(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, int> readCallback, delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, bool> writeCallback, delegate* unmanaged[Cdecl]<ulong, byte*, nuint, bool> deleteCallback);
+        nint CreateIndexUnmanaged(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, int> readCallback, delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback, delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback);
 
         /// <summary>
         /// Equivalent of <see cref="CreateIndexUnmanaged"/>, but with managed callbacks.

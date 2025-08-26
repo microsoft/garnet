@@ -49,7 +49,7 @@ namespace Garnet.server
         public bool UseUnmanagedCallbacks { get; } = false;
 
         /// <inheritdoc/>
-        public nint CreateIndexUnmanaged(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, int> readCallback, delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, bool> writeCallback, delegate* unmanaged[Cdecl]<ulong, byte*, nuint, bool> deleteCallback)
+        public nint CreateIndexUnmanaged(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, int> readCallback, delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback, delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback)
         => throw new NotImplementedException();
 
         /// <inheritdoc/>
@@ -223,9 +223,9 @@ namespace Garnet.server
         /// </summary>
         private const int MinimumSpacePerId = sizeof(int) + 4;
 
-        private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, int> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
-        private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, byte*, nuint, bool> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
-        private unsafe delegate* unmanaged[Cdecl]<ulong, byte*, nuint, bool> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, int> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
 
         private VectorReadDelegate ReadCallbackDel { get; } = ReadCallbackManaged;
         private VectorWriteDelegate WriteCallbackDel { get; } = WriteCallbackManaged;
@@ -260,16 +260,16 @@ namespace Garnet.server
         => nextContextValue;
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe int ReadCallbackUnmanaged(ulong context, byte* keyData, nuint keyLength, byte* writeData, nuint writeLength)
-        => ReadCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref *keyData, (int)keyLength), MemoryMarshal.CreateSpan(ref *writeData, (int)writeLength));
+        private static unsafe int ReadCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
+        => ReadCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)keyData), (int)keyLength), MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>((void*)writeData), (int)writeLength));
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe bool WriteCallbackUnmanaged(ulong context, byte* keyData, nuint keyLength, byte* writeData, nuint writeLength)
-        => WriteCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref *keyData, (int)keyLength), MemoryMarshal.CreateReadOnlySpan(ref *writeData, (int)writeLength));
+        private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
+        => WriteCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)keyData), (int)keyLength), MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)writeData), (int)writeLength)) ? (byte)1 : default;
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe bool DeleteCallbackUnmanaged(ulong context, byte* keyData, nuint keyLength)
-        => DeleteCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref *keyData, (int)keyLength));
+        private static unsafe byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
+        => DeleteCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)keyData), (int)keyLength)) ? (byte)1 : default;
 
         private static int ReadCallbackManaged(ulong context, ReadOnlySpan<byte> key, Span<byte> value)
         {
