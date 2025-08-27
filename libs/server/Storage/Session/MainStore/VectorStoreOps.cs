@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -23,8 +22,6 @@ namespace Garnet.server
     /// </summary>
     sealed partial class StorageSession : IDisposable
     {
-        private static readonly System.Threading.ReaderWriterLockSlim hackVectorSetIndexMutate = new(System.Threading.LockRecursionPolicy.NoRecursion);
-
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
@@ -61,17 +58,10 @@ namespace Garnet.server
             tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
 
-                //hackVectorSetIndexMutate.EnterUpgradeableReadLock();
-
-                if (!lockCtx.TryLock([vectorLockEntry]))
-                {
-                    throw new GarnetException("Couldn't acquire shared lock on Vector Set");
-                }
+                lockCtx.Lock([vectorLockEntry]);
 
                 try
                 {
-
-                    //var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
                     var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes == GarnetStatus.NOTFOUND)
                     {
@@ -79,11 +69,9 @@ namespace Garnet.server
                         {
                             goto tryAgain;
                         }
-                        //hackVectorSetIndexMutate.EnterWriteLock();
 
                         vectorLockEntry.lockType = LockType.Exclusive;
 
-                        //var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
                         var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                         if (writeRes == GarnetStatus.OK)
                         {
@@ -108,12 +96,6 @@ namespace Garnet.server
                 finally
                 {
                     lockCtx.Unlock([vectorLockEntry]);
-                    //if (vectorLockEntry.lockType == LockType.Exclusive)
-                    //{
-                    //    hackVectorSetIndexMutate.ExitWriteLock();
-                    //}
-
-                    //hackVectorSetIndexMutate.ExitUpgradeableReadLock();
                 }
             }
             finally
@@ -141,10 +123,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockCtx.TryLock([vectorLockEntry]))
-                {
-                    throw new GarnetException("Couldn't acquire shared lock on Vector Set");
-                }
+                lockCtx.Lock([vectorLockEntry]);
 
                 try
                 {
@@ -199,10 +178,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockCtx.TryLock([vectorLockEntry]))
-                {
-                    throw new GarnetException("Couldn't acquire shared lock on Vector Set");
-                }
+                lockCtx.Lock([vectorLockEntry]);
 
                 try
                 {
@@ -256,10 +232,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockCtx.TryLock([vectorLockEntry]))
-                {
-                    throw new GarnetException("Couldn't acquire shared lock on Vector Set");
-                }
+                lockCtx.Lock([vectorLockEntry]);
 
                 try
                 {
@@ -312,10 +285,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockCtx.TryLock([vectorLockEntry]))
-                {
-                    throw new GarnetException("Couldn't acquire shared lock on Vector Set");
-                }
+                lockCtx.Lock([vectorLockEntry]);
 
                 try
                 {
@@ -370,10 +340,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Exclusive;
 
-                if (!lockCtx.TryLock([vectorLockEntry]))
-                {
-                    throw new GarnetException("Couldn't acquire shared lock on potential Vector Set");
-                }
+                lockCtx.Lock([vectorLockEntry]);
 
                 try
                 {

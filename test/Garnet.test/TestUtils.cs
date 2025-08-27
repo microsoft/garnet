@@ -84,7 +84,7 @@ namespace Garnet.test
         /// <summary>
         /// Whether to use a test progress logger
         /// </summary>
-        static readonly bool useTestLogger = true;
+        static readonly bool useTestLogger = false;
 
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
         internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";

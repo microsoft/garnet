@@ -301,10 +301,10 @@ namespace Garnet.test
         public async Task JankBenchmarkCommandsAsync()
         {
             const string PathToPreload = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-part-{0}.base.fbin";
-            const string PathToRead = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m.query-10k.fbin";
+            const string PathToQuery = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m.query-10k.fbin";
             const string PathToWrite = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-holdout-{0}.base.fbin";
             const int BenchmarkDurationSeconds = 5;
-            const int ParallelBenchmarks = 1;
+            const int ParallelBenchmarks = 12;
 
             var key = $"{nameof(JankBenchmarkCommandsAsync)}_{Guid.NewGuid()}";
 
@@ -371,7 +371,7 @@ namespace Garnet.test
                                 await start.WaitAsync();
 
                                 var benchSw = Stopwatch.StartNew();
-                                var benchRes = (string)benchDb.Execute("BENCHRWMIX", [key, PathToRead, writePath, "64", "0.1", "50", "500", BenchmarkDurationSeconds.ToString()]); // 50% writes, until we run out of data
+                                var benchRes = (string)benchDb.Execute("BENCHRWMIX", [key, PathToQuery, writePath, "64", "0.1", "64", "500", BenchmarkDurationSeconds.ToString()]); // 50% writes, until we run out of data
                                 benchSw.Stop();
                                 var benchParts = benchRes.Split(' ');
                                 ClassicAssert.AreEqual(4, benchParts.Length);

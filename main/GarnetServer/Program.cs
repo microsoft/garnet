@@ -151,7 +151,7 @@ namespace Garnet
             }
 
             ReadOnlyMemory<float>[] randomReadVecs = GetReadVectors(readPath).ToArray();
-            List<(ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values)> writeVecs = GetWriteVectors(writePath).ToList();
+            (ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values)[] writeVecs = GetWriteVectors(writePath).ToArray();
             int writeVecNextIx = 0;
 
             Random r = Random.Shared;
@@ -168,7 +168,7 @@ namespace Garnet
             Stopwatch sw = Stopwatch.StartNew();
             while (sw.ElapsedMilliseconds < durationMillis)
             {
-                if (r.Next(1_000) < writePerc && writeVecNextIx < writeVecs.Count)
+                if (r.Next(1_000) < writePerc && writeVecNextIx < writeVecs.Length)
                 {
                     // Write a vec
                     (ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values) vec = writeVecs[writeVecNextIx];
@@ -211,7 +211,7 @@ namespace Garnet
             sw.Stop();
             double durationMilliseconds = sw.ElapsedMilliseconds;
 
-            WriteBulkString(ref output, Encoding.UTF8.GetBytes($"{durationMilliseconds} {reads} {writes} {writeVecNextIx == writeVecs.Count}"));
+            WriteBulkString(ref output, Encoding.UTF8.GetBytes($"{durationMilliseconds} {reads} {writes} {writeVecNextIx == writeVecs.Length}"));
             return true;
         }
 
@@ -304,8 +304,6 @@ namespace Garnet
                 return true;
             }
 
-            long startTimeStamp = Stopwatch.GetTimestamp();
-
             string path = procInput.parseState.GetString(0);
             ref ArgSlice key = ref procInput.parseState.GetArgSliceByRef(1);
 
@@ -317,7 +315,11 @@ namespace Garnet
 
             long inserts = 0;
 
-            foreach ((ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values) vector in ReadAllVectors(path))
+            var toInsert = ReadAllVectors(path).ToArray();
+
+            long startTimeStamp = Stopwatch.GetTimestamp();
+
+            foreach ((ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values) vector in toInsert)
             {
                 //Debug.WriteLine($"Adding: 0x{string.Join("", vector.Element.ToArray().Select(static x => x.ToString("X2")))}");
 
