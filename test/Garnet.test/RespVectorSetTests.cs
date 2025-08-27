@@ -300,26 +300,46 @@ namespace Garnet.test
         [Test]
         public async Task JankBenchmarkCommandsAsync()
         {
-            const string PathToPreload = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\youtube-8m.base.fbin";
-            const string PathToRead = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\youtube-8m.query-10k.fbin";
-            const string PathToWrite = PathToPreload;
+            const string PathToPreload = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-part-{0}.base.fbin";
+            const string PathToRead = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m.query-10k.fbin";
+            const string PathToWrite = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-holdout-{0}.base.fbin";
             const int BenchmarkDurationSeconds = 5;
-            const int ParallelBenchmarks = 2;
+            const int ParallelBenchmarks = 1;
 
             var key = $"{nameof(JankBenchmarkCommandsAsync)}_{Guid.NewGuid()}";
 
             // Preload vector set
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            (TimeSpan Duration, long Inserts)[] preloadRes;
             {
-                var db = redis.GetDatabase();
+                var tasks = new Task<(TimeSpan Duration, long Inserts)>[ParallelBenchmarks];
 
-                var fillRes = (string)db.Execute("FILLBENCH", [PathToPreload, key]);
-                var fillParts = fillRes.Split(' ');
-                ClassicAssert.AreEqual(2, fillParts.Length);
-                var fillTime = TimeSpan.FromMilliseconds(double.Parse(fillParts[0]));
-                var fillInserts = long.Parse(fillParts[1]);
-                ClassicAssert.IsTrue(fillTime.Ticks > 0);
-                ClassicAssert.IsTrue(fillInserts > 0);
+                for (var i = 0; i < tasks.Length; i++)
+                {
+                    var pathToPreload = string.Format(PathToPreload, i);
+
+                    tasks[i] =
+                        Task.Run(
+                            () =>
+                            {
+                                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+                                {
+                                    var db = redis.GetDatabase();
+
+                                    var fillRes = (string)db.Execute("FILLBENCH", [pathToPreload, key]);
+                                    var fillParts = fillRes.Split(' ');
+                                    ClassicAssert.AreEqual(2, fillParts.Length);
+                                    var fillTime = TimeSpan.FromMilliseconds(double.Parse(fillParts[0]));
+                                    var fillInserts = long.Parse(fillParts[1]);
+                                    ClassicAssert.IsTrue(fillTime.Ticks > 0);
+                                    ClassicAssert.IsTrue(fillInserts > 0);
+
+                                    return (fillTime, fillInserts);
+                                }
+                            }
+                        );
+                }
+
+                preloadRes = await Task.WhenAll(tasks);
             }
 
             // Spin up some number of tasks which will do arbitrary reads and (optionally) some writes

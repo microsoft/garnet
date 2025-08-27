@@ -23,6 +23,8 @@ namespace Garnet.server
     /// </summary>
     sealed partial class StorageSession : IDisposable
     {
+        private static readonly System.Threading.ReaderWriterLockSlim hackVectorSetIndexMutate = new(System.Threading.LockRecursionPolicy.NoRecursion);
+
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
@@ -50,14 +52,18 @@ namespace Garnet.server
             vectorLockEntry.isObject = false;
             vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
 
-            lockableContext.BeginLockable();
+            var lockCtx = objectStoreLockableContext;
+
+            lockCtx.BeginLockable();
 
             try
             {
             tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockableContext.TryLock([vectorLockEntry]))
+                //hackVectorSetIndexMutate.EnterUpgradeableReadLock();
+
+                if (!lockCtx.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
                 }
@@ -65,17 +71,20 @@ namespace Garnet.server
                 try
                 {
 
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    //var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes == GarnetStatus.NOTFOUND)
                     {
-                        if (!lockableContext.TryPromoteLock(vectorLockEntry))
+                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
                         {
                             goto tryAgain;
                         }
+                        //hackVectorSetIndexMutate.EnterWriteLock();
 
                         vectorLockEntry.lockType = LockType.Exclusive;
 
-                        var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                        //var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                        var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                         if (writeRes == GarnetStatus.OK)
                         {
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
@@ -98,12 +107,18 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    lockableContext.Unlock([vectorLockEntry]);
+                    lockCtx.Unlock([vectorLockEntry]);
+                    //if (vectorLockEntry.lockType == LockType.Exclusive)
+                    //{
+                    //    hackVectorSetIndexMutate.ExitWriteLock();
+                    //}
+
+                    //hackVectorSetIndexMutate.ExitUpgradeableReadLock();
                 }
             }
             finally
             {
-                lockableContext.EndLockable();
+                lockCtx.EndLockable();
             }
         }
 
@@ -116,7 +131,9 @@ namespace Garnet.server
             //
             // Note that this does not block adding vectors to the set, as that can also be done under
             // a shared lock
-            lockableContext.BeginLockable();
+            var lockCtx = objectStoreLockableContext;
+
+            lockCtx.BeginLockable();
             try
             {
                 TxnKeyEntry vectorLockEntry = new();
@@ -124,7 +141,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockableContext.TryLock([vectorLockEntry]))
+                if (!lockCtx.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
                 }
@@ -139,7 +156,7 @@ namespace Garnet.server
                     Span<byte> resSpan = stackalloc byte[128];
                     var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
 
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
                     {
                         result = VectorManagerResult.Invalid;
@@ -154,12 +171,12 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    lockableContext.Unlock([vectorLockEntry]);
+                    lockCtx.Unlock([vectorLockEntry]);
                 }
             }
             finally
             {
-                lockableContext.EndLockable();
+                lockCtx.EndLockable();
             }
         }
 
@@ -172,7 +189,9 @@ namespace Garnet.server
             //
             // Note that this does not block adding vectors to the set, as that can also be done under
             // a shared lock
-            lockableContext.BeginLockable();
+            var lockCtx = objectStoreLockableContext;
+
+            lockCtx.BeginLockable();
             try
             {
                 TxnKeyEntry vectorLockEntry = new();
@@ -180,7 +199,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockableContext.TryLock([vectorLockEntry]))
+                if (!lockCtx.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
                 }
@@ -194,7 +213,7 @@ namespace Garnet.server
                     Span<byte> resSpan = stackalloc byte[128];
                     var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
 
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
                     {
                         result = VectorManagerResult.Invalid;
@@ -209,12 +228,12 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    lockableContext.Unlock([vectorLockEntry]);
+                    lockCtx.Unlock([vectorLockEntry]);
                 }
             }
             finally
             {
-                lockableContext.EndLockable();
+                lockCtx.EndLockable();
             }
         }
 
@@ -227,7 +246,9 @@ namespace Garnet.server
             //
             // Note that this does not block adding vectors to the set, as that can also be done under
             // a shared lock
-            lockableContext.BeginLockable();
+            var lockCtx = objectStoreLockableContext;
+
+            lockCtx.BeginLockable();
             try
             {
                 TxnKeyEntry vectorLockEntry = new();
@@ -235,7 +256,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockableContext.TryLock([vectorLockEntry]))
+                if (!lockCtx.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
                 }
@@ -249,7 +270,7 @@ namespace Garnet.server
                     Span<byte> resSpan = stackalloc byte[128];
                     var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
 
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
                     {
                         return readRes;
@@ -266,12 +287,12 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    lockableContext.Unlock([vectorLockEntry]);
+                    lockCtx.Unlock([vectorLockEntry]);
                 }
             }
             finally
             {
-                lockableContext.EndLockable();
+                lockCtx.EndLockable();
             }
         }
 
@@ -281,7 +302,9 @@ namespace Garnet.server
             //
             // Note that this does not block adding vectors to the set, as that can also be done under
             // a shared lock
-            lockableContext.BeginLockable();
+            var lockCtx = objectStoreLockableContext;
+
+            lockCtx.BeginLockable();
             try
             {
                 TxnKeyEntry vectorLockEntry = new();
@@ -289,7 +312,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Shared;
 
-                if (!lockableContext.TryLock([vectorLockEntry]))
+                if (!lockCtx.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on Vector Set");
                 }
@@ -303,7 +326,7 @@ namespace Garnet.server
                     Span<byte> resSpan = stackalloc byte[128];
                     var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
 
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
                     {
                         dimensions = 0;
@@ -320,12 +343,12 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    lockableContext.Unlock([vectorLockEntry]);
+                    lockCtx.Unlock([vectorLockEntry]);
                 }
             }
             finally
             {
-                lockableContext.EndLockable();
+                lockCtx.EndLockable();
             }
         }
 
@@ -336,7 +359,8 @@ namespace Garnet.server
         /// </summary>
         private Status TryDeleteVectorSet(ref SpanByte key)
         {
-            lockableContext.BeginLockable();
+            var lockCtx = objectStoreLockableContext;
+            lockCtx.BeginLockable();
 
             try
             {
@@ -346,7 +370,7 @@ namespace Garnet.server
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
                 vectorLockEntry.lockType = LockType.Exclusive;
 
-                if (!lockableContext.TryLock([vectorLockEntry]))
+                if (!lockCtx.TryLock([vectorLockEntry]))
                 {
                     throw new GarnetException("Couldn't acquire shared lock on potential Vector Set");
                 }
@@ -361,7 +385,7 @@ namespace Garnet.server
                     var input = new RawStringInput(RespCommand.VADD, ref parseState);
 
                     // Get the index
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref lockableContext);
+                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
                     {
                         // This can happen is something else successfully deleted before we acquired the lock
@@ -375,12 +399,12 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    lockableContext.Unlock([vectorLockEntry]);
+                    lockCtx.Unlock([vectorLockEntry]);
                 }
             }
             finally
             {
-                lockableContext.EndLockable();
+                lockCtx.EndLockable();
             }
         }
     }

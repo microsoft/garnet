@@ -215,7 +215,7 @@ namespace Garnet
             return true;
         }
 
-        private static IEnumerable<(uint Index, byte[] Dimensions)> ParseBin(Stream stream)
+        private static IEnumerable<(byte[] Index, byte[] Dimensions)> ParseBin(Stream stream)
         {
             Span<byte> readBuff = stackalloc byte[sizeof(uint)];
 
@@ -225,11 +225,17 @@ namespace Garnet
             stream.ReadExactly(readBuff);
             uint dims = BinaryPrimitives.ReadUInt32LittleEndian(readBuff);
 
-            var tempBuff = new byte[(int)dims];
+            stream.ReadExactly(readBuff);
+            uint elemSize = BinaryPrimitives.ReadUInt32LittleEndian(readBuff);
+
+            var tempElemBuff = new byte[(int)elemSize];
+            var tempDataBuff = new byte[(int)dims];
             for (var i = 0; i < numVecs; i++)
             {
-                stream.ReadExactly(tempBuff);
-                yield return ((uint)i, tempBuff);
+                stream.ReadExactly(tempElemBuff);
+                stream.ReadExactly(tempDataBuff);
+
+                yield return (tempElemBuff, tempDataBuff);
             }
         }
 
@@ -253,7 +259,7 @@ namespace Garnet
             Memory<byte> remaininElems = default;
 
 
-            foreach ((uint index, byte[] vector) in ParseBin(fs))
+            foreach ((byte[] element, byte[] vector) in ParseBin(fs))
             {
                 if (remainingVecs.IsEmpty)
                 {
@@ -272,7 +278,7 @@ namespace Garnet
                 remainingVecs = remainingVecs[vector.Length..];
 
                 Memory<byte> toRetElem = remaininElems[..sizeof(uint)];
-                BinaryPrimitives.WriteUInt32LittleEndian(toRetElem.Span, index);
+                element.CopyTo(toRetElem);
                 remaininElems = remaininElems[sizeof(uint)..];
 
                 yield return (toRetElem, toRetVec);
@@ -313,6 +319,8 @@ namespace Garnet
 
             foreach ((ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values) vector in ReadAllVectors(path))
             {
+                //Debug.WriteLine($"Adding: 0x{string.Join("", vector.Element.ToArray().Select(static x => x.ToString("X2")))}");
+
                 GarnetStatus res;
                 VectorManagerResult vecRes;
                 ArgSlice element = ArgSlice.FromPinnedSpan(vector.Element.Span);
