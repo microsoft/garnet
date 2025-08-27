@@ -128,7 +128,7 @@ namespace Garnet.server
 
         #region Utilities
         /// <inheritdoc />
-        public void ConvertOutputToHeap(ref VectorInput input, ref SpanByte output) => throw new NotImplementedException();
+        public void ConvertOutputToHeap(ref VectorInput input, ref SpanByte output) { }
         #endregion
     }
 }
