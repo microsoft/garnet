@@ -175,7 +175,8 @@ namespace Garnet.server
             var databasesMapSnapshot = databases.Map;
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
 
-            if (!TryPauseCheckpointsContinuousAsync(dbId, token).GetAwaiter().GetResult())
+            // Check if checkpoint already in progress
+            if (!TryPauseCheckpoints(dbId))
                 return false;
 
             var checkpointTask = TakeCheckpointAsync(databasesMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
@@ -948,7 +949,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="token">Cancellation token</param>
         /// <returns>False if checkpointing already in progress</returns>
-        private async Task TakeDatabasesCheckpointAsync(int dbIdsCount, ILogger logger = null,
+        private async Task<bool> TakeDatabasesCheckpointAsync(int dbIdsCount, ILogger logger = null,
             CancellationToken token = default)
         {
             Debug.Assert(checkpointTasks != null);
@@ -958,19 +959,31 @@ namespace Garnet.server
                 checkpointTasks[i] = Task.CompletedTask;
 
             var lockAcquired = TryGetDatabasesContentReadLock(token);
-            if (!lockAcquired) return;
+            if (!lockAcquired) return false;
+
+            var lastLockedDbId = -1;
+            var databaseMapSnapshot = databases.Map;
 
             try
             {
-                var databaseMapSnapshot = databases.Map;
-
                 var currIdx = 0;
+                while (currIdx < dbIdsCount)
+                {
+                    var dbId = dbIdsToCheckpoint[currIdx];
+                    if (!TryPauseCheckpoints(dbId))
+                        return false;
+
+                    lastLockedDbId = currIdx;
+                    currIdx++;
+                }
+
+                currIdx = 0;
                 while (currIdx < dbIdsCount)
                 {
                     var dbId = dbIdsToCheckpoint[currIdx];
 
                     // Prevent parallel checkpoint
-                    if (!await TryPauseCheckpointsContinuousAsync(dbId, token))
+                    if (!TryPauseCheckpoints(dbId))
                         continue;
 
                     checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
@@ -1004,6 +1017,8 @@ namespace Garnet.server
             {
                 databasesContentLock.ReadUnlock();
             }
+
+            return true;
         }
 
         private void UpdateLastSaveData(int dbId, long? storeTailAddress, long? objectStoreTailAddress)
@@ -1020,24 +1035,6 @@ namespace Garnet.server
                 if (db.ObjectStore != null && objectStoreTailAddress.HasValue)
                     db.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
             }
-        }
-
-        private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId, CancellationToken token = default)
-        {
-            var databasesMapSize = databases.ActualSize;
-            var databasesMapSnapshot = databases.Map;
-            Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
-
-            var db = databasesMapSnapshot[dbId];
-            var checkpointsPaused = TryPauseCheckpoints(db);
-
-            while (!checkpointsPaused && !token.IsCancellationRequested && !Disposed)
-            {
-                await Task.Yield();
-                checkpointsPaused = TryPauseCheckpoints(db);
-            }
-
-            return checkpointsPaused;
         }
 
         public override void Dispose()
