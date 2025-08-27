@@ -158,14 +158,12 @@ namespace Garnet.server
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
                 Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
 
-                TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).GetAwaiter().GetResult();
+                return TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).GetAwaiter().GetResult();
             }
             finally
             {
                 databasesContentLock.ReadUnlock();
             }
-
-            return true;
         }
 
         /// <inheritdoc/>
@@ -961,11 +959,11 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            var lastLockedDbId = -1;
-            var databaseMapSnapshot = databases.Map;
+            var lastLockedIdx = -1;
 
             try
             {
+                // Prevent parallel checkpoints
                 var currIdx = 0;
                 while (currIdx < dbIdsCount)
                 {
@@ -973,35 +971,26 @@ namespace Garnet.server
                     if (!TryPauseCheckpoints(dbId))
                         return false;
 
-                    lastLockedDbId = currIdx;
+                    lastLockedIdx = currIdx;
                     currIdx++;
                 }
+
+                var databaseMapSnapshot = databases.Map;
 
                 currIdx = 0;
                 while (currIdx < dbIdsCount)
                 {
                     var dbId = dbIdsToCheckpoint[currIdx];
 
-                    // Prevent parallel checkpoint
-                    if (!TryPauseCheckpoints(dbId))
-                        continue;
-
                     checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
                         t =>
                         {
-                            try
-                            {
-                                if (t.IsCompletedSuccessfully)
-                                {
-                                    var storeTailAddress = t.Result.Item1;
-                                    var objectStoreTailAddress = t.Result.Item2;
-                                    UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
-                                }
-                            }
-                            finally
-                            {
-                                ResumeCheckpoints(dbId);
-                            }
+                            if (!t.IsCompletedSuccessfully)
+                                return;
+
+                            var storeTailAddress = t.Result.Item1;
+                            var objectStoreTailAddress = t.Result.Item2;
+                            UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
                         }, TaskContinuationOptions.ExecuteSynchronously);
 
                     currIdx++;
@@ -1015,6 +1004,13 @@ namespace Garnet.server
             }
             finally
             {
+                var currIdx = 0;
+                while (currIdx <= lastLockedIdx)
+                {
+                    var dbId = dbIdsToCheckpoint[currIdx++];
+                    ResumeCheckpoints(dbId);
+                }
+
                 databasesContentLock.ReadUnlock();
             }
 
