@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -104,8 +105,8 @@ namespace Garnet
         // Hack Hack - this had better not be in main
         public static void RegisterHackyBenchmarkCommands(GarnetServer server)
         {
-            server.Register.NewProcedure("FILLBENCH", () => FillBenchCommand.Instance, new RespCommandsInfo() { Arity = 3 });
-            server.Register.NewProcedure("BENCHRWMIX", () => BenchmarkReadWriteMixCommand.Instance, new RespCommandsInfo() { Arity = 9 });
+            _ = server.Register.NewProcedure("FILLBENCH", () => FillBenchCommand.Instance, new RespCommandsInfo() { Arity = 3 });
+            _ = server.Register.NewProcedure("BENCHRWMIX", () => BenchmarkReadWriteMixCommand.Instance, new RespCommandsInfo() { Arity = 9 });
         }
     }
 
@@ -137,17 +138,17 @@ namespace Garnet
             int durationSecs = procInput.parseState.GetInt(7);
             long durationMillis = durationSecs * 1_000;
 
-            //if (!File.Exists(readPath))
-            //{
-            //    WriteError(ref output, "READ PATH NOT FOUND");
-            //    return true;
-            //}
+            if (!File.Exists(readPath))
+            {
+                WriteError(ref output, "READ PATH NOT FOUND");
+                return true;
+            }
 
-            //if (!File.Exists(writePath))
-            //{
-            //    WriteError(ref output, "WRITE PATH NOT FOUND");
-            //    return true;
-            //}
+            if (!File.Exists(writePath))
+            {
+                WriteError(ref output, "WRITE PATH NOT FOUND");
+                return true;
+            }
 
             ReadOnlyMemory<float>[] randomReadVecs = GetReadVectors(readPath).ToArray();
             List<(ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values)> writeVecs = GetWriteVectors(writePath).ToList();
@@ -175,10 +176,8 @@ namespace Garnet
 
                     GarnetStatus writeRes;
                     VectorManagerResult vecRes;
-                    fixed (byte* elemPtr = vec.Element.Span)
-                    {
-                        writeRes = garnetApi.VectorSetAdd(vectorSet, 0, vec.Values.Span, new ArgSlice(elemPtr, vec.Element.Length), VectorQuantType.NoQuant, 64, default, 64, out vecRes);
-                    }
+                    ArgSlice elem = ArgSlice.FromPinnedSpan(vec.Element.Span);
+                    writeRes = garnetApi.VectorSetAdd(vectorSet, 0, vec.Values.Span, elem, VectorQuantType.NoQuant, 64, default, 64, out vecRes);
 
                     if (writeRes != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
                     {
@@ -216,22 +215,68 @@ namespace Garnet
             return true;
         }
 
-        private static IEnumerable<ReadOnlyMemory<float>> GetReadVectors(string path)
+        private static IEnumerable<(uint Index, byte[] Dimensions)> ParseBin(Stream stream)
         {
-            // TODO: load from disk
+            Span<byte> readBuff = stackalloc byte[sizeof(uint)];
 
-            yield return (new float[] { 7f, 8f, 9f });
-            yield return (new float[] { 10f, 11f, 12f });
-            yield return (new float[] { 13f, 14f, 15f });
+            stream.ReadExactly(readBuff);
+            uint numVecs = BinaryPrimitives.ReadUInt32LittleEndian(readBuff);
+
+            stream.ReadExactly(readBuff);
+            uint dims = BinaryPrimitives.ReadUInt32LittleEndian(readBuff);
+
+            var tempBuff = new byte[(int)dims];
+            for (var i = 0; i < numVecs; i++)
+            {
+                stream.ReadExactly(tempBuff);
+                yield return ((uint)i, tempBuff);
+            }
         }
 
-        private IEnumerable<(ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values)> GetWriteVectors(string path)
+        private static IEnumerable<ReadOnlyMemory<float>> GetReadVectors(string path)
         {
-            // TODO: load from disk
+            foreach ((_, ReadOnlyMemory<float> vals) in GetWriteVectors(path))
+            {
+                yield return vals;
+            }
+        }
 
-            yield return ("123"u8.ToArray(), new float[] { 1f, 2f, 3f });
-            yield return ("456"u8.ToArray(), new float[] { 4f, 5f, 6f });
-            yield return ("789"u8.ToArray(), new float[] { 7f, 8f, 9f });
+        public static IEnumerable<(ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values)> GetWriteVectors(string path)
+        {
+            const int PinnedBatchSize = 1_024;
+
+            using var fs = File.OpenRead(path);
+
+            float[] pinnedVecs = null;
+            Memory<float> remainingVecs = default;
+            byte[] pinnedElems = null;
+            Memory<byte> remaininElems = default;
+
+
+            foreach ((uint index, byte[] vector) in ParseBin(fs))
+            {
+                if (remainingVecs.IsEmpty)
+                {
+                    pinnedVecs = GC.AllocateArray<float>(vector.Length * PinnedBatchSize, pinned: true);
+                    remainingVecs = pinnedVecs;
+
+                    pinnedElems = GC.AllocateArray<byte>(sizeof(uint) * PinnedBatchSize, pinned: true);
+                    remaininElems = pinnedElems;
+                }
+
+                Memory<float> toRetVec = remainingVecs[..vector.Length];
+                for (int i = 0; i < vector.Length; i++)
+                {
+                    toRetVec.Span[i] = vector[i];
+                }
+                remainingVecs = remainingVecs[vector.Length..];
+
+                Memory<byte> toRetElem = remaininElems[..sizeof(uint)];
+                BinaryPrimitives.WriteUInt32LittleEndian(toRetElem.Span, index);
+                remaininElems = remaininElems[sizeof(uint)..];
+
+                yield return (toRetElem, toRetVec);
+            }
         }
     }
 
@@ -258,11 +303,11 @@ namespace Garnet
             string path = procInput.parseState.GetString(0);
             ref ArgSlice key = ref procInput.parseState.GetArgSliceByRef(1);
 
-            //if (!File.Exists(path))
-            //{
-            //    WriteError(ref output, "PATH NOT FOUND");
-            //    return true;
-            //}
+            if (!File.Exists(path))
+            {
+                WriteError(ref output, "PATH NOT FOUND");
+                return true;
+            }
 
             long inserts = 0;
 
@@ -270,12 +315,9 @@ namespace Garnet
             {
                 GarnetStatus res;
                 VectorManagerResult vecRes;
-                fixed (byte* elem = vector.Element.Span)
-                {
-                    ArgSlice element = new ArgSlice(elem, vector.Element.Length);
+                ArgSlice element = ArgSlice.FromPinnedSpan(vector.Element.Span);
 
-                    res = garnetApi.VectorSetAdd(key, 0, vector.Values.Span, element, VectorQuantType.NoQuant, 64, default, 64, out vecRes);
-                }
+                res = garnetApi.VectorSetAdd(key, 0, vector.Values.Span, element, VectorQuantType.NoQuant, 64, default, 64, out vecRes);
 
                 if (res != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
                 {
@@ -293,12 +335,6 @@ namespace Garnet
         }
 
         private IEnumerable<(ReadOnlyMemory<byte> Element, ReadOnlyMemory<float> Values)> ReadAllVectors(string path)
-        {
-            // TODO: load from disk
-
-            yield return ("123"u8.ToArray(), new float[] { 1f, 2f, 3f });
-            yield return ("456"u8.ToArray(), new float[] { 4f, 5f, 6f });
-            yield return ("789"u8.ToArray(), new float[] { 7f, 8f, 9f });
-        }
+        => BenchmarkReadWriteMixCommand.GetWriteVectors(path);
     }
 }

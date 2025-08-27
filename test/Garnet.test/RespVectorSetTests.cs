@@ -296,12 +296,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, res5);
         }
 
+        // HACK - this had better not land in main
         [Test]
         public async Task JankBenchmarkCommandsAsync()
         {
-            const string PathToPreload = "/foo/bar/preload";
-            const string PathToRead = "/foo/bar/read";
-            const string PathToWrite = "/foo/bar/write-{0}";
+            const string PathToPreload = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\youtube-8m.base.fbin";
+            const string PathToRead = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\youtube-8m.query-10k.fbin";
+            const string PathToWrite = PathToPreload;
             const int BenchmarkDurationSeconds = 5;
             const int ParallelBenchmarks = 2;
 
