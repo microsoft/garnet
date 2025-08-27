@@ -23,4 +23,14 @@
     <PackageReference Include="KeraLua" />
   </ItemGroup>
 
+	<PropertyGroup>
+		<DiskAnnLibPath>E:\diskann-garnet\target\release\diskann_garnet.dll</DiskAnnLibPath>
+	</PropertyGroup>
+	
+	<ItemGroup>
+		<None Include="$(DiskAnnLibPath)" Condition="Exists('$(DiskAnnLibPath)')">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	
 </Project>
