@@ -12,10 +12,10 @@ namespace Garnet.server
     public enum VectorQuantType
     {
         Invalid = 0,
+        NoQuant,
 
         Bin,
         Q8,
-        NoQuant,
     }
 
     /// <summary>

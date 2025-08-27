@@ -231,7 +231,7 @@ namespace Garnet.server
         private VectorWriteDelegate WriteCallbackDel { get; } = WriteCallbackManaged;
         private VectorDeleteDelegate DeleteCallbackDel { get; } = DeleteCallbackManaged;
 
-        private IVectorService Service { get; } = new DummyService();
+        private IVectorService Service { get; } = new DiskANNService();
 
         private ulong nextContextValue;
 
