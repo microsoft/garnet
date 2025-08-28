@@ -155,27 +155,35 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var checkpointLockTaken = false;
 
-            if (activeDbIdsMapSize > 1)
+            var checkpointTask = Task.Run(async () =>
             {
-                if (!multiDbCheckpointingLock.TryWriteLock())
-                    return false;
-            }
+                try
+                {
+                    var activeDbIdsMapSize = activeDbIds.ActualSize;
 
-            var activeDbIdsMapSnapshot = activeDbIds.Map;
-            Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
-
-            var checkpointTask = TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token)
-                .ContinueWith(
-                    t =>
+                    if (activeDbIdsMapSize > 1)
                     {
-                        if (activeDbIdsMapSize > 1)
-                            multiDbCheckpointingLock.WriteUnlock();
+                        if (!multiDbCheckpointingLock.TryWriteLock())
+                            return false;
 
-                        databasesContentLock.ReadUnlock();
-                        return t.IsCompletedSuccessfully && t.Result;
-                    }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
+                        checkpointLockTaken = true;
+                    }
+
+                    var activeDbIdsMapSnapshot = activeDbIds.Map;
+                    Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
+
+                    return await TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token);
+                }
+                finally
+                {
+                    if (checkpointLockTaken)
+                        multiDbCheckpointingLock.WriteUnlock();
+
+                    databasesContentLock.ReadUnlock();
+                }
+            }, token).GetAwaiter();
 
             if (background)
                 return true;
