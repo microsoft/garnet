@@ -165,7 +165,7 @@ namespace Garnet.server
 
     public static partial class NativeDiskANNMethods
     {
-        const string DISKANN_GARNET = "diskann_garnet.dll";
+        const string DISKANN_GARNET = "diskann_garnet";
 
         [LibraryImport(DISKANN_GARNET)]
         public static partial nint create_index(
