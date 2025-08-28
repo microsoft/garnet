@@ -327,7 +327,7 @@ namespace Garnet
                 VectorManagerResult vecRes;
                 ArgSlice element = ArgSlice.FromPinnedSpan(vector.Element.Span);
 
-                res = garnetApi.VectorSetAdd(key, 0, vector.Values.Span, element, VectorQuantType.NoQuant, 64, default, 64, out vecRes);
+                res = garnetApi.VectorSetAdd(key, 0, vector.Values.Span, element, VectorQuantType.NoQuant, 250, default, 16, out vecRes);
 
                 if (res != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
                 {
