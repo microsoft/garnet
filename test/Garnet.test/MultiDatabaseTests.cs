@@ -1279,6 +1279,71 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseSaveInProgressTest()
+        {
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis.GetDatabase(0);
+                var db2 = redis.GetDatabase(1);
+
+                // Check no saves present
+                var lastsave = (int)db1.Execute("LASTSAVE");
+                var lastsave1 = (int)db1.Execute("LASTSAVE", "0");
+                var lastsave2 = (int)db2.Execute("LASTSAVE", "1");
+                ClassicAssert.AreEqual(0, lastsave);
+                ClassicAssert.AreEqual(0, lastsave1);
+                ClassicAssert.AreEqual(0, lastsave2);
+
+                // Issue background save to DB 0
+                var res1 = db1.Execute("BGSAVE", "0");
+                ClassicAssert.AreEqual("Background saving started", res1.ToString());
+
+                // Issue background save to DB 1 while DB 0 save is in progress - legal
+                var res2 = db1.Execute("BGSAVE", "1");
+                ClassicAssert.AreEqual("Background saving started", res2.ToString());
+
+                // Issue general background save while DB 0 save is in progress - legal
+                var res = db1.Execute("BGSAVE");
+                ClassicAssert.AreEqual("Background saving started", res.ToString());
+
+                // Wait for saves to complete
+                do
+                {
+                    Thread.Sleep(10);
+                    lastsave = (int)db1.Execute("LASTSAVE");
+                    lastsave1 = (int)db1.Execute("LASTSAVE", "0");
+                    lastsave2 = (int)db2.Execute("LASTSAVE", "1");
+                }
+                while (lastsave == 0 || lastsave1 == 0 || lastsave2 == 0);
+
+                // Add some data
+                for (var i = 0; i < 1024; i++)
+                {
+                    db1.StringSet($"k{i}", new string('x', 256));
+                    db2.StringSet($"k{i}", new string('x', 256));
+                    db1.ListLeftPush($"k{i}o", new string('x', 256));
+                    db2.ListLeftPush($"k{i}o", new string('x', 256));
+                }
+
+                // Issue general background save
+                res = db1.Execute("BGSAVE");
+                ClassicAssert.AreEqual("Background saving started", res.ToString());
+
+                // Issue background save to DB 0 while general save is in progress - illegal
+                Assert.Throws<RedisServerException>(() => db1.Execute("BGSAVE", "0"),
+                    Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS));
+
+                // Wait for save to complete
+                do
+                {
+                    Thread.Sleep(10);
+                    lastsave = (int)db1.Execute("LASTSAVE");
+                }
+                while (lastsave == 0);
+            }
+        }
+
+        [Test]
         [TestCase(false)]
         [TestCase(true)]
         public void MultiDatabaseSaveRecoverByDbIdTest(bool backgroundSave)

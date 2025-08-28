@@ -36,6 +36,9 @@ namespace Garnet.server
         // The swap-db operation should take a write lock and any operation that should be swap-db-safe should take a read lock.
         SingleWriterMultiReaderLock databasesContentLock;
 
+        // Lock for synchronizing checkpointing of all active DBs (if more than one)
+        SingleWriterMultiReaderLock multiDbCheckpointingLock;
+
         // Reusable task array for tracking checkpointing of multiple DBs
         // Used by recurring checkpointing task if multiple DBs exist
         Task[] checkpointTasks;
@@ -152,18 +155,32 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            try
-            {
-                var activeDbIdsMapSize = activeDbIds.ActualSize;
-                var activeDbIdsMapSnapshot = activeDbIds.Map;
-                Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
 
-                return TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token).GetAwaiter().GetResult();
-            }
-            finally
+            if (activeDbIdsMapSize > 1)
             {
-                databasesContentLock.ReadUnlock();
+                if (!multiDbCheckpointingLock.TryWriteLock())
+                    return false;
             }
+
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+            Array.Copy(activeDbIdsMapSnapshot, dbIdsToCheckpoint, activeDbIdsMapSize);
+
+            var checkpointTask = TakeDatabasesCheckpointAsync(activeDbIdsMapSize, logger: logger, token: token)
+                .ContinueWith(
+                    t =>
+                    {
+                        if (activeDbIdsMapSize > 1)
+                            multiDbCheckpointingLock.WriteUnlock();
+
+                        databasesContentLock.ReadUnlock();
+                        return t.IsCompletedSuccessfully && t.Result;
+                    }, TaskContinuationOptions.ExecuteSynchronously).GetAwaiter();
+
+            if (background)
+                return true;
+
+            return checkpointTask.GetResult();
         }
 
         /// <inheritdoc/>
@@ -240,10 +257,17 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return;
 
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+
             try
             {
+                if (activeDbIdsMapSize > 1)
+                {
+                    if (!multiDbCheckpointingLock.TryWriteLock())
+                        return;
+                }
+
                 var databasesMapSnapshot = databases.Map;
-                var activeDbIdsMapSize = activeDbIds.ActualSize;
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
 
                 var dbIdsIdx = 0;
@@ -269,6 +293,9 @@ namespace Garnet.server
             }
             finally
             {
+                if (activeDbIdsMapSize > 1)
+                    multiDbCheckpointingLock.WriteUnlock();
+
                 databasesContentLock.ReadUnlock();
             }
         }
@@ -959,32 +986,25 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            var lastLockedIdx = -1;
-
             try
             {
-                // Prevent parallel checkpoints
+                var databaseMapSnapshot = databases.Map;
+
                 var currIdx = 0;
                 while (currIdx < dbIdsCount)
                 {
-                    var dbId = dbIdsToCheckpoint[currIdx];
+                    var idx = currIdx++;
+                    var dbId = dbIdsToCheckpoint[idx];
+
+                    // Prevent parallel checkpoints
                     if (!TryPauseCheckpoints(dbId))
-                        return false;
+                        continue;
 
-                    lastLockedIdx = currIdx;
-                    currIdx++;
-                }
-
-                var databaseMapSnapshot = databases.Map;
-
-                currIdx = 0;
-                while (currIdx < dbIdsCount)
-                {
-                    var dbId = dbIdsToCheckpoint[currIdx];
-
-                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
+                    checkpointTasks[idx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
                         t =>
                         {
+                            ResumeCheckpoints(dbId);
+
                             if (!t.IsCompletedSuccessfully)
                                 return;
 
@@ -992,8 +1012,6 @@ namespace Garnet.server
                             var objectStoreTailAddress = t.Result.Item2;
                             UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
                         }, TaskContinuationOptions.ExecuteSynchronously);
-
-                    currIdx++;
                 }
 
                 await Task.WhenAll(checkpointTasks);
@@ -1004,13 +1022,6 @@ namespace Garnet.server
             }
             finally
             {
-                var currIdx = 0;
-                while (currIdx <= lastLockedIdx)
-                {
-                    var dbId = dbIdsToCheckpoint[currIdx++];
-                    ResumeCheckpoints(dbId);
-                }
-
                 databasesContentLock.ReadUnlock();
             }
 
