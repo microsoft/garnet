@@ -155,10 +155,10 @@ namespace Garnet.server
             var lockAcquired = TryGetDatabasesContentReadLock(token);
             if (!lockAcquired) return false;
 
-            var checkpointLockTaken = false;
-
             var checkpointTask = Task.Run(async () =>
             {
+                var checkpointLockTaken = false;
+
                 try
                 {
                     var activeDbIdsMapSize = activeDbIds.ActualSize;
@@ -236,12 +236,12 @@ namespace Garnet.server
 
             var db = databasesMapSnapshot[dbId];
 
-            // Take lock to ensure no other task will be taking a checkpoint
+            // Check if checkpoint already in progress
             var checkpointsPaused = TryPauseCheckpoints(dbId);
 
             try
             {
-                // If an external task has taken a checkpoint beyond the provided entryTime return
+                // If another checkpoint is in progress or a checkpoint was taken beyond the provided entryTime - return
                 if (!checkpointsPaused || db.LastSaveTime > entryTime)
                     return;
 
@@ -267,12 +267,16 @@ namespace Garnet.server
 
             var activeDbIdsMapSize = activeDbIds.ActualSize;
 
+            var checkpointLockTaken = false;
+
             try
             {
                 if (activeDbIdsMapSize > 1)
                 {
                     if (!multiDbCheckpointingLock.TryWriteLock())
                         return;
+
+                    checkpointLockTaken = true;
                 }
 
                 var databasesMapSnapshot = databases.Map;
@@ -301,7 +305,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (activeDbIdsMapSize > 1)
+                if (checkpointLockTaken)
                     multiDbCheckpointingLock.WriteUnlock();
 
                 databasesContentLock.ReadUnlock();
@@ -998,17 +1002,15 @@ namespace Garnet.server
             {
                 var databaseMapSnapshot = databases.Map;
 
-                var currIdx = 0;
-                while (currIdx < dbIdsCount)
+                for (var currIdx = 0; currIdx < dbIdsCount; currIdx++)
                 {
-                    var idx = currIdx++;
-                    var dbId = dbIdsToCheckpoint[idx];
+                    var dbId = dbIdsToCheckpoint[currIdx];
 
-                    // Prevent parallel checkpoints
+                    // If a checkpoint is already in progress for this database, skip it
                     if (!TryPauseCheckpoints(dbId))
                         continue;
 
-                    checkpointTasks[idx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
+                    checkpointTasks[currIdx] = TakeCheckpointAsync(databaseMapSnapshot[dbId], logger: logger, token: token).ContinueWith(
                         t =>
                         {
                             ResumeCheckpoints(dbId);
