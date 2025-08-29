@@ -36,6 +36,11 @@ namespace Garnet.server
         public bool IsParent;
 
         /// <summary>
+        /// If command is a sub-command
+        /// </summary>
+        public bool IsSubCommand;
+
+        /// <summary>
         /// Default SimpleRespCommandInfo
         /// </summary>
         public static SimpleRespCommandInfo Default = new();
@@ -200,6 +205,7 @@ namespace Garnet.server
                 tmpSimpleRespCommandInfo[cmdId].Arity = (sbyte)arity;
                 tmpSimpleRespCommandInfo[cmdId].AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
                 tmpSimpleRespCommandInfo[cmdId].IsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
+                tmpSimpleRespCommandInfo[cmdId].IsSubCommand = cmdInfo.Parent != null;
             }
 
             var tmpAllSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);

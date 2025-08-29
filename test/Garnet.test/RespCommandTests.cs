@@ -188,10 +188,12 @@ namespace Garnet.test
                 var cmdInfo = fullCommandInfo[cmd];
                 var expArity = cmdInfo.Arity;
                 var expIsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
+                var expIsSubCommand = cmdInfo.Parent != null;
                 var expAllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
 
                 if (actualCmdInfo.Arity != expArity ||
                     actualCmdInfo.IsParent != expIsParent ||
+                    actualCmdInfo.IsSubCommand != expIsSubCommand ||
                     actualCmdInfo.AllowedInTxn != expAllowedInTxn)
                     offendingCommands.Add(cmd);
             }
