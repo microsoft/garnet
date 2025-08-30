@@ -761,13 +761,13 @@ namespace Garnet.server
             if (ObjectStore != null)
             {
                 ObjectSessionFunctions objectSessionFunctions = new ObjectSessionFunctions(functionsState);
-                 objectStoreStats= CollectHybridLogStats(db, db.ObjectStore, objectSessionFunctions);
+                objectStoreStats = CollectHybridLogStats(db, db.ObjectStore, objectSessionFunctions);
             }
 
             return (mainStoreStats, objectStoreStats);
         }
 
-        private HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
+        private static HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
             GarnetDatabase db,
             TsavoriteKV<TKey, TValue, TFuncs, TAllocator> store,
             ISessionFunctions<TKey, TValue, TInput, TOutput, long> sessionFunctions)

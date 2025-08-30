@@ -76,48 +76,39 @@ namespace Garnet.test
         [Test]
         public async Task InfoHlogScanTest()
         {
-            TimeSpan metricsUpdateDelay = TimeSpan.FromSeconds(1.1);
+            var metricsUpdateDelay = TimeSpan.FromSeconds(1.1);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // hydrate main store
+            // hydrate
             var startingHA = server.Provider.StoreWrapper.store.Log.HeadAddress;
-            HydrateStore(db, (db, key, value) => db.StringSet(key, value), () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress);
-
-            // hydrate object store
             var startingHAObj = server.Provider.StoreWrapper.objectStore.Log.HeadAddress;
-            HydrateStore(db, (db, key, value) => db.SetAdd(key, value), () => startingHAObj == server.Provider.StoreWrapper.objectStore.Log.HeadAddress);
+            await Task.WhenAll(
+                HydrateStore(db, (db, key, value) => db.StringSetAsync(key, value), () => startingHA == server.Provider.StoreWrapper.store.Log.HeadAddress),
+                HydrateStore(db, (db, key, value) => db.SetAddAsync(key, value), () => startingHAObj == server.Provider.StoreWrapper.objectStore.Log.HeadAddress)
+            );
 
-            await Task.Delay(5);
-
-            var objStoreStartHeadAddr = server.Provider.StoreWrapper.objectStore.Log.HeadAddress;
-            while (objStoreStartHeadAddr == server.Provider.StoreWrapper.objectStore.Log.ReadOnlyAddress)
-            {
-                db.SetAdd(Guid.NewGuid().ToString(), Guid.NewGuid().ToString());
-            }
+            // Wait for the immediate expirations to kick in
+            await Task.Delay(500);
 
             // now we have a differentiated region for mutable and immutable region in object store and main store
-            var result = db.Execute("INFO", "HLOGSCAN");
+            var result = await db.ExecuteAsync("INFO", "HLOGSCAN");
 
-            // HK TODO: Why does object store scan not show us tombstoned records? Need to fix this.
             ClassicAssert.IsTrue(!result.IsNull);
         }
 
-        private void HydrateStore(IDatabase db, Action<IDatabase, string, string> setAction, Func<bool> predicate)
+        private static async Task HydrateStore(IDatabase db, Func<IDatabase, string, string, Task> setAction, Func<bool> predicate)
         {
             const int numKeysToAtleastMake = 1000;
             const int percentKeysWithExpirationsButNotExpired = 30;
             const int percentKeysWithExpirationAndExpired = 30;
             const int percentKeysToDeleteLater = 40;
             const int percentKeysWeRcuLater = 20;
-
             var random = new Random();
-
             var keysWeRcuOn = new List<string>();
             var keysWeDelete = new List<string>();
-
             // add data till there is an immutable region, and atleast 500 records
-            int totalRecords = 0;
+            var totalRecords = 0;
             // keep going till head and tail departur and min key insertions hitting
             while (predicate() || totalRecords < numKeysToAtleastMake)
             {
@@ -126,24 +117,23 @@ namespace Garnet.test
                 var key = Guid.NewGuid().ToString();
                 var value = Guid.NewGuid().ToString();
 
-                bool eligibleForTombstoning = true;
+                var eligibleForTombstoning = true;
 
                 if (chance < percentKeysWithExpirationsButNotExpired)
                 {
-                    setAction(db, key, value);
-                    db.KeyExpire(key, TimeSpan.FromHours(2));
+                    await setAction(db, key, value);
+                    _ = await db.KeyExpireAsync(key, TimeSpan.FromHours(2));
                 }
                 else if (chance > percentKeysWithExpirationsButNotExpired &&
                     chance < percentKeysWithExpirationsButNotExpired + percentKeysWithExpirationAndExpired)
                 {
-
-                    setAction(db, key, value);
-                    db.KeyExpire(key, TimeSpan.FromMilliseconds(2));
+                    await setAction(db, key, value);
+                    _ = await db.KeyExpireAsync(key, TimeSpan.FromMilliseconds(2));
                     eligibleForTombstoning = false; // will be expired already
                 }
                 else
                 {
-                    setAction(db, key, value);
+                    await setAction(db, key, value);
                 }
 
                 if (eligibleForTombstoning)
@@ -161,14 +151,14 @@ namespace Garnet.test
                 }
             }
 
-            foreach (string keyTodel in keysWeDelete)
+            foreach (var keyTodel in keysWeDelete)
             {
-                db.KeyDelete(keyTodel);
+                _ = await db.KeyDeleteAsync(keyTodel);
             }
 
-            foreach (string keyToRcu in keysWeRcuOn)
+            foreach (var keyToRcu in keysWeRcuOn)
             {
-                setAction(db, keyToRcu, Guid.NewGuid().ToString());
+                await setAction(db, keyToRcu, Guid.NewGuid().ToString());
             }
         }
     }
