@@ -55,105 +55,51 @@ namespace Tsavorite.core
         /// </summary>
         /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
         /// <param name="keys">The array of app key data </param>
-        void SortKeyHashes<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey;
-
-        /// <summary>
-        /// Sort an array of app data structures (or classes) by lock code and lock type; these will be passed to Lockable*Session.Lock
-        /// </summary>
-        /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>
-        /// <param name="keys">The array of app key data </param>
-        /// <param name="start">The starting key index to sort</param>
-        /// <param name="count">The number of keys to sort</param>
-        void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
+        void SortKeyHashes<TLockableKey>(Span<TLockableKey> keys)
             where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        void Lock<TLockableKey>(TLockableKey[] keys)
-            where TLockableKey : ILockableKey;
-
-        /// <summary>
-        /// Locks the keys identified in the passed array.
-        /// </summary>
-        /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">key hashCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        void Lock<TLockableKey>(ReadOnlySpan<TLockableKey> keys)
             where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys)
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys)
             where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
         /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout)
+        bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys, TimeSpan timeout)
             where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout)
-            where TLockableKey : ILockableKey;
-
-        /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
-        /// </summary>
-        /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
         /// <param name="cancellationToken">The cancellation token</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
+        bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        /// <param name="cancellationToken">The cancellation token, if any</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey;
-
-        /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
-        /// </summary>
-        /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
         /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
         /// <param name="cancellationToken">The cancellation token</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey;
-
-        /// <summary>
-        /// Promotes a shared lock on the key to an exclusive lock, with retry limits or cancellation.
-        /// </summary>
-        /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">key hashCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
-        /// <param name="cancellationToken">The cancellation token, if any</param>
-        bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
+        bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys, TimeSpan timeout, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey;
 
         /// <summary>
@@ -190,18 +136,8 @@ namespace Tsavorite.core
         /// Unlocks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">key hashCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        void Unlock<TLockableKey>(TLockableKey[] keys)
-        where TLockableKey : ILockableKey;
-
-        /// <summary>
-        /// Unlocks the keys identified in the passed array.
-        /// </summary>
-        /// <typeparam name="TLockableKey"></typeparam>
-        /// <param name="keys">key hashCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TLockableKey}(TLockableKey[])"/>.</param>
-        /// <param name="start">The starting index to Unlock</param>
-        /// <param name="count">The number of keys to Unlock</param>
-        void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
+        /// <param name="keys">key hashCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        void Unlock<TLockableKey>(ReadOnlySpan<TLockableKey> keys)
             where TLockableKey : ILockableKey;
     }
 }

@@ -332,8 +332,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             for (var ii = 0; ii < keys.Length; ++ii)
                 ClassicAssert.AreEqual(bucketIndex, store.LockTable.GetBucketIndex(keys[ii].KeyHash), $"BucketIndex mismatch on key {ii}");
 
-            lContext.Lock(keys);
-            lContext.Unlock(keys);
+            lContext.Lock<FixedLengthLockableKeyStruct<long>>(keys);
+            lContext.Unlock<FixedLengthLockableKeyStruct<long>>(keys);
 
             lContext.EndLockable();
         }
@@ -363,12 +363,12 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (int c = 0; c < NumRecs; c++)
                 {
                     keyVec[0] = new(r.Next(RandRange), LockType.Exclusive, luContext);
-                    luContext.Lock(keyVec);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
                     var value = keyVec[0].Key + NumRecords;
                     _ = luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default);
-                    luContext.Unlock(keyVec);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
 
@@ -383,10 +383,10 @@ namespace Tsavorite.test.LockableUnsafeContext
                     var value = keyVec[0].Key + NumRecords;
                     long output = 0;
 
-                    luContext.Lock(keyVec);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 1);
                     Status status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
-                    luContext.Unlock(keyVec);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                     ClassicAssert.IsFalse(status.IsPending);
                 }
@@ -414,8 +414,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 // Similarly, we need to track bucket counts.
                 BucketLockTracker blt = new();
                 var lockKeys = Enumerable.Range(0, NumRecs).Select(ii => new FixedLengthLockableKeyStruct<long>(r.Next(RandRange), LockType.Shared, luContext)).ToArray();
-                luContext.SortKeyHashes(lockKeys);
-                luContext.Lock(lockKeys);
+                luContext.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(lockKeys);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(lockKeys);
 
                 var expectedS = 0;
                 foreach (var idx in EnumActionKeyIndices(lockKeys, LockOperationType.Lock))
@@ -444,7 +444,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                 foreach (var idx in EnumActionKeyIndices(lockKeys, LockOperationType.Unlock))
                 {
-                    luContext.Unlock(lockKeys, idx, 1);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(lockKeys.AsSpan().Slice(idx, 1));
                     blt.DecrementS(ref lockKeys[idx]);
                 }
 
@@ -496,11 +496,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(readKey51, LockType.Shared, luContext),      // Source, shared
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
-            luContext.SortKeyHashes(keys);
+            luContext.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(keys);
 
             try
             {
-                luContext.Lock(keys);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keys);
 
                 // Verify locks. Note that while we do not increment lock counts for multiple keys (each bucket gets a single lock per thread,
                 // shared or exclusive), each key mapping to that bucket will report 'locked'.
@@ -583,7 +583,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 ClassicAssert.AreEqual(expectedResult, resultValue);
 
-                luContext.Unlock(keys);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keys);
 
                 foreach (var idx in EnumActionKeyIndices(keys, LockOperationType.Lock))
                     blt.Decrement(ref keys[idx]);
@@ -636,13 +636,13 @@ namespace Tsavorite.test.LockableUnsafeContext
                 new FixedLengthLockableKeyStruct<long>(resultKey, LockType.Exclusive, luContext),   // Destination, exclusive
             };
 
-            luContext.SortKeyHashes(keys);
+            luContext.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(keys);
 
             var buckets = keys.Select(key => store.LockTable.GetBucketIndex(key.KeyHash)).ToArray();
 
             try
             {
-                luContext.Lock(keys);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keys);
 
                 // Verify locks. Note that while we do not increment lock counts for multiple keys (each bucket gets a single lock per thread,
                 // shared or exclusive), each key mapping to that bucket will report 'locked'.
@@ -712,7 +712,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 ClassicAssert.IsFalse(status.IsPending, status.ToString());
                 ClassicAssert.AreEqual(expectedResult, resultValue);
 
-                luContext.Unlock(keys);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keys);
 
                 foreach (var idx in EnumActionKeyIndices(keys, LockOperationType.Lock))
                     blt.Decrement(ref keys[idx]);
@@ -763,7 +763,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock destination value.
-                luContext.Lock(keyVec);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                 AssertIsLocked(ref keyVec[0], xlock: true, slock: false);
 
                 blt.Increment(ref keyVec[0]);
@@ -778,7 +778,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 status = luContext.Read(resultKey, out var _);
                 ClassicAssert.IsFalse(status.Found, status.ToString());
 
-                luContext.Unlock(keyVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                 blt.Decrement(ref keyVec[0]);
 
                 AssertNoLocks(ref blt);
@@ -843,8 +843,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     var keys = enumKeysToLock().ToArray();
                     FixedLengthLockableKeyStruct<long>.Sort(keys, luContext);
-                    luContext.Lock(keys);
-                    luContext.Unlock(keys);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(keys);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keys);
                 }
 
                 luContext.EndLockable();
@@ -890,7 +890,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
-            luContext.Lock(keyVec);
+            luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
 
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             PopulateHei(ref hei);
@@ -911,7 +911,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             ClassicAssert.AreEqual(expectedKey, storedKey);
 
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(expectedKey, LockType.Exclusive, luContext) };
-            luContext.Unlock(keyVec);
+            luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
         }
 
         [Test]
@@ -973,14 +973,14 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
-                luContext.Lock(keyVec);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                 blt.Increment(ref keyVec[0]);
                 AssertTotalLockCounts(ref blt);
 
                 store.Log.FlushAndEvict(wait: true);
                 AssertTotalLockCounts(1, 0);
 
-                luContext.Unlock(keyVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                 blt.Decrement(ref keyVec[0]);
 
                 blt.AssertNoLocks();
@@ -1163,8 +1163,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             luContext.BeginLockable();
             try
             {
-                store.LockTable.SortKeyHashes(keyVec);
-                luContext.Lock(keyVec);
+                store.LockTable.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(keyVec);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                 foreach (var idx in EnumActionKeyIndices(keyVec, LockOperationType.Lock))
                     blt.Increment(ref keyVec[idx]);
                 AssertTotalLockCounts(ref blt);
@@ -1180,7 +1180,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     if (key.LockType == LockType.Shared)
                         ClassicAssert.IsTrue(lockState.IsLocked);    // Could be either shared or exclusive; we only lock the bucket once per Lock() call
 
-                    luContext.Unlock(keyVec, idx, 1);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec.AsSpan().Slice(idx, 1));
                     blt.Decrement(ref key);
                 }
 
@@ -1217,7 +1217,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             try
             {
-                luContext.Lock(keyVec);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
 
                 var status = updateOp switch
                 {
@@ -1234,7 +1234,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                 OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, true, 0);
 
-                luContext.Unlock(keyVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                 OverflowBucketLockTableTests.AssertLockCounts(store, keyVec[0].Key, false, 0);
             }
             catch (Exception)
@@ -1285,13 +1285,13 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (var key = NumRecords; key < NumRecords + numNewRecords; ++key)
                 {
                     keyVec[0] = new(key, LockType.Exclusive, luContext);
-                    luContext.Lock(keyVec);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     for (var iter = 0; iter < 2; ++iter)
                     {
                         OverflowBucketLockTableTests.AssertLockCounts(store, key, true, 0);
                         updater(key, iter);
                     }
-                    luContext.Unlock(keyVec);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     OverflowBucketLockTableTests.AssertLockCounts(store, key, false, 0);
                 }
             }
@@ -1426,11 +1426,11 @@ namespace Tsavorite.test.LockableUnsafeContext
                     lastLockerKeys[1] = key;
                     Thread.Sleep(lockRng.Next(maxSleepMs));
                     lastLockerKeys[2] = key;
-                    lockLuContext.Lock(lockKeyVec);
+                    lockLuContext.Lock<FixedLengthLockableKeyStruct<long>>(lockKeyVec);
                     lastLockerKeys[3] = key;
                     Thread.Sleep(lockRng.Next(maxSleepMs));
                     lastLockerKeys[4] = key;
-                    lockLuContext.Unlock(lockKeyVec);
+                    lockLuContext.Unlock<FixedLengthLockableKeyStruct<long>>(lockKeyVec);
                     lastLockerKeys[5] = key;
                 }
                 catch (Exception)
@@ -1513,14 +1513,14 @@ namespace Tsavorite.test.LockableUnsafeContext
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
-                    luContext.Lock(keyVec);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     OverflowBucketLockTableTests.AssertLockCounts(store, key, false, ii + 1);
                 }
 
                 for (var ii = 0; ii < maxLocks; ++ii)
                 {
                     keyVec[0] = new(key, LockType.Shared, luContext);
-                    luContext.Unlock(keyVec);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
                     OverflowBucketLockTableTests.AssertLockCounts(store, key, false, maxLocks - ii - 1);
                 }
                 OverflowBucketLockTableTests.AssertLockCounts(store, key, false, 0);
@@ -1558,8 +1558,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
-            luContext.Unlock(keyVec);
+            ClassicAssert.IsTrue(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(keyVec));
+            luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -1569,17 +1569,17 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
                     blockingVec[0] = keyVec[blockingIdx];
-                    luContext.Lock(blockingVec);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(blockingVec);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, TimeSpan.FromMilliseconds(20)));
+                    ClassicAssert.IsFalse(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(keyVec, TimeSpan.FromMilliseconds(20)));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
                             OverflowBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
                     }
 
-                    luContext.Unlock(blockingVec);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(blockingVec);
                 }
             }
             catch (Exception)
@@ -1615,8 +1615,8 @@ namespace Tsavorite.test.LockableUnsafeContext
             };
 
             // First ensure things work with no blocking locks.
-            ClassicAssert.IsTrue(luContext.TryLock(keyVec));
-            luContext.Unlock(keyVec);
+            ClassicAssert.IsTrue(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(keyVec));
+            luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keyVec);
 
             var blockingVec = new FixedLengthLockableKeyStruct<long>[1];
 
@@ -1626,19 +1626,19 @@ namespace Tsavorite.test.LockableUnsafeContext
                 {
                     // This key blocks the lock. Test all positions in keyVec to ensure rollback of locks on failure.
                     blockingVec[0] = keyVec[blockingIdx];
-                    luContext.Lock(blockingVec);
+                    luContext.Lock<FixedLengthLockableKeyStruct<long>>(blockingVec);
 
                     using var cts = new CancellationTokenSource(20);
 
                     // Now try the lock, and verify there are no locks left after (any taken must be rolled back on failure).
-                    ClassicAssert.IsFalse(luContext.TryLock(keyVec, cts.Token));
+                    ClassicAssert.IsFalse(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(keyVec, cts.Token));
                     foreach (var k in keyVec)
                     {
                         if (k.Key != blockingVec[0].Key)
                             OverflowBucketLockTableTests.AssertLockCounts(store, k.Key, false, 0);
                     }
 
-                    luContext.Unlock(blockingVec);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(blockingVec);
                 }
             }
             catch (Exception)
@@ -1674,15 +1674,15 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(sharedVec));
 
                 ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], TimeSpan.FromMilliseconds(20)));
 
                 // Unlock one of the readers and verify successful promotion
-                luContext.Unlock(sharedVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(sharedVec);
                 ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
-                luContext.Unlock(exclusiveVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(exclusiveVec);
             }
             catch (Exception)
             {
@@ -1717,16 +1717,16 @@ namespace Tsavorite.test.LockableUnsafeContext
             try
             {
                 // Lock twice so it is blocked by the second reader
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
-                ClassicAssert.IsTrue(luContext.TryLock(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(sharedVec));
+                ClassicAssert.IsTrue(luContext.TryLock<FixedLengthLockableKeyStruct<long>>(sharedVec));
 
                 using var cts = new CancellationTokenSource(20);
                 ClassicAssert.IsFalse(luContext.TryPromoteLock(exclusiveVec[0], cts.Token));
 
                 // Unlock one of the readers and verify successful promotion
-                luContext.Unlock(sharedVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(sharedVec);
                 ClassicAssert.IsTrue(luContext.TryPromoteLock(exclusiveVec[0]));
-                luContext.Unlock(exclusiveVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<long>>(exclusiveVec);
             }
             catch (Exception)
             {

@@ -100,24 +100,19 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
+        internal readonly int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
             where TLockableKey : ILockableKey
             => KeyHashComparer(key1, key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
+        internal readonly int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
             where TLockableKey : ILockableKey
             => KeyHashComparer(ref key1, ref key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys)
+        internal readonly void SortKeyHashes<TLockableKey>(Span<TLockableKey> keys)
             where TLockableKey : ILockableKey
-            => Array.Sort(keys, new KeyComparer<TLockableKey>(store.state[store.resizeInfo.version].size_mask));
-
-        /// <inheritdoc/>
-        internal void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count)
-            where TLockableKey : ILockableKey
-            => Array.Sort(keys, start, count, new KeyComparer<TLockableKey>(store.state[store.resizeInfo.version].size_mask));
+            => keys.Sort(new KeyComparer<TLockableKey>(store.state[store.resizeInfo.version].size_mask));
 
         /// <summary>
         /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
