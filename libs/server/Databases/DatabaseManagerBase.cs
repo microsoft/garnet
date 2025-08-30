@@ -768,7 +768,7 @@ namespace Garnet.server
             return (mainStoreStats, objectStoreStats);
         }
 
-        private static HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
+        private HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
             GarnetDatabase db,
             TsavoriteKV<TKey, TValue, TFuncs, TAllocator> store,
             ISessionFunctions<TKey, TValue, TInput, TOutput, long> sessionFunctions)
