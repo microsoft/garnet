@@ -96,6 +96,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Parse client name from parse state at specified index.
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="clientName">Client name</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetClientName(this SessionParseState parseState, int idx, out string clientName)
+        {
+            clientName = parseState.GetString(idx);
+
+            if (clientName == null)
+            {
+                return false;
+            }
+
+            // Reference allows clearing client name
+            if (clientName == string.Empty)
+            {
+                return true;
+            }
+
+            // Client names cannot contain spaces, newlines or special characters.
+            // We limit names to printable characters excluding space.
+            foreach (var c in clientName)
+            {
+                if (c < 33 || c > 126)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Parse client type from parse state at specified index
         /// </summary>
         /// <param name="parseState">The parse state</param>
@@ -558,7 +593,6 @@ namespace Garnet.server
             return true;
         }
 
-
         /// <summary>
         /// Parse manager type from parse state at specified index
         /// </summary>
@@ -578,6 +612,21 @@ namespace Garnet.server
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("SERVERLISTENER"u8))
                 value = ManagerType.ServerListener;
             else return false;
+
+            return true;
+        }
+
+        internal static bool TryGetOperationDirection(this SessionParseState parseState, int idx, out OperationDirection value)
+        {
+            value = OperationDirection.Unknown;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("LEFT"u8))
+                value = OperationDirection.Left;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("RIGHT"u8))
+                value = OperationDirection.Right;
+            else
+                return false;
 
             return true;
         }

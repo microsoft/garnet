@@ -14,7 +14,7 @@ namespace Garnet.cluster
     {
         SingleWriterMultiReaderLock syncInProgress;
         readonly CancellationTokenSource cts;
-        readonly TimeSpan clusterTimeout;
+        readonly TimeSpan replicaSyncTimeout;
         readonly ILogger logger;
 
         public ReplicaSyncSessionTaskStore GetSessionStore { get; }
@@ -32,7 +32,7 @@ namespace Garnet.cluster
             this.logger = logger;
 
             var opts = clusterProvider.serverOptions;
-            clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
+            replicaSyncTimeout = opts.ReplicaSyncTimeout;
             cts = new();
         }
 
@@ -87,7 +87,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddReplicaSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, clusterTimeout, cts.Token, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, cts.Token, logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {
@@ -289,9 +289,9 @@ namespace Garnet.cluster
                 if (!ClusterProvider.serverOptions.DisableObjects)
                 {
                     // Iterate through object store
-                    var objectStoreCheckpointTask = await ClusterProvider.storeWrapper.objectStore.
+                    var objectStoreCheckpointTask = ClusterProvider.storeWrapper.objectStore.
                         TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
-                    result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
+                    result = await WaitOrDie(checkpointTask: objectStoreCheckpointTask, iteratorManager: manager);
                     if (!result.success)
                         throw new InvalidOperationException("Object store checkpoint stream failed!");
                 }
@@ -300,7 +300,7 @@ namespace Garnet.cluster
 
                 async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
                 {
-                    var timeout = clusterTimeout;
+                    var timeout = replicaSyncTimeout;
                     var delay = TimeSpan.FromSeconds(1);
                     while (true)
                     {
@@ -315,7 +315,7 @@ namespace Garnet.cluster
                             return await checkpointTask;
 
                         // Check if we made some progress
-                        timeout = !manager.IsProgressing() ? timeout.Subtract(delay) : clusterTimeout;
+                        timeout = !manager.IsProgressing() ? timeout.Subtract(delay) : replicaSyncTimeout;
 
                         // Throw timeout equals to zero
                         if (timeout.TotalSeconds <= 0)

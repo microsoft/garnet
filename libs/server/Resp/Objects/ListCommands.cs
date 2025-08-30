@@ -226,10 +226,7 @@ namespace Garnet.server
             }
 
             // Get the direction
-            var dir = parseState.GetArgSliceByRef(currTokenId++);
-            var popDirection = GetOperationDirection(dir);
-
-            if (popDirection == OperationDirection.Unknown)
+            if (!parseState.TryGetOperationDirection(currTokenId++, out var popDirection))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
@@ -355,8 +352,12 @@ namespace Garnet.server
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-            var srcDir = parseState.GetArgSliceByRef(2);
-            var dstDir = parseState.GetArgSliceByRef(3);
+
+            if (!parseState.TryGetOperationDirection(2, out var srcDir) ||
+                !parseState.TryGetOperationDirection(3, out var dstDir))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
 
             if (!parseState.TryGetTimeout(4, out var timeout, out var error))
             {
@@ -379,26 +380,25 @@ namespace Garnet.server
 
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
-            var rightOption = ArgSlice.FromPinnedSpan(CmdStrings.RIGHT);
-            var leftOption = ArgSlice.FromPinnedSpan(CmdStrings.LEFT);
 
             if (!parseState.TryGetTimeout(2, out var timeout, out var error))
             {
                 return AbortWithErrorMessage(error);
             }
 
-            return ListBlockingMove(srcKey, dstKey, rightOption, leftOption, timeout);
+            return ListBlockingMove(srcKey, dstKey, OperationDirection.Right,
+                                    OperationDirection.Left, timeout);
         }
 
-        private bool ListBlockingMove(ArgSlice srcKey, ArgSlice dstKey, ArgSlice srcDir, ArgSlice dstDir, double timeout)
+        private bool ListBlockingMove(ArgSlice srcKey, ArgSlice dstKey,
+                                      OperationDirection sourceDirection,
+                                      OperationDirection destinationDirection,
+                                      double timeout)
         {
             var cmdArgs = new ArgSlice[] { default, default, default };
 
             // Read destination key
             cmdArgs[0] = dstKey;
-
-            var sourceDirection = GetOperationDirection(srcDir);
-            var destinationDirection = GetOperationDirection(dstDir);
 
             if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
             {
@@ -770,13 +770,8 @@ namespace Garnet.server
             var srcKey = parseState.GetArgSliceByRef(0);
             var dstKey = parseState.GetArgSliceByRef(1);
 
-            var srcDirSlice = parseState.GetArgSliceByRef(2);
-            var dstDirSlice = parseState.GetArgSliceByRef(3);
-
-            var sourceDirection = GetOperationDirection(srcDirSlice);
-            var destinationDirection = GetOperationDirection(dstDirSlice);
-
-            if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+            if (!parseState.TryGetOperationDirection(2, out var sourceDirection) ||
+                !parseState.TryGetOperationDirection(3, out var destinationDirection))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
@@ -964,10 +959,7 @@ namespace Garnet.server
             var cmdArgs = new ArgSlice[2];
 
             // Get the direction
-            var dir = parseState.GetArgSliceByRef(currTokenId++);
-            var popDirection = GetOperationDirection(dir);
-
-            if (popDirection == OperationDirection.Unknown)
+            if (!parseState.TryGetOperationDirection(currTokenId++, out var popDirection))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }

@@ -1,4 +1,5 @@
 ﻿#region License
+
 // Copyright (c) 2007 James Newton-King
 //
 // Permission is hereby granted, free of charge, to any person
@@ -21,6 +22,7 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
+
 #endregion
 
 using System.Collections.Generic;
@@ -41,8 +43,10 @@ namespace Garnet.test.JSONPath
             {
                 Expressions = new List<QueryExpression>
                 {
-                    new BooleanQueryExpression(QueryOperator.Exists, new List<PathFilter> { new FieldFilter("FirstName") }, null),
-                    new BooleanQueryExpression(QueryOperator.Exists, new List<PathFilter> { new FieldFilter("LastName") }, null)
+                    new BooleanQueryExpression(QueryOperator.Exists,
+                        new List<PathFilter> { new FieldFilter("FirstName") }, null),
+                    new BooleanQueryExpression(QueryOperator.Exists,
+                        new List<PathFilter> { new FieldFilter("LastName") }, null)
                 }
             };
 
@@ -66,8 +70,10 @@ namespace Garnet.test.JSONPath
             {
                 Expressions = new List<QueryExpression>
                 {
-                    new BooleanQueryExpression(QueryOperator.Exists, new List<PathFilter> { new FieldFilter("FirstName") }, null),
-                    new BooleanQueryExpression(QueryOperator.Exists, new List<PathFilter> { new FieldFilter("LastName") }, null)
+                    new BooleanQueryExpression(QueryOperator.Exists,
+                        new List<PathFilter> { new FieldFilter("FirstName") }, null),
+                    new BooleanQueryExpression(QueryOperator.Exists,
+                        new List<PathFilter> { new FieldFilter("LastName") }, null)
                 }
             };
 
@@ -85,16 +91,59 @@ namespace Garnet.test.JSONPath
         }
 
         [Test]
+        public void BooleanExpression_EqualsOperator()
+        {
+            string json = """
+                          {
+                          "field1": "test",
+                          "field2": "hi",
+                          "field3": true,
+                          "field4": 1234,
+                          "field5": null
+                          }
+                          """;
+            JsonNode payload = JsonNode.Parse(json)!;
+            (string FieldName, JsonNode Value, bool ShouldMatch)[] checks =
+            [
+                ("field1", JsonNode.Parse("null"), false),
+                ("field2", JsonNode.Parse("\"hi\""), true),
+                ("field3", JsonNode.Parse("true"), true),
+                ("field3", JsonNode.Parse("false"), false),
+                ("field4", JsonNode.Parse("1234"), true),
+                ("field5", JsonNode.Parse("null"), true),
+                ("field5", JsonNode.Parse("123"), false)
+            ];
+
+            foreach (var check in checks)
+            {
+                BooleanQueryExpression EqualExpression = new BooleanQueryExpression(QueryOperator.Equals,
+                    new List<PathFilter> { new FieldFilter(check.FieldName) }, check.Value);
+                bool EqualResult = EqualExpression.IsMatch(payload, payload);
+                ClassicAssert.AreEqual(check.ShouldMatch, EqualResult, "Equals {0} - {1}", check.FieldName,
+                    check.Value);
+
+                BooleanQueryExpression NotEqualExpression = new BooleanQueryExpression(QueryOperator.NotEquals,
+                    new List<PathFilter> { new FieldFilter(check.FieldName) }, check.Value);
+
+                bool NotEqualResult = NotEqualExpression.IsMatch(payload, payload);
+                ClassicAssert.AreNotEqual(check.ShouldMatch, NotEqualResult, "Not Equals {0} - {1}", check.FieldName,
+                    check.Value);
+            }
+        }
+
+        [Test]
         public void BooleanExpressionTest_RegexEqualsOperator()
         {
-            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.RegexEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/foo.*d/\""));
+            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.RegexEquals,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/foo.*d/\""));
 
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[\"food\"]")));
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[\"fooood and drink\"]")));
             ClassicAssert.IsFalse(e1.IsMatch(null, JsonNode.Parse("[\"FOOD\"]")));
             ClassicAssert.IsFalse(e1.IsMatch(null, JsonNode.Parse("[\"foo\", \"foog\", \"good\"]")));
 
-            BooleanQueryExpression e2 = new BooleanQueryExpression(QueryOperator.RegexEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/Foo.*d/i\""));
+            BooleanQueryExpression e2 = new BooleanQueryExpression(QueryOperator.RegexEquals,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/Foo.*d/i\""));
 
             ClassicAssert.IsTrue(e2.IsMatch(null, JsonNode.Parse("[\"food\"]")));
             ClassicAssert.IsTrue(e2.IsMatch(null, JsonNode.Parse("[\"fooood and drink\"]")));
@@ -105,12 +154,14 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BooleanExpressionTest_RegexEqualsOperator_CornerCase()
         {
-            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.RegexEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/// comment/\""));
+            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.RegexEquals,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/// comment/\""));
 
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[\"// comment\"]")));
             ClassicAssert.IsFalse(e1.IsMatch(null, JsonNode.Parse("[\"//comment\", \"/ comment\"]")));
 
-            BooleanQueryExpression e2 = new BooleanQueryExpression(QueryOperator.RegexEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/<tag>.*</tag>/i\""));
+            BooleanQueryExpression e2 = new BooleanQueryExpression(QueryOperator.RegexEquals,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("\"/<tag>.*</tag>/i\""));
 
             ClassicAssert.IsTrue(e2.IsMatch(null, JsonNode.Parse("[\"<Tag>Test</Tag>\", \"\"]")));
             ClassicAssert.IsFalse(e2.IsMatch(null, JsonNode.Parse("[\"<tag>Test<tag>\"]")));
@@ -119,7 +170,8 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BooleanExpressionTest()
         {
-            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.LessThan, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
+            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.LessThan,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
 
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[1, 2, 3, 4, 5]")));
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[2, 3, 4, 5]")));
@@ -127,7 +179,8 @@ namespace Garnet.test.JSONPath
             ClassicAssert.IsFalse(e1.IsMatch(null, JsonNode.Parse("[4, 5]")));
             ClassicAssert.IsFalse(e1.IsMatch(null, JsonNode.Parse("[\"11\", 5]")));
 
-            BooleanQueryExpression e2 = new BooleanQueryExpression(QueryOperator.LessThanOrEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
+            BooleanQueryExpression e2 = new BooleanQueryExpression(QueryOperator.LessThanOrEquals,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
 
             ClassicAssert.IsTrue(e2.IsMatch(null, JsonNode.Parse("[1, 2, 3, 4, 5]")));
             ClassicAssert.IsTrue(e2.IsMatch(null, JsonNode.Parse("[2, 3, 4, 5]")));
@@ -139,7 +192,8 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BooleanExpressionTest_GreaterThanOperator()
         {
-            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.GreaterThan, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
+            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.GreaterThan,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
 
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[\"2\", \"26\"]")));
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[2, 26]")));
@@ -150,7 +204,8 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BooleanExpressionTest_GreaterThanOrEqualsOperator()
         {
-            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.GreaterThanOrEquals, new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
+            BooleanQueryExpression e1 = new BooleanQueryExpression(QueryOperator.GreaterThanOrEquals,
+                new List<PathFilter> { new ArrayIndexFilter() }, JsonNode.Parse("3"));
 
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[\"2\", \"26\"]")));
             ClassicAssert.IsTrue(e1.IsMatch(null, JsonNode.Parse("[2, 26]")));

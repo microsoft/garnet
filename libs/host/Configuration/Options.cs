@@ -297,6 +297,10 @@ namespace Garnet
         [Option("cluster-timeout", Required = false, HelpText = "Cluster node timeout is the amount of seconds a node must be unreachable.")]
         public int ClusterTimeout { get; set; }
 
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("cluster-config-flush-frequency", Required = false, HelpText = "How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms")]
+        public int ClusterConfigFlushFrequencyMs { get; set; }
+
         [Option("cluster-tls-client-target-host", Required = false, HelpText = "Name for the client target host when using TLS connections in cluster mode.")]
         public string ClusterTlsClientTargetHost { get; set; }
 
@@ -450,6 +454,14 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-attach-timeout", Required = false, HelpText = "Timeout in seconds for replication attach operation.")]
+        public int ReplicaAttachTimeout { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-sync-timeout", Required = false, HelpText = "Timeout in seconds for replication sync operations.")]
+        public int ReplicaSyncTimeout { get; set; }
 
         [MemorySizeValidation(false)]
         [Option("repl-diskless-sync-full-sync-aof-threshold", Required = false, HelpText = "AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.")]
@@ -639,6 +651,13 @@ namespace Garnet
         [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
         [Option("expired-key-deletion-scan-freq", Required = false, HelpText = "Frequency of background scan for expired key deletion, in seconds")]
         public int ExpiredKeyDeletionScanFrequencySecs { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue, includeMin: true, isRequired: false)]
+        [Option("cluster-replication-reestablishment-timeout")]
+        public int ClusterReplicationReestablishmentTimeout { get; set; }
+
+        [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
+        public bool ClusterReplicaResumeWithData { get; set; }
 
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
@@ -848,6 +867,7 @@ namespace Garnet
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
+                ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
@@ -885,6 +905,8 @@ namespace Garnet
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
+                ReplicaSyncTimeout = ReplicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaSyncTimeout),
+                ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
@@ -913,6 +935,8 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
+                ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
+                ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
             };
         }
 

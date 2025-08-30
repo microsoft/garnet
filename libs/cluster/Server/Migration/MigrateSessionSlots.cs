@@ -11,13 +11,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed unsafe partial class MigrateSession : IDisposable
+    internal sealed partial class MigrateSession : IDisposable
     {
         /// <summary>
         /// Migrate Slots inline driver
         /// </summary>
         /// <returns></returns>
-        public bool MigrateSlotsDriverInline()
+        public async Task<bool> MigrateSlotsDriverInline()
         {
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
@@ -25,11 +25,13 @@ namespace Garnet.cluster
 
 #if DEBUG
             // Only on Debug mode
-            ExceptionInjectionHelper.WaitOnCondition(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).GetAwaiter().GetResult();
+            ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition).GetAwaiter().GetResult();
 #endif
 
             // Send main store
-            CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
+            var success = await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
+            if (!success) return false;
 
             // Send object store
             if (!clusterProvider.serverOptions.DisableObjects)
@@ -37,12 +39,14 @@ namespace Garnet.cluster
                 var objectStoreBeginAddress = clusterProvider.storeWrapper.objectStore.Log.BeginAddress;
                 var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
                 var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                logger?.LogWarning("Object Store migrate scan range [{objectStoreBeginAddress}, {objectStoreTailAddress}]", objectStoreBeginAddress, objectStoreTailAddress);
+                success = await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
+                if (!success) return false;
             }
 
             return true;
 
-            void CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
+            async Task<bool> CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)
             {
                 logger?.LogTrace("{method} > [{storeType}] Scan in range ({BeginAddress},{TailAddress})", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress);
                 var migrateOperationRunners = new Task[clusterProvider.serverOptions.ParallelMigrateTaskCount];
@@ -54,7 +58,17 @@ namespace Garnet.cluster
                     i++;
                 }
 
-                Task.WaitAll(migrateOperationRunners, _cts.Token);
+                try
+                {
+                    await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {storeType} {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress, pageSize);
+                    _cts.Cancel();
+                    return false;
+                }
+                return true;
             }
 
             Task<bool> ScanStoreTask(int taskId, StoreType storeType, long beginAddress, long tailAddress, int pageSize)
@@ -70,6 +84,7 @@ namespace Garnet.cluster
                     return Task.FromResult(false);
 
                 var cursor = workerStartAddress;
+                logger?.LogWarning("<{StoreType}:{taskId}> migrate scan range [{workerStartAddress}, {workerEndAddress}]", storeType, taskId, workerStartAddress, workerEndAddress);
                 while (true)
                 {
                     var current = cursor;
@@ -80,8 +95,7 @@ namespace Garnet.cluster
                     // Stop if no keys have been found
                     if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
 
-                    var currentEnd = current;
-                    logger?.LogTrace("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys",
+                    logger?.LogWarning("[{taskId}> Scan from {cursor} to {current} and discovered {count} keys",
                         taskId, cursor, current, migrateOperation.sketch.argSliceVector.Count);
 
                     // Transition EPSM to MIGRATING
@@ -98,6 +112,7 @@ namespace Garnet.cluster
                     // Deleting keys (Currently gathering keys from push-scan and deleting them outside)
                     migrateOperation.DeleteKeys();
 
+                    // Clear keys from buffer
                     migrateOperation.sketch.Clear();
                     cursor = current;
                 }

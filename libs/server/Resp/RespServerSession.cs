@@ -119,6 +119,8 @@ namespace Garnet.server
 
         readonly ILogger logger = null;
 
+        IGarnetServer server;
+
         /// <summary>
         /// Clients must enable asking to make node respond to requests on slots that are being imported.
         /// </summary>
@@ -129,7 +131,19 @@ namespace Garnet.server
         ///
         /// It is not guaranteed to be set.
         /// </summary>
-        public IGarnetServer Server { get; set; }
+        public IGarnetServer Server
+        {
+            get => server;
+            set
+            {
+                server = value;
+                if (clusterSession is not null)
+                {
+                    clusterSession.Server = value;
+                }
+            }
+        }
+
 
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
@@ -643,7 +657,7 @@ namespace Garnet.server
         }
 
         // Make first command in string as uppercase
-        private bool MakeUpperCase(byte* ptr)
+        private bool MakeUpperCase(byte* ptr, int len)
         {
             // Assume most commands are already upper case.
             // Assume most commands are 2-8 bytes long.
@@ -658,7 +672,6 @@ namespace Garnet.server
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
-            var len = bytesRead - readHead;
             if (len >= 12)
             {
                 var cmdLen = (uint)(*(ptr + 5) - '2');
@@ -758,8 +771,8 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
-                RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.EXPIREAT => NetworkEXPIRE(RespCommand.EXPIREAT, ref storageApi),
+                RespCommand.PEXPIREAT => NetworkEXPIRE(RespCommand.PEXPIREAT, ref storageApi),
                 RespCommand.DUMP => NetworkDUMP(ref storageApi),
                 RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 
@@ -1171,43 +1184,6 @@ namespace Garnet.server
             success = true;
 
             AsciiUtils.ToUpperInPlace(result);
-            return result;
-        }
-
-        public ArgSlice GetCommandAsArgSlice(out bool success)
-        {
-            if (bytesRead - readHead < 6)
-            {
-                success = false;
-                return default;
-            }
-
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
-            {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
-            {
-                success = false;
-                return default;
-            }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
-
-            var result = new ArgSlice(recvBufferPtr + readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
-
-            readHead += 2 + psize + 2;
-            success = true;
             return result;
         }
 

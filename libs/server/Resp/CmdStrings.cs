@@ -31,6 +31,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
+        public static ReadOnlySpan<byte> Memory => "memory"u8;
+        public static ReadOnlySpan<byte> ObjLogMemory => "obj-log-memory"u8;
+        public static ReadOnlySpan<byte> ObjHeapMemory => "obj-heap-memory"u8;
+        public static ReadOnlySpan<byte> Index => "index"u8;
+        public static ReadOnlySpan<byte> ObjIndex => "obj-index"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
@@ -276,6 +281,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_UBLOCKING_CLINET => "ERR Unable to unblock client because of error."u8;
         public static ReadOnlySpan<byte> RESP_ERR_NO_SUCH_CLIENT => "ERR No such client"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_ID => "ERR Invalid client ID"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_NAME => "ERR Client names cannot contain spaces, newlines or special characters."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_DISABLED => "ERR ACL Authenticator is disabled."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_FILE_DISABLED => "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option."u8;
         public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
@@ -325,6 +331,13 @@ namespace Garnet.server
         public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
         public const string GenericErrCommandDisallowedWithOption =
             @"ERR {0} command not allowed. If the {1} option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server.";
+        public const string GenericErrIncorrectSizeFormat = "ERR Incorrect size format in (option: '{0}')";
+        public const string GenericErrIndexSizePowerOfTwo = "ERR Index size must be a power of 2 (option: '{0}')";
+        public const string GenericErrIndexSizeAutoGrow = "ERR Cannot adjust index size when auto-grow task is running (option: '{0}')";
+        public const string GenericErrIndexSizeSmallerThanCurrent = "ERR Cannot set dynamic index size smaller than current index size (option: '{0}')";
+        public const string GenericErrIndexSizeGrowFailed = "ERR failed to grow index size beyond current size (option: '{0}')";
+        public const string GenericErrMemorySizeGreaterThanBuffer = "ERR Cannot set dynamic memory size greater than configured circular buffer size (option: '{0}')";
+        public const string GenericErrHeapMemorySizeTrackerNotRunning = "ERR Cannot adjust object store heap memory size when size tracker is not running (option: '{0}')";
 
         /// <summary>
         /// Response errors while scripting
@@ -374,6 +387,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
         public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
         public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
+        public static ReadOnlySpan<byte> GENPASS => "GENPASS"u8;
         public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
@@ -478,6 +492,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_bad_arg_decode => "bad argument to decode"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_pack => "bad argument to pack"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_unpack => "bad argument to unpack"u8;
+        public static ReadOnlySpan<byte> LUA_bad_arg_format => "bad argument to format"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_bor => "bad argument to bor"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_band => "bad argument to band"u8;
         public static ReadOnlySpan<byte> LUA_bad_arg_bxor => "bad argument to bxor"u8;
