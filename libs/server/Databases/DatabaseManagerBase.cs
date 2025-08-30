@@ -750,7 +750,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public abstract (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore) [] CollectHybridLogStats();
+        public abstract (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
 
         protected (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore) CollectHybridLogStatsForDb(GarnetDatabase db)
         {
@@ -815,7 +815,7 @@ namespace Garnet.server
                     // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
                     state = "RCUdUnsealed";
                 }
-                long size =  iter.NextAddress - iter.CurrentAddress;
+                long size = iter.NextAddress - iter.CurrentAddress;
                 scanMetrics.AddScanMetric(region, state, size);
             }
             return scanMetrics;
