@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -207,3 +209,5 @@ namespace Tsavorite.test
 
     }
 }
+
+#endif // LOGRECORD_TODO

@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet
 {
@@ -13,7 +14,7 @@ namespace Garnet
             var offset = 0;
             var key = GetNextArg(ref procInput, ref offset);
 
-            var args = new ArgSlice[2];
+            var args = new PinnedSpanByte[2];
             args[0] = GetNextArg(ref procInput, ref offset); // value to set
             args[1] = GetNextArg(ref procInput, ref offset); // prefix to match
 

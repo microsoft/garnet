@@ -4,7 +4,6 @@
 using System;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -20,11 +19,6 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromMainStore()
         {
-            var bufferSize = 1 << 10;
-            SectorAlignedMemory buffer = new(bufferSize, 1);
-            var bufPtr = buffer.GetValidPointer();
-            var bufPtrEnd = bufPtr + bufferSize;
-            var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
             var migrateTask = migrateOperation[0];
 
             try
@@ -44,11 +38,6 @@ namespace Garnet.cluster
             }
             finally
             {
-                // If allocated memory in heap dispose it here.
-                if (o.Memory != default)
-                    o.Memory.Dispose();
-                buffer.Dispose();
-
                 migrateOperation[0].sketch.SetStatus(SketchStatus.INITIALIZING);
             }
             return true;

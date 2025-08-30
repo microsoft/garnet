@@ -10,7 +10,7 @@ using System.Text;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Recovery info for Tsavorite Log
+    /// Recovery info for TsavoriteLog
     /// </summary>
     public struct TsavoriteLogRecoveryInfo
     {

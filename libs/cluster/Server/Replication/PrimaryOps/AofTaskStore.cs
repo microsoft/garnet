@@ -76,7 +76,7 @@ namespace Garnet.cluster
             {
                 if (_disposed) return replicaInfo;
 
-                for (int i = 0; i < numTasks; ++i)
+                for (int i = 0; i < numTasks; i++)
                 {
                     var cr = tasks[i];
                     var (address, port) = current.GetWorkerAddressFromNodeId(cr.remoteNodeId);

@@ -13,8 +13,8 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
@@ -758,10 +758,7 @@ namespace Garnet.test
             }
 
             // Wait for log size tracker
-            var sizeTrackerDelay =
-                TimeSpan.FromSeconds(
-                    LogSizeTracker<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator,
-                        CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds + 2);
+            var sizeTrackerDelay = TimeSpan.FromSeconds(LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds + 2);
             Thread.Sleep(sizeTrackerDelay);
 
             // Verify that empty page count has increased

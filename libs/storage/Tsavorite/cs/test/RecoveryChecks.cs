@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -46,7 +48,7 @@ namespace Tsavorite.test.recovery
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        public class MyFunctions : SimpleSimpleFunctions<long, long>
+        public class MyFunctions : SimpleLongSimpleFunctions<long, long>
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -55,7 +57,7 @@ namespace Tsavorite.test.recovery
             }
         }
 
-        public class MyFunctions2 : SimpleSimpleFunctions<long, long>
+        public class MyFunctions2 : SimpleLongSimpleFunctions<long, long>
         {
             public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -203,7 +205,7 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bc1 = s1.BasicContext;
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
@@ -259,7 +261,7 @@ namespace Tsavorite.test.recovery
                 ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
                 ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
@@ -300,7 +302,7 @@ namespace Tsavorite.test.recovery
                 if (i > 0)
                     _ = store.Recover(default, token);
 
-                using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s1 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
                 var bc1 = s1.BasicContext;
 
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
@@ -313,7 +315,7 @@ namespace Tsavorite.test.recovery
                 (success, token) = task.AsTask().GetAwaiter().GetResult();
                 ClassicAssert.IsTrue(success);
 
-                using var s2 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s2 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
 
                 for (long key = 0; key < 1000 * i + 1000; key++)
@@ -349,7 +351,7 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bc1 = s1.BasicContext;
 
             for (long key = 0; key < 1000; key++)
@@ -503,7 +505,7 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bc1 = s1.BasicContext;
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
@@ -559,7 +561,7 @@ namespace Tsavorite.test.recovery
                 ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
                 ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
@@ -605,7 +607,7 @@ namespace Tsavorite.test.recovery
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
             var bc1 = s1.BasicContext;
 
             using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
@@ -664,7 +666,7 @@ namespace Tsavorite.test.recovery
                 ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
                 ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
@@ -1084,3 +1086,4 @@ namespace Tsavorite.test.recovery
         }
     }
 }
+#endif

@@ -12,86 +12,74 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory o, out GarnetStatus status)
+        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, out GarnetStatus status)
         {
-            // Read value for key
-            status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref input, ref o);
+            const bool isMainStore = true;
 
-            // Skip if key NOTFOUND
-            if (status == GarnetStatus.NOTFOUND)
-                return true;
+            // Must initialize this here because we use the network buffer as output.
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
 
-            // Get SpanByte from stack if any
-            ref var value = ref o.SpanByte;
-            if (!o.IsSpanByte)
-            {
-                // Reinterpret heap memory to SpanByte
-                value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
-            }
-
-            // Write key to network buffer if it has not expired
-            if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(gcs, ref key, ref value))
-                return false;
-
-            return true;
-
-            bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, ref SpanByte key, ref SpanByte value)
-            {
-                // Check if we need to initialize cluster migrate command arguments
-                if (gcs.NeedsInitialization)
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
-
-                // Try write serialized key value to client buffer
-                while (!gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
-                {
-                    // Flush key value pairs in the buffer
-                    if (!HandleMigrateTaskResponse(task))
-                        return false;
-
-                    // re-initialize cluster migrate command parameters
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
-                }
-                return true;
-            }
+            // Read the value for the key. This will populate output with the entire serialized record.
+            status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
+            return WriteRecord(gcs, ref output, status, isMainStore);
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref ArgSlice key, out GarnetStatus status)
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, out GarnetStatus status)
         {
-            var keyByteArray = key.ToArray();
+            const bool isMainStore = false;
 
-            ObjectInput input = default;
-            GarnetObjectStoreOutput value = default;
-            status = localServerSession.BasicGarnetApi.Read_ObjectStore(ref keyByteArray, ref input, ref value);
+            // Must initialize this here because we use the network buffer as output.
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
 
-            // Skip if key NOTFOUND
+            status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref output);
+            return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isMainStore);
+        }
+
+        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status, bool isMainStore)
+        {
+            // Skip (do not fail) if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
                 return true;
 
-            if (!ClusterSession.Expired(ref value.GarnetObject))
+            // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, so increment curr and
+            // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
+            if (output.IsSpanByte)
             {
-                var objectData = GarnetObjectSerializer.Serialize(value.GarnetObject);
-
-                if (!WriteOrSendObjectStoreKeyValuePair(gcs, keyByteArray, objectData, value.GarnetObject.Expiration))
-                    return false;
-            }
-
-            return true;
-
-            bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, byte[] key, byte[] value, long expiration)
-            {
-                // Check if we need to initialize cluster migrate command arguments
-                if (gcs.NeedsInitialization)
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
-
-                while (!gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
-                {
-                    // Flush key value pairs in the buffer
-                    if (!HandleMigrateTaskResponse(task))
-                        return false;
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
-                }
+                gcs.IncrementRecordDirect(output.SpanByte.TotalSize);
                 return true;
             }
+            return WriteOrSendRecordSpan(gcs, ref output, isMainStore);
+        }
+
+        /// <summary>
+        /// Write a serialized record directly to the client buffer; if there is not enough room, flush the buffer and retry writing.
+        /// </summary>
+        /// <param name="gcs">The client session</param>
+        /// <param name="output">Output buffer from Read(), containing the full serialized record</param>
+        /// <param name="isMainStore">Whether this is the main or object store</param>
+        /// <returns>True on success, else false</returns>
+        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, ref SpanByteAndMemory output, bool isMainStore)
+        {
+            // Check if we need to initialize cluster migrate command arguments
+            if (gcs.NeedsInitialization)
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+
+            fixed (byte* ptr = output.MemorySpan)
+            {
+                // Try to write serialized record to client buffer
+                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))
+                {
+                    // Flush records in the buffer
+                    if (!HandleMigrateTaskResponse(task))
+                        return false;
+
+                    // Re-initialize cluster migrate command parameters for the next loop iteration
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+                }
+            }
+            return true;
         }
 
         /// <summary>
