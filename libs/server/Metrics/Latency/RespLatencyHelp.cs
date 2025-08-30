@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -14,10 +12,10 @@ namespace Garnet.server
         /// Get supported latency commands and a short description
         /// </summary>
         /// <returns></returns>
-        public static List<string> GetLatencyCommands()
+        public static string[] GetLatencyCommands()
         {
-            return new List<string>()
-            {
+            return
+            [
                 "LATENCY <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                 "HISTOGRAM [EVENT [EVENT...]]",
                 "\tReturn latency histogram of one or more <event> classes.",
@@ -27,7 +25,7 @@ namespace Garnet.server
                 "\t(default: reset all data for all event classes).",
                 "HELP",
                 "\tPrints this help"
-            };
+            ];
         }
     }
 }

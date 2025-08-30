@@ -491,16 +491,19 @@ namespace Garnet.test
                 RespCommand.SWAPDB,
                 RespCommand.ECHO,
                 RespCommand.MONITOR,
+                RespCommand.MODULE_HELP,
                 RespCommand.MODULE_LOADCS,
                 RespCommand.REGISTERCS,
                 RespCommand.INFO,
                 RespCommand.TIME,
                 RespCommand.LASTSAVE,
+
                 // ACL
                 RespCommand.ACL_CAT,
                 RespCommand.ACL_DELUSER,
                 RespCommand.ACL_GENPASS,
                 RespCommand.ACL_GETUSER,
+                RespCommand.ACL_HELP,
                 RespCommand.ACL_LIST,
                 RespCommand.ACL_LOAD,
                 RespCommand.ACL_SAVE,
@@ -508,6 +511,7 @@ namespace Garnet.test
                 RespCommand.ACL_USERS,
                 RespCommand.ACL_WHOAMI,
                 // Client
+                RespCommand.CLIENT_HELP,
                 RespCommand.CLIENT_ID,
                 RespCommand.CLIENT_INFO,
                 RespCommand.CLIENT_LIST,
@@ -523,8 +527,10 @@ namespace Garnet.test
                 RespCommand.COMMAND_INFO,
                 RespCommand.COMMAND_GETKEYS,
                 RespCommand.COMMAND_GETKEYSANDFLAGS,
+                RespCommand.COMMAND_HELP,
                 RespCommand.MEMORY_USAGE,
                 // Config
+                RespCommand.CONFIG_HELP,
                 RespCommand.CONFIG_GET,
                 RespCommand.CONFIG_REWRITE,
                 RespCommand.CONFIG_SET,
