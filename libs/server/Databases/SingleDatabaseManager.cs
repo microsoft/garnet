@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -404,6 +405,8 @@ namespace Garnet.server
             var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(DefaultDatabase);
             return (k1 + k2, t1 + t2);
         }
+
+        public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {

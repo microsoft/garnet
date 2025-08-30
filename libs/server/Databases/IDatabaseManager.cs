@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -267,5 +268,11 @@ namespace Garnet.server
         /// On Demand Expired Keys collection, for a db given its ID
         /// </summary>
         public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
+
+        /// <summary>
+        /// Collect and return an array mapping db Id to its stats
+        /// </summary>
+        /// <returns></returns>
+        public (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
     }
 }
