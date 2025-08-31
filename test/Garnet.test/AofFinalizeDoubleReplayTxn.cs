@@ -5,7 +5,7 @@ using Tsavorite.core;
 namespace Garnet.test
 {
   // Test transaction used to make sure we are not doing double replay of items enqueued to AOF at finalize step
-  // AOFFINDOUBLEREP KEY 
+  // AOFFINDOUBLEREP KEY
   public class AofFinalizeDoubleReplayTxn : CustomTransactionProcedure
   {
     public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
