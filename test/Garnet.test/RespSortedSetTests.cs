@@ -3802,6 +3802,10 @@ namespace Garnet.test
             expectedResponse = "*4\r\n$6\r\nSunsui\r\n$4\r\n2200\r\n$2\r\nLG\r\n$4\r\n2500\r\n";
             response = lightClientRequest.Execute("ZRANGEBYSCORE mysales -inf +inf WITHSCORES LIMIT 4 10", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
+
+            expectedResponse = "*0\r\n";
+            response = lightClientRequest.Execute("ZRANGEBYSCORE mysales -inf +inf WITHSCORES LIMIT 4 0", expectedResponse.Length, bytesSent);
+            ClassicAssert.AreEqual(expectedResponse, response);
         }
 
         [Test]
@@ -3863,13 +3867,7 @@ namespace Garnet.test
         {
             //ZRANGE key min max BYLEX REV [WITHSCORES]
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 0 a");
-            lightClientRequest.SendCommand("ZADD board 0 b");
-            lightClientRequest.SendCommand("ZADD board 0 c");
-            lightClientRequest.SendCommand("ZADD board 0 d");
-            lightClientRequest.SendCommand("ZADD board 0 e");
-            lightClientRequest.SendCommand("ZADD board 0 f");
-            lightClientRequest.SendCommand("ZADD board 0 g");
+            var response = lightClientRequest.SendCommand("ZADD board 0 a 0 b 0 c 0 d 0 e 0 f 0 g");
 
             // get a range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX REV", 1);
@@ -3919,6 +3917,11 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("ZRANGEBYLEX mycity - + LIMIT 2 3", 4);
             //expectedResponse = "*3\r\n$7\r\nNewYork\r\n$5\r\nParis\r\n$5\r\nSeoul\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // LIMIT x 0
+            response = lightClientRequest.SendCommand("ZRANGEBYLEX mycity - + LIMIT 2 0");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
         [Test]
@@ -3929,12 +3932,7 @@ namespace Garnet.test
         {
             //ZRANGE key min max REV
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 0 a");
-            lightClientRequest.SendCommand("ZADD board 0 b");
-            lightClientRequest.SendCommand("ZADD board 0 c");
-            lightClientRequest.SendCommand("ZADD board 0 d");
-            lightClientRequest.SendCommand("ZADD board 0 e");
-            lightClientRequest.SendCommand("ZADD board 0 f");
+            var response = lightClientRequest.SendCommand("ZADD board 0 a 0 b 0 c 0 d 0 e 0 f");
 
             // get a range by lex order
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1 REV", bytesSent, 7);
@@ -4234,12 +4232,7 @@ namespace Garnet.test
         {
             //ZREVRANGE key start stop [WITHSCORES]
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 10 a");
-            lightClientRequest.SendCommand("ZADD board 20 b");
-            lightClientRequest.SendCommand("ZADD board 30 c");
-            lightClientRequest.SendCommand("ZADD board 40 d");
-            lightClientRequest.SendCommand("ZADD board 50 e");
-            lightClientRequest.SendCommand("ZADD board 60 f");
+            var response = lightClientRequest.SendCommand("ZADD board 10 a 20 b 30 c 40 d 50 e 60 f");
 
             // get a range by lex order
             response = lightClientRequest.SendCommand("ZREVRANGE board 0 -1", 7);
@@ -4261,12 +4254,7 @@ namespace Garnet.test
         {
             //ZREVRANGESCORE key start stop [WITHSCORES] [LIMIT offset count]
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("ZADD board 10 a");
-            lightClientRequest.SendCommand("ZADD board 20 b");
-            lightClientRequest.SendCommand("ZADD board 30 c");
-            lightClientRequest.SendCommand("ZADD board 40 d");
-            lightClientRequest.SendCommand("ZADD board 50 e");
-            lightClientRequest.SendCommand("ZADD board 60 f");
+            var response = lightClientRequest.SendCommand("ZADD board 10 a 20 b 30 c 40 d 50 e 60 f");
 
             // get a reverse range by score order
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 0", 7);
@@ -4282,8 +4270,18 @@ namespace Garnet.test
             expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
+            // Test LIMITs
             response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 45 LIMIT 0 1", 2);
             expectedResponse = "*1\r\n$1\r\nf\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board 70 45 LIMIT -1 1");
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Exclusions should be reversed too
+            response = lightClientRequest.SendCommand("ZREVRANGEBYSCORE board +inf (40", 3);
+            expectedResponse = "*2\r\n$1\r\nf\r\n$1\r\ne\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -5093,6 +5091,7 @@ namespace Garnet.test
         [TestCase("ZINTERCARD 2 zset1 zset2", 2, Description = "Basic intersection cardinality")]
         [TestCase("ZINTERCARD 3 zset1 zset2 zset3", 1, Description = "Three-way intersection cardinality")]
         [TestCase("ZINTERCARD 2 zset1 zset2 LIMIT 1", 1, Description = "With limit")]
+        [TestCase("ZINTERCARD 2 zset1 zset2 LIMIT 0", 2, Description = "With unlimited limit")]
         public void CanDoZInterCard(string command, int expectedCount)
         {
             using var lightClientRequest = TestUtils.CreateRequest();

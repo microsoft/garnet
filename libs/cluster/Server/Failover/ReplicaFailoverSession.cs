@@ -19,41 +19,9 @@ namespace Garnet.cluster
         GarnetClient primaryClient = null;
 
         /// <summary>
-        /// Set to true to re-use established gossip connections for failover.
-        /// Note connection might abruptly close due to timeout.
-        /// Increase gossip-delay to avoid shutting down connections prematurely during a failover.
-        /// </summary>
-        bool useGossipConnections = false;
-
-        /// <summary>
         /// Send page size for GarnetClient
         /// </summary>
         const int sendPageSize = 1 << 17;
-
-        /// <summary>
-        /// Helper method to re-use gossip connection to perform the failover
-        /// </summary>
-        /// <param name="nodeId">Node-id to use for search the connection array</param>
-        /// <returns></returns>
-        /// <exception cref="GarnetException"></exception>
-        private async Task<GarnetClient> GetOrAddConnectionAsync(string nodeId)
-        {
-            _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out var gsn);
-
-            var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
-            while (!clusterProvider.clusterManager.clusterConnectionStore.GetOrAdd(clusterProvider, endpoint, clusterProvider.serverOptions.TlsOptions, nodeId, out gsn, logger: logger))
-                _ = System.Threading.Thread.Yield();
-
-            if (gsn == null)
-            {
-                logger?.LogWarning("TryMeet: Could not establish connection to remote node [{nodeId} {endpoint}] failed", nodeId, endpoint);
-                return null;
-            }
-
-            await gsn.InitializeAsync();
-
-            return gsn.Client;
-        }
 
         /// <summary>
         /// Helper method to establish connection towards remote node
@@ -80,8 +48,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                if (!useGossipConnections)
-                    client?.Dispose();
+                client?.Dispose();
                 logger?.LogError(ex, "ReplicaFailoverSession.CreateConnection");
                 return null;
             }
@@ -93,9 +60,7 @@ namespace Garnet.cluster
         /// <param name="nodeId"></param>
         /// <returns></returns>
         private Task<GarnetClient> GetConnectionAsync(string nodeId)
-        {
-            return useGossipConnections ? GetOrAddConnectionAsync(nodeId) : CreateConnectionAsync(nodeId);
-        }
+            => CreateConnectionAsync(nodeId);
 
         /// <summary>
         /// Send stop writes message to PRIMARY
@@ -155,7 +120,7 @@ namespace Garnet.cluster
             try
             {
                 // Make replica syncing unavailable by setting recovery flag
-                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover))
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterFailover, upgradeLock: false))
                 {
                     logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     return false;
@@ -181,7 +146,7 @@ namespace Garnet.cluster
             finally
             {
                 // Disable recovering as now this node has become a primary or failed in its attempt earlier
-                if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
+                if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
 
             return true;
@@ -250,8 +215,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (!useGossipConnections)
-                    client?.Dispose();
+                client?.Dispose();
             }
         }
 

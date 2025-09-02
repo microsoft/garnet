@@ -127,7 +127,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
         {
-            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            // Check if checkpoint already in progress
+            if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
 
             var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(

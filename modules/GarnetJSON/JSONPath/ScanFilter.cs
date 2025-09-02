@@ -29,13 +29,9 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON node.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of matching JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
-            if (Name is null)
-            {
-                yield return current;
-            }
-
             // Inspired by https://stackoverflow.com/a/30441479/7331395
             IEnumerator? enumerator = null;
             if (current is JsonArray arr)
@@ -63,6 +59,7 @@ namespace GarnetJSON.JSONPath
                             {
                                 yield return element;
                             }
+
                             stack.Push(enumerator);
                         }
                         else if (enumerator is IEnumerator<KeyValuePair<string, JsonNode?>> objectEnumerator)
@@ -73,6 +70,7 @@ namespace GarnetJSON.JSONPath
                             {
                                 yield return element.Value;
                             }
+
                             stack.Push(enumerator);
                         }
 
@@ -104,7 +102,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The enumerable of current JSON nodes.</param>
         /// <param name="settings">The settings for JSON selection.</param>
         /// <returns>An enumerable of matching JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             return current.SelectMany(x => ExecuteFilter(root, x, settings));
         }

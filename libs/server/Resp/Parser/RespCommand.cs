@@ -310,6 +310,7 @@ namespace Garnet.server
         ACL,
         ACL_CAT,
         ACL_DELUSER,
+        ACL_GENPASS,
         ACL_GETUSER,
         ACL_LIST,
         ACL_LOAD,
@@ -429,6 +430,7 @@ namespace Garnet.server
             // ACL
             RespCommand.ACL_CAT,
             RespCommand.ACL_DELUSER,
+            RespCommand.ACL_GENPASS,
             RespCommand.ACL_GETUSER,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
@@ -2499,6 +2501,10 @@ namespace Garnet.server
                 {
                     return RespCommand.ACL_DELUSER;
                 }
+                else if (subCommand.SequenceEqual(CmdStrings.GENPASS))
+                {
+                    return RespCommand.ACL_GENPASS;
+                }
                 else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
                 {
                     return RespCommand.ACL_GETUSER;
@@ -2832,7 +2838,7 @@ namespace Garnet.server
             var ptr = recvBufferPtr + readHead;
 
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
-            if (MakeUpperCase(ptr))
+            if (MakeUpperCase(ptr, bytesRead - readHead))
             {
                 cmd = FastParseCommand(out count);
                 if (cmd != RespCommand.NONE)

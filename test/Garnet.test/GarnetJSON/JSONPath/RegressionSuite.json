@@ -1,0 +1,5344 @@
+{
+  "queries": [
+    {
+      "id": "array_slice",
+      "selector": "$[1:3]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "second",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_on_exact_match",
+      "selector": "$[0:5]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_on_non_overlapping_array",
+      "selector": "$[7:10]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_on_object",
+      "selector": "$[1:3]",
+      "document": {
+        ":": 42,
+        "more": "string",
+        "a": 1,
+        "b": 2,
+        "c": 3,
+        "1:3": "nice"
+      },
+      "consensus": []
+    },
+    {
+      "id": "array_slice_on_partially_overlapping_array",
+      "selector": "$[1:10]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "second",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_large_number_for_end",
+      "selector": "$[2:113667776004]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_large_number_for_end_and_negative_step",
+      "selector": "$[2:-113667776004:-1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_large_number_for_start",
+      "selector": "$[-113667776004:2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "array_slice_with_large_number_for_start_end_negative_step",
+      "selector": "$[113667776004:2:-1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_negative_start_and_end_and_range_of_-1",
+      "selector": "$[-4:-5]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_negative_start_and_end_and_range_of_0",
+      "selector": "$[-4:-4]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_negative_start_and_end_and_range_of_1",
+      "selector": "$[-4:-3]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [
+        4
+      ]
+    },
+    {
+      "id": "array_slice_with_negative_start_and_positive_end_and_range_of_-1",
+      "selector": "$[-4:1]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_negative_start_and_positive_end_and_range_of_0",
+      "selector": "$[-4:2]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_negative_start_and_positive_end_and_range_of_1",
+      "selector": "$[-4:3]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [
+        4
+      ]
+    },
+    {
+      "id": "array_slice_with_negative_step",
+      "selector": "$[3:0:-2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_negative_step_and_start_greater_than_end",
+      "selector": "$[0:3:-2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_negative_step_on_partially_overlapping_array",
+      "selector": "$[7:3:-1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_negative_step_only",
+      "selector": "$[::-2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_open_end",
+      "selector": "$[1:]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_open_end_and_negative_step",
+      "selector": "$[3::-1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_open_start",
+      "selector": "$[:2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "array_slice_with_open_start_and_end",
+      "selector": "$[:]",
+      "document": [
+        "first",
+        "second"
+      ],
+      "consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "array_slice_with_open_start_and_end_and_step_empty",
+      "selector": "$[::]",
+      "document": [
+        "first",
+        "second"
+      ],
+      "consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "array_slice_with_open_start_and_end_on_object",
+      "selector": "$[:]",
+      "document": {
+        ":": 42,
+        "more": "string"
+      },
+      "consensus": []
+    },
+    {
+      "id": "array_slice_with_open_start_and_negative_step",
+      "selector": "$[:2:-1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_positive_start_and_negative_end_and_range_of_-1",
+      "selector": "$[3:-4]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_positive_start_and_negative_end_and_range_of_0",
+      "selector": "$[3:-3]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_positive_start_and_negative_end_and_range_of_1",
+      "selector": "$[3:-2]",
+      "document": [
+        2,
+        "a",
+        4,
+        5,
+        100,
+        "nice"
+      ],
+      "consensus": [
+        5
+      ]
+    },
+    {
+      "id": "array_slice_with_range_of_-1",
+      "selector": "$[2:1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_range_of_0",
+      "selector": "$[0:0]",
+      "document": [
+        "first",
+        "second"
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "array_slice_with_range_of_1",
+      "selector": "$[0:1]",
+      "document": [
+        "first",
+        "second"
+      ],
+      "consensus": [
+        "first"
+      ]
+    },
+    {
+      "id": "array_slice_with_start_-1_and_open_end",
+      "selector": "$[-1:]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_start_-2_and_open_end",
+      "selector": "$[-2:]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "second",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_start_large_negative_number_and_open_end_on_short_array",
+      "selector": "$[-4:]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "first",
+        "second",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_step",
+      "selector": "$[0:3:2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_step_0",
+      "selector": "$[0:3:0]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "array_slice_with_step_1",
+      "selector": "$[0:3:1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "second",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_step_and_leading_zeros",
+      "selector": "$[010:024:010]",
+      "document": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ],
+      "consensus": [
+        10,
+        20
+      ]
+    },
+    {
+      "id": "array_slice_with_step_but_end_not_aligned",
+      "selector": "$[0:4:2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_step_empty",
+      "selector": "$[1:3:]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "second",
+        "third"
+      ]
+    },
+    {
+      "id": "array_slice_with_step_only",
+      "selector": "$[::2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first",
+        "third",
+        "fifth"
+      ]
+    },
+    {
+      "id": "bracket_notation",
+      "selector": "$['key']",
+      "document": {
+        "key": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_after_recursive_descent",
+      "selector": "$..[0]",
+      "document": [
+        "first",
+        {
+          "key": [
+            "first nested",
+            {
+              "more": [
+                {
+                  "nested": [
+                    "deepest",
+                    "second"
+                  ]
+                },
+                [
+                  "more",
+                  "values"
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "ordered": false,
+      "consensus": [
+        "deepest",
+        "first nested",
+        "first",
+        "more",
+        {
+          "nested": [
+            "deepest",
+            "second"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bracket_notation_on_object_without_key",
+      "selector": "$['missing']",
+      "document": {
+        "key": "value"
+      },
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_NFC_path_on_NFD_key",
+      "selector": "$['ü']",
+      "document": {
+        "ü": 42
+      },
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_dot",
+      "selector": "$['two.some']",
+      "document": {
+        "one": {
+          "key": "value"
+        },
+        "two": {
+          "some": "more",
+          "key": "other value"
+        },
+        "two.some": "42"
+      },
+      "consensus": [
+        "42"
+      ],
+      "scalar-consensus": "42"
+    },
+    {
+      "id": "bracket_notation_with_double_quotes",
+      "selector": "$[\"key\"]",
+      "document": {
+        "key": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_empty_string",
+      "selector": "$['']",
+      "document": {
+        "": 42,
+        "''": 123,
+        "\"\"": 222
+      },
+      "consensus": [
+        42
+      ],
+      "scalar-consensus": 42
+    },
+    {
+      "id": "bracket_notation_with_empty_string_doubled_quoted",
+      "selector": "$[\"\"]",
+      "document": {
+        "": 42,
+        "''": 123,
+        "\"\"": 222
+      },
+      "consensus": [
+        42
+      ],
+      "scalar-consensus": 42
+    },
+    {
+      "id": "bracket_notation_with_negative_number_on_short_array",
+      "selector": "$[-2]",
+      "document": [
+        "one element"
+      ],
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_number",
+      "selector": "$[2]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "third"
+      ],
+      "scalar-consensus": "third"
+    },
+    {
+      "id": "bracket_notation_with_number_-1",
+      "selector": "$[-1]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "third"
+      ],
+      "scalar-consensus": "third"
+    },
+    {
+      "id": "bracket_notation_with_number_-1_on_empty_array",
+      "selector": "$[-1]",
+      "document": [],
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_number_0",
+      "selector": "$[0]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": [
+        "first"
+      ],
+      "scalar-consensus": "first"
+    },
+    {
+      "id": "bracket_notation_with_number_after_dot_notation_with_wildcard_on_nested_arrays_with_different_length",
+      "selector": "$.*[1]",
+      "document": [
+        [
+          1
+        ],
+        [
+          2,
+          3
+        ]
+      ],
+      "consensus": [
+        3
+      ]
+    },
+    {
+      "id": "bracket_notation_with_number_on_object",
+      "selector": "$[0]",
+      "document": {
+        "0": "value"
+      },
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_number_on_short_array",
+      "selector": "$[1]",
+      "document": [
+        "one element"
+      ],
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_number_on_string",
+      "selector": "$[0]",
+      "document": "Hello World",
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_quoted_array_slice_literal",
+      "selector": "$[':']",
+      "document": {
+        ":": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_closing_bracket_literal",
+      "selector": "$[']']",
+      "document": {
+        "]": 42
+      },
+      "consensus": [
+        42
+      ],
+      "scalar-consensus": 42
+    },
+    {
+      "id": "bracket_notation_with_quoted_current_object_literal",
+      "selector": "$['@']",
+      "document": {
+        "@": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_dot_literal",
+      "selector": "$['.']",
+      "document": {
+        ".": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_dot_wildcard",
+      "selector": "$['.*']",
+      "document": {
+        "key": 42,
+        ".*": 1,
+        "": 10
+      },
+      "consensus": [
+        1
+      ],
+      "scalar-consensus": 1
+    },
+    {
+      "id": "bracket_notation_with_quoted_double_quote_literal",
+      "selector": "$['\"']",
+      "document": {
+        "\"": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_escaped_backslash",
+      "selector": "$['\\\\']",
+      "document": {
+        "\\": "value"
+      }
+    },
+    {
+      "id": "bracket_notation_with_quoted_escaped_single_quote",
+      "selector": "$['\\'']",
+      "document": {
+        "'": "value"
+      }
+    },
+    {
+      "id": "bracket_notation_with_quoted_number_on_object",
+      "selector": "$['0']",
+      "document": {
+        "0": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_root_literal",
+      "selector": "$['$']",
+      "document": {
+        "$": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_special_characters_combined",
+      "selector": "$[':@.\"$,*\\'\\\\']",
+      "document": {
+        ":@.\"$,*'\\": 42
+      }
+    },
+    {
+      "id": "bracket_notation_with_quoted_string_and_unescaped_single_quote",
+      "selector": "$['single'quote']",
+      "document": {
+        "single'quote": "value"
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "bracket_notation_with_quoted_union_literal",
+      "selector": "$[',']",
+      "document": {
+        ",": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_wildcard_literal",
+      "selector": "$['*']",
+      "document": {
+        "*": "value",
+        "another": "entry"
+      },
+      "ordered": false,
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "bracket_notation_with_quoted_wildcard_literal_on_object_without_key",
+      "selector": "$['*']",
+      "document": {
+        "another": "entry"
+      },
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_spaces",
+      "selector": "$[ 'a' ]",
+      "document": {
+        " a": 1,
+        "a": 2,
+        " a ": 3,
+        "a ": 4,
+        " 'a' ": 5,
+        " 'a": 6,
+        "a' ": 7,
+        " \"a\" ": 8,
+        "\"a\"": 9
+      },
+      "consensus": [
+        2
+      ],
+      "scalar-consensus": 2
+    },
+    {
+      "id": "bracket_notation_with_string_including_dot_wildcard",
+      "selector": "$['ni.*']",
+      "document": {
+        "nice": 42,
+        "ni.*": 1,
+        "mice": 100
+      },
+      "consensus": [
+        1
+      ],
+      "scalar-consensus": 1
+    },
+    {
+      "id": "bracket_notation_with_two_literals_separated_by_dot",
+      "selector": "$['two'.'some']",
+      "document": {
+        "one": {
+          "key": "value"
+        },
+        "two": {
+          "some": "more",
+          "key": "other value"
+        },
+        "two.some": "42",
+        "two'.'some": "43"
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "bracket_notation_with_two_literals_separated_by_dot_without_quotes",
+      "selector": "$[two.some]",
+      "document": {
+        "one": {
+          "key": "value"
+        },
+        "two": {
+          "some": "more",
+          "key": "other value"
+        },
+        "two.some": "42"
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "bracket_notation_with_wildcard_after_array_slice",
+      "selector": "$[0:2][*]",
+      "document": [
+        [
+          1,
+          2
+        ],
+        [
+          "a",
+          "b"
+        ],
+        [
+          0,
+          0
+        ]
+      ],
+      "consensus": [
+        1,
+        2,
+        "a",
+        "b"
+      ]
+    },
+    {
+      "id": "bracket_notation_with_wildcard_after_dot_notation_after_bracket_notation_with_wildcard",
+      "selector": "$[*].bar[*]",
+      "document": [
+        {
+          "bar": [
+            42
+          ]
+        }
+      ],
+      "consensus": [
+        42
+      ]
+    },
+    {
+      "id": "bracket_notation_with_wildcard_after_recursive_descent",
+      "selector": "$..[*]",
+      "document": {
+        "key": "value",
+        "another key": {
+          "complex": "string",
+          "primitives": [
+            0,
+            1
+          ]
+        }
+      },
+      "ordered": false,
+      "consensus": [
+        "string",
+        "value",
+        0,
+        1,
+        [
+          0,
+          1
+        ],
+        {
+          "complex": "string",
+          "primitives": [
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bracket_notation_with_wildcard_on_array",
+      "selector": "$[*]",
+      "document": [
+        "string",
+        42,
+        {
+          "key": "value"
+        },
+        [
+          0,
+          1
+        ]
+      ],
+      "consensus": [
+        "string",
+        42,
+        {
+          "key": "value"
+        },
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "bracket_notation_with_wildcard_on_empty_array",
+      "selector": "$[*]",
+      "document": [],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_wildcard_on_empty_object",
+      "selector": "$[*]",
+      "document": {},
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "bracket_notation_with_wildcard_on_null_value_array",
+      "selector": "$[*]",
+      "document": [
+        40,
+        null,
+        42
+      ],
+      "consensus": [
+        40,
+        null,
+        42
+      ]
+    },
+    {
+      "id": "bracket_notation_with_wildcard_on_object",
+      "selector": "$[*]",
+      "document": {
+        "some": "string",
+        "int": 42,
+        "object": {
+          "key": "value"
+        },
+        "array": [
+          0,
+          1
+        ]
+      },
+      "ordered": false,
+      "consensus": [
+        "string",
+        42,
+        [
+          0,
+          1
+        ],
+        {
+          "key": "value"
+        }
+      ]
+    },
+    {
+      "id": "bracket_notation_without_quotes",
+      "selector": "$[key]",
+      "document": {
+        "key": "value"
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "current_with_dot_notation",
+      "selector": "@.a",
+      "document": {
+        "a": 1
+      }
+    },
+    {
+      "id": "dot_bracket_notation",
+      "selector": "$.['key']",
+      "document": {
+        "key": "value",
+        "other": {
+          "key": [
+            {
+              "key": 42
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "dot_bracket_notation_with_double_quotes",
+      "selector": "$.[\"key\"]",
+      "document": {
+        "key": "value",
+        "other": {
+          "key": [
+            {
+              "key": 42
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "dot_bracket_notation_without_quotes",
+      "selector": "$.[key]",
+      "document": {
+        "key": "value",
+        "other": {
+          "key": [
+            {
+              "key": 42
+            }
+          ]
+        }
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "dot_notation",
+      "selector": "$.key",
+      "document": {
+        "key": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_after_array_slice",
+      "selector": "$[0:2].key",
+      "document": [
+        {
+          "key": "ey"
+        },
+        {
+          "key": "bee"
+        },
+        {
+          "key": "see"
+        }
+      ],
+      "consensus": [
+        "ey",
+        "bee"
+      ]
+    },
+    {
+      "id": "dot_notation_after_bracket_notation_after_recursive_descent",
+      "selector": "$..[1].key",
+      "document": {
+        "k": [
+          {
+            "key": "some value"
+          },
+          {
+            "key": 42
+          }
+        ],
+        "kk": [
+          [
+            {
+              "key": 100
+            },
+            {
+              "key": 200
+            },
+            {
+              "key": 300
+            }
+          ],
+          [
+            {
+              "key": 400
+            },
+            {
+              "key": 500
+            },
+            {
+              "key": 600
+            }
+          ]
+        ],
+        "key": [
+          0,
+          1
+        ]
+      },
+      "ordered": false,
+      "consensus": [
+        200,
+        42,
+        500
+      ]
+    },
+    {
+      "id": "dot_notation_after_bracket_notation_with_wildcard",
+      "selector": "$[*].a",
+      "document": [
+        {
+          "a": 1
+        },
+        {
+          "a": 1
+        }
+      ],
+      "consensus": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "dot_notation_after_bracket_notation_with_wildcard_on_one_matching",
+      "selector": "$[*].a",
+      "document": [
+        {
+          "a": 1
+        }
+      ],
+      "consensus": [
+        1
+      ]
+    },
+    {
+      "id": "dot_notation_after_bracket_notation_with_wildcard_on_some_matching",
+      "selector": "$[*].a",
+      "document": [
+        {
+          "a": 1
+        },
+        {
+          "b": 1
+        }
+      ],
+      "consensus": [
+        1
+      ]
+    },
+    {
+      "id": "dot_notation_after_filter_expression",
+      "selector": "$[?(@.id==42)].name",
+      "document": [
+        {
+          "id": 42,
+          "name": "forty-two"
+        },
+        {
+          "id": 1,
+          "name": "one"
+        }
+      ],
+      "consensus": [
+        "forty-two"
+      ]
+    },
+    {
+      "id": "dot_notation_after_recursive_descent",
+      "selector": "$..key",
+      "document": {
+        "object": {
+          "key": "value",
+          "array": [
+            {
+              "key": "something"
+            },
+            {
+              "key": {
+                "key": "russian dolls"
+              }
+            }
+          ]
+        },
+        "key": "top"
+      },
+      "ordered": false,
+      "consensus": [
+        "russian dolls",
+        "something",
+        "top",
+        "value",
+        {
+          "key": "russian dolls"
+        }
+      ]
+    },
+    {
+      "id": "dot_notation_after_recursive_descent_after_dot_notation",
+      "selector": "$.store..price",
+      "document": {
+        "store": {
+          "book": [
+            {
+              "category": "reference",
+              "author": "Nigel Rees",
+              "title": "Sayings of the Century",
+              "price": 8.95
+            },
+            {
+              "category": "fiction",
+              "author": "Evelyn Waugh",
+              "title": "Sword of Honour",
+              "price": 12.99
+            },
+            {
+              "category": "fiction",
+              "author": "Herman Melville",
+              "title": "Moby Dick",
+              "isbn": "0-553-21311-3",
+              "price": 8.99
+            },
+            {
+              "category": "fiction",
+              "author": "J. R. R. Tolkien",
+              "title": "The Lord of the Rings",
+              "isbn": "0-395-19395-8",
+              "price": 22.99
+            }
+          ],
+          "bicycle": {
+            "color": "red",
+            "price": 19.95
+          }
+        }
+      },
+      "ordered": false,
+      "consensus": [
+        12.99,
+        19.95,
+        22.99,
+        8.95,
+        8.99
+      ]
+    },
+    {
+      "id": "dot_notation_after_recursive_descent_with_extra_dot",
+      "selector": "$...key",
+      "document": {
+        "object": {
+          "key": "value",
+          "array": [
+            {
+              "key": "something"
+            },
+            {
+              "key": {
+                "key": "russian dolls"
+              }
+            }
+          ]
+        },
+        "key": "top"
+      },
+      "ordered": false
+    },
+    {
+      "id": "dot_notation_after_union",
+      "selector": "$[0,2].key",
+      "document": [
+        {
+          "key": "ey"
+        },
+        {
+          "key": "bee"
+        },
+        {
+          "key": "see"
+        }
+      ],
+      "consensus": [
+        "ey",
+        "see"
+      ]
+    },
+    {
+      "id": "dot_notation_after_union_with_keys",
+      "selector": "$['one','three'].key",
+      "document": {
+        "one": {
+          "key": "value"
+        },
+        "two": {
+          "k": "v"
+        },
+        "three": {
+          "some": "more",
+          "key": "other value"
+        }
+      },
+      "consensus": [
+        "value",
+        "other value"
+      ]
+    },
+    {
+      "id": "dot_notation_on_array",
+      "selector": "$.key",
+      "document": [
+        0,
+        1
+      ],
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_on_array_value",
+      "selector": "$.key",
+      "document": {
+        "key": [
+          "first",
+          "second"
+        ]
+      },
+      "consensus": [
+        [
+          "first",
+          "second"
+        ]
+      ],
+      "scalar-consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "dot_notation_on_array_with_containing_object_matching_key",
+      "selector": "$.id",
+      "document": [
+        {
+          "id": 2
+        }
+      ],
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_on_empty_object_value",
+      "selector": "$.key",
+      "document": {
+        "key": {}
+      },
+      "consensus": [
+        {}
+      ],
+      "scalar-consensus": {}
+    },
+    {
+      "id": "dot_notation_on_null_value",
+      "selector": "$.key",
+      "document": {
+        "key": null
+      },
+      "consensus": [
+        null
+      ],
+      "scalar-consensus": null
+    },
+    {
+      "id": "dot_notation_on_object_without_key",
+      "selector": "$.missing",
+      "document": {
+        "key": "value"
+      },
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_with_dash",
+      "selector": "$.key-dash",
+      "document": {
+        "key": 42,
+        "key-": 43,
+        "-": 44,
+        "dash": 45,
+        "-dash": 46,
+        "": 47,
+        "key-dash": "value",
+        "something": "else"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_with_double_quotes",
+      "selector": "$.\"key\"",
+      "document": {
+        "key": "value",
+        "\"key\"": 42
+      }
+    },
+    {
+      "id": "dot_notation_with_double_quotes_after_recursive_descent",
+      "selector": "$..\"key\"",
+      "document": {
+        "object": {
+          "key": "value",
+          "\"key\"": 100,
+          "array": [
+            {
+              "key": "something",
+              "\"key\"": 0
+            },
+            {
+              "key": {
+                "key": "russian dolls"
+              },
+              "\"key\"": {
+                "\"key\"": 99
+              }
+            }
+          ]
+        },
+        "key": "top",
+        "\"key\"": 42
+      },
+      "ordered": false
+    },
+    {
+      "id": "dot_notation_with_empty_path",
+      "selector": "$.",
+      "document": {
+        "key": 42,
+        "": 9001,
+        "''": "nice"
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "dot_notation_with_key_named_in",
+      "selector": "$.in",
+      "document": {
+        "in": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_with_key_named_length",
+      "selector": "$.length",
+      "document": {
+        "length": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_with_key_named_length_on_array",
+      "selector": "$.length",
+      "document": [
+        4,
+        5,
+        6
+      ],
+      "consensus": [],
+      "scalar-consensus": null,
+      "not-found-consensus": "NOT_FOUND",
+      "scalar-not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_with_key_named_null",
+      "selector": "$.null",
+      "document": {
+        "null": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_with_key_named_true",
+      "selector": "$.true",
+      "document": {
+        "true": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_with_key_root_literal",
+      "selector": "$.$",
+      "document": {
+        "$": "value"
+      }
+    },
+    {
+      "id": "dot_notation_with_non_ASCII_key",
+      "selector": "$.屬性",
+      "document": {
+        "屬性": "value"
+      },
+      "consensus": [
+        "value"
+      ],
+      "scalar-consensus": "value"
+    },
+    {
+      "id": "dot_notation_with_number",
+      "selector": "$.2",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "dot_notation_with_number_-1",
+      "selector": "$.-1",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ]
+    },
+    {
+      "id": "dot_notation_with_number_on_object",
+      "selector": "$.2",
+      "document": {
+        "2": "second",
+        "a": "first",
+        "b": "third"
+      },
+      "consensus": [
+        "second"
+      ],
+      "scalar-consensus": "second"
+    },
+    {
+      "id": "dot_notation_with_single_quotes",
+      "selector": "$.'key'",
+      "document": {
+        "key": "value",
+        "'key'": 42
+      }
+    },
+    {
+      "id": "dot_notation_with_single_quotes_after_recursive_descent",
+      "selector": "$..'key'",
+      "document": {
+        "object": {
+          "key": "value",
+          "'key'": 100,
+          "array": [
+            {
+              "key": "something",
+              "'key'": 0
+            },
+            {
+              "key": {
+                "key": "russian dolls"
+              },
+              "'key'": {
+                "'key'": 99
+              }
+            }
+          ]
+        },
+        "key": "top",
+        "'key'": 42
+      },
+      "ordered": false
+    },
+    {
+      "id": "dot_notation_with_single_quotes_and_dot",
+      "selector": "$.'some.key'",
+      "document": {
+        "some.key": 42,
+        "some": {
+          "key": "value"
+        },
+        "'some.key'": 43
+      }
+    },
+    {
+      "id": "dot_notation_with_space_padded_key",
+      "selector": "$. a ",
+      "document": {
+        " a": 1,
+        "a": 2,
+        " a ": 3,
+        "": 4
+      }
+    },
+    {
+      "id": "dot_notation_with_wildcard_after_dot_notation_after_dot_notation_with_wildcard",
+      "selector": "$.*.bar.*",
+      "document": [
+        {
+          "bar": [
+            42
+          ]
+        }
+      ],
+      "consensus": [
+        42
+      ]
+    },
+    {
+      "id": "dot_notation_with_wildcard_after_dot_notation_with_wildcard_on_nested_arrays",
+      "selector": "$.*.*",
+      "document": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          4,
+          5,
+          6
+        ]
+      ],
+      "consensus": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "id": "dot_notation_with_wildcard_after_recursive_descent",
+      "selector": "$..*",
+      "document": {
+        "key": "value",
+        "another key": {
+          "complex": "string",
+          "primitives": [
+            0,
+            1
+          ]
+        }
+      },
+      "ordered": false,
+      "consensus": [
+        "string",
+        "value",
+        0,
+        1,
+        [
+          0,
+          1
+        ],
+        {
+          "complex": "string",
+          "primitives": [
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dot_notation_with_wildcard_after_recursive_descent_on_null_value_array",
+      "selector": "$..*",
+      "document": [
+        40,
+        null,
+        42
+      ],
+      "ordered": false,
+      "consensus": [
+        40,
+        42,
+        null
+      ]
+    },
+    {
+      "id": "dot_notation_with_wildcard_after_recursive_descent_on_scalar",
+      "selector": "$..*",
+      "document": 42,
+      "ordered": false,
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_with_wildcard_on_array",
+      "selector": "$.*",
+      "document": [
+        "string",
+        42,
+        {
+          "key": "value"
+        },
+        [
+          0,
+          1
+        ]
+      ],
+      "consensus": [
+        "string",
+        42,
+        {
+          "key": "value"
+        },
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "id": "dot_notation_with_wildcard_on_empty_array",
+      "selector": "$.*",
+      "document": [],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_with_wildcard_on_empty_object",
+      "selector": "$.*",
+      "document": {},
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "dot_notation_with_wildcard_on_object",
+      "selector": "$.*",
+      "document": {
+        "some": "string",
+        "int": 42,
+        "object": {
+          "key": "value"
+        },
+        "array": [
+          0,
+          1
+        ]
+      },
+      "ordered": false,
+      "consensus": [
+        "string",
+        42,
+        [
+          0,
+          1
+        ],
+        {
+          "key": "value"
+        }
+      ]
+    },
+    {
+      "id": "dot_notation_without_dot",
+      "selector": "$a",
+      "document": {
+        "a": 1,
+        "$a": 2
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "dot_notation_without_root",
+      "selector": ".key",
+      "document": {
+        "key": "value"
+      }
+    },
+    {
+      "id": "dot_notation_without_root_and_dot",
+      "selector": "key",
+      "document": {
+        "key": "value"
+      }
+    },
+    {
+      "id": "empty",
+      "selector": "",
+      "document": {
+        "a": 42,
+        "": 21
+      }
+    },
+    {
+      "id": "filter_expression_after_dot_notation_with_wildcard_after_recursive_descent",
+      "selector": "$..*[?(@.id>2)]",
+      "document": [
+        {
+          "complext": {
+            "one": [
+              {
+                "name": "first",
+                "id": 1
+              },
+              {
+                "name": "next",
+                "id": 2
+              },
+              {
+                "name": "another",
+                "id": 3
+              },
+              {
+                "name": "more",
+                "id": 4
+              }
+            ],
+            "more": {
+              "name": "next to last",
+              "id": 5
+            }
+          }
+        },
+        {
+          "name": "last",
+          "id": 6
+        }
+      ],
+      "ordered": false
+    },
+    {
+      "id": "filter_expression_after_recursive_descent",
+      "selector": "$..[?(@.id==2)]",
+      "document": {
+        "id": 2,
+        "more": [
+          {
+            "id": 2
+          },
+          {
+            "more": {
+              "id": 2
+            }
+          },
+          {
+            "id": {
+              "id": 2
+            }
+          },
+          [
+            {
+              "id": 2
+            }
+          ]
+        ]
+      },
+      "ordered": false
+    },
+    {
+      "id": "filter_expression_on_object",
+      "selector": "$[?(@.key)]",
+      "document": {
+        "key": 42,
+        "another": {
+          "key": 1
+        }
+      }
+    },
+    {
+      "id": "filter_expression_with_addition",
+      "selector": "$[?(@.key+50==100)]",
+      "document": [
+        {
+          "key": 60
+        },
+        {
+          "key": 50
+        },
+        {
+          "key": 10
+        },
+        {
+          "key": -50
+        },
+        {
+          "key+50": 100
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_boolean_and_operator",
+      "selector": "$[?(@.key>42 && @.key<44)]",
+      "document": [
+        {
+          "key": 42
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 44
+        }
+      ],
+      "consensus": [
+        {
+          "key": 43
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_boolean_and_operator_and_value_false",
+      "selector": "$[?(@.key>0 && false)]",
+      "document": [
+        {
+          "key": 1
+        },
+        {
+          "key": 3
+        },
+        {
+          "key": "nice"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": null
+        },
+        {
+          "key": false
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": ""
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_boolean_and_operator_and_value_true",
+      "selector": "$[?(@.key>0 && true)]",
+      "document": [
+        {
+          "key": 1
+        },
+        {
+          "key": 3
+        },
+        {
+          "key": "nice"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": null
+        },
+        {
+          "key": false
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": ""
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_boolean_or_operator",
+      "selector": "$[?(@.key>43 || @.key<43)]",
+      "document": [
+        {
+          "key": 42
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 44
+        }
+      ],
+      "consensus": [
+        {
+          "key": 42
+        },
+        {
+          "key": 44
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_boolean_or_operator_and_value_false",
+      "selector": "$[?(@.key>0 || false)]",
+      "document": [
+        {
+          "key": 1
+        },
+        {
+          "key": 3
+        },
+        {
+          "key": "nice"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": null
+        },
+        {
+          "key": false
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": ""
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_boolean_or_operator_and_value_true",
+      "selector": "$[?(@.key>0 || true)]",
+      "document": [
+        {
+          "key": 1
+        },
+        {
+          "key": 3
+        },
+        {
+          "key": "nice"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": null
+        },
+        {
+          "key": false
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": ""
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_bracket_notation",
+      "selector": "$[?(@['key']==42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "some": "value"
+        }
+      ],
+      "consensus": [
+        {
+          "key": 42
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_bracket_notation_and_current_object_literal",
+      "selector": "$[?(@['@key']==42)]",
+      "document": [
+        {
+          "@key": 0
+        },
+        {
+          "@key": 42
+        },
+        {
+          "key": 42
+        },
+        {
+          "@key": 43
+        },
+        {
+          "some": "value"
+        }
+      ],
+      "consensus": [
+        {
+          "@key": 42
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_bracket_notation_with_-1",
+      "selector": "$[?(@[-1]==2)]",
+      "document": [
+        [
+          2,
+          3
+        ],
+        [
+          "a"
+        ],
+        [
+          0,
+          2
+        ],
+        [
+          2
+        ]
+      ]
+    },
+    {
+      "id": "filter_expression_with_bracket_notation_with_number",
+      "selector": "$[?(@[1]=='b')]",
+      "document": [
+        [
+          "a",
+          "b"
+        ],
+        [
+          "x",
+          "y"
+        ]
+      ],
+      "consensus": [
+        [
+          "a",
+          "b"
+        ]
+      ]
+    },
+    {
+      "id": "filter_expression_with_bracket_notation_with_number_on_object",
+      "selector": "$[?(@[1]=='b')]",
+      "document": {
+        "1": [
+          "a",
+          "b"
+        ],
+        "2": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "id": "filter_expression_with_current_object",
+      "selector": "$[?(@)]",
+      "document": [
+        "some value",
+        null,
+        "value",
+        0,
+        1,
+        -1,
+        "",
+        [],
+        {},
+        false,
+        true
+      ]
+    },
+    {
+      "id": "filter_expression_with_different_grouped_operators",
+      "selector": "$[?(@.a && (@.b || @.c))]",
+      "document": [
+        {
+          "a": true
+        },
+        {
+          "a": true,
+          "b": true
+        },
+        {
+          "a": true,
+          "b": true,
+          "c": true
+        },
+        {
+          "b": true,
+          "c": true
+        },
+        {
+          "a": true,
+          "c": true
+        },
+        {
+          "c": true
+        },
+        {
+          "b": true
+        }
+      ],
+      "consensus": [
+        {
+          "a": true,
+          "b": true
+        },
+        {
+          "a": true,
+          "b": true,
+          "c": true
+        },
+        {
+          "a": true,
+          "c": true
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_different_ungrouped_operators",
+      "selector": "$[?(@.a && @.b || @.c)]",
+      "document": [
+        {
+          "a": true,
+          "b": true
+        },
+        {
+          "a": true,
+          "b": true,
+          "c": true
+        },
+        {
+          "b": true,
+          "c": true
+        },
+        {
+          "a": true,
+          "c": true
+        },
+        {
+          "a": true
+        },
+        {
+          "b": true
+        },
+        {
+          "c": true
+        },
+        {
+          "d": true
+        },
+        {}
+      ]
+    },
+    {
+      "id": "filter_expression_with_division",
+      "selector": "$[?(@.key/10==5)]",
+      "document": [
+        {
+          "key": 60
+        },
+        {
+          "key": 50
+        },
+        {
+          "key": 10
+        },
+        {
+          "key": -50
+        },
+        {
+          "key/10": 5
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_dot_notation_with_dash",
+      "selector": "$[?(@.key-dash == 'value')]",
+      "document": [
+        {
+          "key-dash": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_dot_notation_with_number",
+      "selector": "$[?(@.2 == 'second')]",
+      "document": [
+        {
+          "2": "second",
+          "a": "first",
+          "b": "third"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_dot_notation_with_number_on_array",
+      "selector": "$[?(@.2 == 'third')]",
+      "document": [
+        [
+          "first",
+          "second",
+          "third",
+          "forth",
+          "fifth"
+        ]
+      ]
+    },
+    {
+      "id": "filter_expression_with_empty_expression",
+      "selector": "$[?()]",
+      "document": [
+        1,
+        {
+          "key": 42
+        },
+        "value",
+        null
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "filter_expression_with_equals",
+      "selector": "$[?(@.key==42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "some"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": null
+        },
+        {
+          "key": 420
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": [
+            42
+          ]
+        },
+        {
+          "key": {
+            "key": 42
+          }
+        },
+        {
+          "key": {
+            "some": 42
+          }
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_array",
+      "selector": "$[?(@.d==[\"v1\",\"v2\"])]",
+      "document": [
+        {
+          "d": [
+            "v1",
+            "v2"
+          ]
+        },
+        {
+          "d": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "d": "v1"
+        },
+        {
+          "d": "v2"
+        },
+        {
+          "d": {}
+        },
+        {
+          "d": []
+        },
+        {
+          "d": null
+        },
+        {
+          "d": -1
+        },
+        {
+          "d": 0
+        },
+        {
+          "d": 1
+        },
+        {
+          "d": "['v1','v2']"
+        },
+        {
+          "d": "['v1', 'v2']"
+        },
+        {
+          "d": "v1,v2"
+        },
+        {
+          "d": "[\"v1\", \"v2\"]"
+        },
+        {
+          "d": "[\"v1\",\"v2\"]"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_array_for_array_slice_with_range_1",
+      "selector": "$[?(@[0:1]==[1])]",
+      "document": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1
+        ],
+        [
+          2,
+          3
+        ],
+        1,
+        2
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_array_for_dot_notation_with_star",
+      "selector": "$[?(@.*==[1,2])]",
+      "document": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_array_or_equals_true",
+      "selector": "$[?(@.d==[\"v1\",\"v2\"] || (@.d == true))]",
+      "document": [
+        {
+          "d": [
+            "v1",
+            "v2"
+          ]
+        },
+        {
+          "d": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "d": true
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_array_with_single_quotes",
+      "selector": "$[?(@.d==['v1','v2'])]",
+      "document": [
+        {
+          "d": [
+            "v1",
+            "v2"
+          ]
+        },
+        {
+          "d": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "d": "v1"
+        },
+        {
+          "d": "v2"
+        },
+        {
+          "d": {}
+        },
+        {
+          "d": []
+        },
+        {
+          "d": null
+        },
+        {
+          "d": -1
+        },
+        {
+          "d": 0
+        },
+        {
+          "d": 1
+        },
+        {
+          "d": "['v1','v2']"
+        },
+        {
+          "d": "['v1', 'v2']"
+        },
+        {
+          "d": "v1,v2"
+        },
+        {
+          "d": "[\"v1\", \"v2\"]"
+        },
+        {
+          "d": "[\"v1\",\"v2\"]"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_boolean_expression_value",
+      "selector": "$[?((@.key<44)==false)]",
+      "document": [
+        {
+          "key": 42
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 44
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_false",
+      "selector": "$[?(@.key==false)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": false
+        },
+        {
+          "key": null
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_null",
+      "selector": "$[?(@.key==null)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": false
+        },
+        {
+          "key": null
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_number_for_array_slice_with_range_1",
+      "selector": "$[?(@[0:1]==1)]",
+      "document": [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          1
+        ],
+        [
+          2,
+          3
+        ],
+        1,
+        2
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_number_for_bracket_notation_with_star",
+      "selector": "$[?(@[*]==2)]",
+      "document": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_number_for_dot_notation_with_star",
+      "selector": "$[?(@.*==2)]",
+      "document": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          1
+        ],
+        [
+          2
+        ],
+        [
+          1,
+          2,
+          3
+        ],
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_number_with_fraction",
+      "selector": "$[?(@.key==-0.123e2)]",
+      "document": [
+        {
+          "key": -12.3
+        },
+        {
+          "key": -0.123
+        },
+        {
+          "key": -12
+        },
+        {
+          "key": 12.3
+        },
+        {
+          "key": 2
+        },
+        {
+          "key": "-0.123e2"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_number_with_leading_zeros",
+      "selector": "$[?(@.key==010)]",
+      "document": [
+        {
+          "key": "010"
+        },
+        {
+          "key": "10"
+        },
+        {
+          "key": 10
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 8
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_object",
+      "selector": "$[?(@.d=={\"k\":\"v\"})]",
+      "document": [
+        {
+          "d": {
+            "k": "v"
+          }
+        },
+        {
+          "d": {
+            "a": "b"
+          }
+        },
+        {
+          "d": "k"
+        },
+        {
+          "d": "v"
+        },
+        {
+          "d": {}
+        },
+        {
+          "d": []
+        },
+        {
+          "d": null
+        },
+        {
+          "d": -1
+        },
+        {
+          "d": 0
+        },
+        {
+          "d": 1
+        },
+        {
+          "d": "[object Object]"
+        },
+        {
+          "d": "{\"k\": \"v\"}"
+        },
+        {
+          "d": "{\"k\":\"v\"}"
+        },
+        "v"
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_on_array_of_numbers",
+      "selector": "$[?(@==42)]",
+      "document": [
+        0,
+        42,
+        -1,
+        41,
+        43,
+        42.0001,
+        41.9999,
+        null,
+        100
+      ],
+      "consensus": [
+        42
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_on_array_without_match",
+      "selector": "$[?(@.key==43)]",
+      "document": [
+        {
+          "key": 42
+        }
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "filter_expression_with_equals_on_object",
+      "selector": "$[?(@.key==42)]",
+      "document": {
+        "a": {
+          "key": 0
+        },
+        "b": {
+          "key": 42
+        },
+        "c": {
+          "key": -1
+        },
+        "d": {
+          "key": 41
+        },
+        "e": {
+          "key": 43
+        },
+        "f": {
+          "key": 42.0001
+        },
+        "g": {
+          "key": 41.9999
+        },
+        "h": {
+          "key": 100
+        },
+        "i": {
+          "some": "value"
+        }
+      }
+    },
+    {
+      "id": "filter_expression_with_equals_on_object_with_key_matching_query",
+      "selector": "$[?(@.id==2)]",
+      "document": {
+        "id": 2
+      },
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "filter_expression_with_equals_string",
+      "selector": "$[?(@.key==\"value\")]",
+      "document": [
+        {
+          "key": "some"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": null
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": "valuemore"
+        },
+        {
+          "key": "morevalue"
+        },
+        {
+          "key": [
+            "value"
+          ]
+        },
+        {
+          "key": {
+            "some": "value"
+          }
+        },
+        {
+          "key": {
+            "key": "value"
+          }
+        },
+        {
+          "some": "value"
+        }
+      ],
+      "consensus": [
+        {
+          "key": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_string_in_NFC",
+      "selector": "$[?(@.key==\"Motörhead\")]",
+      "document": [
+        {
+          "key": "something"
+        },
+        {
+          "key": "Motörhead"
+        },
+        {
+          "key": "motörhead"
+        },
+        {
+          "key": "Motorhead"
+        },
+        {
+          "key": "Motoörhead"
+        },
+        {
+          "key": "motoörhead"
+        }
+      ],
+      "consensus": [
+        {
+          "key": "Motörhead"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_string_with_current_object_literal",
+      "selector": "$[?(@.key==\"hi@example.com\")]",
+      "document": [
+        {
+          "key": "some"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": "hi@example.com"
+        }
+      ],
+      "consensus": [
+        {
+          "key": "hi@example.com"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_string_with_dot_literal",
+      "selector": "$[?(@.key==\"some.value\")]",
+      "document": [
+        {
+          "key": "some"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": "some.value"
+        }
+      ],
+      "consensus": [
+        {
+          "key": "some.value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_string_with_single_quotes",
+      "selector": "$[?(@.key=='value')]",
+      "document": [
+        {
+          "key": "some"
+        },
+        {
+          "key": "value"
+        }
+      ],
+      "consensus": [
+        {
+          "key": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_string_with_unicode_character_escape",
+      "selector": "$[?(@.key==\"Mot\\u00f6rhead\")]",
+      "document": [
+        {
+          "key": "something"
+        },
+        {
+          "key": "Motörhead"
+        },
+        {
+          "key": "motörhead"
+        },
+        {
+          "key": "Motorhead"
+        },
+        {
+          "key": "Motoörhead"
+        },
+        {
+          "key": "motoörhead"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_true",
+      "selector": "$[?(@.key==true)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": false
+        },
+        {
+          "key": null
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_with_path_and_path",
+      "selector": "$[?(@.key1==@.key2)]",
+      "document": [
+        {
+          "key1": 10,
+          "key2": 10
+        },
+        {
+          "key1": 42,
+          "key2": 50
+        },
+        {
+          "key1": 10
+        },
+        {
+          "key2": 10
+        },
+        {},
+        {
+          "key1": null,
+          "key2": null
+        },
+        {
+          "key1": null
+        },
+        {
+          "key2": null
+        },
+        {
+          "key1": 0,
+          "key2": 0
+        },
+        {
+          "key1": 0
+        },
+        {
+          "key2": 0
+        },
+        {
+          "key1": -1,
+          "key2": -1
+        },
+        {
+          "key1": "",
+          "key2": ""
+        },
+        {
+          "key1": false,
+          "key2": false
+        },
+        {
+          "key1": false
+        },
+        {
+          "key2": false
+        },
+        {
+          "key1": true,
+          "key2": true
+        },
+        {
+          "key1": [],
+          "key2": []
+        },
+        {
+          "key1": {},
+          "key2": {}
+        },
+        {
+          "key1": {
+            "a": 1,
+            "b": 2
+          },
+          "key2": {
+            "b": 2,
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_equals_with_root_reference",
+      "selector": "$.items[?(@.key==$.value)]",
+      "document": {
+        "value": 42,
+        "items": [
+          {
+            "key": 10
+          },
+          {
+            "key": 42
+          },
+          {
+            "key": 50
+          }
+        ]
+      },
+      "consensus": [
+        {
+          "key": 42
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_greater_than",
+      "selector": "$[?(@.key>42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_greater_than_or_equal",
+      "selector": "$[?(@.key>=42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_greater_than_string",
+      "selector": "$[?(@.key>\"VALUE\")]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "alpha"
+        },
+        {
+          "key": "ALPHA"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": "VALUE"
+        },
+        {
+          "some": "value"
+        },
+        {
+          "some": "VALUE"
+        }
+      ],
+      "consensus": [
+        {
+          "key": "alpha"
+        },
+        {
+          "key": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_in_array_of_values",
+      "selector": "$[?(@.d in [2, 3])]",
+      "document": [
+        {
+          "d": 1
+        },
+        {
+          "d": 2
+        },
+        {
+          "d": 1
+        },
+        {
+          "d": 3
+        },
+        {
+          "d": 4
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_in_current_object",
+      "selector": "$[?(2 in @.d)]",
+      "document": [
+        {
+          "d": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "d": [
+            2
+          ]
+        },
+        {
+          "d": [
+            1
+          ]
+        },
+        {
+          "d": [
+            3,
+            4
+          ]
+        },
+        {
+          "d": [
+            4,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_length_free_function",
+      "selector": "$[?(length(@) == 4)]",
+      "document": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ]
+    },
+    {
+      "id": "filter_expression_with_length_function",
+      "selector": "$[?(@.length() == 4)]",
+      "document": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "filter_expression_with_length_property",
+      "selector": "$[?(@.length == 4)]",
+      "document": [
+        [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        [
+          1,
+          2,
+          3,
+          4
+        ],
+        [
+          1,
+          2,
+          3
+        ]
+      ],
+      "consensus": []
+    },
+    {
+      "id": "filter_expression_with_less_than",
+      "selector": "$[?(@.key<42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_less_than_or_equal",
+      "selector": "$[?(@.key<=42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_local_dot_key_and_null_in_data",
+      "selector": "$[?(@.key='value')]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": "value"
+        },
+        null,
+        {
+          "key": 42
+        },
+        {
+          "some": "value"
+        }
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "filter_expression_with_multiplication",
+      "selector": "$[?(@.key*2==100)]",
+      "document": [
+        {
+          "key": 60
+        },
+        {
+          "key": 50
+        },
+        {
+          "key": 10
+        },
+        {
+          "key": -50
+        },
+        {
+          "key*2": 100
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_negation_and_equals",
+      "selector": "$[?(!(@.key==42))]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_negation_and_equals_array_or_equals_true",
+      "selector": "$[?(!(@.d==[\"v1\",\"v2\"]) || (@.d == true))]",
+      "document": [
+        {
+          "d": [
+            "v1",
+            "v2"
+          ]
+        },
+        {
+          "d": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "d": true
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_negation_and_less_than",
+      "selector": "$[?(!(@.key<42))]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "43"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": "41"
+        },
+        {
+          "key": "value"
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_negation_and_without_value",
+      "selector": "$[?(!@.key)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": false
+        },
+        {
+          "key": null
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_non_singular_existence_test",
+      "selector": "$[?(@.a.*)]",
+      "document": [
+        {
+          "a": 0
+        },
+        {
+          "a": "x"
+        },
+        {
+          "a": false
+        },
+        {
+          "a": true
+        },
+        {
+          "a": null
+        },
+        {
+          "a": []
+        },
+        {
+          "a": [
+            1
+          ]
+        },
+        {
+          "a": [
+            1,
+            2
+          ]
+        },
+        {
+          "a": {}
+        },
+        {
+          "a": {
+            "x": "y"
+          }
+        },
+        {
+          "a": {
+            "x": "y",
+            "w": "z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_not_equals",
+      "selector": "$[?(@.key!=42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "some"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": null
+        },
+        {
+          "key": 420
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": [
+            42
+          ]
+        },
+        {
+          "key": {
+            "key": 42
+          }
+        },
+        {
+          "key": {
+            "some": 42
+          }
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_not_equals_array_or_equals_true",
+      "selector": "$[?((@.d!=[\"v1\",\"v2\"]) || (@.d == true))]",
+      "document": [
+        {
+          "d": [
+            "v1",
+            "v2"
+          ]
+        },
+        {
+          "d": [
+            "a",
+            "b"
+          ]
+        },
+        {
+          "d": true
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_parent_axis_operator",
+      "selector": "$[*].bookmarks[?(@.page == 45)]^^^",
+      "document": [
+        {
+          "title": "Sayings of the Century",
+          "bookmarks": [
+            {
+              "page": 40
+            }
+          ]
+        },
+        {
+          "title": "Sword of Honour",
+          "bookmarks": [
+            {
+              "page": 35
+            },
+            {
+              "page": 45
+            }
+          ]
+        },
+        {
+          "title": "Moby Dick",
+          "bookmarks": [
+            {
+              "page": 3035
+            },
+            {
+              "page": 45
+            }
+          ]
+        }
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "filter_expression_with_regular_expression",
+      "selector": "$[?(@.name=~/hello.*/)]",
+      "document": [
+        {
+          "name": "hullo world"
+        },
+        {
+          "name": "hello world"
+        },
+        {
+          "name": "yes hello world"
+        },
+        {
+          "name": "HELLO WORLD"
+        },
+        {
+          "name": "good bye"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_regular_expression_from_member",
+      "selector": "$[?(@.name=~/@.pattern/)]",
+      "document": [
+        {
+          "name": "hullo world"
+        },
+        {
+          "name": "hello world"
+        },
+        {
+          "name": "yes hello world"
+        },
+        {
+          "name": "HELLO WORLD"
+        },
+        {
+          "name": "good bye"
+        },
+        {
+          "pattern": "hello.*"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_set_wise_comparison_to_scalar",
+      "selector": "$[?(@[*]>=4)]",
+      "document": [
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          5,
+          6
+        ]
+      ]
+    },
+    {
+      "id": "filter_expression_with_set_wise_comparison_to_set",
+      "selector": "$.x[?(@[*]>=$.y[*])]",
+      "document": {
+        "x": [
+          [
+            1,
+            2
+          ],
+          [
+            3,
+            4
+          ],
+          [
+            5,
+            6
+          ]
+        ],
+        "y": [
+          3,
+          4,
+          5
+        ]
+      }
+    },
+    {
+      "id": "filter_expression_with_single_equal",
+      "selector": "$[?(@.key=42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "some"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": null
+        },
+        {
+          "key": 420
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": [
+            42
+          ]
+        },
+        {
+          "key": {
+            "key": 42
+          }
+        },
+        {
+          "key": {
+            "some": 42
+          }
+        },
+        {
+          "some": "value"
+        }
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "filter_expression_with_subfilter",
+      "selector": "$[?(@.a[?(@.price>10)])]",
+      "document": [
+        {
+          "a": [
+            {
+              "price": 1
+            },
+            {
+              "price": 3
+            }
+          ]
+        },
+        {
+          "a": [
+            {
+              "price": 11
+            }
+          ]
+        },
+        {
+          "a": [
+            {
+              "price": 8
+            },
+            {
+              "price": 12
+            },
+            {
+              "price": 3
+            }
+          ]
+        },
+        {
+          "a": []
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_subpaths",
+      "selector": "$[?(@.a.b==3)]",
+      "document": [
+        {
+          "a": {
+            "b": 3
+          }
+        },
+        {
+          "a": {
+            "b": 2
+          }
+        }
+      ],
+      "consensus": [
+        {
+          "a": {
+            "b": 3
+          }
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_subpaths_deeply_nested",
+      "selector": "$[?(@.a.b.c==3)]",
+      "document": [
+        {
+          "a": {
+            "b": {
+              "c": 3
+            }
+          }
+        },
+        {
+          "a": 3
+        },
+        {
+          "c": 3
+        },
+        {
+          "a": {
+            "b": {
+              "c": 2
+            }
+          }
+        }
+      ],
+      "consensus": [
+        {
+          "a": {
+            "b": {
+              "c": 3
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_subtraction",
+      "selector": "$[?(@.key-50==-100)]",
+      "document": [
+        {
+          "key": 60
+        },
+        {
+          "key": 50
+        },
+        {
+          "key": 10
+        },
+        {
+          "key": -50
+        },
+        {
+          "key-50": -100
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_tautological_comparison",
+      "selector": "$[?(1==1)]",
+      "document": [
+        1,
+        3,
+        "nice",
+        true,
+        null,
+        false,
+        {},
+        [],
+        -1,
+        0,
+        ""
+      ],
+      "consensus": [
+        1,
+        3,
+        "nice",
+        true,
+        null,
+        false,
+        {},
+        [],
+        -1,
+        0,
+        ""
+      ]
+    },
+    {
+      "id": "filter_expression_with_triple_equal",
+      "selector": "$[?(@.key===42)]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "some"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": null
+        },
+        {
+          "key": 420
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": [
+            42
+          ]
+        },
+        {
+          "key": {
+            "key": 42
+          }
+        },
+        {
+          "key": {
+            "some": 42
+          }
+        },
+        {
+          "some": "value"
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_value",
+      "selector": "$[?(@.key)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": false
+        },
+        {
+          "key": null
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        }
+      ]
+    },
+    {
+      "id": "filter_expression_with_value_after_dot_notation_with_wildcard_on_array_of_objects",
+      "selector": "$.*[?(@.key)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": "value"
+        }
+      ],
+      "consensus": [],
+      "not-found-consensus": "NOT_FOUND"
+    },
+    {
+      "id": "filter_expression_with_value_after_recursive_descent",
+      "selector": "$..[?(@.id)]",
+      "document": {
+        "id": 2,
+        "more": [
+          {
+            "id": 3
+          },
+          {
+            "more": {
+              "id": 4
+            }
+          },
+          {
+            "id": {
+              "id": 5
+            }
+          },
+          [
+            {
+              "id": 6
+            }
+          ]
+        ]
+      },
+      "ordered": false
+    },
+    {
+      "id": "filter_expression_with_value_false",
+      "selector": "$[?(false)]",
+      "document": [
+        1,
+        3,
+        "nice",
+        true,
+        null,
+        false,
+        {},
+        [],
+        -1,
+        0,
+        ""
+      ]
+    },
+    {
+      "id": "filter_expression_with_value_from_recursive_descent",
+      "selector": "$[?(@..child)]",
+      "document": [
+        {
+          "key": [
+            {
+              "child": 1
+            },
+            {
+              "child": 2
+            }
+          ]
+        },
+        {
+          "key": [
+            {
+              "child": 2
+            }
+          ]
+        },
+        {
+          "key": [
+            {}
+          ]
+        },
+        {
+          "key": [
+            {
+              "something": 42
+            }
+          ]
+        },
+        {}
+      ]
+    },
+    {
+      "id": "filter_expression_with_value_null",
+      "selector": "$[?(null)]",
+      "document": [
+        1,
+        3,
+        "nice",
+        true,
+        null,
+        false,
+        {},
+        [],
+        -1,
+        0,
+        ""
+      ]
+    },
+    {
+      "id": "filter_expression_with_value_true",
+      "selector": "$[?(true)]",
+      "document": [
+        1,
+        3,
+        "nice",
+        true,
+        null,
+        false,
+        {},
+        [],
+        -1,
+        0,
+        ""
+      ]
+    },
+    {
+      "id": "filter_expression_without_parens",
+      "selector": "$[?@.key==42]",
+      "document": [
+        {
+          "key": 0
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": 41
+        },
+        {
+          "key": 43
+        },
+        {
+          "key": 42.0001
+        },
+        {
+          "key": 41.9999
+        },
+        {
+          "key": 100
+        },
+        {
+          "key": "some"
+        },
+        {
+          "key": "42"
+        },
+        {
+          "key": null
+        },
+        {
+          "key": 420
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        },
+        {
+          "key": [
+            42
+          ]
+        },
+        {
+          "key": {
+            "key": 42
+          }
+        },
+        {
+          "key": {
+            "some": 42
+          }
+        },
+        {
+          "some": "value"
+        }
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "filter_expression_without_value",
+      "selector": "$[?(@.key)]",
+      "document": [
+        {
+          "some": "some value"
+        },
+        {
+          "key": true
+        },
+        {
+          "key": false
+        },
+        {
+          "key": null
+        },
+        {
+          "key": "value"
+        },
+        {
+          "key": ""
+        },
+        {
+          "key": 0
+        },
+        {
+          "key": 1
+        },
+        {
+          "key": -1
+        },
+        {
+          "key": 42
+        },
+        {
+          "key": {}
+        },
+        {
+          "key": []
+        }
+      ]
+    },
+    {
+      "id": "function_sum",
+      "selector": "$.data.sum()",
+      "document": {
+        "data": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "parens_notation",
+      "selector": "$(key,more)",
+      "document": {
+        "key": 1,
+        "some": 2,
+        "more": 3
+      },
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "recursive_descent",
+      "selector": "$..",
+      "document": [
+        {
+          "a": {
+            "b": "c"
+          }
+        },
+        [
+          0,
+          1
+        ]
+      ],
+      "ordered": false,
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "recursive_descent_after_dot_notation",
+      "selector": "$.key..",
+      "document": {
+        "some key": "value",
+        "key": {
+          "complex": "string",
+          "primitives": [
+            0,
+            1
+          ]
+        }
+      },
+      "ordered": false,
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "recursive_descent_on_nested_arrays",
+      "selector": "$..*",
+      "document": [
+        [
+          0
+        ],
+        [
+          1
+        ]
+      ],
+      "consensus": [
+        [
+          0
+        ],
+        [
+          1
+        ],
+        0,
+        1
+      ]
+    },
+    {
+      "id": "root",
+      "selector": "$",
+      "document": {
+        "key": "value",
+        "another key": {
+          "complex": [
+            "a",
+            1
+          ]
+        }
+      },
+      "consensus": [
+        {
+          "another key": {
+            "complex": [
+              "a",
+              1
+            ]
+          },
+          "key": "value"
+        }
+      ],
+      "scalar-consensus": {
+        "another key": {
+          "complex": [
+            "a",
+            1
+          ]
+        },
+        "key": "value"
+      }
+    },
+    {
+      "id": "root_on_scalar",
+      "selector": "$",
+      "document": 42,
+      "consensus": [
+        42
+      ],
+      "scalar-consensus": 42
+    },
+    {
+      "id": "root_on_scalar_false",
+      "selector": "$",
+      "document": false,
+      "consensus": [
+        false
+      ],
+      "scalar-consensus": false
+    },
+    {
+      "id": "root_on_scalar_true",
+      "selector": "$",
+      "document": true,
+      "consensus": [
+        true
+      ],
+      "scalar-consensus": true
+    },
+    {
+      "id": "script_expression",
+      "selector": "$[(@.length-1)]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": "NOT_SUPPORTED"
+    },
+    {
+      "id": "union",
+      "selector": "$[0,1]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "union_with_duplication_from_array",
+      "selector": "$[0,0]",
+      "document": [
+        "a"
+      ],
+      "consensus": [
+        "a",
+        "a"
+      ]
+    },
+    {
+      "id": "union_with_duplication_from_object",
+      "selector": "$['a','a']",
+      "document": {
+        "a": 1
+      },
+      "consensus": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "union_with_filter",
+      "selector": "$[?(@.key<3),?(@.key>6)]",
+      "document": [
+        {
+          "key": 1
+        },
+        {
+          "key": 8
+        },
+        {
+          "key": 3
+        },
+        {
+          "key": 10
+        },
+        {
+          "key": 7
+        },
+        {
+          "key": 2
+        },
+        {
+          "key": 6
+        },
+        {
+          "key": 4
+        }
+      ]
+    },
+    {
+      "id": "union_with_keys",
+      "selector": "$['key','another']",
+      "document": {
+        "key": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value",
+        "entry"
+      ]
+    },
+    {
+      "id": "union_with_keys_after_array_slice",
+      "selector": "$[:]['c','d']",
+      "document": [
+        {
+          "c": "cc1",
+          "d": "dd1",
+          "e": "ee1"
+        },
+        {
+          "c": "cc2",
+          "d": "dd2",
+          "e": "ee2"
+        }
+      ],
+      "consensus": [
+        "cc1",
+        "dd1",
+        "cc2",
+        "dd2"
+      ]
+    },
+    {
+      "id": "union_with_keys_after_bracket_notation",
+      "selector": "$[0]['c','d']",
+      "document": [
+        {
+          "c": "cc1",
+          "d": "dd1",
+          "e": "ee1"
+        },
+        {
+          "c": "cc2",
+          "d": "dd2",
+          "e": "ee2"
+        }
+      ],
+      "consensus": [
+        "cc1",
+        "dd1"
+      ]
+    },
+    {
+      "id": "union_with_keys_after_dot_notation_with_wildcard",
+      "selector": "$.*['c','d']",
+      "document": [
+        {
+          "c": "cc1",
+          "d": "dd1",
+          "e": "ee1"
+        },
+        {
+          "c": "cc2",
+          "d": "dd2",
+          "e": "ee2"
+        }
+      ],
+      "consensus": [
+        "cc1",
+        "dd1",
+        "cc2",
+        "dd2"
+      ]
+    },
+    {
+      "id": "union_with_keys_after_recursive_descent",
+      "selector": "$..['c','d']",
+      "document": [
+        {
+          "c": "cc1",
+          "d": "dd1",
+          "e": "ee1"
+        },
+        {
+          "c": "cc2",
+          "child": {
+            "d": "dd2"
+          }
+        },
+        {
+          "c": "cc3"
+        },
+        {
+          "d": "dd4"
+        },
+        {
+          "child": {
+            "c": "cc5"
+          }
+        }
+      ],
+      "ordered": false,
+      "consensus": [
+        "cc1",
+        "cc2",
+        "cc3",
+        "cc5",
+        "dd1",
+        "dd2",
+        "dd4"
+      ]
+    },
+    {
+      "id": "union_with_keys_on_object_without_key",
+      "selector": "$['missing','key']",
+      "document": {
+        "key": "value",
+        "another": "entry"
+      },
+      "consensus": [
+        "value"
+      ]
+    },
+    {
+      "id": "union_with_numbers_in_decreasing_order",
+      "selector": "$[4,1]",
+      "document": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "consensus": [
+        5,
+        2
+      ]
+    },
+    {
+      "id": "union_with_repeated_matches_after_dot_notation_with_wildcard",
+      "selector": "$.*[0,:5]",
+      "document": {
+        "a": [
+          "string",
+          null,
+          true
+        ],
+        "b": [
+          false,
+          "string",
+          5.4
+        ]
+      }
+    },
+    {
+      "id": "union_with_slice_and_number",
+      "selector": "$[1:3,4]",
+      "document": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "id": "union_with_spaces",
+      "selector": "$[ 0 , 1 ]",
+      "document": [
+        "first",
+        "second",
+        "third"
+      ],
+      "consensus": [
+        "first",
+        "second"
+      ]
+    },
+    {
+      "id": "union_with_wildcard_and_number",
+      "selector": "$[*,1]",
+      "document": [
+        "first",
+        "second",
+        "third",
+        "forth",
+        "fifth"
+      ],
+      "consensus": "NOT_SUPPORTED"
+    }
+  ]
+}

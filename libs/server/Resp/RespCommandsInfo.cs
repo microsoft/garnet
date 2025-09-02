@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text.Json.Serialization;
@@ -14,6 +15,37 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Represents a simplified version of RESP command's information
+    /// </summary>
+    public struct SimpleRespCommandInfo
+    {
+        /// <summary>
+        /// Command Arity
+        /// </summary>
+        public sbyte Arity;
+
+        /// <summary>
+        /// If command is allowed in a transaction context
+        /// </summary>
+        public bool AllowedInTxn;
+
+        /// <summary>
+        /// If command has sub-commands
+        /// </summary>
+        public bool IsParent;
+
+        /// <summary>
+        /// If command is a sub-command
+        /// </summary>
+        public bool IsSubCommand;
+
+        /// <summary>
+        /// Default SimpleRespCommandInfo
+        /// </summary>
+        public static SimpleRespCommandInfo Default = new();
+    }
+
     /// <summary>
     /// Represents a RESP command's information
     /// </summary>
@@ -96,6 +128,7 @@ namespace Garnet.server
         public RespCommandsInfo Parent { get; set; }
 
         private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
+        private const string UnknownCommandName = "UNKNOWN";
 
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
@@ -107,6 +140,7 @@ namespace Garnet.server
         private static IReadOnlySet<string> AllRespCommandNames = null;
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
         private static IReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>> AclCommandInfo = null;
+        private static SimpleRespCommandInfo[] SimpleRespCommandsInfo = null;
 
         private static RespCommandsInfo[] FastBasicRespCommandsInfo = null;
 
@@ -154,6 +188,26 @@ namespace Garnet.server
                 }
             }
 
+            var tmpSimpleRespCommandInfo = new SimpleRespCommandInfo[(int)RespCommandExtensions.LastValidCommand + 1];
+            for (var cmdId = (int)RespCommandExtensions.FirstReadCommand; cmdId < tmpSimpleRespCommandInfo.Length; cmdId++)
+            {
+                if (!tmpFlattenedRespCommandsInfo.TryGetValue((RespCommand)cmdId, out var cmdInfo))
+                {
+                    tmpSimpleRespCommandInfo[cmdId] = SimpleRespCommandInfo.Default;
+                    continue;
+                }
+
+                var arity = cmdInfo.Arity;
+
+                // Verify that arity is in the signed byte range (-128 to 127)
+                Debug.Assert(arity <= sbyte.MaxValue && arity >= sbyte.MinValue);
+
+                tmpSimpleRespCommandInfo[cmdId].Arity = (sbyte)arity;
+                tmpSimpleRespCommandInfo[cmdId].AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
+                tmpSimpleRespCommandInfo[cmdId].IsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
+                tmpSimpleRespCommandInfo[cmdId].IsSubCommand = cmdInfo.Parent != null;
+            }
+
             var tmpAllSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             var tmpExternalSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in tmpAllRespCommandsInfo)
@@ -177,6 +231,7 @@ namespace Garnet.server
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. AllRespCommandsInfo.Keys]);
             ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. ExternalRespCommandsInfo.Keys]);
             FlattenedRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpFlattenedRespCommandsInfo);
+            SimpleRespCommandsInfo = tmpSimpleRespCommandInfo;
 
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
@@ -357,6 +412,37 @@ namespace Garnet.server
             respSubCommandsInfo = externalOnly ? ExternalRespSubCommandsInfo : AllRespSubCommandsInfo;
             return true;
         }
+
+        /// <summary>
+        /// Gets command's simplified info
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="cmdInfo">Arity</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if valid command</returns>
+        public static bool TryGetSimpleRespCommandInfo(RespCommand cmd, out SimpleRespCommandInfo cmdInfo, ILogger logger = null)
+        {
+            cmdInfo = SimpleRespCommandInfo.Default;
+
+            if (!IsInitialized && !TryInitialize(logger))
+                return false;
+
+            var cmdId = (ushort)cmd;
+            if (cmdId >= SimpleRespCommandsInfo.Length)
+                return false;
+
+            cmdInfo = SimpleRespCommandsInfo[cmdId];
+            return true;
+        }
+
+        /// <summary>
+        /// Gets command's name
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Command name</returns>
+        public static string GetRespCommandName(RespCommand cmd, ILogger logger = null)
+            => TryGetRespCommandInfo(cmd, out var commandInfo, logger: logger) ? commandInfo.Name : UnknownCommandName;
 
         /// <summary>
         /// Serializes the current object to RESP format
