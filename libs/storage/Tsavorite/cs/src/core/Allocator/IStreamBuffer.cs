@@ -23,8 +23,8 @@ namespace Tsavorite.core
         /// </summary>
         internal const int DiskReadForceOverflowSize = 1 * 1024 * 1024;
 
-        /// <summary>The size of the write buffer used for writing data to the disk. Must be a sector multiple.</summary>
-        internal const int DiskWriteBufferSize = 4 * 1024 * 1024;
+        /// <summary>The size of the buffer used for writing data to and reading it from the disk. Must be a sector multiple.</summary>
+        internal const int PageBufferSize = 1 << LogSettings.kMinSegmentSizeBits;
 
         /// <summary>Initial IO size to read.</summary>
         internal static int InitialIOSize => Environment.SystemPageSize;
@@ -51,11 +51,6 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This implements the standard Stream functionality, called from the Value Serializer</remarks>
         void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// The Flush operation has completed. Flush any partial buffer contents to the storage or network and ensure the original callback is called.
-        /// </summary>
-        void OnFlushComplete(DeviceIOCompletionCallback originalCallback, object originalContext);
 
         /// <summary>
         /// Read more bytes from the disk or network, up to <paramref name="destinationSpan.Length"/>, and store in the buffer. It may not read all bytes

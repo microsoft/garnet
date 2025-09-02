@@ -520,8 +520,8 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
+                    // If shouldUpdateEtag != inputHeaderHasEtag, then either there is one that nextUpdate will remove, or there isn't one and nextUpdate will add it.
+                    shouldUpdateEtag = inputHeaderHasEtag;
                     if (inputHeaderHasEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;

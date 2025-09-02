@@ -218,10 +218,10 @@ namespace Tsavorite.test
         {
             Thirty = 30,
             OneK = 1024,
-            HalfBuffer = IStreamBuffer.DiskWriteBufferSize / 2,
-            OneBuffer = IStreamBuffer.DiskWriteBufferSize,
-            ThreeHalfBuffer = (IStreamBuffer.DiskWriteBufferSize / 2) * 3,
-            TwoBuffer = IStreamBuffer.DiskWriteBufferSize * 2
+            HalfBuffer = IStreamBuffer.PageBufferSize / 2,
+            OneBuffer = IStreamBuffer.PageBufferSize,
+            ThreeHalfBuffer = (IStreamBuffer.PageBufferSize / 2) * 3,
+            TwoBuffer = IStreamBuffer.PageBufferSize * 2
         }
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
@@ -280,7 +280,7 @@ namespace Tsavorite.test
             using var session = store.NewSession<TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var bContext = session.BasicContext;
 
-            var valueSize = IStreamBuffer.DiskWriteBufferSize / 2;
+            var valueSize = IStreamBuffer.PageBufferSize / 2;
             const int numRec = 5;
             var valueBuffer = new byte[valueSize * numRec];
             new Span<byte>(valueBuffer).Fill(0x42);

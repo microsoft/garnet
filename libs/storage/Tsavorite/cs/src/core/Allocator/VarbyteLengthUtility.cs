@@ -21,14 +21,14 @@ namespace Tsavorite.core
     public static unsafe class VarbyteLengthUtility
     {
         // Indicator bits for version and varlen int. Since the record is always aligned to 8 bytes, we can use long operations (on values only in
-        // the low byte) which are faster than byte or int.
+        // the low byte) which are faster than byte or int. 
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
-        // The top 3 bytes are Indicator metadata
-        const long kVersionBitMask = 7 << 6;        // 2 bits for version; currently not checked and may be repurposed
-        const long CurrentVersion = 0 << 6;         // Initial version is 0; shift will always be 6
+        // The top 3 bits are Indicator metadata
+        const long kVersionBitMask = 7 << 6;            // 2 bits for version; currently not checked and may be repurposed
+        const long CurrentVersion = 0 << 6;             // Initial version is 0; shift will always be 6
 
         // These share the same bit: HasFiller is only in-memory, and IsChunked is only on-disk.
-        const long kIsChunkedValueBitMask = 1 << 5; // 1 bit for chunked value indicator
+        const long kIsChunkedValueBitMask = 1 << 5;     // 1 bit for chunked value indicator
         internal const long kHasFillerBitMask = 1 << 5; // 1 bit for chunked value indicator
 
         // The bottom 5 bits are actual length bytecounts
@@ -52,6 +52,11 @@ namespace Tsavorite.core
         /// </summary>
         const long kValueLengthBitMask = 7;
 #pragma warning restore IDE1006 // Naming Styles
+
+        /// <summary>The maximum number of key length bytes in the in-memory single-long word representation. Anything over this becomes overflow.</summary>
+        internal const int MaxKeyLengthBytesInWord = 3;
+        /// <summary>The maximum number of value length bytes in the in-memory single-long word representation. Anything over this becomes overflow.</summary>
+        internal const int MaxValueLengthBytesInWord = 4;
 
         /// <summary>Version of the variable-length byte encoding for key and value lengths. There is no version info for <see cref="RecordInfo.RecordIsInline"/>
         /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>

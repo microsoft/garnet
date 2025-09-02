@@ -69,6 +69,11 @@ namespace Tsavorite.core
         Elided,
 
         /// <summary>
+        /// Record expiration
+        /// </summary>
+        Expired,
+
+        /// <summary>
         /// A page was evicted from the in-memory portion of the main log, or from the readcache.
         /// </summary>
         PageEviction

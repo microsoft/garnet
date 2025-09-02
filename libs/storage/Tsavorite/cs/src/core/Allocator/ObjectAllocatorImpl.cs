@@ -2,12 +2,14 @@
 // Licensed under the MIT license.
 
 //#define READ_WRITE
+#define TRACE_EXPANSION
 
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
@@ -246,6 +248,11 @@ namespace Tsavorite.core
 
         internal override void PatchExpandedAddresses(long closeStartAddress, long closeEndAddress, TsavoriteBase storeBase)
         {
+            // If we are closing the first record, initialize ClosedDiskTailOffset. Note that only the first in-memory page has the invalid header, but all on-disk pages
+            // have a DiskPageHeader. The on-disk address is essentially the physical address, and accounts for the growth due to both DiskPageHeader and key/value expansion.
+            if (closeStartAddress == GetFirstValidLogicalAddressOnPage(0))
+                _ = MonotonicUpdate(ref ClosedDiskTailOffset, ClosedDiskTailOffset + DiskPageHeader.Size, out _);
+
             // Scan forward to process each closing LogRecord and advance to the next one.
             for (var closeAddress = closeStartAddress; closeAddress < closeEndAddress; /* incremented in loop*/)
             {
@@ -272,7 +279,7 @@ namespace Tsavorite.core
                                     logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
                                     Debug.Assert((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress < BeginAddress || IsOnDisk((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress),
                                                 $"RI: Expected PrevAddress {AbsoluteAddress((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress)} to be on Disk, but wasn't");
-                                    Debug.WriteLine($"PatchAddressUpdate  RI: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(logRecord.Info.PreviousAddress)}");
+                                    TraceExpansion($"PatchAddressUpdate  RI: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(logRecord.Info.PreviousAddress)}");
                                     break;
                                 }
                             }
@@ -288,7 +295,7 @@ namespace Tsavorite.core
                     {
                         Debug.Assert((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress < BeginAddress || IsOnDisk((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress),
                                     $"HBE: Expected PrevAddress {AbsoluteAddress((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress)} to be on Disk, but wasn't");
-                        Debug.WriteLine($"PatchAddressUpdate HBE: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(hei.Address)}");
+                        TraceExpansion($"PatchAddressUpdate HBE: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(hei.Address)}");
                     }
 
                     // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
@@ -296,7 +303,7 @@ namespace Tsavorite.core
                     // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
                     // TODO is MonotonicUpdate needed? The OnPagesClosedWorker page-fragment ordering sequence should guarantee that only one thread at a time will be doing this
                     _ = MonotonicUpdate(ref ClosedDiskTailOffset, ClosedDiskTailOffset + closeLogRecord.CalculateExpansion(), out _);
-                    Debug.WriteLine($"ClosedDiskTailOffset pt 1: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
+                    TraceExpansion($"ClosedDiskTailOffset pt 1: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
                 }
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
@@ -324,13 +331,14 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-        {
-            WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize,
-                    callback, asyncResult, device);
-        }
+        /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
+        protected override CircularDiskPageWriteBuffer CreateFlushBuffers(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger)
+            => new(bufferPool, IStreamBuffer.PageBufferSize, numberOfFlushPageBuffers, device, logger);
 
-        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize,
+        protected override void WriteAsync<TContext>(CircularDiskPageWriteBuffer diskPageBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+            => WriteAsync(diskPageBuffers, flushPage, (uint)PageSize, callback, asyncResult, device);
+
+        protected override void WriteAsyncToDevice<TContext>(CircularDiskPageWriteBuffer diskPageBuffers, long startPage, long flushPage, int pageSize,
             DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -346,8 +354,7 @@ namespace Tsavorite.core
                 }
 
                 // We are writing to separate device
-                WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)pageSize,
-                        callback, asyncResult, device, flushPage, fuzzyStartLogicalAddress);
+                WriteAsync(diskPageBuffers, flushPage, (uint)pageSize, callback, asyncResult, device, fuzzyStartLogicalAddress);
             }
             finally
             {
@@ -356,9 +363,18 @@ namespace Tsavorite.core
             }
         }
 
-        private void WriteAsync<TContext>(long flushPage, ulong alignedDestinationAddress, uint numBytesToWrite,
-                        DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device, long intendedDestinationPage = -1, long fuzzyStartLogicalAddress = long.MaxValue)
+        /// <summary>
+        /// This writes data from a page (or pages) that does not need to be expanded.
+        /// </summary>
+        /// <param name="diskPageBuffers"></param>
+        /// <param name="flushPage">The allocator page to be flushed</param>
+        /// <param name="numBytesToWrite">Number of bytes to be written, based on allocator page range</param>
+        /// <param name="callback">The callback for the operation</param>
+        /// <param name="asyncResult">The callback state information, including information for the flush operation</param>
+        /// <param name="device">The device to write to</param>
+        /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
+        private void WriteAsync<TContext>(CircularDiskPageWriteBuffer diskPageBuffers, long flushPage, uint numBytesToWrite, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
+                        IDevice device, long fuzzyStartLogicalAddress = long.MaxValue)
         {
             // We flush within the DiskStreamWriteBuffer, so we do not use the asyncResult here for IO, but it has useful fields.
 
@@ -371,20 +387,42 @@ namespace Tsavorite.core
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
 
-            // TODO: If ObjectIdMap for this page is empty and FlushedDiskTailOffset is 0, we can write directly from the page to disk (with the sector-aligning pre-Read).
+            // TODO: If ObjectIdMap for this page is empty and FlushedDiskTailOffset is 0, we can write directly from the page to disk (with DiskPageHeader and DiskPageBuffer postion adjusted for DiskBufferSize).
 
-            // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries).
-            // This includes the objectId space for Overflow and Heap Objects. "Aligned" refers to sector aligned
-            int startOffset = 0, alignedStartOffset = 0, endOffset = (int)numBytesToWrite;
+            // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries),
+            // in the allocator page (including the objectId space for Overflow and Heap Objects). However, we need to align with the on-disk expanded addresses, including making
+            // sure the start logical address is aligned into the page buffer we are writing, so we cleanly align with the page buffer size and thus can put the DiskPageHeaders
+            // in the right place. So, first get the DiskPageBuffer offset of asyncResult.fromAddress, including FlushDiskTailOffset, which includes DiskPageHeader sizes. We do this
+            // DiskPageBuffer alignment regardless of whether asyncResult.partial is true; due to expansion, we can no longer assume an allocator page starts on a disk-page boundary.
+            // Note that only the first in-memory page has the invalid header, but all on-disk pages have a DiskPageHeader. The on-disk address is essentially the physical address,
+            // and accounts for the growth due to both DiskPageHeader and key/value expansion. Note: "Aligned" in this discussion refers to sector aligned (as opposed to record alignment).
+
+            // Initialize offsets into the allocator page based on full-page, then override them if partial. pageStart subtraction is needed because it offsets all logicalAddresses;
+            // we must adjust them to start at zero, then add FlushDiskTailOffset (which includes Header, Footer, and forced sector alignment on the final flush to disk of the partialflush).
+            int startOffset = 0, endOffset = (int)numBytesToWrite;
+            var pageStart = GetStartLogicalAddressOfPage(asyncResult.page);
             if (asyncResult.partial)
             {
-                // We're writing only a subset of the page, so aligned_start will be rounded down to sectorSize-aligned start position.
-                var pageStart = GetStartLogicalAddressOfPage(asyncResult.page);
+                // We're writing only a subset of the page, so align relative to page start (which is necessary due to the invalid in-memory header of page 0).
                 startOffset = (int)(asyncResult.fromAddress - pageStart);
-                alignedStartOffset = RoundDown(startOffset, sectorSize);
                 endOffset = (int)(asyncResult.untilAddress - pageStart);
                 numBytesToWrite = (uint)(endOffset - startOffset);
             }
+
+            // Initialize disk offset from logicalAddress to subtract the GetFirstValidLogicalAddressOnPage(), then ensure we are aligned to the DiskPageBuffer.
+            // Note: Partial flushes end with a sector-aligned Flush, and this is also reflected in FlushDiskTailOffset. So even if this is
+            // the first flush in this CircularDiskPageWriteBuffer, FlushedDiskTailOffset will be set so we are sector aligned for the first record.
+            var logicalAddress = asyncResult.fromAddress;
+            var bufferPosition = (int)((logicalAddress - pageStart + FlushedDiskTailOffset) & (IStreamBuffer.PageBufferSize - 1));
+
+            // Destination address is the equivalent of physicalAddress, since there is no longer a connection between logicalAddress space and disk pages in the expanded disk page space.
+            // Align destination address to the location we'll start the first write to the disk for this flush operation. This address does not have the AddressType prefix, as it is the
+            // IO address in the file.
+            var destinationAddress = AbsoluteAddress(logicalAddress) - pageStart + FlushedDiskTailOffset;
+            var alignedDestinationAddress = RoundDown(destinationAddress, sectorSize);
+
+            // Now make sure the circular buffer is consistent with bufferPosition, including if necessary updating FlushedDiskTailOffset to account for an initial DiskPageHeader.
+            var isFirstPartialFlush = diskPageBuffers.OnPartialFlushStart(bufferPosition, ref FlushedDiskTailOffset);
 
             // Hang onto local copies of the objects and page inline data, so they are kept valid even if the original page is reclaimed.
             // TODO: Should Page eviction null the ObjectIdMap, or its internal MultiLevelPageArray, vs. just clearing the objects
@@ -401,30 +439,12 @@ namespace Tsavorite.core
 
             // Object keys and values are serialized into this Stream.
             var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
-            var diskBuffer = new DiskStreamWriteBuffer(device, logger, bufferPool, IStreamBuffer.DiskWriteBufferSize, valueObjectSerializer, callback, asyncResult);
-            PinnedMemoryStream<DiskStreamWriteBuffer> pinnedMemoryStream = new(diskBuffer);
+            var diskWriter = new DiskStreamWriter(device, diskPageBuffers, valueObjectSerializer);
+            PinnedMemoryStream<DiskStreamWriter> pinnedMemoryStream = new(diskWriter);
 
             try
             {
-                if (alignedStartOffset < startOffset)
-                {
-                    // Writes must be sector-aligned and the current write would not start on a sector boundary. Read one sector of bytes back from the disk to the start of
-                    // the buffer (rather than re-serializing the start of the page; we wrote it to disk with expanded objects in a prior Flush). We'll start overwriting at
-                    // startOffset, which is somewhere in the middle of that sector. Do not read back the invalid header of page 0; we'll write it below.
-                    if (flushPage > 0 || startOffset > GetFirstValidLogicalAddressOnPage(flushPage))
-                    {
-                        using var countdownEvent = new CountdownEvent(1);
-                        PageAsyncReadResult<Empty> result = new() { handle = countdownEvent };
-                        alignedDestinationAddress += (ulong)alignedStartOffset;
-                        device.ReadAsync(alignedDestinationAddress, (IntPtr)diskBuffer.flushBuffer.memory.GetValidPointer(), (uint)sectorSize, AsyncSimpleReadPageCallback, result);
-                        result.handle.Wait();
-                        if (result.numBytesRead != (uint)sectorSize)    // Our writes should always have written at least a sector
-                            throw new TsavoriteException($"Expected number of bytes read {sectorSize}, actual {result.numBytesRead}");
-                        diskBuffer.OnInitialSectorReadComplete(startOffset - alignedStartOffset);
-                    }
-                }
-
-                diskBuffer.SetAlignedDeviceAddress(alignedDestinationAddress);
+                diskWriter.circularPageBuffers.alignedDeviceAddress = (ulong)alignedDestinationAddress;
                 valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
 
                 // AddressType consistency check
@@ -432,17 +452,19 @@ namespace Tsavorite.core
                 Debug.Assert(IsInLogMemory(asyncResult.untilAddress), "untilAddress is not marked as in Log memory");
                 Debug.Assert(fuzzyStartLogicalAddress < 0 || IsInLogMemory(fuzzyStartLogicalAddress), "fromAddress is not marked as in Log memory");
 
-                var logicalAddress = asyncResult.fromAddress;
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
 
                 if (flushPage == 0 && startOffset == AbsoluteAddress(GetFirstValidLogicalAddressOnPage(flushPage)))
                 {
                     // Write the header of page 0. This keeps the file aligned with the first logical address, and maybe we'll add something useful there.
-                    diskBuffer.Write(new ReadOnlySpan<byte>((byte*)pagePointers[flushPage % BufferSize], startOffset));
+                    diskWriter.Write(new ReadOnlySpan<byte>((byte*)pagePointers[flushPage % BufferSize], startOffset));
                 }
 
+                // We need to hang onto the last logicalAddress so we can set a flag indicating if FlushedUntilAddress had a jump due to final-sector alignment.
+                var lastLogicalAddress = logicalAddress;
                 for (var physicalAddress = (long)srcBuffer.GetValidPointer(); physicalAddress < endPhysicalAddress; /* incremented in loop */)
                 {
+                    lastLogicalAddress = logicalAddress;
                     var logRecord = new LogRecord(physicalAddress, localObjectIdMap);
 
                     // Use allocatedSize here because that is what LogicalAddress is based on.
@@ -454,16 +476,16 @@ namespace Tsavorite.core
                         // Shrink the expansion for skipped records. We still have to step over the record to get to the next one.
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
                         _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset - logRecordSize, out _);
-                        Debug.WriteLine($"FlushedDiskTailOffset pt 1: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                        TraceExpansion($"FlushedDiskTailOffset pt 1: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                     }
                     else
                     {
                         logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
-                        var prevPosition = diskBuffer.TotalWrittenLength;
+                        var prevPosition = diskWriter.circularPageBuffers.TotalWrittenLength;
 
                         // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
-                        diskBuffer.Write(in logRecord, FlushedDiskTailOffset);
-                        var streamRecordSize = diskBuffer.TotalWrittenLength - prevPosition;
+                        diskWriter.Write(in logRecord, FlushedDiskTailOffset);
+                        var streamRecordSize = diskWriter.circularPageBuffers.TotalWrittenLength - prevPosition;
 
                         var streamExpansion = streamRecordSize - logRecordSize;
                         Debug.Assert(streamExpansion % Constants.kRecordAlignment == 0, $"streamExpansion {streamExpansion} is not record-aligned (streamRecordSize {streamRecordSize})");
@@ -475,13 +497,24 @@ namespace Tsavorite.core
 
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
                         _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset + streamExpansion, out _);
-                        Debug.WriteLine($"FlushedDiskTailOffset pt 2: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                        TraceExpansion($"FlushedDiskTailOffset pt 2: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                     }
 
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
-                diskBuffer.OnFlushComplete(callback, asyncResult);
+
+                // We need to store the PartialFlushComplete forced sector alignment offset change so it can be recalculated by ClosedDiskTailOffset:
+                //   - Storing an indicator bit in the prev logRecord to tell us this happened won't work because fine-grained eviction won't have it available anymore (or we would have to store that 
+                //     information across recovery
+                //   - Similarly, storing it in the allocator-page structure won't survive recovery
+                TODO("This may cause a sector-aligning final flush that can bump FlushedDiskTailOffset. We need to reflect that in the ClosedDiskTailOffset calculations.");
+                var flushedUntilAdjustment = diskWriter.circularPageBuffers.OnPartialFlushComplete(callback, asyncResult);
+                if (flushedUntilAdjustment > 0)
+                {
+                    _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset + flushedUntilAdjustment, out _);
+                    TraceExpansion($"FlushedDiskTailOffset pt 3: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                }
             }
             finally
             {
@@ -648,10 +681,7 @@ namespace Tsavorite.core
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.GetPage(pageIndex) == null)
-                    frame.Allocate(pageIndex);
-                else
-                    frame.Clear(pageIndex);
+                frame.Initialize(pageIndex);
 
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
@@ -682,6 +712,13 @@ namespace Tsavorite.core
         internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             throw new TsavoriteException("Incremental snapshots not supported with generic allocator"); // TODO READ_WRITE
+        }
+
+        [Conditional("TRACE_EXPANSION")]
+        private void TraceExpansion(string message)
+        {
+            Debug.WriteLine(message);
+            //Console.WriteLine(message);
         }
     }
 }

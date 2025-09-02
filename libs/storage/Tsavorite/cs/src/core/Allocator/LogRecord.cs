@@ -33,6 +33,14 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         internal readonly ObjectIdMap objectIdMap;
 
+        /// <summary>The minimum number of length metadata bytes--1 indicator byte, 1 byte key length, 1 byte value length</summary>
+        internal const int MinLengthMetadataBytes = 3;
+        /// <summary>The maximum number of length metadata bytes--1 indicator byte, 3 bytes key length, 7 bytes value length</summary>
+        internal const int MaxLengthMetadataBytes = 11;
+
+        /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
+        internal const int IndicatorBytes = 1;
+
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
         /// <summary>Invalid ETag, and also the pre-incremented value</summary>
@@ -49,7 +57,7 @@ namespace Tsavorite.core
 
         internal readonly long IndicatorAddress => physicalAddress + RecordInfo.GetLength();
 
-        public readonly byte IndicatorByte => *(byte*)(physicalAddress + RecordInfo.GetLength());
+        public readonly byte IndicatorByte => *(byte*)IndicatorAddress;
 
         /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -90,9 +98,31 @@ namespace Tsavorite.core
             get
             {
                 if (!IsPinnedKey)
-                    return null;
+                    throw new TsavoriteException("PinnedKeyPointer is unavailable when Key is not pinned; use IsPinnedKey");
                 (_ /*length*/, var dataAddress) = GetKeyFieldInfo(IndicatorAddress);
                 return (byte*)dataAddress;
+            }
+        }
+
+        /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        public OverflowByteArray KeyOverflow
+        {
+            get
+            {
+                if (Info.KeyIsInline)
+                    throw new TsavoriteException("get_Overflow is unavailable when Key is inline");
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
+            }
+            set
+            {
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+
+                Debug.Assert(length == ObjectIdMap.ObjectIdSize, "Expected set_KeyOverflow to be called only at initialization from DiskLogRecord, which sets size to ObjectIdSize");
+                if (*(int*)dataAddress == ObjectIdMap.InvalidObjectId)
+                    *(int*)dataAddress = objectIdMap.Allocate();
+                objectIdMap.Set(*(int*)dataAddress, value);
+                InfoRef.SetKeyIsOverflow();
             }
         }
 
@@ -144,9 +174,31 @@ namespace Tsavorite.core
             get
             {
                 if (!IsPinnedValue)
-                    return null;
+                    throw new TsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedKey");
                 (_ /*length*/, var dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return (byte*)dataAddress;
+            }
+        }
+
+        /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Value is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        public OverflowByteArray ValueOverflow
+        {
+            get
+            {
+                if (Info.ValueIsInline)
+                    throw new TsavoriteException("get_Overflow is unavailable when Value is inline");
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
+            }
+            set
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+
+                Debug.Assert(length == ObjectIdMap.ObjectIdSize, "Expected set_ValueOverflow to be called only at initialization from DiskLogRecord, which sets size to ObjectIdSize");
+                if (*(int*)dataAddress == ObjectIdMap.InvalidObjectId)
+                    *(int*)dataAddress = objectIdMap.Allocate();
+                objectIdMap.Set(*(int*)dataAddress, value);
+                InfoRef.SetValueIsOverflow();
             }
         }
 
@@ -949,7 +1001,7 @@ namespace Tsavorite.core
             {
                 // This assumes we know SerializedSize is exact, such as after Flush(), so we disregard SerializeSizeIsExact, but must still account
                 // for having a full sizeof(int) value length in the initial value length (fortunately the intermediate chunk-continuation valueLength
-                // sizeof(int)s are already accounted for in SerializedSize).
+                // sizeof(int)s are already accounted for in SerializedSize, as are any DiskPageHeaders contained within the record space).
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 var valueObject = objectIdMap.GetHeapObject(*(int*)dataAddress);
                 var serializedSize = valueObject.SerializedSize;

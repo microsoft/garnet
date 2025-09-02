@@ -27,6 +27,9 @@ namespace Tsavorite.core
         /// <summary>The pointer to the pinned memory if <see cref="IsPinnedKey"/> is true, else null.</summary>
         byte* PinnedKeyPointer { get; }
 
+        /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is Overflow; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        OverflowByteArray KeyOverflow { get; set; }
+
         /// <summary>The value <see cref="Span{_byte_}"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
         /// <remarks>Not a ref return as it cannot be changed directly; use <see cref="LogRecord.TrySetValueSpan(ReadOnlySpan{byte}, in RecordSizeInfo)"/> instead.</remarks>
         Span<byte> ValueSpan { get; }
@@ -39,6 +42,9 @@ namespace Tsavorite.core
 
         /// <summary>The pointer to the pinned memory if <see cref="IsPinnedValue"/> is true, else null.</summary>
         byte* PinnedValuePointer { get; }
+
+        /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Value is not Overflow; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        OverflowByteArray ValueOverflow { get; set; }
 
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }

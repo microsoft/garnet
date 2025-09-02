@@ -12,7 +12,6 @@ namespace Tsavorite.core
     /// </summary>
     public abstract class StorageDeviceBase : IDevice
     {
-
         /// <summary>
         /// 
         /// </summary>
@@ -146,7 +145,7 @@ namespace Tsavorite.core
         public virtual bool Throttle() => false;
 
         /// <summary>
-        /// Write operation
+        /// Write operation; compute the segment id and call the IDevice implementation.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>
@@ -163,7 +162,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Read operation
+        /// Read operation; compute the segment id and call the IDevice implementation.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>

@@ -9,7 +9,7 @@ namespace Tsavorite.core
 {
     /// <summary>A byte[] wrapper that encodes offset from start in the first 2 bytes of the array and offset from end in the next 2 bytes.</summary>
     /// <remarks>Used primarily for sector-aligned reads directly into the overflow byte[]. The offsets are up to sector size, which is &lt;= 64k on NTFS systems.</remarks>
-    internal struct OverflowByteArray
+    public struct OverflowByteArray
     {
         /// <summary>
         /// The maximum offset from start or end allowed by our 2-byte offsets.
@@ -21,7 +21,7 @@ namespace Tsavorite.core
 
         internal readonly bool IsEmpty => Data is null;
 
-        readonly int StartOffset => Unsafe.As<byte, ushort>(ref Data[0]) + PrefixSize;
+        internal readonly int StartOffset => Unsafe.As<byte, ushort>(ref Data[0]) + PrefixSize;
 
         readonly int EndOffset => Unsafe.As<byte, ushort>(ref Data[sizeof(ushort)]);
 
@@ -67,18 +67,18 @@ namespace Tsavorite.core
             Unsafe.As<byte, ushort>(ref Data[2]) = (ushort)offsetFromEnd;
         }
 
-        internal readonly void ExtractOptionals(RecordInfo recordInfo, int valueLength, out long eTag, out long expiration)
+        internal readonly void ExtractOptionals(RecordInfo recordInfo, int valueLength, out RecordOptionals optionals)
         {
             var optionalOffset = 0;
-            eTag = expiration = 0L;
+            optionals = default;
             if (recordInfo.HasETag)
             {
-                eTag = Unsafe.As<byte, long>(ref Span.Slice(valueLength, LogRecord.ETagSize)[0]);
+                optionals.eTag = Unsafe.As<byte, long>(ref Span.Slice(valueLength, LogRecord.ETagSize)[0]);
                 optionalOffset += LogRecord.ETagSize;
             }
             if (recordInfo.HasExpiration)
             {
-                expiration = Unsafe.As<byte, long>(ref Span.Slice(valueLength + optionalOffset, LogRecord.ExpirationSize)[0]);
+                optionals.expiration = Unsafe.As<byte, long>(ref Span.Slice(valueLength + optionalOffset, LogRecord.ExpirationSize)[0]);
                 optionalOffset += LogRecord.ExpirationSize;
             }
             AdjustOffsetFromEnd(optionalOffset);

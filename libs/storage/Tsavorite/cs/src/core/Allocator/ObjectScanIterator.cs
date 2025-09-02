@@ -20,6 +20,7 @@ namespace Tsavorite.core
     {
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
+
         private readonly ObjectFrame frame;
 
         private readonly bool assumeInMemory;
@@ -49,7 +50,7 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
             if (frameSize > 0)
-                frame = new ObjectFrame(frameSize, hlogBase.PageSize);
+                frame = new ObjectFrame(hlogBase.bufferPool, frameSize, IStreamBuffer.PageBufferSize);
         }
 
         /// <summary>
@@ -64,7 +65,7 @@ namespace Tsavorite.core
             this.hlogBase = hlogBase;
             assumeInMemory = false;
             if (frameSize > 0)
-                frame = new ObjectFrame(frameSize, hlogBase.PageSize);
+                frame = new ObjectFrame(hlogBase.bufferPool, frameSize, IStreamBuffer.PageBufferSize);
         }
 
         /// <inheritdoc/>
@@ -72,8 +73,6 @@ namespace Tsavorite.core
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
             Debug.Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
-
-#if READ_WRITE // See comments in SnapToLogicalAddressBoundary regarding on-disk/physical address
 
             if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                 return false;
@@ -88,7 +87,6 @@ namespace Tsavorite.core
                 epoch?.Suspend();
                 throw;
             }
-#endif // READ_WRITE
             return true;
         }
 
@@ -166,9 +164,9 @@ namespace Tsavorite.core
             }
             else
             {
-#if READ_WRITE  // SnapToLogicalAddressBoundary(): This won't work for OA; we don't have a known "start of page".
-                // May need to just accept physicalAddress as is; perhaps add a checksum in the upper bits of the returned cursor
-
+                // TODO READ_WRITE SnapToLogicalAddressBoundary(): Cannot do on-disk address verification for OA as we don't have a known "start of page".
+                // For now we just accept physicalAddress as is. We could add a checksum in the upper bits of the returned cursor for non-secure validation.
+#if READ_WRITE
                 while (totalSizes <= offset)
                 {
                     var allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();   // SnapToLogicalAddressBoundary()
@@ -331,7 +329,7 @@ namespace Tsavorite.core
             long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
             allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();   // GetPhysicalAddressAndAllocatedSize()
             return physicalAddress;
-#else 
+#else
             return allocatedSize = 0;
 #endif // READ_WRITE
         }
@@ -355,6 +353,13 @@ namespace Tsavorite.core
         public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
 
         /// <inheritdoc/>
+        public OverflowByteArray KeyOverflow
+        {
+            get => diskLogRecord.KeyOverflow;
+            set => diskLogRecord.KeyOverflow = value;
+        }
+
+        /// <inheritdoc/>
         public Span<byte> ValueSpan => diskLogRecord.ValueSpan;
 
         /// <inheritdoc/>
@@ -365,6 +370,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+
+        /// <inheritdoc/>
+        public OverflowByteArray ValueOverflow
+        {
+            get => diskLogRecord.ValueOverflow;
+            set => diskLogRecord.ValueOverflow = value;
+        }
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;

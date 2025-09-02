@@ -94,6 +94,9 @@ namespace Tsavorite.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
+        /// <remarks>While this supports concurrent writes, the caller should try as much as possible to sequentialize the writes, as the IDevice implementation
+        ///     may require append-only behavior and thus will have to buffer. For similar reasons, do not back up and re-write; depending on the IDevice implementation,
+        ///     this may fail or be inefficient.</remarks>
         void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
@@ -110,17 +113,22 @@ namespace Tsavorite.core
         /* Direct addressing API */
 
         /// <summary>
-        /// Write to the file. The alignedSourceAddress must be pinned.
+        /// Write to the file. The alignedSourceAddress must be pinned. If inheriting from <see cref="StorageDeviceBase"/>, that provides an implementation of this that calculates the segmentId
+        /// and then invokes the overload with that segmentId.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
+        /// <remarks>While this supports concurrent writes, the caller should try as much as possible to sequentialize the writes, as the IDevice implementation
+        ///     may require append-only behavior and thus will have to buffer. For similar reasons, do not back up and re-write; depending on the IDevice implementation,
+        ///     this may fail or be inefficient.</remarks>
         void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context);
 
         /// <summary>
-        /// Read from the file. The alignedSourceAddress must be pinned.
+        /// Read from the file. The alignedSourceAddress must be pinned. If inheriting from <see cref="StorageDeviceBase"/>, that provides an implementation of this that calculates the segmentId
+        /// and then invokes the overload with that segmentId.
         /// </summary>
         /// <param name="alignedSourceAddress"></param>
         /// <param name="alignedDestinationAddress"></param>

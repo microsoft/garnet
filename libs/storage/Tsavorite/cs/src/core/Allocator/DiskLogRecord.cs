@@ -205,7 +205,7 @@ namespace Tsavorite.core
         }
 
         internal DiskLogRecord(RecordInfo recordInfo, ref SectorAlignedMemory keyBuffer, OverflowByteArray keyOverflow, ref SectorAlignedMemory valueBuffer,
-            OverflowByteArray valueOverflow, long eTag, long expiration, IHeapObject valueObject) : this()
+            OverflowByteArray valueOverflow, RecordOptionals optionals, IHeapObject valueObject) : this()
         {
             this.recordInfo = recordInfo;
             
@@ -246,8 +246,8 @@ namespace Tsavorite.core
                 valueOverflowOrObject = valueOverflow.Data;     // *not* the OverflowByteArray
                 recordInfo.SetValueIsOverflow();
             }
-            this.eTag = Info.HasETag ? eTag : LogRecord.NoETag;
-            this.expiration = Info.HasExpiration ? expiration : 0;
+            eTag = Info.HasETag ? optionals.eTag : LogRecord.NoETag;
+            expiration = Info.HasExpiration ? optionals.expiration : 0;
         }
 
         /// <summary>A ref to the record header</summary>
@@ -290,10 +290,32 @@ namespace Tsavorite.core
         public readonly byte* PinnedKeyPointer => IsPinnedKey ? keySpan.ToPointer() : null;
 
         /// <inheritdoc/>
+        public OverflowByteArray KeyOverflow
+        {
+            readonly get => !Info.KeyIsInline ? keyOverflow : throw new TsavoriteException("get_Overflow is unavailable when Key is inline");
+            set
+            {
+                keyOverflow = value;
+                InfoRef.SetKeyIsOverflow();
+            }
+        }
+
+        /// <inheritdoc/>
         public readonly bool IsPinnedValue => Info.ValueIsInline;
 
         /// <inheritdoc/>
         public readonly byte* PinnedValuePointer => IsPinnedValue ? valueSpan.ToPointer() : null;
+
+        /// <inheritdoc/>
+        public OverflowByteArray ValueOverflow
+        {
+            readonly get => Info.ValueIsOverflow ? new((byte[])valueOverflowOrObject) : throw new TsavoriteException("get_Overflow is unavailable when Value is inline or object");
+            set
+            {
+                valueOverflowOrObject = value;
+                InfoRef.SetValueIsOverflow();
+            }
+        }
 
         /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0 || keyBuffer is not null || !keyOverflow.IsEmpty;

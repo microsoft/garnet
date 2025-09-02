@@ -2185,7 +2185,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2216,7 +2216,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2245,7 +2245,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2811,7 +2811,7 @@ namespace Tsavorite.core
                     else
                     {
                         ctx.record.Return();
-                        allocator.AsyncReadRecordToMemory(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ref ctx);
+                        allocator.AsyncReadBlittableRecordToMemory(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ref ctx);
                     }
                 }
             }

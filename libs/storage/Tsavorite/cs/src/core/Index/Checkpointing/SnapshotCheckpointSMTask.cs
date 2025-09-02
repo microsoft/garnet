@@ -55,7 +55,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushPagesToDevice(
+                    store.hlogBase.AsyncFlushPagesForSnapshot(
                         startPage,
                         endPage,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,

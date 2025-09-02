@@ -276,6 +276,13 @@ namespace Tsavorite.core
         public unsafe byte* PinnedKeyPointer => CurrentIter.PinnedKeyPointer;
 
         /// <inheritdoc/>
+        public OverflowByteArray KeyOverflow
+        {
+            get => CurrentIter.KeyOverflow;
+            set => CurrentIter.KeyOverflow = value;
+        }
+
+        /// <inheritdoc/>
         public unsafe Span<byte> ValueSpan => CurrentIter.ValueSpan;
 
         /// <inheritdoc/>
@@ -286,6 +293,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public unsafe byte* PinnedValuePointer => CurrentIter.PinnedValuePointer;
+
+        /// <inheritdoc/>
+        public OverflowByteArray ValueOverflow
+        {
+            get => CurrentIter.ValueOverflow;
+            set => CurrentIter.ValueOverflow = value;
+        }
 
         /// <inheritdoc/>
         public long ETag => CurrentIter.ETag;

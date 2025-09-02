@@ -319,6 +319,13 @@ namespace Tsavorite.core
         public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
 
         /// <inheritdoc/>
+        public OverflowByteArray KeyOverflow
+        {
+            get => diskLogRecord.KeyOverflow;
+            set => diskLogRecord.KeyOverflow = value;
+        }
+
+        /// <inheritdoc/>
         public Span<byte> ValueSpan => diskLogRecord.ValueSpan;
 
         /// <inheritdoc/>
@@ -329,6 +336,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+
+        /// <inheritdoc/>
+        public OverflowByteArray ValueOverflow
+        {
+            get => diskLogRecord.ValueOverflow;
+            set => diskLogRecord.ValueOverflow = value;
+        }
 
         /// <inheritdoc/>
         public long ETag => diskLogRecord.ETag;

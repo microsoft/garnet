@@ -157,6 +157,13 @@ namespace Tsavorite.core
             return value & ~(alignment - 1);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAligned(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(long) alignment must be a power of two");
+            return (value & (alignment - 1)) == 0;
+        }
+
         /// <summary>
         /// Is type blittable
         /// </summary>

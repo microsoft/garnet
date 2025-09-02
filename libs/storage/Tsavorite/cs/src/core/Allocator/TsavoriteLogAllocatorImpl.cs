@@ -85,7 +85,7 @@ namespace Tsavorite.core
 
         internal int OverflowPageCount => freePagePool.Count;
 
-        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(CircularDiskPageWriteBuffer _ /*flushBuffers*/, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -94,7 +94,7 @@ namespace Tsavorite.core
                     asyncResult, device);
         }
 
-        protected override void WriteAsyncToDevice<TContext> (long startPage, long flushPage, int pageSize,
+        protected override void WriteAsyncToDevice<TContext> (CircularDiskPageWriteBuffer _ /*flushBuffers*/, long startPage, long flushPage, int pageSize,
             DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);

@@ -684,7 +684,7 @@ namespace Tsavorite.core
 
             // Issue request to read pages as much as possible
             for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlogBase.GetPageIndexForPage(p)] = ReadStatus.Pending;
-            hlogBase.AsyncReadPagesFromDevice(page, numPagesToRead, endAddress,
+            hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress,
                                           hlogBase.AsyncReadPagesCallbackForRecovery,
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                                           recoveryStatus.recoveryDevice);
@@ -854,7 +854,7 @@ namespace Tsavorite.core
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
                 // Page was modified due to undoFutureVersion. Flush it to disk; the callback issues the after-capacity read request if necessary.
-                hlogBase.AsyncFlushPages(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
+                hlogBase.AsyncFlushPagesForRecovery(page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                 return;
             }
 
@@ -1003,7 +1003,7 @@ namespace Tsavorite.core
                 {
                     // Flush snapshot page to main log
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-                    hlogBase.AsyncFlushPages(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
+                    hlogBase.AsyncFlushPagesForRecovery(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                 }
             }
         }
@@ -1279,7 +1279,7 @@ namespace Tsavorite.core
                         numPages++;
                     }
 
-                    AsyncReadPagesFromDevice(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
+                    AsyncReadPagesForRecovery(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
                     return true;
                 }
             }

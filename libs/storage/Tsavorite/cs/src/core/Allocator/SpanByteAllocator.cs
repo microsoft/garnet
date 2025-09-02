@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    // Allocator for ReadOnlySpan<byte> Keys and Span<byte> Values.
+    /// <summary>
+    /// Allocator for ReadOnlySpan{byte} Keys and Span{byte} Values.
+    /// </summary>
     public struct SpanByteAllocator<TStoreFunctions> : IAllocator<TStoreFunctions>
         where TStoreFunctions : IStoreFunctions
     {
@@ -118,10 +120,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public readonly void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
+        public readonly void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
     }
 }

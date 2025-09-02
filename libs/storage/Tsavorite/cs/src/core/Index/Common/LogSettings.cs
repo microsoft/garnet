@@ -15,15 +15,22 @@ namespace Tsavorite.core
         /// <summary>Maximum number of bits for a page size</summary>
         public const int kMaxPageSizeBits = 30;
 
-        /// <summary>Minimum number of bits for a segment (segments consist of one or more pages)</summary>
-        public const int kMinSegmentSizeBits = kMinPageSizeBits;
+        /// <summary>Minimum number of bits for a segment (segments consist of one or more pages). This minimum size is also the size of the <see cref="DiskPageWriteBuffer"/> buffer,
+        ///     so the segment must be a multiple of this (which is guaranteed as both are powers of 2).</summary>
+        /// <remarks>During flush we may create multiple buffers, depending on the degree of parallelism allowed by page concurrency and <see cref="NumberOfFlushPageBuffers"/>.</remarks>
+        public const int kMinSegmentSizeBits = 22;  // 4MB
         /// <summary>Maximum number of bits for a page size (segments consist of one or more pages)</summary>
         public const int kMaxSegmentSizeBits = 62;
 
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
-        public const int kMinMemorySizeBits = kMinSegmentSizeBits;
+        public const int kMinMemorySizeBits = kMinPageSizeBits;
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
+
+        /// <summary>Minimum <see cref="NumberOfFlushPageBuffers"/> per flush operation. Must be a power of 2</summary>
+        public const int kMinPageFlushBuffers = 2;
+        /// <summary>Maximum <see cref="NumberOfFlushPageBuffers"/> per flush operation. Must be a power of 2</summary>
+        public const int kMaxPageFlushBuffers = 64;
 
         /// <summary>Default number of bits for the size of an inline (not overflow) key</summary>
         public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;
@@ -94,5 +101,12 @@ namespace Tsavorite.core
         /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
         /// </summary>
         public int MaxInlineValueSizeBits = kDefaultMaxInlineValueSizeBits;
+
+        /// <summary>
+        /// Number of page buffers during a Flush operation on a page or portion of a page. There may be multiple sets of buffers at any given time,
+        /// depending on page parallelism. Must be a power of 2.
+        /// </summary>
+        /// <remarks>Validated for all allocators, but only used by <see cref="ObjectAllocator{TStoreFunctions}"/>.</remarks>
+        public int NumberOfFlushPageBuffers = 4;
     }
 }
