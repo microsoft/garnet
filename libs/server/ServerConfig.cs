@@ -130,6 +130,12 @@ namespace Garnet.server
             string certPassword = null;
             string clusterUsername = null;
             string clusterPassword = null;
+            string memorySize = null;
+            string objLogMemory = null;
+            string objHeapMemory = null;
+            string index = null;
+            string objIndex = null;
+
             var unknownOption = false;
             var unknownKey = "";
 
@@ -138,13 +144,23 @@ namespace Garnet.server
                 var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
                 var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
 
-                if (key.SequenceEqual(CmdStrings.CertFileName))
+                if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Memory, allowNonAlphabeticChars: false))
+                    memorySize = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjLogMemory, allowNonAlphabeticChars: true))
+                    objLogMemory = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjHeapMemory, allowNonAlphabeticChars: true))
+                    objHeapMemory = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Index, allowNonAlphabeticChars: false))
+                    index = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjIndex, allowNonAlphabeticChars: true))
+                    objIndex = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertFileName, allowNonAlphabeticChars: true))
                     certFileName = Encoding.ASCII.GetString(value);
-                else if (key.SequenceEqual(CmdStrings.CertPassword))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertPassword, allowNonAlphabeticChars: true))
                     certPassword = Encoding.ASCII.GetString(value);
-                else if (key.SequenceEqual(CmdStrings.ClusterUsername))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterUsername, allowNonAlphabeticChars: true))
                     clusterUsername = Encoding.ASCII.GetString(value);
-                else if (key.SequenceEqual(CmdStrings.ClusterPassword))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ClusterPassword, allowNonAlphabeticChars: true))
                     clusterPassword = Encoding.ASCII.GetString(value);
                 else
                 {
@@ -156,10 +172,11 @@ namespace Garnet.server
                 }
             }
 
-            string errorMsg = null;
+            var sbErrorMsg = new StringBuilder();
+
             if (unknownOption)
             {
-                errorMsg = string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey);
+                AppendError(sbErrorMsg, string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey));
             }
             else
             {
@@ -171,39 +188,189 @@ namespace Garnet.server
                         storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
                     else
                     {
-                        errorMsg = "ERR Cluster is disabled.";
+                        AppendError(sbErrorMsg, "ERR Cluster is disabled.");
                     }
                 }
+
                 if (certFileName != null || certPassword != null)
                 {
                     if (storeWrapper.serverOptions.TlsOptions != null)
                     {
                         if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
                         {
-                            if (errorMsg == null) errorMsg = "ERR " + certErrorMessage;
-                            else errorMsg += " " + certErrorMessage;
+                            AppendError(sbErrorMsg, certErrorMessage);
                         }
                     }
                     else
                     {
-                        if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
-                        else errorMsg += " TLS is disabled.";
+                        sbErrorMsg.AppendLine("ERR TLS is disabled.");
                     }
                 }
+
+                if (memorySize != null)
+                    HandleMemorySizeChange(memorySize, sbErrorMsg);
+
+                if (objLogMemory != null)
+                    HandleMemorySizeChange(objLogMemory, sbErrorMsg, mainStore: false);
+
+                if (index != null)
+                    HandleIndexSizeChange(index, sbErrorMsg);
+
+                if (objIndex != null)
+                    HandleIndexSizeChange(objIndex, sbErrorMsg, mainStore: false);
+
+                if (objHeapMemory != null)
+                    HandleObjHeapMemorySizeChange(objHeapMemory, sbErrorMsg);
             }
 
-            if (errorMsg == null)
+            if (sbErrorMsg.Length == 0)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
 
             return true;
+        }
+
+        private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool mainStore = true)
+        {
+            var option = mainStore ? CmdStrings.Memory : CmdStrings.ObjLogMemory;
+
+            if (!ServerOptions.TryParseSize(memorySize, out var newMemorySize))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
+                return;
+            }
+
+            // Parse the configured memory size
+            var confMemorySize = ServerOptions.ParseSize(
+                    mainStore ? storeWrapper.serverOptions.MemorySize
+                        : storeWrapper.serverOptions.ObjectStoreLogMemorySize, out _);
+
+            // If the new memory size is the same as the configured memory size, nothing to do
+            if (newMemorySize == confMemorySize)
+                return;
+
+            // Calculate the buffer size based on the configured memory size
+            confMemorySize = ServerOptions.NextPowerOf2(confMemorySize);
+
+            // If the new memory size is greater than the configured memory size, return an error
+            if (newMemorySize > confMemorySize)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrMemorySizeGreaterThanBuffer, option);
+                return;
+            }
+
+            // Parse & adjust the configured page size
+            var pageSize = ServerOptions.ParseSize(
+                    mainStore ? storeWrapper.serverOptions.PageSize : storeWrapper.serverOptions.ObjectStorePageSize,
+                    out _);
+            pageSize = ServerOptions.PreviousPowerOf2(pageSize);
+
+            // Compute the new minimum empty page count and update the store's log accessor
+            var newMinEmptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
+            if (mainStore)
+            {
+                storeWrapper.store.Log.MinEmptyPageCount = newMinEmptyPageCount;
+            }
+            else
+            {
+                storeWrapper.objectStore.Log.MinEmptyPageCount = newMinEmptyPageCount;
+            }
+        }
+
+        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool mainStore = true)
+        {
+            var option = mainStore ? CmdStrings.Index : CmdStrings.ObjIndex;
+
+            if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
+                return;
+            }
+
+            // Check if the new index size is a power of two. If not - return an error.
+            var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
+            if (adjNewIndexSize != newIndexSize)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizePowerOfTwo, option);
+                return;
+            }
+
+            // Check if the index auto-grow task is running. If so - return an error.
+            if ((mainStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0) ||
+                (!mainStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeAutoGrow, option);
+                return;
+            }
+
+            var currIndexSize = mainStore ? storeWrapper.store.IndexSize : storeWrapper.objectStore.IndexSize;
+
+            // Convert new index size to cache lines
+            adjNewIndexSize /= 64;
+
+            // If the current index size is the same as the new index size, nothing to do
+            if (currIndexSize == adjNewIndexSize)
+                return;
+
+            // If the new index size is smaller than the current index size, return an error
+            if (currIndexSize > adjNewIndexSize)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, option);
+                return;
+            }
+
+            // Try to grow the index size by doubling it until it reaches the new size
+            while (currIndexSize < adjNewIndexSize)
+            {
+                var isSuccessful = mainStore
+                    ? storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult()
+                    : storeWrapper.objectStore.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+
+                if (!isSuccessful)
+                {
+                    AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, option);
+                    return;
+                }
+
+                currIndexSize *= 2;
+            }
+        }
+
+        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
+        {
+            if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.ObjHeapMemory);
+                return;
+            }
+
+            // If the object store size tracker is not running, return an error
+            if (storeWrapper.objectStoreSizeTracker == null)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.ObjHeapMemory);
+                return;
+            }
+
+            // Set the new target size for the object store size tracker
+            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
+        }
+
+        private static void AppendError(StringBuilder sbErrorMsg, string error)
+        {
+            sbErrorMsg.Append($"{(sbErrorMsg.Length == 0 ? error : $"; {error.Substring(4)}")}");
+        }
+
+        private static void AppendErrorWithTemplate(StringBuilder sbErrorMsg, string template, ReadOnlySpan<byte> option)
+        {
+            var error = string.Format(template, Encoding.ASCII.GetString(option));
+            AppendError(sbErrorMsg, error);
         }
     }
 }

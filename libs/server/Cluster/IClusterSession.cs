@@ -23,6 +23,18 @@ namespace Garnet.server
         bool ReadWriteSession { get; }
 
         /// <summary>
+        /// If the current session has seen an APPENDLOG command.
+        /// </summary>
+        bool IsReplicating { get; }
+
+        /// <summary>
+        /// If set, commands can use this to enumerate details about the server or other sessions.
+        ///
+        /// It is not guaranteed to be set.
+        /// </summary>
+        IGarnetServer Server { get; set; }
+
+        /// <summary>
         /// Make this cluster session a read-only session
         /// </summary>
         void SetReadOnlySession();

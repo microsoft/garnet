@@ -125,7 +125,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int MemorySizeBits()
         {
-            long size = ParseSize(MemorySize);
+            long size = ParseSize(MemorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower log memory size than specified (power of 2)");
@@ -138,7 +138,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int PageSizeBits()
         {
-            long size = ParseSize(PageSize);
+            long size = ParseSize(PageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
@@ -151,7 +151,7 @@ namespace Garnet.server
         /// <returns></returns>
         public long PubSubPageSizeBytes()
         {
-            long size = ParseSize(PubSubPageSize);
+            long size = ParseSize(PubSubPageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower pub/sub page size than specified (power of 2)");
@@ -164,7 +164,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int SegmentSizeBits()
         {
-            long size = ParseSize(SegmentSize);
+            long size = ParseSize(SegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower disk segment size than specified (power of 2)");
@@ -177,7 +177,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int IndexSizeCachelines(string name, string indexSize)
         {
-            long size = ParseSize(indexSize);
+            long size = ParseSize(indexSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (adjustedSize < 64 || adjustedSize > (1L << 37)) throw new Exception($"Invalid {name}");
             if (size != adjustedSize)
@@ -235,24 +235,33 @@ namespace Garnet.server
         /// Parse size from string specification
         /// </summary>
         /// <param name="value"></param>
+        /// <param name="bytesRead"></param>
         /// <returns></returns>
-        public static long ParseSize(string value)
+        public static long ParseSize(string value, out int bytesRead)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
-            foreach (char c in value)
+            bytesRead = 0;
+            for (var i = 0; i < value.Length; i++)
             {
+                var c = value[i];
                 if (char.IsDigit(c))
                 {
-                    result = result * 10 + (byte)c - '0';
+                    result = (result * 10) + (byte)c - '0';
+                    bytesRead++;
                 }
                 else
                 {
-                    for (int i = 0; i < suffix.Length; i++)
+                    for (var s = 0; s < suffix.Length; s++)
                     {
-                        if (char.ToLower(c) == suffix[i])
+                        if (char.ToLower(c) == suffix[s])
                         {
-                            result *= (long)Math.Pow(1024, i + 1);
+                            result *= (long)Math.Pow(1024, s + 1);
+                            bytesRead++;
+
+                            if (i + 1 < value.Length && char.ToLower(value[i + 1]) == 'b')
+                                bytesRead++;
+
                             return result;
                         }
                     }
@@ -262,11 +271,23 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Try to parse size from string specification
+        /// </summary>
+        /// <param name="value">String size value</param>
+        /// <param name="size">Parsed size</param>
+        /// <returns>True if successful</returns>
+        public static bool TryParseSize(string value, out long size)
+        {
+            size = ParseSize(value, out var charsRead);
+            return charsRead == value.Length;
+        }
+
+        /// <summary>
         /// Pretty print value
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        protected static string PrettySize(long value)
+        internal static string PrettySize(long value)
         {
             char[] suffix = ['k', 'm', 'g', 't', 'p'];
             double v = value;
@@ -300,7 +321,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="v"></param>
         /// <returns></returns>
-        protected static long PreviousPowerOf2(long v)
+        internal static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
             v |= v >> 2;
@@ -309,6 +330,23 @@ namespace Garnet.server
             v |= v >> 16;
             v |= v >> 32;
             return v - (v >> 1);
+        }
+
+        /// <summary>
+        /// Next power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static long NextPowerOf2(long v)
+        {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v + 1;
         }
     }
 }
