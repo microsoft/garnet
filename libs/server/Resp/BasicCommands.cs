@@ -418,7 +418,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            
+
             var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
             var status = storageApi.SET_Conditional(key, ref input);
 

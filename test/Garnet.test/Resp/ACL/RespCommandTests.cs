@@ -7531,7 +7531,7 @@ namespace Garnet.test.Resp.ACL
                     _ = await client.ExecuteForStringResultAsync("VDIM", ["foo"]);
                     ClassicAssert.Fail("Shouldn't be reachable");
                 }
-                catch(Exception e) when (e.Message.Equals("ERR Key not found"))
+                catch (Exception e) when (e.Message.Equals("ERR Key not found"))
                 {
                     // Excepted
                 }
