@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text.Json.Serialization;
@@ -15,37 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
-    /// <summary>
-    /// Represents a simplified version of RESP command's information
-    /// </summary>
-    public struct SimpleRespCommandInfo
-    {
-        /// <summary>
-        /// Command Arity
-        /// </summary>
-        public sbyte Arity;
-
-        /// <summary>
-        /// If command is allowed in a transaction context
-        /// </summary>
-        public bool AllowedInTxn;
-
-        /// <summary>
-        /// If command has sub-commands
-        /// </summary>
-        public bool IsParent;
-
-        /// <summary>
-        /// If command is a sub-command
-        /// </summary>
-        public bool IsSubCommand;
-
-        /// <summary>
-        /// Default SimpleRespCommandInfo
-        /// </summary>
-        public static SimpleRespCommandInfo Default = new();
-    }
-
     /// <summary>
     /// Represents a RESP command's information
     /// </summary>
@@ -197,15 +165,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                var arity = cmdInfo.Arity;
-
-                // Verify that arity is in the signed byte range (-128 to 127)
-                Debug.Assert(arity <= sbyte.MaxValue && arity >= sbyte.MinValue);
-
-                tmpSimpleRespCommandInfo[cmdId].Arity = (sbyte)arity;
-                tmpSimpleRespCommandInfo[cmdId].AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
-                tmpSimpleRespCommandInfo[cmdId].IsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
-                tmpSimpleRespCommandInfo[cmdId].IsSubCommand = cmdInfo.Parent != null;
+                cmdInfo.PopulateSimpleCommandInfo(ref tmpSimpleRespCommandInfo[cmdId]);
             }
 
             var tmpAllSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
