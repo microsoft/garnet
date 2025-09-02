@@ -14,7 +14,10 @@ namespace Garnet.server
         private bool NetworkVADD<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // VADD key [REDUCE dim] (FP32 | VALUES num) vector element [CAS] [NOQUANT | Q8 | BIN] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
+            // VADD key [REDUCE dim] (FP32 | XB8 | VALUES num) vector element [CAS] [NOQUANT | Q8 | BIN | XPREQ8] [EF build-exploration-factor] [SETATTR attributes] [M numlinks]
+            //
+            // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
+            // XPREQ8 is a non-Redis extension, stands for: eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
 
             const int MinM = 4;
             const int MaxM = 4_096;
@@ -42,8 +45,9 @@ namespace Garnet.server
                 curIx++;
             }
 
-            float[] rentedValues = null;
-            Span<float> values = stackalloc float[64];
+            var valueType = VectorValueType.Invalid;
+            byte[] rentedValues = null;
+            Span<byte> values = stackalloc byte[64 * sizeof(float)];
 
             try
             {
@@ -61,7 +65,8 @@ namespace Garnet.server
                         return AbortWithErrorMessage("ERR invalid vector specification");
                     }
 
-                    values = MemoryMarshal.Cast<byte, float>(asBytes);
+                    valueType = VectorValueType.F32;
+                    values = asBytes;
                 }
                 else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("VALUES"u8))
                 {
@@ -77,26 +82,46 @@ namespace Garnet.server
                     }
                     curIx++;
 
-                    if (valueCount > values.Length)
+                    if (valueCount * sizeof(float) > values.Length)
                     {
-                        values = rentedValues = ArrayPool<float>.Shared.Rent(valueCount);
+                        values = rentedValues = ArrayPool<byte>.Shared.Rent(valueCount * sizeof(float));
                     }
-                    values = values[..valueCount];
+                    values = values[..(valueCount * sizeof(float))];
 
                     if (curIx + valueCount > parseState.Count)
                     {
                         return AbortWithWrongNumberOfArguments("VADD");
                     }
 
+                    valueType = VectorValueType.F32;
+                    var floatValues = MemoryMarshal.Cast<byte, float>(values);
+
                     for (var valueIx = 0; valueIx < valueCount; valueIx++)
                     {
-                        if (!parseState.TryGetFloat(curIx, out values[valueIx]))
+                        if (!parseState.TryGetFloat(curIx, out floatValues[valueIx]))
                         {
                             return AbortWithErrorMessage("ERR invalid vector specification");
                         }
 
                         curIx++;
                     }
+                }
+                else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8))
+                {
+                    curIx++;
+                    if (curIx >= parseState.Count)
+                    {
+                        return AbortWithWrongNumberOfArguments("VADD");
+                    }
+
+                    var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+                    if ((asBytes.Length % sizeof(float)) != 0)
+                    {
+                        return AbortWithErrorMessage("ERR invalid vector specification");
+                    }
+
+                    valueType = VectorValueType.XB8;
+                    values = asBytes;
                 }
 
                 if (curIx >= parseState.Count)
@@ -257,7 +282,7 @@ namespace Garnet.server
                 attributes ??= default;
                 numLinks ??= 16;
 
-                var res = storageApi.VectorSetAdd(key, reduceDim, values, element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out var result);
+                var res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out var result);
 
                 if (res == GarnetStatus.OK)
                 {
@@ -303,7 +328,7 @@ namespace Garnet.server
             {
                 if (rentedValues != null)
                 {
-                    ArrayPool<float>.Shared.Return(rentedValues);
+                    ArrayPool<byte>.Shared.Return(rentedValues);
                 }
             }
         }
@@ -314,7 +339,9 @@ namespace Garnet.server
             const int DefaultResultSetSize = 64;
             const int DefaultIdSize = sizeof(ulong);
 
-            // VSIM key (ELE | FP32 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
+            // VSIM key (ELE | FP32 | XB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
+            //
+            // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
 
             if (parseState.Count < 3)
             {
@@ -328,10 +355,11 @@ namespace Garnet.server
 
             ReadOnlySpan<byte> element;
 
-            float[] rentedValues = null;
+            VectorValueType valueType = VectorValueType.Invalid;
+            byte[] rentedValues = null;
             try
             {
-                Span<float> values = stackalloc float[64];
+                Span<byte> values = stackalloc byte[64 * sizeof(float)];
                 if (kind.Span.EqualsUpperCaseSpanIgnoringCase("ELE"u8))
                 {
                     element = parseState.GetArgSliceByRef(curIx).ReadOnlySpan;
@@ -354,7 +382,21 @@ namespace Garnet.server
                             return AbortWithErrorMessage("FP32 values must be multiple of 4-bytes in size");
                         }
 
-                        values = MemoryMarshal.Cast<byte, float>(asBytes);
+                        valueType = VectorValueType.F32;
+                        values = asBytes;
+                        curIx++;
+                    }
+                    else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("XB8"u8))
+                    {
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithWrongNumberOfArguments("VSIM");
+                        }
+
+                        var asBytes = parseState.GetArgSliceByRef(curIx).Span;
+
+                        valueType = VectorValueType.XB8;
+                        values = asBytes;
                         curIx++;
                     }
                     else if (kind.Span.EqualsUpperCaseSpanIgnoringCase("VALUES"u8))
@@ -370,20 +412,23 @@ namespace Garnet.server
                         }
                         curIx++;
 
-                        if (valueCount > values.Length)
+                        if (valueCount * sizeof(float) > values.Length)
                         {
-                            values = rentedValues = ArrayPool<float>.Shared.Rent(valueCount);
+                            values = rentedValues = ArrayPool<byte>.Shared.Rent(valueCount * sizeof(float));
                         }
-                        values = values[..valueCount];
+                        values = values[..(valueCount * sizeof(float))];
 
                         if (curIx + valueCount > parseState.Count)
                         {
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
+                        valueType = VectorValueType.F32;
+                        var floatValues = MemoryMarshal.Cast<byte, float>(values);
+
                         for (var valueIx = 0; valueIx < valueCount; valueIx++)
                         {
-                            if (!parseState.TryGetFloat(curIx, out values[valueIx]))
+                            if (!parseState.TryGetFloat(curIx, out floatValues[valueIx]))
                             {
                                 return AbortWithErrorMessage("VALUES value must be valid float");
                             }
@@ -606,7 +651,7 @@ namespace Garnet.server
                     VectorManagerResult vectorRes;
                     if (element.IsEmpty)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, values, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, ref idResult, ref distanceResult, out vectorRes);
+                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, ref idResult, ref distanceResult, out vectorRes);
                     }
                     else
                     {
@@ -705,7 +750,7 @@ namespace Garnet.server
             {
                 if (rentedValues != null)
                 {
-                    ArrayPool<float>.Shared.Return(rentedValues);
+                    ArrayPool<byte>.Shared.Return(rentedValues);
                 }
             }
         }

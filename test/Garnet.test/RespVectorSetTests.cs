@@ -45,10 +45,10 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", "def", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", new byte[] { 1, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
             // TODO: exact duplicates - what does Redis do?
@@ -123,7 +123,7 @@ namespace Garnet.test
             // Mismatch after creating a vector set
             _ = db.KeyDelete(vectorSetKey);
 
-            _ = db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0", "bar", "NOQUANT", "EF", "6", "M", "10"]);
+            _ = db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0", new byte[] { 0, 0, 1, 0 }, "NOQUANT", "EF", "6", "M", "10"]);
 
             // TODO: Redis returns the same error for all these mismatches which also seems... wrong, confirm with them
             var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz"]));
@@ -142,17 +142,17 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = (string[])db.Execute("VEMB", ["foo", "abc"]);
+            var res2 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
             ClassicAssert.AreEqual(4, res2.Length);
             ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res2[0]));
             ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res2[1]));
             ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res2[2]));
             ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res2[3]));
 
-            var res3 = (string[])db.Execute("VEMB", ["foo", "def"]);
+            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
             ClassicAssert.AreEqual(0, res3.Length);
         }
 
@@ -162,7 +162,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = ClassicAssert.Throws<RedisServerException>(() => db.StringGet("foo"));
@@ -177,16 +177,16 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = (string)db.StringGet("abc");
+            var res2 = (string)db.StringGet(new byte[] { 0, 0, 0, 0 });
             ClassicAssert.IsNull(res2);
 
-            var res3 = db.KeyDelete("abc");
+            var res3 = db.KeyDelete(new byte[] { 0, 0, 0, 0 });
             ClassicAssert.IsFalse(res3);
 
-            var res4 = db.StringSet("abc", "def", when: When.NotExists);
+            var res4 = db.StringSet(new byte[] { 0, 0, 0, 0 }, "def", when: When.NotExists);
             ClassicAssert.IsTrue(res4);
 
             Span<byte> buffer = stackalloc byte[128];
@@ -196,7 +196,7 @@ namespace Garnet.test
             var ctx = manager.HighestContext();
             for (var i = 0UL; i <= ctx; i++)
             {
-                VectorManager.DistinguishVectorElementKey(i, "abc"u8, ref buffer, out var rented);
+                VectorManager.DistinguishVectorElementKey(i, [0, 0, 0, 0], ref buffer, out var rented);
 
                 try
                 {
@@ -218,7 +218,7 @@ namespace Garnet.test
             }
 
             // Check we haven't messed up the element
-            var res7 = (string[])db.Execute("VEMB", ["foo", "abc"]);
+            var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
             ClassicAssert.AreEqual(4, res7.Length);
             ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res7[0]));
             ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res7[1]));
@@ -232,21 +232,21 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", "def", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
 
-            var res3 = (string[])db.Execute("VSIM", ["foo", "VALUES", "4", "2.1", "2.2", "2.3", "2.4", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            var res3 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "4", "2.1", "2.2", "2.3", "2.4", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
             ClassicAssert.AreEqual(2, res3.Length);
-            ClassicAssert.IsTrue(res3.Contains("abc"));
-            ClassicAssert.IsTrue(res3.Contains("def"));
+            ClassicAssert.IsTrue(res3.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res3.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
-            var res4 = (string[])db.Execute("VSIM", ["foo", "ELE", "abc", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            var res4 = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }, "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
             ClassicAssert.AreEqual(2, res4.Length);
-            ClassicAssert.IsTrue(res4.Contains("abc"));
-            ClassicAssert.IsTrue(res4.Contains("def"));
+            ClassicAssert.IsTrue(res4.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res4.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
             // TODO: WITHSCORES
             // TODO: WITHATTRIBS
@@ -258,13 +258,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = db.Execute("VDIM", "foo");
             ClassicAssert.AreEqual(3, (int)res2);
 
-            var res3 = db.Execute("VADD", ["bar", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res3 = db.Execute("VADD", ["bar", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = db.Execute("VDIM", "bar");
@@ -280,13 +280,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = db.KeyDelete("foo");
             ClassicAssert.IsTrue(res2);
 
-            var res3 = db.Execute("VADD", ["fizz", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "abc", "CAS", "Q8", "EF", "16", "M", "32"]);
+            var res3 = db.Execute("VADD", ["fizz", "REDUCE", "3", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = db.StringSet("buzz", "abc");
@@ -304,7 +304,7 @@ namespace Garnet.test
             const string PathToQuery = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m.query-10k.fbin";
             const string PathToWrite = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-holdout-{0}.base.fbin";
             const int BenchmarkDurationSeconds = 5;
-            const int ParallelBenchmarks = 12;
+            const int ParallelBenchmarks = 1;
 
             var key = $"{nameof(JankBenchmarkCommandsAsync)}_{Guid.NewGuid()}";
 

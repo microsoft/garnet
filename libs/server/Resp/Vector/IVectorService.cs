@@ -48,7 +48,7 @@ namespace Garnet.server
         /// Insert a vector into an index.
         /// </summary>
         /// <returns>True if the vector was added, false otherwise.</returns>
-        bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<float> vector, ReadOnlySpan<byte> attributes);
+        bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, VectorValueType vectorType, ReadOnlySpan<byte> vector, ReadOnlySpan<byte> attributes);
 
         /// <summary>
         /// Search for similar vectors, given a vector.
@@ -58,7 +58,7 @@ namespace Garnet.server
         /// 
         /// Returns number of results placed in outputXXX parameters.
         /// </summary>
-        int SearchVector(ulong context, nint index, ReadOnlySpan<float> vector, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, Span<byte> outputIds, Span<float> outputDistances, out nint continuation);
+        int SearchVector(ulong context, nint index, VectorValueType vectorType, ReadOnlySpan<byte> vector, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, Span<byte> outputIds, Span<float> outputDistances, out nint continuation);
 
         /// <summary>
         /// Search for similar vectors, given a vector.
@@ -82,7 +82,7 @@ namespace Garnet.server
         /// 
         /// This undoes any dimensionality reduction, so values may be approximate.
         /// 
-        /// <paramref name="dimensions"/> is always the size of dimesions passed to <see cref="CreateIndexManaged"/> or <see cref="CreateIndexUnmanaged"/>.
+        /// <paramref name="dimensions"/> is always the size of dimensions passed to <see cref="CreateIndexManaged"/> or <see cref="CreateIndexUnmanaged"/>.
         /// </summary>
         bool TryGetEmbedding(ulong context, nint index, ReadOnlySpan<byte> id, Span<float> dimensions);
     }

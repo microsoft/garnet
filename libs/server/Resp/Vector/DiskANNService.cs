@@ -52,13 +52,35 @@ namespace Garnet.server
             NativeDiskANNMethods.drop_index(context, index);
         }
 
-        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<float> vector, ReadOnlySpan<byte> attributes)
+        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, VectorValueType vectorType, ReadOnlySpan<byte> vector, ReadOnlySpan<byte> attributes)
         {
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
             var id_len = id.Length;
 
-            var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
-            var vector_len = vector.Length;
+            void* vector_data;
+            int vector_len;
+
+            Span<float> temp = vectorType == VectorValueType.XB8 ? stackalloc float[vector.Length] : default;
+            if (vectorType == VectorValueType.F32)
+            {
+                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
+                vector_len = vector.Length / sizeof(float);
+            }
+            else if (vectorType == VectorValueType.XB8)
+            {
+                // TODO: Eventually DiskANN will just take this directly, for now map to a float
+                for (var i = 0; i < vector.Length; i++)
+                {
+                    temp[i] = vector[i];
+                }
+
+                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(temp));
+                vector_len = temp.Length;
+            }
+            else
+            {
+                throw new NotImplementedException($"{vectorType}");
+            }
 
             var attributes_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
             var attributes_len = attributes.Length;
@@ -69,7 +91,8 @@ namespace Garnet.server
         public int SearchVector(
             ulong context,
             nint index,
-            ReadOnlySpan<float> vector,
+            VectorValueType vectorType,
+            ReadOnlySpan<byte> vector,
             float delta,
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
@@ -79,8 +102,30 @@ namespace Garnet.server
             out nint continuation
         )
         {
-            var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
-            var vector_len = vector.Length;
+            void* vector_data;
+            int vector_len;
+
+            Span<float> temp = vectorType == VectorValueType.XB8 ? stackalloc float[vector.Length] : default;
+            if (vectorType == VectorValueType.F32)
+            {
+                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
+                vector_len = vector.Length / sizeof(float);
+            }
+            else if (vectorType == VectorValueType.XB8)
+            {
+                // TODO: Eventually DiskANN will just take this directly, for now map to a float
+                for (var i = 0; i < vector.Length; i++)
+                {
+                    temp[i] = vector[i];
+                }
+
+                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(temp));
+                vector_len = temp.Length;
+            }
+            else
+            {
+                throw new NotImplementedException($"{vectorType}");
+            }
 
             var filter_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
             var filter_len = filter.Length;

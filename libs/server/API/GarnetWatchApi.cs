@@ -647,5 +647,35 @@ namespace Garnet.server
             => garnetApi.ResetScratchBuffer(offset);
 
         #endregion
+
+        #region Vector Sets
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice value, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetValueSimilarity(key, valueType, value, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetElementSimilarity(ArgSlice key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetDimensions(key, out dimensions);
+        }
+        #endregion
     }
 }

@@ -8,13 +8,58 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Supported quantizations of vector data.
+    /// 
+    /// This controls the mapping of vector elements to how they're actually stored.
+    /// </summary>
     public enum VectorQuantType
     {
         Invalid = 0,
-        NoQuant,
 
+        // Redis quantiziations
+
+        /// <summary>
+        /// Provided and stored as floats (FP32).
+        /// </summary>
+        NoQuant,
+        /// <summary>
+        /// Provided as FP32, stored as binary (1 bit).
+        /// </summary>
         Bin,
+        /// <summary>
+        /// Provided as FP32, stored as bytes (8 bits).
+        /// </summary>
         Q8,
+
+        // Extended quantizations
+
+        /// <summary>
+        /// Provided and stored as bytes (8 bits).
+        /// </summary>
+        XPreQ8,
+    }
+
+    /// <summary>
+    /// Supported formats for Vector value data.
+    /// </summary>
+    public enum VectorValueType
+    {
+        Invalid = 0,
+
+        // Redis formats
+
+        /// <summary>
+        /// Floats (FP32).
+        /// </summary>
+        F32,
+
+        // Extended formats
+
+        /// <summary>
+        /// Bytes (8 bit).
+        /// </summary>
+        XB8,
     }
 
     /// <summary>
@@ -25,13 +70,25 @@ namespace Garnet.server
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
-        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, ReadOnlySpan<float> values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
+        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
         {
-            var dims = values.Length;
+            int dims;
+            if (valueType == VectorValueType.F32)
+            {
+                dims = values.ReadOnlySpan.Length / sizeof(float);
+            }
+            else if (valueType == VectorValueType.XB8)
+            {
+                dims = values.ReadOnlySpan.Length;
+            }
+            else
+            {
+                throw new NotImplementedException($"{valueType}");
+            }
 
             var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
             var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
-            var valuesArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(values));
+            var valuesArg = values;
             var elementArg = element;
             var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
             var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
@@ -89,7 +146,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, values, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks);
+                    result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks);
 
                     return GarnetStatus.OK;
                 }
@@ -107,7 +164,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
-        public GarnetStatus VectorSetValueSimilarity(SpanByte key, ReadOnlySpan<float> values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        public GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -144,7 +201,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
+                    result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
 
                     return GarnetStatus.OK;
                 }

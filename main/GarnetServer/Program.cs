@@ -177,7 +177,7 @@ namespace Garnet
                     GarnetStatus writeRes;
                     VectorManagerResult vecRes;
                     ArgSlice elem = ArgSlice.FromPinnedSpan(vec.Element.Span);
-                    writeRes = garnetApi.VectorSetAdd(vectorSet, 0, vec.Values.Span, elem, VectorQuantType.NoQuant, 250, default, 16, out vecRes);
+                    writeRes = garnetApi.VectorSetAdd(vectorSet, 0, VectorValueType.F32, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(vec.Values.Span)), elem, VectorQuantType.NoQuant, 250, default, 16, out vecRes);
 
                     if (writeRes != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
                     {
@@ -195,7 +195,7 @@ namespace Garnet
                     SpanByteAndMemory idResults = SpanByteAndMemory.FromPinnedSpan(idSpace);
                     SpanByteAndMemory distanceResults = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(distanceSpace));
 
-                    GarnetStatus readRes = garnetApi.VectorSetValueSimilarity(vectorSet, values.Span, resultsPerQuery, delta, searchExplorationFactor, default, 0, ref idResults, ref distanceResults, out VectorManagerResult vecRes);
+                    GarnetStatus readRes = garnetApi.VectorSetValueSimilarity(vectorSet, VectorValueType.F32, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(values.Span)), resultsPerQuery, delta, searchExplorationFactor, default, 0, ref idResults, ref distanceResults, out VectorManagerResult vecRes);
                     Debug.Assert(idResults.IsSpanByte && distanceResults.IsSpanByte, "Shouldn't have resized, allocations will tank perf");
 
                     if (readRes != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
@@ -327,7 +327,7 @@ namespace Garnet
                 VectorManagerResult vecRes;
                 ArgSlice element = ArgSlice.FromPinnedSpan(vector.Element.Span);
 
-                res = garnetApi.VectorSetAdd(key, 0, vector.Values.Span, element, VectorQuantType.NoQuant, 250, default, 16, out vecRes);
+                res = garnetApi.VectorSetAdd(key, 0, VectorValueType.F32, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(vector.Values.Span)), element, VectorQuantType.NoQuant, 250, default, 16, out vecRes);
 
                 if (res != GarnetStatus.OK || vecRes != VectorManagerResult.OK)
                 {

@@ -3,11 +3,7 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -17,168 +13,6 @@ namespace Garnet.server
 {
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    internal sealed unsafe class DummyService : IVectorService
-    {
-        private const byte FullVector = 0;
-        private const byte NeighborList = 1;
-        private const byte QuantizedVector = 2;
-        private const byte Attributes = 3;
-
-        private sealed class ByteArrayEqualityComparer : IEqualityComparer<byte[]>
-        {
-            public static readonly ByteArrayEqualityComparer Instance = new();
-
-            private ByteArrayEqualityComparer() { }
-
-            public bool Equals(byte[] x, byte[] y)
-            => x.AsSpan().SequenceEqual(y);
-
-            public int GetHashCode([DisallowNull] byte[] obj)
-            {
-                var hash = new HashCode();
-                hash.AddBytes(obj);
-
-                return hash.ToHashCode();
-            }
-        }
-
-        private readonly ConcurrentDictionary<nint, (VectorReadDelegate Read, VectorWriteDelegate Write, VectorDeleteDelegate Delete, ConcurrentDictionary<byte[], byte> Members)> data = new();
-
-        /// <inheritdoc/>
-        public bool UseUnmanagedCallbacks { get; } = false;
-
-        /// <inheritdoc/>
-        public nint CreateIndexUnmanaged(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, int> readCallback, delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback, delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback)
-        => throw new NotImplementedException();
-
-        /// <inheritdoc/>
-        public nint CreateIndexManaged(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, VectorReadDelegate readCallback, VectorWriteDelegate writeCallback, VectorDeleteDelegate deleteCallback)
-        {
-            var ptr = (nint)(context + 17); // some arbitrary non-multiple of 4 to mess with things
-
-            if (!data.TryAdd(ptr, new(readCallback, writeCallback, deleteCallback, new(ByteArrayEqualityComparer.Instance))))
-            {
-                throw new InvalidOperationException("Shouldn't be possible");
-            }
-
-            return ptr;
-        }
-
-        /// <inheritdoc/>
-        public void DropIndex(ulong context, nint index)
-        {
-            if (!data.TryRemove(index, out var state))
-            {
-                throw new InvalidOperationException("Attempted to drop index that was already dropped");
-            }
-
-            // It isn't required that an implementer clean up after itself, but this tests callbacks are still valid
-            foreach (var key in state.Members.Keys)
-            {
-                _ = state.Delete(context + 0, key);
-                _ = state.Delete(context + 1, key);
-                _ = state.Delete(context + 2, key);
-                _ = state.Delete(context + 3, key);
-            }
-        }
-
-        /// <inheritdoc/>
-        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<float> vector, ReadOnlySpan<byte> attributes)
-        {
-            var (_, write, _, members) = data[index];
-
-            // save vector data
-            _ = members.AddOrUpdate(id.ToArray(), static (_) => 0, static (key, old) => (byte)(old + 1));
-            _ = write(context + FullVector, id, MemoryMarshal.Cast<float, byte>(vector));
-
-            if (!attributes.IsEmpty)
-            {
-                _ = write(context + Attributes, id, attributes);
-            }
-
-            return true;
-        }
-
-        /// <inheritdoc/>
-        public int SearchVector(ulong context, nint index, ReadOnlySpan<float> vector, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, Span<byte> outputIds, Span<float> outputDistances, out nint continuation)
-        {
-            var (read, _, _, members) = data[index];
-
-            // Hack, just use a fixed sized buffer for now
-            Span<byte> memberData = stackalloc byte[128];
-
-            var matches = 0;
-            var remainingOutputIds = outputIds;
-            var remainingDistances = outputDistances;
-
-            // We don't actually do the distance calc, this is just for testing
-            foreach (var member in members.Keys)
-            {
-                var len = read(context + FullVector, member, memberData);
-                if (len == 0)
-                {
-                    continue;
-                }
-
-                var asFloats = MemoryMarshal.Cast<byte, float>(memberData[..len]);
-                if (member.Length > remainingOutputIds.Length + sizeof(int))
-                {
-                    // This is where a continuation would be set
-                    throw new NotImplementedException();
-                }
-
-                BinaryPrimitives.WriteInt32LittleEndian(remainingOutputIds, member.Length);
-                remainingOutputIds = remainingOutputIds[sizeof(int)..];
-                member.AsSpan().CopyTo(remainingOutputIds);
-                remainingOutputIds = remainingOutputIds[member.Length..];
-
-                remainingDistances[0] = (float)Random.Shared.NextDouble();
-                remainingDistances = remainingDistances[1..];
-                matches++;
-
-                if (remainingDistances.IsEmpty)
-                {
-                    break;
-                }
-            }
-
-            continuation = 0;
-            return matches;
-        }
-
-        /// <inheritdoc/>
-        public int SearchElement(ulong context, nint index, ReadOnlySpan<byte> id, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, Span<byte> outputIds, Span<float> outputDistances, out nint continuation)
-        {
-            var (read, _, _, members) = data[index];
-
-            // Hack, just use a fixed sized buffer for now
-            Span<byte> memberData = stackalloc byte[128];
-            var len = read(context + FullVector, id, memberData);
-            if (len == 0)
-            {
-                continuation = 0;
-                return 0;
-            }
-
-            var vector = MemoryMarshal.Cast<byte, float>(memberData[..len]);
-            return SearchVector(context, index, vector, delta, searchExplorationFactor, filter, maxFilteringEffort, outputIds, outputDistances, out continuation);
-        }
-
-        /// <inheritdoc/>
-        public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<float> outputDistances, out nint newContinuation)
-        {
-            throw new NotImplementedException();
-        }
-
-        /// <inheritdoc/>
-        public bool TryGetEmbedding(ulong context, nint index, ReadOnlySpan<byte> id, Span<float> dimensions)
-        {
-            var (read, _, _, _) = data[index];
-
-            return read(context + FullVector, id, MemoryMarshal.Cast<float, byte>(dimensions)) != 0;
-        }
-    }
 
     public enum VectorManagerResult
     {
@@ -406,11 +240,6 @@ namespace Garnet.server
         {
             var context = NextContext();
 
-            // Enforce defaults, which match Redis; see https://redis.io/docs/latest/commands/vadd/
-            quantType = quantType == VectorQuantType.Invalid ? VectorQuantType.Q8 : quantType;
-            buildExplorationFactory = buildExplorationFactory == 0 ? 200 : buildExplorationFactory;
-            numLinks = numLinks == 0 ? 16 : numLinks;
-
             nint indexPtr;
             if (Service.UseUnmanagedCallbacks)
             {
@@ -488,7 +317,8 @@ namespace Garnet.server
             StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
-            ReadOnlySpan<float> values,
+            VectorValueType valueType,
+            ReadOnlySpan<byte> values,
             ReadOnlySpan<byte> attributes,
             uint providedReduceDims,
             VectorQuantType providedQuantType,
@@ -501,7 +331,9 @@ namespace Garnet.server
             {
                 ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
 
-                if (dimensions != values.Length)
+                var valueDims = CalculateValueDimensions(valueType, values);
+
+                if (dimensions != valueDims)
                 {
                     return VectorManagerResult.BadParams;
                 }
@@ -531,6 +363,7 @@ namespace Garnet.server
                         context,
                         indexPtr,
                         element,
+                        valueType,
                         values,
                         attributes
                     );
@@ -554,7 +387,8 @@ namespace Garnet.server
         internal VectorManagerResult ValueSimilarity(
             StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
-            ReadOnlySpan<float> values,
+            VectorValueType valueType,
+            ReadOnlySpan<byte> values,
             int count,
             float delta,
             int searchExplorationFactor,
@@ -568,6 +402,12 @@ namespace Garnet.server
             try
             {
                 ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+
+                var valueDims = CalculateValueDimensions(valueType, values);
+                if (dimensions != valueDims)
+                {
+                    return VectorManagerResult.BadParams;
+                }
 
                 // Make sure enough space in distances for requested count
                 if (count > outputDistances.Length)
@@ -600,6 +440,7 @@ namespace Garnet.server
                     Service.SearchVector(
                         context,
                         indexPtr,
+                        valueType,
                         values,
                         delta,
                         searchExplorationFactor,
@@ -765,6 +606,25 @@ namespace Garnet.server
 
             Debug.Assert(!IsVectorSetRelatedKey(rawKey.ReadOnlySpan), "Mangling did not work");
             return;
+        }
+
+        /// <summary>
+        /// Determine the dimensions of a vector given its <see cref="VectorValueType"/> and its raw data.
+        /// </summary>
+        private static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
+        {
+            if (valueType == VectorValueType.F32)
+            {
+                return (uint)(values.Length / sizeof(float));
+            }
+            else if (valueType == VectorValueType.XB8)
+            {
+                return (uint)(values.Length);
+            }
+            else
+            {
+                throw new NotImplementedException($"{valueType}");
+            }
         }
     }
 }
