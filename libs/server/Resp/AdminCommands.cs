@@ -880,7 +880,7 @@ namespace Garnet.server
 
             if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
-                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -1003,7 +1003,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
             }
 
