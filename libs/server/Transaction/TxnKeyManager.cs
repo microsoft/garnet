@@ -594,7 +594,8 @@ namespace Garnet.server
         {
             var (firstKeyIdx, lastKeyIdx, keyStep) = respSession.parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
 
-            var lockType = keySpec.IsReadOnly ? LockType.Shared : LockType.Exclusive;
+            var isReadOnly = (keySpec.Flags & KeySpecificationFlags.RO) == KeySpecificationFlags.RO;
+            var lockType = isReadOnly ? LockType.Shared : LockType.Exclusive;
 
             var skipIdx = -1;
             for (var currIdx = firstKeyIdx; currIdx <= lastKeyIdx; currIdx += keyStep + 1)

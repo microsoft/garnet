@@ -1175,23 +1175,31 @@ namespace Garnet.server
             }
 
             var cmdName = parseState.GetString(0);
-            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
 
+            var cmdFound = false;
+            var simpleCmdInfo = SimpleRespCommandInfo.Default;
+            
+            if (Enum.TryParse<RespCommand>(cmdName, true, out var cmd))
+            {
+                if (RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
+                    cmdFound = true;
+
+                if (!cmdFound && storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out var cmdInfo))
+                {
+                    cmdInfo.PopulateSimpleCommandInfo(ref simpleCmdInfo);
+                    cmdFound = true;
+                }
+            }
+        
             if (!cmdFound)
-            {
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
-            }
 
-            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
-            {
+            if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
-            }
 
-            parseState.TryExtractKeysFromSpecs(cmdInfo.KeySpecifications, out var keys);
+            var keys = parseState.ExtractKeysFromSpecs(simpleCmdInfo.KeySpecs);
 
-
-            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(keys.Length, ref dcurr, dend))
                 SendAndReset();
 
             foreach (var key in keys)
@@ -1214,35 +1222,45 @@ namespace Garnet.server
             }
 
             var cmdName = parseState.GetString(0);
-            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
+
+            var cmdFound = false;
+            var simpleCmdInfo = SimpleRespCommandInfo.Default;
+
+            if (Enum.TryParse<RespCommand>(cmdName, true, out var cmd))
+            {
+                if (RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
+                    cmdFound = true;
+
+                if (!cmdFound && storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out var cmdInfo))
+                {
+                    cmdInfo.PopulateSimpleCommandInfo(ref simpleCmdInfo);
+                    cmdFound = true;
+                }
+            }
 
             if (!cmdFound)
-            {
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
-            }
 
-            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
-            {
+            if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
-            }
 
-            parseState.TryExtractKeysAndFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
+            var keysAndFlags = parseState.ExtractKeysAndFlagsFromSpecs(simpleCmdInfo.KeySpecs);
 
-            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(keysAndFlags.Length, ref dcurr, dend))
                 SendAndReset();
 
-            for (int i = 0; i < keys.Count; i++)
+            for (var i = 0; i < keysAndFlags.Length; i++)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(keys[i].Span, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(keysAndFlags[i].Item1.Span, ref dcurr, dend))
                     SendAndReset();
 
-                WriteSetLength(flags[i].Length);
+                var flags = EnumUtils.GetEnumDescriptions(keysAndFlags[i].Item2);
+                WriteSetLength(flags.Length);
 
-                foreach (var flag in flags[i])
+                foreach (var flag in flags)
                 {
                     while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
                         SendAndReset();

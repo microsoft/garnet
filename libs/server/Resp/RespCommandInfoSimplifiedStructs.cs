@@ -189,9 +189,9 @@ namespace Garnet.server
         public SimpleRespKeySpecFindKeys FindKeys;
 
         /// <summary>
-        /// Whether keys defined in this spec are for read-only operations
+        /// Key specification flags
         /// </summary>
-        public bool IsReadOnly;
+        public KeySpecificationFlags Flags;
     }
 
     /// <summary>
@@ -259,7 +259,7 @@ namespace Garnet.server
                 _ => throw new NotSupportedException()
             };
 
-            simpleKeySpec.IsReadOnly = keySpec.Flags.HasFlag(KeySpecificationFlags.RO);
+            simpleKeySpec.Flags = keySpec.Flags;
 
             return true;
         }

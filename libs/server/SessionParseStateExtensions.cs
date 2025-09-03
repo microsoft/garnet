@@ -848,21 +848,15 @@ namespace Garnet.server
         /// </summary>
         /// <param name="state">The SessionParseState instance.</param>
         /// <param name="keySpecs">The RespCommandKeySpecification array contains the key specification</param>
-        /// <param name="keys">The list to store extracted keys.</param>
-        /// <returns>True if keys were successfully extracted, otherwise false.</returns>
-        internal static bool TryExtractKeysFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys)
+        /// <returns>The extracted keys</returns>
+        internal static ArgSlice[] ExtractKeysFromSpecs(this ref SessionParseState state, SimpleRespKeySpec[] keySpecs)
         {
-            keys = new();
+            var keys = new List<ArgSlice>();
 
             foreach (var spec in keySpecs)
-            {
-                if (!ExtractKeysFromSpec(ref state, keys, spec))
-                {
-                    return false;
-                }
-            }
+                AppendKeysFromSpec(ref state, spec, keys);
 
-            return true;
+            return keys.ToArray();
         }
 
         /// <summary>
@@ -870,60 +864,43 @@ namespace Garnet.server
         /// </summary>
         /// <param name="state">The SessionParseState instance.</param>
         /// <param name="keySpecs">The RespCommandKeySpecification array containing the key specifications.</param>
-        /// <param name="keys">The list to store extracted keys.</param>
-        /// <param name="flags">The list to store associated flags for each key.</param>
-        /// <returns>True if keys and flags were successfully extracted, otherwise false.</returns>
-        internal static bool TryExtractKeysAndFlagsFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys, out List<string[]> flags)
+        /// <returns>The extracted keys and flags</returns>
+        internal static (ArgSlice, KeySpecificationFlags)[] ExtractKeysAndFlagsFromSpecs(this ref SessionParseState state, SimpleRespKeySpec[] keySpecs)
         {
-            keys = new();
-            flags = new();
-
+            var keysAndFlags = new List<(ArgSlice, KeySpecificationFlags)>();
+            
             foreach (var spec in keySpecs)
-            {
-                var prevKeyCount = keys.Count;
-                if (!ExtractKeysFromSpec(ref state, keys, spec))
-                {
-                    return false;
-                }
+                AppendKeysAndFlagsFromSpec(ref state, spec, keysAndFlags);
 
-                var keyFlags = spec.RespFormatFlags;
-                for (int i = prevKeyCount; i < keys.Count; i++)
-                {
-                    flags.Add(keyFlags);
-                }
-            }
-
-            return true;
+            return keysAndFlags.ToArray();
         }
 
         /// <summary>
         /// Extracts keys from the given key specification in the provided SessionParseState.
         /// </summary>
-        /// <param name="state">The SessionParseState instance.</param>
-        /// <param name="keys">The list to store extracted keys.</param>
-        /// <param name="spec">The key specification to use for extraction.</param>
-        /// <returns>True if keys were successfully extracted, otherwise false.</returns>
-        private static bool ExtractKeysFromSpec(ref SessionParseState state, List<ArgSlice> keys, RespCommandKeySpecification spec)
+        /// <param name="parseState">The SessionParseState instance.</param>
+        /// <param name="keySpec">The key specification to use for extraction.</param>
+        /// <param name="keys">The list to store extracted keys</param>
+        private static void AppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, List<ArgSlice> keys)
         {
-            int startIndex = 0;
+            var (firstKeyIdx, lastKeyIdx, keyStep) = parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
 
-            if (spec.BeginSearch is BeginSearchKeySpecMethodBase bsKeyword)
-            {
-                if (!bsKeyword.TryGetStartIndex(ref state, out startIndex))
-                {
-                    return false;
-                }
-            }
+            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep + 1)
+                keys.Add(parseState.GetArgSliceByRef(i));
+        }
 
-            if (startIndex < 0 || startIndex >= state.Count)
-                return false;
+        /// <summary>
+        /// Extracts keys from the given key specification in the provided SessionParseState.
+        /// </summary>
+        /// <param name="parseState">The SessionParseState instance.</param>
+        /// <param name="keySpec">The key specification to use for extraction.</param>
+        /// <param name="keysAndFlags">The list to store extracted keys and flags</param>
+        private static void AppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, List<(ArgSlice, KeySpecificationFlags)> keysAndFlags)
+        {
+            var (firstKeyIdx, lastKeyIdx, keyStep) = parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
 
-            if (spec.FindKeys is FindKeysKeySpecMethodBase findKey)
-            {
-                findKey.ExtractKeys(ref state, startIndex, keys);
-            }
-
-            return true;
+            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep + 1)
+                keysAndFlags.Add((parseState.GetArgSliceByRef(i), keySpec.Flags));
         }
 
         /// <summary>
