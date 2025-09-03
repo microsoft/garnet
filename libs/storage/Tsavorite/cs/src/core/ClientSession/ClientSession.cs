@@ -186,10 +186,7 @@ namespace Tsavorite.core
         public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => store.LockTable.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys);
-
-        /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys, start, count);
+        public void SortKeyHashes<TLockableKey>(Span<TLockableKey> keys) where TLockableKey : ILockableKey => store.LockTable.SortKeyHashes(keys);
 
         #endregion ITsavoriteContext
 
