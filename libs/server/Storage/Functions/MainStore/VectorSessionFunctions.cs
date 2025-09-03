@@ -26,13 +26,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
-            if (recordInfo.Hidden)
-            {
-                // Implies this is a vector set, needs special handling
-                deleteInfo.Action = DeleteAction.CancelOperation;
-                return false;
-            }
-
             recordInfo.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
@@ -53,7 +46,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo)
         {
-            Debug.Assert(readInfo.RecordInfo.Hidden, "Should never read a non-hidden value with VectorSessionFunctions");
+            Debug.Assert(key.MetadataSize == 1, "Should never read a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
 
             dst.Length = value.Length;
@@ -64,7 +57,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
-            Debug.Assert(readInfo.RecordInfo.Hidden, "Should never read a non-hidden value with VectorSessionFunctions");
+            Debug.Assert(key.MetadataSize == 1, "Should never read a non-namespaced value with VectorSessionFunctions");
             Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
 
             dst.Length = value.Length;
@@ -92,7 +85,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
         {
-            recordInfo.Hidden = true;
             return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
         }
 
@@ -101,7 +93,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
-            recordInfo.Hidden = true;
             return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
         }
         #endregion
@@ -115,7 +106,7 @@ namespace Garnet.server
         public int GetRMWModifiedValueLength(ref SpanByte value, ref VectorInput input) => throw new NotImplementedException();
         /// <inheritdoc />
         public int GetUpsertValueLength(ref SpanByte value, ref VectorInput input)
-        => sizeof(int) + value.Length;
+        => sizeof(byte) + sizeof(int) + value.Length;
         /// <inheritdoc />
         public bool InPlaceUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
         /// <inheritdoc />

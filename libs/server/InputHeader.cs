@@ -537,6 +537,13 @@ namespace Garnet.server
     {
         public int SerializedLength => throw new NotImplementedException();
 
+        public byte Namespace { get; set; }
+
+        public VectorInput(byte ns)
+        {
+            Namespace = ns;
+        }
+
         public unsafe int CopyTo(byte* dest, int length) => throw new NotImplementedException();
         public unsafe int DeserializeFrom(byte* src) => throw new NotImplementedException();
     }

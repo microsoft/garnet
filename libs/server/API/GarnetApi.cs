@@ -53,8 +53,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             var asSpanByte = key.SpanByte;
 
             return storageSession.GET(ref asSpanByte, ref input, ref output, ref context);
@@ -78,8 +76,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe GarnetStatus GET(ArgSlice key, out ArgSlice value)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             return storageSession.GET(key, out value, ref context);
         }
 
@@ -134,8 +130,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, ref RawStringInput input, ref SpanByte value)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             var asSpanByte = key.SpanByte;
 
             return storageSession.SET(ref asSpanByte, ref input, ref value, ref context);
@@ -148,8 +142,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             var asSpanByte = key.SpanByte;
 
             return storageSession.SET_Conditional(ref asSpanByte, ref input, ref output, ref context);
@@ -158,8 +150,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             var asSpanByte = key.SpanByte;
 
             return storageSession.SET_Conditional(ref asSpanByte, ref input, ref context);
@@ -168,16 +158,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, Memory<byte> value)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             return storageSession.SET(key, value, ref context);
         }
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, ArgSlice value)
         {
-            VectorManager.UnsafeMangleMainKey(ref key);
-
             var asSpanByte = key.SpanByte;
             var valSpanByte = value.SpanByte;
 

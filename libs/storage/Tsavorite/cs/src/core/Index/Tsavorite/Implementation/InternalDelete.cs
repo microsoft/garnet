@@ -225,6 +225,7 @@ namespace Tsavorite.core
 
             ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
             newRecordInfo.SetTombstone();
+            newRecordInfo.VectorSet = srcRecordInfo.VectorSet;
             stackCtx.SetNewRecord(newLogicalAddress);
 
             DeleteInfo deleteInfo = new()

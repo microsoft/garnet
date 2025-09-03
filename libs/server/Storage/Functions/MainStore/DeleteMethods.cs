@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
-            if (recordInfo.Hidden)
+            if (recordInfo.VectorSet)
             {
                 // Implies this is a vector set, needs special handling
                 deleteInfo.Action = DeleteAction.CancelOperation;
@@ -35,7 +35,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
-            if (recordInfo.Hidden)
+            if (recordInfo.VectorSet)
             {
                 // Implies this is a vector set, needs special handling
                 deleteInfo.Action = DeleteAction.CancelOperation;

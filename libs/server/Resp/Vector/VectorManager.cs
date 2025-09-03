@@ -107,90 +107,66 @@ namespace Garnet.server
 
         private static int ReadCallbackManaged(ulong context, ReadOnlySpan<byte> key, Span<byte> value)
         {
-            Span<byte> distinctKey = stackalloc byte[128];
-            DistinguishVectorElementKey(context, key, ref distinctKey, out var rentedBuffer);
+            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload((byte)context);
+            key.CopyTo(keyWithNamespace.AsSpan());
 
-            try
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+            VectorInput input = new((byte)context);
+            var outputSpan = SpanByte.FromPinnedSpan(value);
+
+            var status = ctx.Read(ref keyWithNamespace, ref input, ref outputSpan);
+            if (status.IsPending)
             {
-                ref var ctx = ref ActiveThreadSession.vectorContext;
-                var keySpan = SpanByte.FromPinnedSpan(distinctKey);
-                VectorInput input = new();
-                var outputSpan = SpanByte.FromPinnedSpan(value);
-
-                var status = ctx.Read(ref keySpan, ref input, ref outputSpan);
-                if (status.IsPending)
-                {
-                    CompletePending(ref status, ref outputSpan, ref ctx);
-                }
-
-                if (status.Found)
-                {
-                    return outputSpan.Length;
-                }
-
-                return 0;
+                CompletePending(ref status, ref outputSpan, ref ctx);
             }
-            finally
+
+            if (status.Found)
             {
-                if (rentedBuffer != null)
-                {
-                    ArrayPool<byte>.Shared.Return(rentedBuffer);
-                }
+                return outputSpan.Length;
             }
+
+            return 0;
         }
 
         private static bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
-            Span<byte> distinctKey = stackalloc byte[128];
-            DistinguishVectorElementKey(context, key, ref distinctKey, out var rentedBuffer);
+            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload((byte)context);
+            key.CopyTo(keyWithNamespace.AsSpan());
 
-            try
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+            VectorInput input = new((byte)context);
+            var valueSpan = SpanByte.FromPinnedSpan(value);
+            SpanByte outputSpan = default;
+
+            var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
+            if (status.IsPending)
             {
-                ref var ctx = ref ActiveThreadSession.vectorContext;
-                var keySpan = SpanByte.FromPinnedSpan(distinctKey);
-                VectorInput input = new();
-                var valueSpan = SpanByte.FromPinnedSpan(value);
-                SpanByte outputSpan = default;
-
-                var status = ctx.Upsert(ref keySpan, ref input, ref valueSpan, ref outputSpan);
-                if (status.IsPending)
-                {
-                    CompletePending(ref status, ref outputSpan, ref ctx);
-                }
-
-                return status.IsCompletedSuccessfully;
+                CompletePending(ref status, ref outputSpan, ref ctx);
             }
-            finally
-            {
-                if (rentedBuffer != null)
-                {
-                    ArrayPool<byte>.Shared.Return(rentedBuffer);
-                }
-            }
+
+            return status.IsCompletedSuccessfully;
         }
 
         private static bool DeleteCallbackManaged(ulong context, ReadOnlySpan<byte> key)
         {
-            Span<byte> distinctKey = stackalloc byte[128];
-            DistinguishVectorElementKey(context, key, ref distinctKey, out var rentedBuffer);
+            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload((byte)context);
+            key.CopyTo(keyWithNamespace.AsSpan());
 
-            try
-            {
-                ref var ctx = ref ActiveThreadSession.vectorContext;
-                var keySpan = SpanByte.FromPinnedSpan(distinctKey);
+            ref var ctx = ref ActiveThreadSession.vectorContext;
 
-                var status = ctx.Delete(ref keySpan);
-                Debug.Assert(!status.IsPending, "Deletes should never go async");
+            var status = ctx.Delete(ref keyWithNamespace);
+            Debug.Assert(!status.IsPending, "Deletes should never go async");
 
-                return status.IsCompletedSuccessfully;
-            }
-            finally
-            {
-                if (rentedBuffer != null)
-                {
-                    ArrayPool<byte>.Shared.Return(rentedBuffer);
-                }
-            }
+            return status.IsCompletedSuccessfully;
         }
 
         /// <summary>
@@ -253,7 +229,11 @@ namespace Garnet.server
                 indexPtr = Service.CreateIndexManaged(context, dimensions, reduceDims, quantType, buildExplorationFactory, numLinks, ReadCallbackDel, WriteCallbackDel, DeleteCallbackDel);
             }
 
-            ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue.AsSpan()));
+            var indexSpan = indexValue.AsSpan();
+
+            Debug.Assert(indexSpan.Length == Index.Size, "Insufficient space for index");
+
+            ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
             asIndex.Context = context;
             asIndex.Dimensions = dimensions;
             asIndex.ReduceDims = reduceDims;
@@ -579,33 +559,6 @@ namespace Garnet.server
             {
                 ActiveThreadSession = null;
             }
-        }
-
-        /// <summary>
-        /// Returns true if the key (as found in main store) is somehow related to some Vector Set.
-        /// </summary>
-        internal static bool IsVectorSetRelatedKey(ReadOnlySpan<byte> keyInStore)
-        => !keyInStore.IsEmpty && (keyInStore[^1] > 0b1100_0000);
-
-        /// <summary>
-        /// If a key going into the main store would be interpreted as a Vector Set (via <see cref="IsVectorSetRelatedKey"/>) key,
-        /// mangles it so that it no longer will.
-        /// 
-        /// This is unsafe because it ASSUMES there's an extra free byte at the end
-        /// of the key.
-        /// </summary>
-        internal static unsafe void UnsafeMangleMainKey(ref ArgSlice rawKey)
-        {
-            if (!IsVectorSetRelatedKey(rawKey.ReadOnlySpan))
-            {
-                return;
-            }
-
-            *(rawKey.ptr + rawKey.length) = 0b1100_0000;
-            rawKey.length++;
-
-            Debug.Assert(!IsVectorSetRelatedKey(rawKey.ReadOnlySpan), "Mangling did not work");
-            return;
         }
 
         /// <summary>

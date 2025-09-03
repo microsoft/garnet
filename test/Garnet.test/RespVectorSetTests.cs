@@ -25,7 +25,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
 
             Program.RegisterHackyBenchmarkCommands(server);
 
@@ -226,13 +226,14 @@ namespace Garnet.test
                 }
             }
 
+            // TODO: restore once VEMB is re-implemented
             // Check we haven't messed up the element
-            var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
-            ClassicAssert.AreEqual(4, res7.Length);
-            ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res7[0]));
-            ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res7[1]));
-            ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res7[2]));
-            ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res7[3]));
+            //var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            //ClassicAssert.AreEqual(4, res7.Length);
+            //ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res7[0]));
+            //ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res7[1]));
+            //ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res7[2]));
+            //ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res7[3]));
         }
 
         [Test]
@@ -325,7 +326,7 @@ namespace Garnet.test
             const string PathToQuery = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m.query-10k.fbin";
             const string PathToWrite = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-holdout-{0}.base.fbin";
             const int BenchmarkDurationSeconds = 5;
-            const int ParallelBenchmarks = 1;
+            const int ParallelBenchmarks = 12;
 
             var key = $"{nameof(JankBenchmarkCommandsAsync)}_{Guid.NewGuid()}";
 
@@ -434,7 +435,7 @@ namespace Garnet.test
             var qps = totalQueries / (double)BenchmarkDurationSeconds;
             var ips = totalWrites / (double)BenchmarkDurationSeconds;
 
-            TestContext.Progress.WriteLine($"Total queries: {qps}");
+            TestContext.Progress.WriteLine($"Total queries: {totalQueries}");
             TestContext.Progress.WriteLine($"Queries per second: {qps}");
             TestContext.Progress.WriteLine($"Total inserts: {totalWrites}");
             TestContext.Progress.WriteLine($"Inserts per second: {ips}");

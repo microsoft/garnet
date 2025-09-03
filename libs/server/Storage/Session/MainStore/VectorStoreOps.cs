@@ -387,6 +387,7 @@ namespace Garnet.server
         private Status TryDeleteVectorSet(ref SpanByte key)
         {
             var lockCtx = objectStoreLockableContext;
+
             lockCtx.BeginLockable();
 
             try
@@ -418,6 +419,8 @@ namespace Garnet.server
 
                     // We shouldn't read a non-Vector Set value if we read anything, so this is unconditional
                     vectorManager.DropIndex(this, indexConfig.AsSpan());
+
+                    // TODO: actually delete!
 
                     return Status.CreateFound();
                 }

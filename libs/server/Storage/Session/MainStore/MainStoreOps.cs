@@ -589,10 +589,9 @@ namespace Garnet.server
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 var status = context.Delete(ref key);
-
                 if (status.IsCanceled)
                 {
-                    // May be a Vector Set, try delete with that logic
+                    // Might be a vector set
                     status = TryDeleteVectorSet(ref key);
                 }
 
@@ -622,12 +621,14 @@ namespace Garnet.server
                 var status = objectContext.Delete(key);
                 if (status.IsCanceled)
                 {
-                    // May be a Vector Set, try delete with that logic
+                    // Might be a vector set
                     fixed (byte* keyPtr = key)
                     {
                         SpanByte keySpan = new(key.Length, (nint)keyPtr);
                         status = TryDeleteVectorSet(ref keySpan);
                     }
+
+                    if (status.Found) found = true;
                 }
 
                 Debug.Assert(!status.IsPending);
