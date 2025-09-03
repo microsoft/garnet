@@ -45,11 +45,20 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            // VALUES
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
             var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", new byte[] { 1, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res2);
+
+            // FP32
+            var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "FP32", MemoryMarshal.Cast<float, byte>([5f, 6f, 7f, 8f]).ToArray(), new byte[] { 2, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            // XB8
+            var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "XB8", new byte[] { 9, 10, 11, 12 }, new byte[] { 3, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res4);
 
             // TODO: exact duplicates - what does Redis do?
         }
@@ -247,6 +256,18 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, res4.Length);
             ClassicAssert.IsTrue(res4.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
             ClassicAssert.IsTrue(res4.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
+
+            // FP32
+            var res5 = (byte[][])db.Execute("VSIM", ["foo", "FP32", MemoryMarshal.Cast<float, byte>([3.1f, 3.2f, 3.3f, 3.4f]).ToArray(), "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res5.Length);
+            ClassicAssert.IsTrue(res5.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res5.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
+
+            // XB8
+            var res6 = (byte[][])db.Execute("VSIM", ["foo", "XB8", new byte[] { 10, 11, 12, 13 }, "COUNT", "5", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res6.Length);
+            ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
             // TODO: WITHSCORES
             // TODO: WITHATTRIBS

@@ -65,6 +65,7 @@ namespace Garnet.server
                         return AbortWithErrorMessage("ERR invalid vector specification");
                     }
 
+                    curIx++;
                     valueType = VectorValueType.F32;
                     values = asBytes;
                 }
@@ -115,10 +116,7 @@ namespace Garnet.server
                     }
 
                     var asBytes = parseState.GetArgSliceByRef(curIx).Span;
-                    if ((asBytes.Length % sizeof(float)) != 0)
-                    {
-                        return AbortWithErrorMessage("ERR invalid vector specification");
-                    }
+                    curIx++;
 
                     valueType = VectorValueType.XB8;
                     values = asBytes;
