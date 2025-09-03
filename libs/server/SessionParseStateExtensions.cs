@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 
@@ -923,6 +924,76 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Extracts the first, last, and step arguments for key searching based on a simplified RESP key specification and the current parse state.
+        /// </summary>
+        /// <param name="parseState">The current parse state</param>
+        /// <param name="keySpec">The simplified key specification</param>
+        /// <returns>First, last, and step arguments for key searching</returns>
+        internal static (int firstIdx, int lastIdx, int step) GetKeySearchArgsFromSimpleKeySpec(this ref SessionParseState parseState, SimpleRespKeySpec keySpec)
+        {
+            // Determine the starting index for searching keys
+            var beginSearchIdx = -1;
+
+            // If the begin search is an index type - use the specified index as a constant
+            if (keySpec.BeginSearch.IsIndexType)
+            {
+                beginSearchIdx = keySpec.BeginSearch.Index - 1;
+            }
+            // If the begin search is a keyword type - search for the keyword in the parse state, starting at the specified index
+            else
+            {
+                for (var i = keySpec.BeginSearch.Index - 1; i < parseState.Count; i++)
+                {
+                    if (parseState.GetArgSliceByRef(i).ReadOnlySpan
+                        .EqualsUpperCaseSpanIgnoringCase(keySpec.BeginSearch.Keyword))
+                    {
+                        // The begin search index is the argument immediately after the keyword
+                        beginSearchIdx = i + 1;
+                        break;
+                    }
+                }
+            }
+
+            // Next, determine the first, last, and step arguments for key searching based on the find keys specification
+            var firstKeyIdx = beginSearchIdx;
+            var keyStep = keySpec.FindKeys.KeyStep;
+            int lastKeyIdx;
+
+            if (keySpec.FindKeys.IsRangeType)
+            {
+                // If the find keys is of type range with limit, the last key index is determined by the limit factor
+                // 0 and 1 mean no limit, 2 means half of the remaining arguments, 3 means a third, and so on.
+                if (keySpec.FindKeys.IsRangeLimitType)
+                {
+                    var limit = keySpec.FindKeys.LastKeyOrLimit;
+                    lastKeyIdx = limit == 0 || limit == 1 ? parseState.Count - 1
+                        : ((parseState.Count - firstKeyIdx) / limit) + firstKeyIdx - 1;
+                }
+                // If the find keys is of type range with last key, the last key index is determined by the specified last key index relative to the begin search index
+                else
+                {
+                    lastKeyIdx = keySpec.FindKeys.LastKeyOrLimit;
+                    lastKeyIdx = lastKeyIdx < 0 ? lastKeyIdx + parseState.Count : lastKeyIdx - firstKeyIdx;
+                }
+            }
+            // If the find keys is of type keynum, the last key index is determined by the number of keys specified at the key number index relative to the begin search index
+            else
+            {
+                var keyNumIdx = keySpec.FindKeys.KeyNumIndex;
+                Debug.Assert(keyNumIdx > 0 && keyNumIdx < parseState.Count);
+
+                var keyNumFound = parseState.TryGetInt(keyNumIdx, out var keyNum);
+                Debug.Assert(keyNumFound);
+
+                firstKeyIdx += keySpec.FindKeys.FirstKey - 1;
+                lastKeyIdx = firstKeyIdx + ((keyNum - 1) * (keyStep + 1));
+            }
+
+            Debug.Assert(lastKeyIdx < parseState.Count);
+            return (firstKeyIdx, lastKeyIdx, keyStep);
         }
     }
 }

@@ -56,6 +56,11 @@ namespace Garnet.server
             }
         }
 
+        internal int GetKeysByKeySpec(SimpleRespCommandInfo cmdInfo)
+        {
+            return LockKeys(cmdInfo, StoreType.All);
+        }
+
         /// <summary>
         /// Returns a number of skipped args
         /// </summary>
@@ -569,6 +574,41 @@ namespace Garnet.server
             }
 
             return inputCount;
+        }
+
+        private int LockKeys(SimpleRespCommandInfo cmdInfo, StoreType storeType)
+        {
+            var lastKeyIdx = -1;
+
+            foreach (var keySpec in cmdInfo.KeySpecs)
+            {
+                var keySpecLastKeyIdx = LockKeysByKeySpec(keySpec, storeType);
+                if (keySpecLastKeyIdx > lastKeyIdx)
+                    lastKeyIdx = keySpecLastKeyIdx;
+            }
+
+            return lastKeyIdx + 1;
+        }
+
+        private int LockKeysByKeySpec(SimpleRespKeySpec keySpec, StoreType storeType)
+        {
+            var (firstKeyIdx, lastKeyIdx, keyStep) = respSession.parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
+
+            var lockType = keySpec.IsReadOnly ? LockType.Shared : LockType.Exclusive;
+
+            var skipIdx = -1;
+            for (var currIdx = firstKeyIdx; currIdx <= lastKeyIdx; currIdx += keyStep + 1)
+            {
+                var key = respSession.parseState.GetArgSliceByRef(currIdx);
+                if (storeType is StoreType.Main or StoreType.All)
+                    SaveKeyEntryToLock(key, false, lockType);
+                if (storeType is StoreType.Object or StoreType.All && !objectStoreBasicContext.IsNull)
+                    SaveKeyEntryToLock(key, true, lockType);
+                SaveKeyArgSlice(key); 
+                skipIdx = currIdx;
+            }
+
+            return skipIdx;
         }
     }
 }

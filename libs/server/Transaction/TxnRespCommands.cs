@@ -166,6 +166,11 @@ namespace Garnet.server
                 }
             }
 
+            if (commandInfo.KeySpecs?.Length > 0)
+            {
+                var skippedNew = txnManager.GetKeysByKeySpec(commandInfo);
+            }
+
             // Get and add keys to txn key list
             int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error);
 
