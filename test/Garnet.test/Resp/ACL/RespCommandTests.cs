@@ -7494,7 +7494,9 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVAddAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", "bar", "CAS", "Q8", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]);
+                var elem = Encoding.ASCII.GetString("\x0\x1\x2\x3"u8);
+
+                long val = await client.ExecuteForLongResultAsync("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", elem, "CAS", "Q8", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]);
                 ClassicAssert.AreEqual(1, val);
             }
         }

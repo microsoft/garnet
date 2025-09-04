@@ -258,7 +258,7 @@ namespace Garnet.server
 
             internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase<SpanByte, SpanByte>
             {
-                protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
+                protected override bool IsExpired(ref SpanByte value) => value.MetadataSize == 8 && MainSessionFunctions.CheckExpiry(ref value);
                 protected override bool DeleteIfExpiredInMemory(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata)
                 {
                     var input = new RawStringInput(RespCommand.DELIFEXPIM);
@@ -324,7 +324,7 @@ namespace Garnet.server
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     if ((info.patternB != null && !GlobUtils.Match(info.patternB, info.patternLength, key.ToPointer(), key.Length, true))
-                        || (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value)))
+                        || (value.MetadataSize == 8 && MainSessionFunctions.CheckExpiry(ref value)))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                     }
@@ -410,7 +410,7 @@ namespace Garnet.server
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (value.MetadataSize == 0 || !MainSessionFunctions.CheckExpiry(ref value))
+                    if (value.MetadataSize != 8 || !MainSessionFunctions.CheckExpiry(ref value))
                     {
                         ++info.count;
                     }

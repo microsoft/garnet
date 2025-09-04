@@ -320,6 +320,7 @@ namespace Garnet.test
 
         // HACK - this had better not land in main
         [Test]
+        [Ignore("Long running, skip for now")]
         public async Task JankBenchmarkCommandsAsync()
         {
             const string PathToPreload = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-part-{0}.base.fbin";

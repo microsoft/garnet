@@ -331,7 +331,7 @@ namespace Garnet.server
         {
             RespCommand cmd = input.header.cmd;
             // Expired data
-            if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
+            if (value.MetadataSize == 8 && input.header.CheckExpiry(value.ExtraMetadata))
             {
                 rmwInfo.Action = cmd is RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 recordInfo.ClearHasETag();
@@ -585,7 +585,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.EXPIRE:
-                    var expiryExists = value.MetadataSize > 0;
+                    var expiryExists = value.MetadataSize == 8;
 
                     var expirationWithOption = new ExpirationWithOption(input.arg1);
 
@@ -599,7 +599,7 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.PERSIST:
-                    if (value.MetadataSize != 0)
+                    if (value.MetadataSize == 8)
                     {
                         rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                         value.AsSpan().CopyTo(value.AsSpanWithMetadata());
@@ -755,7 +755,7 @@ namespace Garnet.server
                         var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
 
                         var newExpiry = input.arg1;
-                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize > 0, newExpiry, ref value, ref _output);
+                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize == 8, newExpiry, ref value, ref _output);
                     }
 
                     if (input.parseState.Count > 0)
@@ -882,7 +882,7 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFEXPIM:
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                     }
@@ -945,7 +945,7 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         rmwInfo.RecordInfo.ClearHasETag();
@@ -973,7 +973,7 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     // Expired data, return false immediately so we do not set, since it does not exist
                     // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.RecordInfo.ClearHasETag();
                         rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -1014,7 +1014,7 @@ namespace Garnet.server
         public bool CopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             // Expired data
-            if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+            if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
             {
                 recordInfo.ClearHasETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
@@ -1176,7 +1176,7 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                     shouldUpdateEtag = false;
 
-                    var expiryExists = oldValue.MetadataSize > 0;
+                    var expiryExists = oldValue.MetadataSize == 8;
 
                     var expirationWithOption = new ExpirationWithOption(input.arg1);
 
@@ -1186,7 +1186,7 @@ namespace Garnet.server
                 case RespCommand.PERSIST:
                     shouldUpdateEtag = false;
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                    if (oldValue.MetadataSize != 0)
+                    if (oldValue.MetadataSize == 8)
                     {
                         newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
                         newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
@@ -1311,7 +1311,7 @@ namespace Garnet.server
                         byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
                         var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
                         var newExpiry = input.arg1;
-                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize > 0, newExpiry, ref oldValue, ref newValue, ref _output);
+                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize == 8, newExpiry, ref oldValue, ref newValue, ref _output);
                     }
 
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
