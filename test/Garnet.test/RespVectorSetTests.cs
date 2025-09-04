@@ -146,6 +146,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Ignore("Not yet implemented on the DiskANN side")]
         public void VEMB()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -161,7 +162,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res2[2]));
             ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res2[3]));
 
-            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
             ClassicAssert.AreEqual(0, res3.Length);
         }
 

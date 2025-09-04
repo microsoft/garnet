@@ -473,13 +473,11 @@ namespace Garnet.cluster
                     // TODO: need VectorManager mangling space
 
                     ref var key = ref SpanByte.Reinterpret(payloadPtr);
-                    var keyArgSlice = ArgSlice.FromPinnedSpan(key.AsReadOnlySpan());
                     payloadPtr += key.TotalSize;
                     ref var value = ref SpanByte.Reinterpret(payloadPtr);
-                    var valueArgSlice = ArgSlice.FromPinnedSpan(value.AsReadOnlySpan());
                     payloadPtr += value.TotalSize;
 
-                    _ = basicGarnetApi.SET(keyArgSlice, valueArgSlice);
+                    _ = basicGarnetApi.SET(ref key, ref value);
                     i++;
                 }
             }

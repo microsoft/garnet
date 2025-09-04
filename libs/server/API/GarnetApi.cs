@@ -127,6 +127,10 @@ namespace Garnet.server
         #endregion
 
         #region SET
+
+        public GarnetStatus SET(ref SpanByte key, ref SpanByte value)
+           => storageSession.SET(ref key, ref value, ref context);
+
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, ref RawStringInput input, ref SpanByte value)
         {
