@@ -61,6 +61,10 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TLockableKey : ILockableKey
         {
+            // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
+            // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
+            // This is the same as DoManualTryLock but without timeout; it will keep trying until it acquires all locks or the hardcoded retry limit is reached.
+
             var retryCount = 0;
         Retry:
             var prevBucketIndex = -1L;
@@ -98,6 +102,10 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TLockableKey : ILockableKey
         {
+            // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
+            // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
+            // This is the same as DoManualLock but with timeout.
+
             // We can't start each retry with a full timeout because we might always fail if someone is not unlocking (e.g. another thread hangs
             // somehow while holding a lock, or the current thread has issued two lock calls on two key sets and the second tries to lock one in
             // the first, and so on). So set the timeout high enough to accommodate as many retries as you want.
