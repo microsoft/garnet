@@ -885,8 +885,14 @@ namespace Garnet.server
         {
             var (firstKeyIdx, lastKeyIdx, keyStep) = parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
 
-            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep + 1)
-                keys.Add(parseState.GetArgSliceByRef(i));
+            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep)
+            {
+                var key = parseState.GetArgSliceByRef(i);
+                if (key.Length == 0)
+                    continue;
+
+                keys.Add(key);
+            }
         }
 
         /// <summary>
@@ -899,8 +905,14 @@ namespace Garnet.server
         {
             var (firstKeyIdx, lastKeyIdx, keyStep) = parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
 
-            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep + 1)
-                keysAndFlags.Add((parseState.GetArgSliceByRef(i), keySpec.Flags));
+            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep)
+            {
+                var key = parseState.GetArgSliceByRef(i);
+                if (key.Length == 0)
+                    continue;
+
+                keysAndFlags.Add((key, keySpec.Flags));
+            }
         }
 
         /// <summary>
@@ -917,12 +929,12 @@ namespace Garnet.server
             // If the begin search is an index type - use the specified index as a constant
             if (keySpec.BeginSearch.IsIndexType)
             {
-                beginSearchIdx = keySpec.BeginSearch.Index - 1;
+                beginSearchIdx = keySpec.BeginSearch.Index;
             }
             // If the begin search is a keyword type - search for the keyword in the parse state, starting at the specified index
             else
             {
-                for (var i = keySpec.BeginSearch.Index - 1; i < parseState.Count; i++)
+                for (var i = keySpec.BeginSearch.Index; i < parseState.Count; i++)
                 {
                     if (parseState.GetArgSliceByRef(i).ReadOnlySpan
                         .EqualsUpperCaseSpanIgnoringCase(keySpec.BeginSearch.Keyword))
@@ -946,27 +958,28 @@ namespace Garnet.server
                 if (keySpec.FindKeys.IsRangeLimitType)
                 {
                     var limit = keySpec.FindKeys.LastKeyOrLimit;
-                    lastKeyIdx = limit == 0 || limit == 1 ? parseState.Count - 1
-                        : ((parseState.Count - firstKeyIdx) / limit) + firstKeyIdx - 1;
+                    var keyNum = 1 + ((parseState.Count - 1 - firstKeyIdx) / keyStep);
+                    lastKeyIdx = limit is 0 or 1 ? firstKeyIdx + ((keyNum - 1) * keyStep)
+                        : firstKeyIdx + (((keyNum / limit) - 1) * keyStep);
                 }
                 // If the find keys is of type range with last key, the last key index is determined by the specified last key index relative to the begin search index
                 else
                 {
                     lastKeyIdx = keySpec.FindKeys.LastKeyOrLimit;
-                    lastKeyIdx = lastKeyIdx < 0 ? lastKeyIdx + parseState.Count : lastKeyIdx - firstKeyIdx;
+                    lastKeyIdx = lastKeyIdx < 0 ? lastKeyIdx + parseState.Count : firstKeyIdx + lastKeyIdx;
                 }
             }
             // If the find keys is of type keynum, the last key index is determined by the number of keys specified at the key number index relative to the begin search index
             else
             {
-                var keyNumIdx = keySpec.FindKeys.KeyNumIndex;
-                Debug.Assert(keyNumIdx > 0 && keyNumIdx < parseState.Count);
+                var keyNumIdx = beginSearchIdx + keySpec.FindKeys.KeyNumIndex;
+                Debug.Assert(keyNumIdx >= 0 && keyNumIdx < parseState.Count);
 
                 var keyNumFound = parseState.TryGetInt(keyNumIdx, out var keyNum);
                 Debug.Assert(keyNumFound);
 
-                firstKeyIdx += keySpec.FindKeys.FirstKey - 1;
-                lastKeyIdx = firstKeyIdx + ((keyNum - 1) * (keyStep + 1));
+                firstKeyIdx += keySpec.FindKeys.FirstKey;
+                lastKeyIdx = firstKeyIdx + ((keyNum - 1) * keyStep);
             }
 
             Debug.Assert(lastKeyIdx < parseState.Count);
