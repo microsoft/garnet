@@ -297,7 +297,7 @@ namespace Garnet.server
 
             // get the elements within the score range and write the result
             var count = 0;
-            if (sortedSet.Count > 0)
+            if (sortedSet.Count > 0 && minValue <= sortedSet.Max.Score)
             {
                 foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
                 {

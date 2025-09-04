@@ -530,6 +530,19 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanGetScoresZCountWithMinHigherThanMaxScore()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "LeaderBoard";
+
+            var added = db.SortedSetAdd(key, "a", 1);
+
+            var card = db.SortedSetLength(new RedisKey(key), min: 2, max: 3);
+            ClassicAssert.IsTrue(0 == card);
+        }
+
+        [Test]
         public async Task ZCountAndZCardWithExpiredAndExpiringItems()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
