@@ -338,6 +338,11 @@ namespace Garnet.server
                     return VectorManagerResult.BadParams;
                 }
 
+                if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(uint))
+                {
+                    return VectorManagerResult.BadParams;
+                }
+
                 var insert =
                     Service.Insert(
                         context,

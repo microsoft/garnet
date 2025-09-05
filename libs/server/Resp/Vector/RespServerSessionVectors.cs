@@ -197,6 +197,18 @@ namespace Garnet.server
 
                         continue;
                     }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XPreQ8;
+                        curIx++;
+
+                        continue;
+                    }
 
                     // Look for build-exploration-factor
                     if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("EF"u8))
@@ -280,7 +292,18 @@ namespace Garnet.server
                 attributes ??= default;
                 numLinks ??= 16;
 
-                var res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out var result);
+                // We need to reject these HERE because validation during create_index is very awkward
+                GarnetStatus res;
+                VectorManagerResult result;
+                if (quantType == VectorQuantType.XPreQ8 && reduceDim != 0)
+                {
+                    result = VectorManagerResult.BadParams;
+                    res = GarnetStatus.OK;
+                }
+                else
+                {
+                    res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out result);
+                }
 
                 if (res == GarnetStatus.OK)
                 {

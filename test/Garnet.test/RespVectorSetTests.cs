@@ -59,6 +59,30 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VADDXPREQB8()
+        {
+            // Extra validation is required for this extension quantifier
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // REDUCE not allowed
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "2", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc1.Message);
+
+            // Create a vector set
+            var res1 = db.Execute("VADD", ["fizz", "VALUES", "1", "1.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Element name too short
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0 }, "XPREQ8"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc2.Message);
+
+            // Element name too long
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 1, 2, 3, 4, }, "XPREQ8"]));
+            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc3.Message);
+        }
+
+        [Test]
         public void VADDErrors()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
