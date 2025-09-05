@@ -350,7 +350,7 @@ namespace Tsavorite.test.recovery
                 lc.BeginTransaction();
 
                 // Lock keys, session acquires version in this call
-                lc.Lock(exclusiveVec);
+                lc.Lock<FixedLengthTransactionalKeyStruct>(exclusiveVec);
 
                 txnVersion = store.stateMachineDriver.VerifyTransactionVersion(txnVersion);
                 lc.LocksAcquired(txnVersion);
@@ -360,7 +360,7 @@ namespace Tsavorite.test.recovery
                 _ = lc.RMW(SpanByte.FromPinnedVariable(ref key2), ref input);
 
                 // Unlock keys
-                lc.Unlock(exclusiveVec);
+                lc.Unlock<FixedLengthTransactionalKeyStruct>(exclusiveVec);
 
                 // End transaction
                 lc.EndTransaction();

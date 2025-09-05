@@ -54,113 +54,57 @@ namespace Tsavorite.core
         /// </summary>
         /// <typeparam name="TTransactionalKey">The type of the app data struct or class containing key info</typeparam>
         /// <param name="keys">The array of app key data </param>
-        void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys)
-            where TTransactionalKey : ITransactionalKey;
-
-        /// <summary>
-        /// Sort an array of app data structures (or classes) by lock code and lock type; these will be passed to Transactional*Session.Lock
-        /// </summary>
-        /// <typeparam name="TTransactionalKey">The type of the app data struct or class containing key info</typeparam>
-        /// <param name="keys">The array of app key data </param>
-        /// <param name="start">The starting key index to sort</param>
-        /// <param name="count">The number of keys to sort</param>
-        void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
+        void SortKeyHashes<TTransactionalKey>(Span<TTransactionalKey> keys)
             where TTransactionalKey : ITransactionalKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        void Lock<TTransactionalKey>(TTransactionalKey[] keys)
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        void Lock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys)
             where TTransactionalKey : ITransactionalKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">key hashCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        void Lock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys)
             where TTransactionalKey : ITransactionalKey;
 
         /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
+        /// Locks the keys identified in the passed array, with retry limits.
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys)
-            where TTransactionalKey : ITransactionalKey;
-
-        /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
-        /// </summary>
-        /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
         /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, TimeSpan timeout)
+        bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys, TimeSpan timeout)
             where TTransactionalKey : ITransactionalKey;
 
         /// <summary>
         /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, TimeSpan timeout)
-            where TTransactionalKey : ITransactionalKey;
-
-        /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
-        /// </summary>
-        /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
         /// <param name="cancellationToken">The cancellation token</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, CancellationToken cancellationToken)
+        bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys, CancellationToken cancellationToken)
             where TTransactionalKey : ITransactionalKey;
 
         /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
-        /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        /// <param name="cancellationToken">The cancellation token, if any</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, CancellationToken cancellationToken)
-            where TTransactionalKey : ITransactionalKey;
-
-        /// <summary>
-        /// Locks the keys identified in the passed array, with retry limits or cancellation.
         /// </summary>
-        /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
+        /// <param name="keys">keys to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call.</param>
         /// <param name="cancellationToken">The cancellation token</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, TimeSpan timeout, CancellationToken cancellationToken)
+        bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys, TimeSpan timeout, CancellationToken cancellationToken)
             where TTransactionalKey : ITransactionalKey;
 
         /// <summary>
         /// Promotes a shared lock on the key to an exclusive lock, with retry limits or cancellation.
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">key hashCodes to be locked, and whether that locking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        /// <param name="start">The starting key index to Lock</param>
-        /// <param name="count">The number of keys to Lock</param>
-        /// <param name="timeout">TimeSpan limiting the duration of the TryLock() call over all keys.</param>
-        /// <param name="cancellationToken">The cancellation token, if any</param>
-        bool TryLock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
-            where TTransactionalKey : ITransactionalKey;
-
-        /// <summary>
-        /// Tries to promote a shared lock the key to an exclusive lock, with retry limits or cancellation.
-        /// </summary>
-        /// <typeparam name="TTransactionalKey"></typeparam>
         /// <param name="key">key whose lock is to be promoted.</param>
-        /// <remarks>On success, the caller must update the ITransactionalKey.LockType so the unlock has the right type</remarks>
         bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key)
             where TTransactionalKey : ITransactionalKey;
 
@@ -189,18 +133,8 @@ namespace Tsavorite.core
         /// Unlocks the keys identified in the passed array.
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">key hashCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        void Unlock<TTransactionalKey>(TTransactionalKey[] keys)
+        /// <param name="keys">key hashCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes"/>.</param>
+        void Unlock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys)
         where TTransactionalKey : ITransactionalKey;
-
-        /// <summary>
-        /// Unlocks the keys identified in the passed array.
-        /// </summary>
-        /// <typeparam name="TTransactionalKey"></typeparam>
-        /// <param name="keys">key hashCodes to be unlocked, and whether that unlocking is shared or exclusive; must be sorted by <see cref="SortKeyHashes{TTransactionalKey}(TTransactionalKey[])"/>.</param>
-        /// <param name="start">The starting index to Unlock</param>
-        /// <param name="count">The number of keys to Unlock</param>
-        void Unlock<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
-            where TTransactionalKey : ITransactionalKey;
     }
 }

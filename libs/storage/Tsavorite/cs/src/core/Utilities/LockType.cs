@@ -81,12 +81,12 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Sort the passed key array for use in <see cref="ITransactionalContext.Lock{TTransactionalKey}(TTransactionalKey[])"/>
-        /// and <see cref="ITransactionalContext.Unlock{TTransactionalKey}(TTransactionalKey[])"/>
+        /// Sort the passed key array for use in <see cref="ITransactionalContext.Lock"/>
+        /// and <see cref="ITransactionalContext.Unlock"/>
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="context"></param>
-        public static void Sort(FixedLengthTransactionalKeyStruct[] keys, ITransactionalContext context) => context.SortKeyHashes(keys);
+        public static void Sort(FixedLengthTransactionalKeyStruct[] keys, ITransactionalContext context) => context.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
 
         /// <inheritdoc/>
         public override string ToString()

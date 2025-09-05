@@ -122,14 +122,14 @@ namespace Garnet.server
             // Issue main store locks
             if (mainKeyCount > 0)
             {
-                comparison.transactionalContext.Lock(keys, 0, mainKeyCount);
+                comparison.transactionalContext.Lock<TxnKeyEntry>(keys.AsSpan()[..mainKeyCount]);
                 mainStoreKeyLocked = true;
             }
 
             // Issue object store locks
             if (mainKeyCount < keyCount)
             {
-                comparison.objectStoreTransactionalContext.Lock(keys, mainKeyCount, keyCount - mainKeyCount);
+                comparison.objectStoreTransactionalContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(mainKeyCount, keyCount - mainKeyCount));
                 objectStoreKeyLocked = true;
             }
 
@@ -150,7 +150,7 @@ namespace Garnet.server
             // TryLock will unlock automatically in case of partial failure
             if (mainKeyCount > 0)
             {
-                mainStoreKeyLocked = comparison.transactionalContext.TryLock(keys, 0, mainKeyCount, lock_timeout);
+                mainStoreKeyLocked = comparison.transactionalContext.TryLock<TxnKeyEntry>(keys.AsSpan()[..mainKeyCount], lock_timeout);
                 if (!mainStoreKeyLocked)
                 {
                     phase = 0;
@@ -162,7 +162,7 @@ namespace Garnet.server
             // TryLock will unlock automatically in case of partial failure
             if (mainKeyCount < keyCount)
             {
-                objectStoreKeyLocked = comparison.objectStoreTransactionalContext.TryLock(keys, mainKeyCount, keyCount - mainKeyCount, lock_timeout);
+                objectStoreKeyLocked = comparison.objectStoreTransactionalContext.TryLock<TxnKeyEntry>(keys.AsSpan().Slice(mainKeyCount, keyCount - mainKeyCount), lock_timeout);
                 if (!objectStoreKeyLocked)
                 {
                     phase = 0;
@@ -178,9 +178,9 @@ namespace Garnet.server
         {
             phase = 2;
             if (mainStoreKeyLocked && mainKeyCount > 0)
-                comparison.transactionalContext.Unlock(keys, 0, mainKeyCount);
+                comparison.transactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan()[..mainKeyCount]);
             if (objectStoreKeyLocked && mainKeyCount < keyCount)
-                comparison.objectStoreTransactionalContext.Unlock(keys, mainKeyCount, keyCount - mainKeyCount);
+                comparison.objectStoreTransactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(mainKeyCount, keyCount - mainKeyCount));
             mainKeyCount = 0;
             keyCount = 0;
             mainStoreKeyLocked = false;

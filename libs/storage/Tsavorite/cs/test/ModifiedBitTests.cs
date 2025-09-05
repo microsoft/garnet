@@ -116,18 +116,18 @@ namespace Tsavorite.test.ModifiedBit
 
             var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Exclusive, lContext) };
 
-            lContext.Lock(keyVec);
+            lContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(lContext, key, xlock: true, slock: false, modified: false);
 
-            lContext.Unlock(keyVec);
+            lContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
 
             keyVec[0].LockType = LockType.Shared;
 
-            lContext.Lock(keyVec);
+            lContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(lContext, key, xlock: false, slock: true, modified: false);
 
-            lContext.Unlock(keyVec);
+            lContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: false);
             lContext.EndTransaction();
         }
@@ -219,7 +219,7 @@ namespace Tsavorite.test.ModifiedBit
 
             var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Exclusive, luContext) };
 
-            luContext.Lock(keyVec);
+            luContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
 
             switch (updateOp)
             {
@@ -250,15 +250,15 @@ namespace Tsavorite.test.ModifiedBit
                 }
             }
 
-            luContext.Unlock(keyVec);
+            luContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
 
             if (flushToDisk)
             {
                 keyVec[0].LockType = LockType.Shared;
-                luContext.Lock(keyVec);
+                luContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
                 (status, _) = luContext.Read(key);
                 ClassicAssert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
-                luContext.Unlock(keyVec);
+                luContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
             }
 
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
@@ -334,7 +334,7 @@ namespace Tsavorite.test.ModifiedBit
 
             var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Exclusive, lContext) };
 
-            lContext.Lock(keyVec);
+            lContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
 
             if (flushToDisk)
                 store.Log.FlushAndEvict(wait: true);
@@ -370,15 +370,15 @@ namespace Tsavorite.test.ModifiedBit
                 }
             }
 
-            lContext.Unlock(keyVec);
+            lContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
 
             if (flushToDisk)
             {
                 keyVec[0].LockType = LockType.Shared;
-                lContext.Lock(keyVec);
+                lContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
                 (status, _) = lContext.Read(key);
                 ClassicAssert.AreEqual(updateOp != UpdateOp.Delete, status.Found, status.ToString());
-                lContext.Unlock(keyVec);
+                lContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
             }
 
             AssertLockandModified(lContext, key, xlock: false, slock: false, modified: updateOp != UpdateOp.Delete);
@@ -403,7 +403,7 @@ namespace Tsavorite.test.ModifiedBit
 
             var keyVec = new[] { new FixedLengthTransactionalKeyStruct<int>(key, LockType.Shared, luContext) };
 
-            luContext.Lock(keyVec);
+            luContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: true, modified: true);
 
             // Check Read Copy to Tail resets the modified
@@ -411,18 +411,18 @@ namespace Tsavorite.test.ModifiedBit
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = luContext.CompletePending(wait: true);
 
-            luContext.Unlock(keyVec);
+            luContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
             // Check Read Copy to Tail resets the modified on locked key
             key += 10;
             keyVec[0] = new(key, LockType.Exclusive, luContext);
-            luContext.Lock(keyVec);
+            luContext.Lock<FixedLengthLockableKeyStruct<int>>(keyVec);
             status = luContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = luContext.CompletePending(wait: true);
             AssertLockandModified(luContext, key, xlock: true, slock: false, modified: true);
-            luContext.Unlock(keyVec);
+            luContext.Unlock<FixedLengthLockableKeyStruct<int>>(keyVec);
             AssertLockandModified(luContext, key, xlock: false, slock: false, modified: true);
 
             luContext.EndTransaction();

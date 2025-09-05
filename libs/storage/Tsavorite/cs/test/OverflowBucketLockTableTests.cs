@@ -342,7 +342,7 @@ namespace Tsavorite.test.LockTable
         public void FullArraySortTest()
         {
             var keys = CreateKeys(new Random(101), 100, 1000);
-            store.LockTable.SortKeyHashes(keys);
+            store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
             AssertSorted(keys, keys.Length);
         }
 
@@ -358,7 +358,7 @@ namespace Tsavorite.test.LockTable
             for (var ii = count; ii < numRecords; ++ii)
                 keys[ii].KeyHash = -ii;
 
-            store.LockTable.SortKeyHashes(keys, 0, count);
+            store.LockTable.SortKeyHashes(keys.AsSpan()[..count]);
             AssertSorted(keys, count);
 
             // Verify later elements were untouched.
@@ -409,7 +409,7 @@ namespace Tsavorite.test.LockTable
                     }
 
                     // Sort and lock
-                    store.LockTable.SortKeyHashes(threadStructs);
+                    store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(threadStructs);
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         HashEntryInfo hei = new(threadStructs[ii].KeyHash);

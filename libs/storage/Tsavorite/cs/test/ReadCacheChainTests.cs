@@ -625,10 +625,10 @@ namespace Tsavorite.test.ReadCacheTests
 
             try
             {
-                luContext.SortKeyHashes(keys);
+                luContext.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
 
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-                luContext.Lock(keys);
+                luContext.Lock<FixedLengthTransactionalKeyStruct>(keys);
 
                 store.ReadCache.FlushAndEvict(wait: true);
 
@@ -653,7 +653,7 @@ namespace Tsavorite.test.ReadCacheTests
                     ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     ClassicAssert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
-                    luContext.Unlock(keys, idx, 1);
+                    luContext.Unlock<FixedLengthTransactionalKeyStruct>(keys.AsSpan().Slice(idx, 1));
                     lockState = store.LockTable.GetLockState(ref hei);
                     ClassicAssert.IsFalse(lockState.IsLockedExclusive);
                     ClassicAssert.AreEqual(0, lockState.NumLockedShared);

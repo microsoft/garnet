@@ -100,24 +100,19 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal int CompareKeyHashes<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2)
+        internal readonly int CompareKeyHashes<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2)
             where TTransactionalKey : ITransactionalKey
             => KeyHashComparer(key1, key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal int CompareKeyHashes<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2)
+        internal readonly int CompareKeyHashes<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2)
             where TTransactionalKey : ITransactionalKey
             => KeyHashComparer(ref key1, ref key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys)
+        internal readonly void SortKeyHashes<TTransactionalKey>(Span<TTransactionalKey> keys)
             where TTransactionalKey : ITransactionalKey
-            => Array.Sort(keys, new KeyComparer<TTransactionalKey>(store.state[store.resizeInfo.version].size_mask));
-
-        /// <inheritdoc/>
-        internal void SortKeyHashes<TTransactionalKey>(TTransactionalKey[] keys, int start, int count)
-            where TTransactionalKey : ITransactionalKey
-            => Array.Sort(keys, start, count, new KeyComparer<TTransactionalKey>(store.state[store.resizeInfo.version].size_mask));
+            => keys.Sort(new KeyComparer<TTransactionalKey>(store.state[store.resizeInfo.version].size_mask));
 
         /// <summary>
         /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
