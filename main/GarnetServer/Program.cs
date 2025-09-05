@@ -1,13 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers.Binary;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
-using Garnet.common;
 using Garnet.server;
-using Tsavorite.core;
 
 namespace Garnet
 {

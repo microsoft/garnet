@@ -3,12 +3,9 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
-using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -26,8 +23,6 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-
-            Program.RegisterHackyBenchmarkCommands(server);
 
             server.Start();
         }
@@ -317,131 +312,6 @@ namespace Garnet.test
 
             var res5 = db.KeyDelete(["fizz", "buzz"]);
             ClassicAssert.AreEqual(2, res5);
-        }
-
-        // HACK - this had better not land in main
-        [Test]
-        [Ignore("Long running, skip for now")]
-        public async Task JankBenchmarkCommandsAsync()
-        {
-            const string PathToPreload = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-part-{0}.base.fbin";
-            const string PathToQuery = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m.query-10k.fbin";
-            const string PathToWrite = @"C:\Users\kmontrose\Desktop\QUASR\Test Data\Youtube\Processed\youtube-8m-holdout-{0}.base.fbin";
-            const int BenchmarkDurationSeconds = 5;
-            const int ParallelBenchmarks = 12;
-
-            var key = $"{nameof(JankBenchmarkCommandsAsync)}_{Guid.NewGuid()}";
-
-            // Preload vector set
-            (TimeSpan Duration, long Inserts)[] preloadRes;
-            {
-                var tasks = new Task<(TimeSpan Duration, long Inserts)>[ParallelBenchmarks];
-
-                for (var i = 0; i < tasks.Length; i++)
-                {
-                    var pathToPreload = string.Format(PathToPreload, i);
-
-                    tasks[i] =
-                        Task.Run(
-                            () =>
-                            {
-                                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
-                                {
-                                    var db = redis.GetDatabase();
-
-                                    var fillRes = (string)db.Execute("FILLBENCH", [pathToPreload, key]);
-                                    var fillParts = fillRes.Split(' ');
-                                    ClassicAssert.AreEqual(2, fillParts.Length);
-                                    var fillTime = TimeSpan.FromMilliseconds(double.Parse(fillParts[0]));
-                                    var fillInserts = long.Parse(fillParts[1]);
-                                    ClassicAssert.IsTrue(fillTime.Ticks > 0);
-                                    ClassicAssert.IsTrue(fillInserts > 0);
-
-                                    return (fillTime, fillInserts);
-                                }
-                            }
-                        );
-                }
-
-                preloadRes = await Task.WhenAll(tasks);
-            }
-
-            // Spin up some number of tasks which will do arbitrary reads and (optionally) some writes
-            var benchmarkMultis = new ConnectionMultiplexer[ParallelBenchmarks];
-            (TimeSpan Duration, long Reads, long Writes, bool RanOutOfWriteData)[] results;
-            try
-            {
-                for (var i = 0; i < benchmarkMultis.Length; i++)
-                {
-                    benchmarkMultis[i] = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-                    _ = benchmarkMultis[i].GetDatabase().Ping();
-                }
-
-                using var start = new SemaphoreSlim(0, benchmarkMultis.Length);
-                using var started = new SemaphoreSlim(0, benchmarkMultis.Length);
-                var commands = new Task<(TimeSpan Duration, long Reads, long Writes, bool RanOutOfWriteData)>[benchmarkMultis.Length];
-
-                for (var i = 0; i < benchmarkMultis.Length; i++)
-                {
-                    var benchRedis = benchmarkMultis[i];
-                    var benchDb = benchRedis.GetDatabase();
-                    var writePath = string.Format(PathToWrite, i);
-                    commands[i] =
-                        Task.Run(
-                            async () =>
-                            {
-                                _ = started.Release();
-
-                                await start.WaitAsync();
-
-                                var benchSw = Stopwatch.StartNew();
-                                var benchRes = (string)benchDb.Execute("BENCHRWMIX", [key, PathToQuery, writePath, "64", "0.1", "64", "500", BenchmarkDurationSeconds.ToString()]); // 50% writes, until we run out of data
-                                benchSw.Stop();
-                                var benchParts = benchRes.Split(' ');
-                                ClassicAssert.AreEqual(4, benchParts.Length);
-                                var benchTime = TimeSpan.FromMilliseconds(double.Parse(benchParts[0]));
-                                var benchReads = long.Parse(benchParts[1]);
-                                var benchWrites = long.Parse(benchParts[2]);
-                                var ranOutOfWriteData = bool.Parse(benchParts[3]);
-                                ClassicAssert.IsTrue(benchSw.Elapsed >= TimeSpan.FromSeconds(BenchmarkDurationSeconds));
-                                ClassicAssert.IsTrue(benchTime >= TimeSpan.FromSeconds(BenchmarkDurationSeconds));
-                                ClassicAssert.IsTrue(benchReads > 0);
-                                ClassicAssert.IsTrue(benchWrites > 0);
-
-                                return (benchTime, benchReads, benchWrites, ranOutOfWriteData);
-                            }
-                        );
-                }
-
-                // Wait for all the tasks to init
-                for (var i = 0; i < benchmarkMultis.Length; i++)
-                {
-                    await started.WaitAsync();
-                }
-
-                // Release all task and wait for bench commands to complete
-                _ = start.Release(benchmarkMultis.Length);
-                results = await Task.WhenAll(commands);
-            }
-            finally
-            {
-                foreach (var toDispose in benchmarkMultis)
-                {
-                    toDispose?.Dispose();
-                }
-            }
-
-            var totalQueries = results.Sum(static x => x.Reads);
-            var totalWrites = results.Sum(static x => x.Writes);
-            var ranOutOfWriteData = results.Any(static x => x.RanOutOfWriteData);
-            var qps = totalQueries / (double)BenchmarkDurationSeconds;
-            var ips = totalWrites / (double)BenchmarkDurationSeconds;
-
-            TestContext.Progress.WriteLine($"Total queries: {totalQueries}");
-            TestContext.Progress.WriteLine($"Queries per second: {qps}");
-            TestContext.Progress.WriteLine($"Total inserts: {totalWrites}");
-            TestContext.Progress.WriteLine($"Inserts per second: {ips}");
-            TestContext.Progress.WriteLine($"Ran out of write data: {ranOutOfWriteData}");
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
