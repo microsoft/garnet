@@ -202,6 +202,7 @@ namespace Garnet.server
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNK_CMD => "ERR unknown command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_SUPPORTED_RESP2 => "ERR command not supported in RESP2"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_UNBALANCED_QUOTES => "ERR Protocol error: unbalanced quotes in request"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER_DISABLED => "ERR This instance has cluster support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_LUA_DISABLED => "ERR This instance has Lua scripting support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WRONG_ARGUMENTS => "ERR wrong number of arguments for 'config|set' command"u8;
@@ -428,7 +429,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NO => "NO"u8;
 
         // Cluster subcommands which are internal and thus undocumented
-        // 
+        //
         // Because these are internal, they have lower case property names
         public static ReadOnlySpan<byte> gossip => "GOSSIP"u8;
         public static ReadOnlySpan<byte> myparentid => "MYPARENTID"u8;

@@ -8,7 +8,9 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -641,55 +643,19 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        /// <summary>
-        /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
-        /// and advances read head.
-        /// </summary>
-        /// <param name="count">Outputs the number of arguments stored with the command.</param>
-        /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseInlineCommand(out int count)
-        {
-            byte* ptr = recvBufferPtr + readHead;
-            count = 0;
-
-            if (bytesRead - readHead >= 6)
-            {
-                if ((*(ushort*)(ptr + 4) == MemoryMarshal.Read<ushort>("\r\n"u8)))
-                {
-                    // Optimistically increase read head
-                    readHead += 6;
-
-                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
-                    {
-                        return RespCommand.PING;
-                    }
-
-                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
-                    {
-                        return RespCommand.QUIT;
-                    }
-
-                    // Decrease read head, if no match was found
-                    readHead -= 6;
-                }
-            }
-
-            return RespCommand.NONE;
-        }
+        private static readonly ushort CrLf = MemoryMarshal.Read<ushort>("\r\n"u8);
 
         /// <summary>
         /// Fast-parses for command type, starting at the current read head in the receive buffer
         /// and advances the read head to the position after the parsed command.
         /// </summary>
         /// <param name="count">Outputs the number of arguments stored with the command</param>
+        /// <param name="ptr">The current read head to continue reading from</param>
+        /// <param name="remainingBytes">Bytes remaining in the read buffer</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseCommand(out int count)
+        private RespCommand FastParseCommand(out int count, byte* ptr, int remainingBytes)
         {
-            var ptr = recvBufferPtr + readHead;
-            var remainingBytes = bytesRead - readHead;
-
             // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
             // i.e. an array with a single-digit length and single-digit first string length.
             if ((remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8))
@@ -790,10 +756,6 @@ namespace Garnet.server
                     }
                 }
             }
-            else
-            {
-                return FastParseInlineCommand(out count);
-            }
 
             // Couldn't find a matching command in this pass
             count = -1;
@@ -806,15 +768,13 @@ namespace Garnet.server
         /// the parsed command/subcommand name.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
+        /// <param name="ptr">The current read head to continue reading from</param>
+        /// <param name="remainingBytes">Bytes remaining in the read buffer</param>
+        /// <param name="specificErrorMessage"></param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand FastParseArrayCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage)
+        private RespCommand FastParseArrayCommand(ref int count, byte* ptr, int remainingBytes,
+                                                  ref ReadOnlySpan<byte> specificErrorMessage)
         {
-            // Bytes remaining in the read buffer
-            int remainingBytes = bytesRead - readHead;
-
-            // The current read head to continue reading from
-            byte* ptr = recvBufferPtr + readHead;
-
             //
             // Fast-path parsing by (1) command string length, (2) First character of command name (optional) and (3) priority (manual order)
             //
@@ -1445,47 +1405,47 @@ namespace Garnet.server
                                 }
                                 break;
                             case 8:
-                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.ZREVRANK;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.SMEMBERS;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.BITFIELD;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXPIREAT"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.EXPIREAT;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPEXPIRE"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.HPEXPIRE;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HPERSIST"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.HPERSIST;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPEXPIRE"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.ZPEXPIRE;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPERSIST"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.ZPERSIST;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMAX"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.BZPOPMAX;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BZPOPMIN"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.BZPOPMIN;
                                 }
-                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SPUBLISH"u8) && *(ushort*)(ptr + 12) == CrLf)
                                 {
                                     return RespCommand.SPUBLISH;
                                 }
@@ -1692,22 +1652,22 @@ namespace Garnet.server
                                 break;
 
                             case 14:
-                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == CrLf)
                                 {
                                     return RespCommand.ZREMRANGEBYLEX;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nGEOSEA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("RCHSTORE"u8) && *(ushort*)(ptr + 19) == CrLf)
                                 {
                                     return RespCommand.GEOSEARCHSTORE;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == CrLf)
                                 {
                                     return RespCommand.ZREVRANGEBYLEX;
                                 }
                                 break;
 
                             case 15:
-                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == CrLf)
                                 {
                                     return RespCommand.ZREMRANGEBYRANK;
                                 }
@@ -1769,21 +1729,29 @@ namespace Garnet.server
         /// <summary>
         /// Parses the receive buffer, starting from the current read head, for all command names that are
         /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
-        /// 
+        ///
         /// NOTE: Assumes the input command names have already been converted to upper-case.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
         /// <param name="specificErrorMsg">If the command could not be parsed, will be non-empty if a specific error message should be returned.</param>
-        /// <param name="success">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
+        /// <param name="commandReceived">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
+        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived,
+                                             ReadOnlySpan<byte> command = default, ArgSlice subCommand = default)
         {
-            // Try to extract the current string from the front of the read head
-            var command = GetCommand(out success);
-
-            if (!success)
+            if (command.IsEmpty)
             {
-                return RespCommand.INVALID;
+                // Try to extract the current string from the front of the read head
+                command = GetCommand(out commandReceived);
+
+                if (!commandReceived)
+                {
+                    return RespCommand.INVALID;
+                }
+            }
+            else
+            {
+                commandReceived = true;
             }
 
             // Account for the command name being taken off the read head
@@ -1795,67 +1763,42 @@ namespace Garnet.server
             }
             else
             {
-                return SlowParseCommand(command, ref count, ref specificErrorMsg, out success);
+                return SlowParseCommand(command, ref count, ref specificErrorMsg, out commandReceived, subCommand);
             }
         }
 
-        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
+        private RespCommand SlowParseCommand(ReadOnlySpan<byte> command, ref int count,
+                                             ref ReadOnlySpan<byte> specificErrorMsg, out bool commandReceived,
+                                             ArgSlice inlineSubCommand = default)
         {
-            success = true;
-            if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
+            commandReceived = true;
+            if (command.SequenceEqual(CmdStrings.HELLO))
+            {
+                return RespCommand.HELLO;
+            }
+            else if (command.SequenceEqual(CmdStrings.AUTH))
+            {
+                return RespCommand.AUTH;
+            }
+            else if (command.SequenceEqual(CmdStrings.PING))
+            {
+                return RespCommand.PING;
+            }
+            else if (command.SequenceEqual(CmdStrings.TIME))
+            {
+                return RespCommand.TIME;
+            }
+            else if (command.SequenceEqual(CmdStrings.QUIT))
+            {
+                return RespCommand.QUIT;
+            }
+            else if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
             {
                 return RespCommand.SUBSCRIBE;
             }
             else if (command.SequenceEqual(CmdStrings.SSUBSCRIBE))
             {
                 return RespCommand.SSUBSCRIBE;
-            }
-            else if (command.SequenceEqual(CmdStrings.RUNTXP))
-            {
-                return RespCommand.RUNTXP;
-            }
-            else if (command.SequenceEqual(CmdStrings.SCRIPT))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.SCRIPT)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.LOAD))
-                {
-                    return RespCommand.SCRIPT_LOAD;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.FLUSH))
-                {
-                    return RespCommand.SCRIPT_FLUSH;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.EXISTS))
-                {
-                    return RespCommand.SCRIPT_EXISTS;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.SCRIPT));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.ECHO))
-            {
-                return RespCommand.ECHO;
             }
             else if (command.SequenceEqual(CmdStrings.GEORADIUS))
             {
@@ -1873,6 +1816,10 @@ namespace Garnet.server
             {
                 return RespCommand.GEORADIUSBYMEMBER_RO;
             }
+            else if (command.SequenceEqual(CmdStrings.ECHO))
+            {
+                return RespCommand.ECHO;
+            }
             else if (command.SequenceEqual(CmdStrings.REPLICAOF))
             {
                 return RespCommand.REPLICAOF;
@@ -1880,104 +1827,6 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.SECONDARYOF) || command.SequenceEqual(CmdStrings.SLAVEOF))
             {
                 return RespCommand.SECONDARYOF;
-            }
-            else if (command.SequenceEqual(CmdStrings.CONFIG))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CONFIG)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.GET))
-                {
-                    return RespCommand.CONFIG_GET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
-                {
-                    return RespCommand.CONFIG_REWRITE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SET))
-                {
-                    return RespCommand.CONFIG_SET;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CONFIG));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.CLIENT))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CLIENT)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.ID))
-                {
-                    return RespCommand.CLIENT_ID;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.INFO))
-                {
-                    return RespCommand.CLIENT_INFO;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.LIST))
-                {
-                    return RespCommand.CLIENT_LIST;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.KILL))
-                {
-                    return RespCommand.CLIENT_KILL;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
-                {
-                    return RespCommand.CLIENT_GETNAME;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
-                {
-                    return RespCommand.CLIENT_SETNAME;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
-                {
-                    return RespCommand.CLIENT_SETINFO;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
-                {
-                    return RespCommand.CLIENT_UNBLOCK;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CLIENT));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.AUTH))
-            {
-                return RespCommand.AUTH;
             }
             else if (command.SequenceEqual(CmdStrings.INFO))
             {
@@ -1987,350 +1836,13 @@ namespace Garnet.server
             {
                 return RespCommand.ROLE;
             }
-            else if (command.SequenceEqual(CmdStrings.COMMAND))
-            {
-                if (count == 0)
-                {
-                    return RespCommand.COMMAND;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.COUNT))
-                {
-                    return RespCommand.COMMAND_COUNT;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.INFO))
-                {
-                    return RespCommand.COMMAND_INFO;
-                }
-
-                if (subCommand.SequenceEqual(CmdStrings.DOCS))
-                {
-                    return RespCommand.COMMAND_DOCS;
-                }
-
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
-                {
-                    return RespCommand.COMMAND_GETKEYS;
-                }
-
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
-                {
-                    return RespCommand.COMMAND_GETKEYSANDFLAGS;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.COMMAND));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.PING))
-            {
-                return RespCommand.PING;
-            }
-            else if (command.SequenceEqual(CmdStrings.HELLO))
-            {
-                return RespCommand.HELLO;
-            }
-            else if (command.SequenceEqual(CmdStrings.CLUSTER))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.CLUSTER)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.BUMPEPOCH))
-                {
-                    return RespCommand.CLUSTER_BUMPEPOCH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.FORGET))
-                {
-                    return RespCommand.CLUSTER_FORGET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.gossip))
-                {
-                    return RespCommand.CLUSTER_GOSSIP;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.INFO))
-                {
-                    return RespCommand.CLUSTER_INFO;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.MEET))
-                {
-                    return RespCommand.CLUSTER_MEET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.MYID))
-                {
-                    return RespCommand.CLUSTER_MYID;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.myparentid))
-                {
-                    return RespCommand.CLUSTER_MYPARENTID;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.NODES))
-                {
-                    return RespCommand.CLUSTER_NODES;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SHARDS))
-                {
-                    return RespCommand.CLUSTER_SHARDS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                {
-                    return RespCommand.CLUSTER_RESET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.FAILOVER))
-                {
-                    return RespCommand.CLUSTER_FAILOVER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTS))
-                {
-                    return RespCommand.CLUSTER_ADDSLOTS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTSRANGE))
-                {
-                    return RespCommand.CLUSTER_ADDSLOTSRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.COUNTKEYSINSLOT))
-                {
-                    return RespCommand.CLUSTER_COUNTKEYSINSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.DELSLOTS))
-                {
-                    return RespCommand.CLUSTER_DELSLOTS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.DELSLOTSRANGE))
-                {
-                    return RespCommand.CLUSTER_DELSLOTSRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GETKEYSINSLOT))
-                {
-                    return RespCommand.CLUSTER_GETKEYSINSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.HELP))
-                {
-                    return RespCommand.CLUSTER_HELP;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.KEYSLOT))
-                {
-                    return RespCommand.CLUSTER_KEYSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETSLOT))
-                {
-                    return RespCommand.CLUSTER_SETSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SLOTS))
-                {
-                    return RespCommand.CLUSTER_SLOTS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.REPLICAS))
-                {
-                    return RespCommand.CLUSTER_REPLICAS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.REPLICATE))
-                {
-                    return RespCommand.CLUSTER_REPLICATE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.delkeysinslot))
-                {
-                    return RespCommand.CLUSTER_DELKEYSINSLOT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.delkeysinslotrange))
-                {
-                    return RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.setslotsrange))
-                {
-                    return RespCommand.CLUSTER_SETSLOTSRANGE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.slotstate))
-                {
-                    return RespCommand.CLUSTER_SLOTSTATE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.publish))
-                {
-                    return RespCommand.CLUSTER_PUBLISH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.spublish))
-                {
-                    return RespCommand.CLUSTER_SPUBLISH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
-                {
-                    return RespCommand.CLUSTER_MIGRATE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.mtasks))
-                {
-                    return RespCommand.CLUSTER_MTASKS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.aofsync))
-                {
-                    return RespCommand.CLUSTER_AOFSYNC;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.appendlog))
-                {
-                    return RespCommand.CLUSTER_APPENDLOG;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.attach_sync))
-                {
-                    return RespCommand.CLUSTER_ATTACH_SYNC;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.banlist))
-                {
-                    return RespCommand.CLUSTER_BANLIST;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.begin_replica_recover))
-                {
-                    return RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.endpoint))
-                {
-                    return RespCommand.CLUSTER_ENDPOINT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.failreplicationoffset))
-                {
-                    return RespCommand.CLUSTER_FAILREPLICATIONOFFSET;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
-                {
-                    return RespCommand.CLUSTER_FAILSTOPWRITES;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
-                {
-                    return RespCommand.CLUSTER_FLUSHALL;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
-                {
-                    return RespCommand.CLUSTER_SETCONFIGEPOCH;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.initiate_replica_sync))
-                {
-                    return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_file_segment))
-                {
-                    return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
-                {
-                    return RespCommand.CLUSTER_SEND_CKPT_METADATA;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
-                {
-                    return RespCommand.CLUSTER_SYNC;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CLUSTER));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.LATENCY))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.LATENCY)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.HELP))
-                {
-                    return RespCommand.LATENCY_HELP;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
-                {
-                    return RespCommand.LATENCY_HISTOGRAM;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                {
-                    return RespCommand.LATENCY_RESET;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.LATENCY));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.SLOWLOG))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.SLOWLOG)));
-                }
-                else if (count >= 1)
-                {
-                    var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                    if (!gotSubCommand)
-                    {
-                        success = false;
-                        return RespCommand.NONE;
-                    }
-
-                    count--;
-
-                    if (subCommand.SequenceEqual(CmdStrings.HELP))
-                    {
-                        return RespCommand.SLOWLOG_HELP;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.GET))
-                    {
-                        return RespCommand.SLOWLOG_GET;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.LEN))
-                    {
-                        return RespCommand.SLOWLOG_LEN;
-                    }
-                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
-                    {
-                        return RespCommand.SLOWLOG_RESET;
-                    }
-                }
-            }
-            else if (command.SequenceEqual(CmdStrings.TIME))
-            {
-                return RespCommand.TIME;
-            }
-            else if (command.SequenceEqual(CmdStrings.QUIT))
-            {
-                return RespCommand.QUIT;
-            }
             else if (command.SequenceEqual(CmdStrings.SAVE))
             {
                 return RespCommand.SAVE;
+            }
+            else if (command.SequenceEqual(CmdStrings.RUNTXP))
+            {
+                return RespCommand.RUNTXP;
             }
             else if (command.SequenceEqual(CmdStrings.EXPDELSCAN))
             {
@@ -2372,103 +1884,9 @@ namespace Garnet.server
             {
                 return RespCommand.FAILOVER;
             }
-            else if (command.SequenceEqual(CmdStrings.MEMORY))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.MEMORY)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
-                {
-                    return RespCommand.MEMORY_USAGE;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.MEMORY));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
             else if (command.SequenceEqual(CmdStrings.MONITOR))
             {
                 return RespCommand.MONITOR;
-            }
-            else if (command.SequenceEqual(CmdStrings.ACL))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.ACL)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.CAT))
-                {
-                    return RespCommand.ACL_CAT;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
-                {
-                    return RespCommand.ACL_DELUSER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GENPASS))
-                {
-                    return RespCommand.ACL_GENPASS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
-                {
-                    return RespCommand.ACL_GETUSER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.LIST))
-                {
-                    return RespCommand.ACL_LIST;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.LOAD))
-                {
-                    return RespCommand.ACL_LOAD;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SAVE))
-                {
-                    return RespCommand.ACL_SAVE;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.SETUSER))
-                {
-                    return RespCommand.ACL_SETUSER;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.USERS))
-                {
-                    return RespCommand.ACL_USERS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.WHOAMI))
-                {
-                    return RespCommand.ACL_WHOAMI;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.ACL));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
@@ -2477,72 +1895,6 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ASYNC))
             {
                 return RespCommand.ASYNC;
-            }
-            else if (command.SequenceEqual(CmdStrings.MODULE))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.MODULE)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.LOADCS))
-                {
-                    return RespCommand.MODULE_LOADCS;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.MODULE));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
-            }
-            else if (command.SequenceEqual(CmdStrings.PUBSUB))
-            {
-                if (count == 0)
-                {
-                    specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        nameof(RespCommand.PUBSUB)));
-                    return RespCommand.INVALID;
-                }
-
-                var subCommand = GetUpperCaseCommand(out var gotSubCommand);
-                if (!gotSubCommand)
-                {
-                    success = false;
-                    return RespCommand.NONE;
-                }
-
-                count--;
-
-                if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
-                {
-                    return RespCommand.PUBSUB_CHANNELS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
-                {
-                    return RespCommand.PUBSUB_NUMSUB;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
-                {
-                    return RespCommand.PUBSUB_NUMPAT;
-                }
-
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.PUBSUB));
-                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
-                return RespCommand.INVALID;
             }
             else if (command.SequenceEqual(CmdStrings.HCOLLECT))
             {
@@ -2577,6 +1929,578 @@ namespace Garnet.server
             {
                 return RespCommand.DELIFGREATER;
             }
+            else
+            {
+                ReadOnlySpan<byte> subCommand = default;
+                var oldReadHead = -1;
+
+                if (count > 0)
+                {
+                    if (inlineSubCommand.length != 0)
+                    {
+                        AsciiUtils.ToUpperInPlace(inlineSubCommand.Span);
+                        subCommand = inlineSubCommand.ReadOnlySpan;
+                    }
+                    else
+                    {
+                        oldReadHead = readHead;
+                        // Optimistically advance readHead
+                        subCommand = GetUpperCaseCommand(out var gotSubCommand);
+                        if (!gotSubCommand)
+                        {
+                            commandReceived = false;
+                            return RespCommand.NONE;
+                        }
+                    }
+                }
+
+                if (command.SequenceEqual(CmdStrings.CLIENT))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.CLIENT)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.ID))
+                    {
+                        return RespCommand.CLIENT_ID;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.CLIENT_INFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
+                    {
+                        return RespCommand.CLIENT_LIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.KILL))
+                    {
+                        return RespCommand.CLIENT_KILL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETNAME))
+                    {
+                        return RespCommand.CLIENT_GETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETNAME))
+                    {
+                        return RespCommand.CLIENT_SETNAME;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETINFO))
+                    {
+                        return RespCommand.CLIENT_SETINFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
+                    {
+                        return RespCommand.CLIENT_UNBLOCK;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.CLIENT));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.COMMAND))
+                {
+                    if (count == 0)
+                    {
+                        return RespCommand.COMMAND;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.COUNT))
+                    {
+                        return RespCommand.COMMAND_COUNT;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.COMMAND_INFO;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.DOCS))
+                    {
+                        return RespCommand.COMMAND_DOCS;
+                    }
+
+                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYS))
+                    {
+                        return RespCommand.COMMAND_GETKEYS;
+                    }
+
+                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
+                    {
+                        return RespCommand.COMMAND_GETKEYSANDFLAGS;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.COMMAND));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.CLUSTER))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.CLUSTER)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.BUMPEPOCH))
+                    {
+                        return RespCommand.CLUSTER_BUMPEPOCH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.FORGET))
+                    {
+                        return RespCommand.CLUSTER_FORGET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.gossip))
+                    {
+                        return RespCommand.CLUSTER_GOSSIP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.INFO))
+                    {
+                        return RespCommand.CLUSTER_INFO;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.MEET))
+                    {
+                        return RespCommand.CLUSTER_MEET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.MYID))
+                    {
+                        return RespCommand.CLUSTER_MYID;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.myparentid))
+                    {
+                        return RespCommand.CLUSTER_MYPARENTID;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.NODES))
+                    {
+                        return RespCommand.CLUSTER_NODES;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SHARDS))
+                    {
+                        return RespCommand.CLUSTER_SHARDS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.CLUSTER_RESET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.FAILOVER))
+                    {
+                        return RespCommand.CLUSTER_FAILOVER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTS))
+                    {
+                        return RespCommand.CLUSTER_ADDSLOTS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTSRANGE))
+                    {
+                        return RespCommand.CLUSTER_ADDSLOTSRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.COUNTKEYSINSLOT))
+                    {
+                        return RespCommand.CLUSTER_COUNTKEYSINSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.DELSLOTS))
+                    {
+                        return RespCommand.CLUSTER_DELSLOTS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.DELSLOTSRANGE))
+                    {
+                        return RespCommand.CLUSTER_DELSLOTSRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETKEYSINSLOT))
+                    {
+                        return RespCommand.CLUSTER_GETKEYSINSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.CLUSTER_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.KEYSLOT))
+                    {
+                        return RespCommand.CLUSTER_KEYSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETSLOT))
+                    {
+                        return RespCommand.CLUSTER_SETSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SLOTS))
+                    {
+                        return RespCommand.CLUSTER_SLOTS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.REPLICAS))
+                    {
+                        return RespCommand.CLUSTER_REPLICAS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.REPLICATE))
+                    {
+                        return RespCommand.CLUSTER_REPLICATE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.delkeysinslot))
+                    {
+                        return RespCommand.CLUSTER_DELKEYSINSLOT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.delkeysinslotrange))
+                    {
+                        return RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.setslotsrange))
+                    {
+                        return RespCommand.CLUSTER_SETSLOTSRANGE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.slotstate))
+                    {
+                        return RespCommand.CLUSTER_SLOTSTATE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.publish))
+                    {
+                        return RespCommand.CLUSTER_PUBLISH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.spublish))
+                    {
+                        return RespCommand.CLUSTER_SPUBLISH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
+                    {
+                        return RespCommand.CLUSTER_MIGRATE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.mtasks))
+                    {
+                        return RespCommand.CLUSTER_MTASKS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.aofsync))
+                    {
+                        return RespCommand.CLUSTER_AOFSYNC;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.appendlog))
+                    {
+                        return RespCommand.CLUSTER_APPENDLOG;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.attach_sync))
+                    {
+                        return RespCommand.CLUSTER_ATTACH_SYNC;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.banlist))
+                    {
+                        return RespCommand.CLUSTER_BANLIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.begin_replica_recover))
+                    {
+                        return RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.endpoint))
+                    {
+                        return RespCommand.CLUSTER_ENDPOINT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.failreplicationoffset))
+                    {
+                        return RespCommand.CLUSTER_FAILREPLICATIONOFFSET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
+                    {
+                        return RespCommand.CLUSTER_FAILSTOPWRITES;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.FLUSHALL))
+                    {
+                        return RespCommand.CLUSTER_FLUSHALL;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
+                    {
+                        return RespCommand.CLUSTER_SETCONFIGEPOCH;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.initiate_replica_sync))
+                    {
+                        return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_file_segment))
+                    {
+                        return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
+                    {
+                        return RespCommand.CLUSTER_SEND_CKPT_METADATA;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
+                    {
+                        return RespCommand.CLUSTER_SYNC;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.CLUSTER));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.SCRIPT))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.SCRIPT)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.LOAD))
+                    {
+                        return RespCommand.SCRIPT_LOAD;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.FLUSH))
+                    {
+                        return RespCommand.SCRIPT_FLUSH;
+                    }
+
+                    if (subCommand.SequenceEqual(CmdStrings.EXISTS))
+                    {
+                        return RespCommand.SCRIPT_EXISTS;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                                Encoding.UTF8.GetString(subCommand),
+                                                nameof(RespCommand.SCRIPT));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.CONFIG))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.CONFIG)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.GET))
+                    {
+                        return RespCommand.CONFIG_GET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
+                    {
+                        return RespCommand.CONFIG_REWRITE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SET))
+                    {
+                        return RespCommand.CONFIG_SET;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.CONFIG));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.PUBSUB))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.PUBSUB)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.CHANNELS))
+                    {
+                        return RespCommand.PUBSUB_CHANNELS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
+                    {
+                        return RespCommand.PUBSUB_NUMSUB;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
+                    {
+                        return RespCommand.PUBSUB_NUMPAT;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.PUBSUB));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.ACL))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.ACL)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.CAT))
+                    {
+                        return RespCommand.ACL_CAT;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
+                    {
+                        return RespCommand.ACL_DELUSER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GENPASS))
+                    {
+                        return RespCommand.ACL_GENPASS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
+                    {
+                        return RespCommand.ACL_GETUSER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LIST))
+                    {
+                        return RespCommand.ACL_LIST;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LOAD))
+                    {
+                        return RespCommand.ACL_LOAD;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SAVE))
+                    {
+                        return RespCommand.ACL_SAVE;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.SETUSER))
+                    {
+                        return RespCommand.ACL_SETUSER;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.USERS))
+                    {
+                        return RespCommand.ACL_USERS;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.WHOAMI))
+                    {
+                        return RespCommand.ACL_WHOAMI;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.ACL));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.LATENCY))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.LATENCY)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.LATENCY_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
+                    {
+                        return RespCommand.LATENCY_HISTOGRAM;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.LATENCY_RESET;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.LATENCY));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.SLOWLOG))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.SLOWLOG)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.HELP))
+                    {
+                        return RespCommand.SLOWLOG_HELP;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.GET))
+                    {
+                        return RespCommand.SLOWLOG_GET;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.LEN))
+                    {
+                        return RespCommand.SLOWLOG_LEN;
+                    }
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
+                    {
+                        return RespCommand.SLOWLOG_RESET;
+                    }
+                }
+                else if (command.SequenceEqual(CmdStrings.MEMORY))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.MEMORY)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USAGE))
+                    {
+                        return RespCommand.MEMORY_USAGE;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.MEMORY));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+                else if (command.SequenceEqual(CmdStrings.MODULE))
+                {
+                    if (count == 0)
+                    {
+                        specificErrorMsg = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                            nameof(RespCommand.MODULE)));
+                        return RespCommand.INVALID;
+                    }
+
+                    count--;
+
+                    if (subCommand.SequenceEqual(CmdStrings.LOADCS))
+                    {
+                        return RespCommand.MODULE_LOADCS;
+                    }
+
+                    var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                               Encoding.UTF8.GetString(subCommand),
+                                               nameof(RespCommand.MODULE));
+                    specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
+                    return RespCommand.INVALID;
+                }
+
+                // Reset read head if we didn't match command.
+                if (oldReadHead != -1)
+                {
+                    readHead = oldReadHead;
+                }
+            }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
             return RespCommand.INVALID;
@@ -2591,7 +2515,7 @@ namespace Garnet.server
             // We might have received an inline command package.Try to find the end of the line.
             logger?.LogWarning("Received malformed input message. Trying to skip line.");
 
-            for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
+            for (var stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
             {
                 if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
                 {
@@ -2607,7 +2531,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Try to parse a command out of a provided buffer.
-        /// 
+        ///
         /// Useful for when we have a command to validate somewhere, but aren't actually running it.
         /// </summary>
         internal RespCommand ParseRespCommandBuffer(ReadOnlySpan<byte> buffer)
@@ -2637,9 +2561,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Version of <see cref="ParseRespCommandBuffer(ReadOnlySpan{byte})"/> for fuzzing.
-        /// 
+        ///
         /// Expects (and allows) partial commands.
-        /// 
+        ///
         /// Returns true if a command was succesfully parsed
         /// </summary>
         internal bool FuzzParseCommandBuffer(ReadOnlySpan<byte> buffer, out RespCommand cmd)
@@ -2699,45 +2623,437 @@ namespace Garnet.server
         /// Parses the command from the given input buffer.
         /// </summary>
         /// <param name="writeErrorOnFailure">If true, when a parsing error occurs an error response will written.</param>
-        /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
+        /// <param name="commandReceived">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
+        private RespCommand ParseCommand(bool writeErrorOnFailure, out bool commandReceived)
         {
-            RespCommand cmd = RespCommand.INVALID;
+            RespCommand cmd;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
-            int count = -1;
-            success = true;
+            var count = -1;
+            commandReceived = true;
             endReadHead = readHead;
 
-            // Attempt parsing using fast parse pass for most common operations
-            cmd = FastParseCommand(out count);
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+            var remainingBytes = bytesRead - readHead;
 
-            // If we have not found a command, continue parsing on slow path
+            // Attempt parsing using fast parse pass for most common operations
+            cmd = FastParseCommand(out count, ptr, remainingBytes);
+
             if (cmd == RespCommand.NONE)
             {
-                cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
-                if (!success) return cmd;
-            }
-
-            // Set up parse state
-            parseState.Initialize(count);
-            var ptr = recvBufferPtr + readHead;
-            for (int i = 0; i < count; i++)
-            {
-                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
+                // See if input command is all upper-case. If not, convert and try fast parse pass again.
+                if (MakeUpperCase(ptr, remainingBytes))
                 {
-                    success = false;
-                    return RespCommand.INVALID;
+                    cmd = FastParseCommand(out count, ptr, remainingBytes);
+                }
+
+                // If we have not found a command, continue parsing on slow path.
+                // But first ensure we are attempting to read a RESP array header.
+                if ((cmd == RespCommand.NONE) && (*ptr == '*'))
+                {
+                    cmd = ArrayParseCommand(writeErrorOnFailure, ptr, end, out count, out commandReceived);
+                    if (!commandReceived) return cmd;
                 }
             }
-            endReadHead = (int)(ptr - recvBufferPtr);
+
+            if (cmd != RespCommand.NONE)
+            {
+                // Set up read pointer past the command.
+                ptr = recvBufferPtr + readHead;
+
+                // Set up parse state
+                parseState.Initialize(count);
+                for (var i = 0; i < count; i++)
+                {
+                    if (!parseState.Read(i, ref ptr, end))
+                    {
+                        commandReceived = false;
+                        return RespCommand.INVALID;
+                    }
+                }
+
+                readHead = (int)(ptr - recvBufferPtr);
+            }
+            else if (CanRunInlineCommands() && (*ptr != '*'))
+            {
+                cmd = TryParseInlineCommandline(writeErrorOnFailure, ref ptr, out commandReceived, ref count);
+                if (!commandReceived)
+                    return RespCommand.INVALID;
+            }
+            else
+            {
+                commandReceived = AttemptSkipLine();
+                return RespCommand.INVALID;
+            }
+
+            endReadHead = readHead;
 
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        private RespCommand TryParseInlineCommandline(bool writeErrorOnFailure, ref byte* ptr,
+                                                      out bool commandReceived, ref int count)
+        {
+            // This may be an inline command string. We'll parse it and convert a part to a RESP command string,
+            // which is then parsed to get the command.
+            SpanByteAndMemory spam = new(null);
+            if (!ParseInlineCommandline(ref spam, writeErrorOnFailure, ref ptr, out commandReceived, out var nbytes, out var result))
+            {
+                if (commandReceived)
+                    endReadHead = readHead;
+                return RespCommand.INVALID;
+            }
+
+            // If we're here, commandReceived is true, and we've reached end-of-line.
+            endReadHead = readHead;
+
+            fixed (byte* nptr = spam.Memory.Memory.Span)
+            {
+                var nend = nptr + nbytes;
+
+                var cmd = FastParseCommand(out count, nptr, nbytes);
+
+                // Since we're operating on a temporary buffer and not the actual receive buffer,
+                // we don't care for its commandReceived, and we reset readHead afterwards.
+                if (cmd == RespCommand.NONE)
+                {
+                    cmd = ArrayParseCommand(writeErrorOnFailure, nptr, nend, out count, out _,
+                                            result[0].ReadOnlySpan, result.Length > 1 ? result[1] : default);
+                }
+                readHead = endReadHead;
+
+                if (cmd == RespCommand.INVALID)
+                    logger?.LogWarning("Received malformed input message. Line is skipped.");
+                else
+                    // Note that arguments are initialized from the actual command string, and not our made-up RESP string.
+                    parseState.InitializeWithArguments(result[(result.Length - count)..]);
+
+                return cmd;
+            }
+        }
+
+        private bool ParseInlineCommandline(ref SpanByteAndMemory spam,
+                                            bool writeErrorOnFailure, ref byte* ptr, out bool commandReceived,
+                                            out int nbytes, out ArgSlice[] result)
+        {
+            nbytes = 0;
+            result = default;
+
+            // Minimum processing length is 4. But a user can send shorter lines
+            // (e.g. just pressing enter in telnet), and these get appended to next
+            // lines in inline mode.
+            //
+            // Another complication is that the terminator is different:
+            // It's CRLF in Normal RESP processing, but inline can also handle just LF.
+            // Also, A RESP packet can be sent in parts or be malformed, so
+            // it's possible this path tries to inline parse a partial RESP packet.
+            //
+            // In short: The way we process RESP is a bit hostile to inline processing,
+            // however normal RESP processing is prioritzed, so we'll have to work around it.
+            //
+            // First, we can exploit the fact that any such short command would be invalid.
+            // Every CRLF below the minimum can be discarded.
+            // Second, we can only check for CRLF and not LF, since discarding
+            // upto LF might conflict with partial normal RESP packets.
+            var tptr = ptr;
+            for (var i = 0; i < MinimumProcessLength - 1; ++i)
+            {
+                if (*(ushort*)tptr++ == CrLf)
+                {
+                    ptr = tptr + 1;
+
+                    if (bytesRead - i < MinimumProcessLength)
+                    {
+                        commandReceived = true;
+                        readHead = i + 2;
+                        if (writeErrorOnFailure)
+                        {
+                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        return false;
+                    }
+                    break;
+                }
+            }
+
+            // We might have received an inline command package. Try parsing it.
+            if (!TryParseInlineCommandArguments(writeErrorOnFailure, out commandReceived, out result,
+                                                ref ptr, recvBufferPtr + bytesRead, out var error) || (result.Length == 0))
+            {
+                if (!error.IsEmpty)
+                {
+                    while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                // Move readHead to end of line in input package if we can
+                if (commandReceived)
+                {
+                    logger?.LogWarning("Received malformed input message. Line is skipped.");
+                    readHead = (int)(ptr - recvBufferPtr);
+                }
+
+                // The second condition indicates line is CRLF.
+                return false;
+            }
+
+            // Move readHead to end of line in input package
+            // Note there's no situation where we're here and commandReceived is false.
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // command matching only needs the first two elements.
+            var command = result[0];
+            var subCommand = result.Length > 1 ? result[1] : default;
+
+            // Make sure the command is uppercased.
+            MakeUpperCase(command.ptr, command.length);
+
+            // We'll parse the result by creating a RESP string to parse and then calling the regular code.
+
+            // Minumum estimate is array header + length + command + crlf + length + subcommand + crlf
+            nbytes = 4 + 4 + command.Length + 2 + 4 + subCommand.Length + 2;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
+
+            writer.Realloc(nbytes);
+            // We use the actual length because it may be read back later.
+            writer.WriteArrayLength(result.Length);
+
+            // The resp string is technically invalid since the length doesn't match the actual items.
+            writer.WriteBulkString(command.ReadOnlySpan);
+            if (result.Length > 1)
+                writer.WriteBulkString(subCommand.ReadOnlySpan);
+
+            nbytes = writer.GetPosition();
+            return true;
+        }
+
+        private static bool TryParseInlineCommandArguments(bool writeErrorOnFailure, out bool commandReceived,
+                                                           out ArgSlice[] result, ref byte* ptr, byte* end,
+                                                           out ReadOnlySpan<byte> error)
+        {
+            // The inline format is not defined beyond:
+            // "space-separated arguments in a telnet session" and
+            // "no command starts with * (the identifying byte of RESP Arrays)".
+            //
+            // Different reference versions do it differently, newer ones use quoting but without defining it anywhere.
+            // The behaviour implemented here is a slight superset of observed reference behaviour.
+            //
+            // We'll use consistent rules:
+            // A character or group of characters under the same rules is a sequence.
+            // There are four types of sequences: quoting, separators, escapes, or normal.
+            // There are two types of contexts: a quote context or a normal context.
+            // Quote contexts allow escaping depending on their starting character.
+            //
+            // Separators separate different arguments.
+            // Separators are start of line (implied), linefeed which marks end of line, and the characters:
+            // space, tab and carriage return, when they are in a normal context.
+            // In a quote context the same seqeunces are considered normal.
+            //
+            // Quote characters are ' or ".
+            //
+            // A quoting context starts with a quote character.
+            // A quoting context ends with the same quote character that followed by a separator,
+            // unless the quote character is escaped (see below).
+            // [References seem to not have the 'followed by a separator' rule, but just error out]
+            // 
+            // A quote character not starting or ending a quote context is considered a normal character.
+            //
+            // The character \ inside a quote context starts an escape sequence.
+            // In quote contexts starting with " character, the escape sequence is the typical C escapes.
+            // Other characters are escaped to themselves. All resulting escaped characters are considered normal characters.
+            // In quote contexts starting with ' character, the only allowed escape is \' -> '.
+            //
+            // Normal sequences (or sequences considered such) are echoed to the output, everything else is not echoed.
+            // 
+
+            error = default;
+            result = default;
+            commandReceived = false;
+
+            var slices = new System.Collections.Generic.List<ArgSlice>();
+            var slicePtr = ptr;
+
+            // True if the current slice has any contents.
+            var anyContents = false;
+            // True if any quote is used. If no quoting is used, we can save on unescaping later.
+            var anyQuote = false;
+            // Current quote char if any.
+            byte quoteChar = 0;
+
+            while (ptr < end)
+            {
+                if (*ptr == '\n')
+                {
+                    commandReceived = true;
+                    if (anyContents)
+                    {
+                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
+                    }
+
+                    // Advance past newline
+                    ptr++;
+
+                    if (quoteChar != 0)
+                    {
+                        if (writeErrorOnFailure)
+                        {
+                            error = CmdStrings.RESP_ERR_UNBALANCED_QUOTES;
+                        }
+                        return false;
+                    }
+
+                    if (anyQuote && slices.Count > 0)
+                    {
+                        result = new ArgSlice[slices.Count];
+
+                        // MakeUpperCase could have been run on the first slice earlier.
+                        result[0] = ArgSliceUtils.Unescape(slices[0], true);
+                        for (var i = 1; i < slices.Count; ++i)
+                        {
+                            result[i] = ArgSliceUtils.Unescape(slices[i]);
+                        }
+                    }
+                    // If there are no quotes, we can be faster
+                    else
+                    {
+                        result = [.. slices];
+                    }
+
+                    return true;
+                }
+
+                if (AsciiUtils.IsQuoteChar(*ptr))
+                {
+                    if (quoteChar == 0)
+                    {
+                        quoteChar = *ptr;
+                        anyContents = true;
+                        anyQuote = true;
+                    }
+                    else if ((quoteChar == *ptr) && (ptr < end))
+                    {
+                        var next = ptr + 1;
+                        if (AsciiUtils.IsRedisWhiteSpace(*next) || (*next == '\n'))
+                        {
+                            var unQuote = true;
+
+                            // We do the unescaping separately, so we need an extra check here to see this quote isn't escaped.
+                            if (quoteChar == '"')
+                            {
+                                for (var index = ptr - 1; index >= slicePtr && *index == '\\'; --index)
+                                {
+                                    unQuote = !unQuote;
+                                }
+                            }
+                            // We likely don't need this check, because to get quoteChar != 0 we needed to open up a quote earlier,
+                            // which means slicePtr must have been earlier. But it costs little to be safer.
+                            else if (ptr > slicePtr)
+                            {
+                                unQuote = *(ptr - 1) != '\\';
+                            }
+
+                            if (unQuote)
+                                quoteChar = 0;
+                        }
+                    }
+                }
+                else if ((quoteChar == 0) && AsciiUtils.IsRedisWhiteSpace(*ptr))
+                {
+                    if (anyContents)
+                    {
+                        slices.Add(new ArgSlice(slicePtr, (int)(ptr - slicePtr)));
+                        anyContents = false;
+                    }
+
+                    slicePtr = ptr + 1;
+                }
+                else
+                {
+                    anyContents = true;
+                }
+
+                ++ptr;
+            }
+
+            return false;
+        }
+
+
+        ReadOnlySpan<byte> GetCommand(out bool success)
+        {
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
+            {
+                success = false;
+                return default;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
+            {
+                success = false;
+                return default;
+            }
+
+            if (*(ushort*)ptr != CrLf)
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            var result = new ReadOnlySpan<byte>(recvBufferPtr + readHead, length);
+            readHead += length + 2;
+            success = true;
+
+            return result;
+        }
+
+        ReadOnlySpan<byte> GetUpperCaseCommand(out bool success)
+        {
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.TryReadUnsignedLengthHeader(out int length, ref ptr, end))
+            {
+                success = false;
+                return default;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
+            {
+                success = false;
+                return default;
+            }
+
+            if (*(ushort*)ptr != CrLf)
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
+            readHead += length + 2;
+            success = true;
+
+            AsciiUtils.ToUpperInPlace(result);
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2751,7 +3067,7 @@ namespace Garnet.server
             if (txnManager.state == TxnState.Started)
                 return;
 
-            /* 
+            /*
                 If a previous command marked AOF for blocking we should not change AOF blocking flag.
                 If no previous command marked AOF for blocking, then we only change AOF flag to block
                 if the current command is AOF dependent.
@@ -2760,51 +3076,37 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success)
+        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, byte* ptr, byte* end,
+                                              out int count, out bool commandReceived,
+                                              ReadOnlySpan<byte> command = default,
+                                              ArgSlice subCommand = default)
         {
             RespCommand cmd = RespCommand.INVALID;
             ReadOnlySpan<byte> specificErrorMessage = default;
+            commandReceived = true;
             endReadHead = readHead;
-            var ptr = recvBufferPtr + readHead;
 
-            // See if input command is all upper-case. If not, convert and try fast parse pass again.
-            if (MakeUpperCase(ptr, bytesRead - readHead))
-            {
-                cmd = FastParseCommand(out count);
-                if (cmd != RespCommand.NONE)
-                {
-                    return cmd;
-                }
-            }
-
-            // Ensure we are attempting to read a RESP array header
-            if (recvBufferPtr[readHead] != '*')
-            {
-                // We might have received an inline command package. Skip until the end of the line in the input package.
-                success = AttemptSkipLine();
-                return RespCommand.INVALID;
-            }
-
+            var optr = ptr;
             // Read the array length
-            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, end))
             {
-                success = false;
+                commandReceived = false;
                 return RespCommand.INVALID;
             }
 
             // Move readHead to start of command payload
-            readHead = (int)(ptr - recvBufferPtr);
+            readHead += (int)(ptr - optr);
 
             // Try parsing the most important variable-length commands
-            cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
+            cmd = FastParseArrayCommand(ref count, ptr, (int)(end - ptr), ref specificErrorMessage);
 
             if (cmd == RespCommand.NONE)
             {
-                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
+                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out commandReceived, command, subCommand);
             }
 
             // Parsing for command name was successful, but the command is unknown
-            if (writeErrorOnFailure && success && cmd == RespCommand.INVALID)
+            if (writeErrorOnFailure && commandReceived && cmd == RespCommand.INVALID)
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
