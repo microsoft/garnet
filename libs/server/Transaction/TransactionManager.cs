@@ -175,7 +175,7 @@ namespace Garnet.server
             this.keyCount = 0;
         }
 
-        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output)
+        internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isRecovering = false)
         {
             var running = false;
             scratchBufferAllocator.Reset();
@@ -227,8 +227,14 @@ namespace Garnet.server
             {
                 try
                 {
-                    // Run finalize procedure at the end
-                    proc.Finalize(garnetTxFinalizeApi, ref procInput, ref output);
+                    // Run finalize procedure at the end.
+                    // If the transaction was invoked during AOF replay skip the finalize step altogether
+                    // Finalize logs to AOF accordingly, so let the replay pick up the commits from AOF as
+                    // part of normal AOF replay.
+                    if (!isRecovering)
+                    {
+                        proc.Finalize(garnetTxFinalizeApi, ref procInput, ref output);
+                    }
                 }
                 catch { }
 
