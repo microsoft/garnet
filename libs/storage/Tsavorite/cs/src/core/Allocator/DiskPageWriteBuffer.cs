@@ -15,6 +15,7 @@ namespace Tsavorite.core
         ///     so it remains signaled until Reset() is called.</summary>
         CountdownEvent countdownEvent;
 
+        /// <summary>The buffer to build the page image for writing.</summary>
         internal SectorAlignedMemory memory;
 
         /// <summary>Current write position (we do not support read in this buffer). This class only supports Write and no Seek,
@@ -37,9 +38,10 @@ namespace Tsavorite.core
             this.logger = logger;
         }
 
-        internal void Initialize(int sectorSize)
+        internal void WaitUntilFreeAndInitialize(int sectorSize)
         {
-            // First wait for any pending write in this buffer to complete. If this is our first time in this buffer there won't be a CountdownEvent yet.
+            // First wait for any pending write in this buffer to complete. If this is our first time in this buffer there won't be a CountdownEvent yet;
+            // we defer that because we may not need all the buffers in the circular buffer.
             countdownEvent?.Wait();
             memory.valid_offset = memory.available_bytes = 0;
             currentPosition = (*(DiskPageHeader*)memory.GetValidPointer()).Initialize(sectorSize);
@@ -89,11 +91,13 @@ namespace Tsavorite.core
         public void Dispose()
         {
             memory?.Return();
+            memory = null;
             countdownEvent.Dispose();
+            countdownEvent = null;
         }
 
         /// <inheritdoc/>
         public override string ToString() 
-            => $"currPos {currentPosition}; buf: {memory}";
+            => $"currPos {currentPosition}; flushedUntilPos {flushedUntilPosition}; countDown {countdownEvent?.CurrentCount}; buf: {memory}";
     }
 }

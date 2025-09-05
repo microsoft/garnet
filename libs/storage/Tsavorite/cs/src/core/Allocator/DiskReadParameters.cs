@@ -46,7 +46,7 @@ namespace Tsavorite.core
             /// <summary>The <see cref="IStoreFunctions"/> implementation to use</summary>
             internal readonly TStoreFunctions storeFunctions;
 
-            /// <summary>Constructor for SpanByteAllocator, which has a fixed page size and no overflow</summary>
+            /// <summary>Constructor used for SpanByteAllocator, which has a fixed page size and no overflow</summary>
             internal DiskReadParameters(SectorAlignedBufferPool bufferPool, int fixedPageSize, uint sectorSize, int pageBufferSize, long recordAddress, TStoreFunctions storeFunctions)
             {
                 this.bufferPool = bufferPool ?? throw new ArgumentNullException(nameof(bufferPool));
@@ -59,7 +59,7 @@ namespace Tsavorite.core
                 this.storeFunctions = storeFunctions ?? throw new ArgumentNullException(nameof(storeFunctions));
             }
 
-            /// <summary>Constructor for ObjectAllocator, which has no fixed pages size and may have overflow and objects</summary>
+            /// <summary>Constructor used for ObjectAllocator, which has no fixed pages size and may have overflow and objects</summary>
             internal DiskReadParameters(SectorAlignedBufferPool bufferPool, int maxInlineKeyLength, int maxInlineValueLength, uint sectorSize, int pageBufferSize, long recordAddress, TStoreFunctions storeFunctions)
             {
                 this.bufferPool = bufferPool ?? throw new ArgumentNullException(nameof(bufferPool));

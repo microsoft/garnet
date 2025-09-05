@@ -12,6 +12,10 @@ namespace Tsavorite.core
 #pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
 
+    /// <summary>
+    /// This class drives object-serialization writing to the disk.
+    /// </summary>
+    /// <remarks>This does not implement <see cref="IDisposable"/>; it calls <see cref="EndFlushComplete"/> itself when the final callback is issued.</remarks>
     public class CircularDiskPageWriteBuffer
     {
         internal readonly SectorAlignedBufferPool bufferPool;
@@ -60,18 +64,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal DiskPageWriteBuffer GetCurrentBuffer() => buffers[currentIndex];
 
-        internal DiskPageWriteBuffer ShiftTailToNextBuffer(int start)
-        {
-            // Move to the next buffer and make sure it is available (writes have completed).
-            var buffer1 = GetCurrentBuffer();
-            var buffer2 = MoveToAndInitializeNextBuffer();
-
-            // Copy any partial tail to the next buffer.
-            if (start < buffer1.currentPosition)
-                buffer2.CopyFrom(buffer1.GetTailSpan(start));
-            return buffer2;
-        }
-
         internal DiskPageWriteBuffer MoveToAndInitializeNextBuffer()
         {
             currentIndex = (currentIndex + 1) & (buffers.Length - 1);
@@ -86,7 +78,7 @@ namespace Tsavorite.core
                 buffer = new DiskPageWriteBuffer(bufferPool.Get(pageBufferSize), device, logger);
                 buffers[currentIndex] = buffer;
             }
-            buffer.Initialize(SectorSize);
+            buffer.WaitUntilFreeAndInitialize(SectorSize);
             return buffer;
         }
 
@@ -247,6 +239,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"currIdx {currentIndex}";
+        public override string ToString() 
+            => $"currIdx {currentIndex}; pageBufSize {pageBufferSize}; UsablePageSize {UsablePageSize}; priCumLen {priorCumulativeLength}, alignDevAddr {alignedDeviceAddress}, isFirsPartial {isFirstPartialFlush}; SecSize {SectorSize}";
     }
 }

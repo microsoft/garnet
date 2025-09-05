@@ -1665,8 +1665,10 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Create the circular flush buffers. Only implemented by ObjectAllocator.</summary>
+        /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
         protected virtual CircularDiskPageWriteBuffer CreateFlushBuffers(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger) => default;
+        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
+        protected virtual CircularDiskPageReadBuffer CreateDeserializationBuffers(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger) => default;
 
         /// <summary>
         /// Flush page range to disk
@@ -1902,12 +1904,17 @@ namespace Tsavorite.core
                 // will test to ensure they get the expected number of bytes.
                 ctx.record.available_bytes = (int)numBytes;
 
+                // Create the buffers we will use for object deserialization.
+                var deserializationBuffers = (*(RecordInfo*)ctx.record.GetValidPointer()).ValueIsObject
+                    ? CreateDeserializationBuffers(bufferPool, IStreamBuffer.PageBufferSize, numberOfFlushPageBuffers, device, logger)
+                    : default;
+
                 // Note: logicalAddress is actually physicalAddress here, with the OnDisk AddressType; there can't be fixed pages for expanded records.
                 // TODO: move this "if" to an IAllocator function call to do the DiskStreamReadBuffer.Read().
                 DiskStreamReader<TStoreFunctions>.DiskReadParameters readParams = IsObjectAllocator
                     ? new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions)
                     : new(bufferPool, PageSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions);
-                var readBuffer = new DiskStreamReader<TStoreFunctions>(in readParams, device, logger);
+                var readBuffer = new DiskStreamReader<TStoreFunctions>(in readParams, device, deserializationBuffers, logger);
                 if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord))
                 {
                     Debug.Assert(!readBuffer.recordInfo.Invalid, "Invalid records should not be in the hash chain for pending IO");

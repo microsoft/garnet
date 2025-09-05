@@ -335,6 +335,10 @@ namespace Tsavorite.core
         protected override CircularDiskPageWriteBuffer CreateFlushBuffers(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger)
             => new(bufferPool, IStreamBuffer.PageBufferSize, numberOfFlushPageBuffers, device, logger);
 
+        /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
+        protected override CircularDiskPageReadBuffer CreateDeserializationBuffers(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger)
+            => new(bufferPool, IStreamBuffer.PageBufferSize, numberOfFlushPageBuffers, device, logger);
+
         protected override void WriteAsync<TContext>(CircularDiskPageWriteBuffer diskPageBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
             => WriteAsync(diskPageBuffers, flushPage, (uint)PageSize, callback, asyncResult, device);
 
@@ -444,7 +448,7 @@ namespace Tsavorite.core
 
             try
             {
-                diskWriter.circularPageBuffers.alignedDeviceAddress = (ulong)alignedDestinationAddress;
+                diskWriter.circularPageFlushBuffers.alignedDeviceAddress = (ulong)alignedDestinationAddress;
                 valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
 
                 // AddressType consistency check
@@ -481,11 +485,11 @@ namespace Tsavorite.core
                     else
                     {
                         logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
-                        var prevPosition = diskWriter.circularPageBuffers.TotalWrittenLength;
+                        var prevPosition = diskWriter.circularPageFlushBuffers.TotalWrittenLength;
 
                         // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
                         diskWriter.Write(in logRecord, FlushedDiskTailOffset);
-                        var streamRecordSize = diskWriter.circularPageBuffers.TotalWrittenLength - prevPosition;
+                        var streamRecordSize = diskWriter.circularPageFlushBuffers.TotalWrittenLength - prevPosition;
 
                         var streamExpansion = streamRecordSize - logRecordSize;
                         Debug.Assert(streamExpansion % Constants.kRecordAlignment == 0, $"streamExpansion {streamExpansion} is not record-aligned (streamRecordSize {streamRecordSize})");
@@ -509,7 +513,7 @@ namespace Tsavorite.core
                 //     information across recovery
                 //   - Similarly, storing it in the allocator-page structure won't survive recovery
                 TODO("This may cause a sector-aligning final flush that can bump FlushedDiskTailOffset. We need to reflect that in the ClosedDiskTailOffset calculations.");
-                var flushedUntilAdjustment = diskWriter.circularPageBuffers.OnPartialFlushComplete(callback, asyncResult);
+                var flushedUntilAdjustment = diskWriter.circularPageFlushBuffers.OnPartialFlushComplete(callback, asyncResult);
                 if (flushedUntilAdjustment > 0)
                 {
                     _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset + flushedUntilAdjustment, out _);
