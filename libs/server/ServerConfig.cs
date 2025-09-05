@@ -105,6 +105,26 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkCONFIG_HELP()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.HELP)}");
+            }
+
+            WriteHelp("CONFIG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                      "GET <pattern>",
+                      "\tReturn parameters matching the glob-like <pattern> and their values.",
+                      "SET <directive> <value>",
+                      "\tSet the configuration <directive> to <value>.",
+                      "REWRITE",
+                      "\tRewrite the configuration file.",
+                      "HELP",
+                      "\tPrint this help.");
+
+            return true;
+        }
+
         private bool NetworkCONFIG_REWRITE()
         {
             if (parseState.Count != 0)
