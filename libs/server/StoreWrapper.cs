@@ -13,6 +13,7 @@ using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Garnet.server.Lua;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -789,6 +790,8 @@ namespace Garnet.server
                 logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
         }
+
+        public (HybridLogScanMetrics, HybridLogScanMetrics)[] HybridLogDistributionScan() => databaseManager.CollectHybridLogStats();
 
         internal void Start()
         {
