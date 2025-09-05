@@ -26,17 +26,12 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET(ref SpanByte key, ref SpanByte value);
-
-        /// <summary>
-        /// SET
-        /// </summary>
-        GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value);
+        GarnetStatus SET(ArgSlice key, ref RawStringInput input, ref SpanByte value);
 
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input);
+        GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input);
 
         /// <summary>
         /// DEL Conditional
@@ -46,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// SET Conditional
         /// </summary>
-        GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+        GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// SET
@@ -1206,6 +1201,13 @@ namespace Garnet.server
         GarnetStatus HyperLogLogMerge(ref RawStringInput input, out bool error);
 
         #endregion
+
+        #region VectorSet Methods
+        /// <summary>
+        /// Adds to (and may create) a vector set with the given parameters.
+        /// </summary>
+        GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, VectorValueType valueType, ArgSlice value, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result);
+        #endregion
     }
 
     /// <summary>
@@ -1217,7 +1219,7 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+        GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// GET
@@ -2026,6 +2028,35 @@ namespace Garnet.server
 
         #endregion
 
+        #region Vector Sets
+        // TODO: Span-ish types are very inconsistent here, think about them maybe?
+
+        /// <summary>
+        /// Perform a similarity search given a vector and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice value, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
+
+        /// <summary>
+        /// Perform a similarity search given an element already in the vector set and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetElementSimilarity(ArgSlice key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result);
+
+        /// <summary>
+        /// Fetch the embedding of a given element in a Vector set.
+        /// </summary>
+        GarnetStatus VectorSetEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances);
+
+        /// <summary>
+        /// Fetch the dimensionality of the given Vector Set.
+        /// 
+        /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
+        /// </summary>
+        GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions);
+        #endregion 
     }
 
     /// <summary>

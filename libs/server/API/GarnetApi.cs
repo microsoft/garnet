@@ -21,19 +21,22 @@ namespace Garnet.server
     /// <summary>
     /// Garnet API implementation
     /// </summary>
-    public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
+    public partial struct GarnetApi<TContext, TObjectContext, TVectorContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        where TVectorContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
         TObjectContext objectContext;
+        TVectorContext vectorContext;
 
-        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext)
+        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext, TVectorContext vectorContext)
         {
             this.storageSession = storageSession;
             this.context = context;
             this.objectContext = objectContext;
+            this.vectorContext = vectorContext;
         }
 
         #region WATCH
@@ -48,8 +51,12 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
-            => storageSession.GET(ref key, ref input, ref output, ref context);
+        public GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
+        {
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.GET(ref asSpanByte, ref input, ref output, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus GET_WithPending(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending)
@@ -68,7 +75,9 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public unsafe GarnetStatus GET(ArgSlice key, out ArgSlice value)
-            => storageSession.GET(key, out value, ref context);
+        {
+            return storageSession.GET(key, out value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value)
@@ -118,33 +127,52 @@ namespace Garnet.server
         #endregion
 
         #region SET
-        /// <inheritdoc />
+
         public GarnetStatus SET(ref SpanByte key, ref SpanByte value)
-            => storageSession.SET(ref key, ref value, ref context);
+           => storageSession.SET(ref key, ref value, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value)
-            => storageSession.SET(ref key, ref input, ref value, ref context);
+        public GarnetStatus SET(ArgSlice key, ref RawStringInput input, ref SpanByte value)
+        {
+            var asSpanByte = key.SpanByte;
 
-        /// <inheritdoc />
-        public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input)
-            => storageSession.SET_Conditional(ref key, ref input, ref context);
+            return storageSession.SET(ref asSpanByte, ref input, ref value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus DEL_Conditional(ref SpanByte key, ref RawStringInput input)
             => storageSession.DEL_Conditional(ref key, ref input, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
-            => storageSession.SET_Conditional(ref key, ref input, ref output, ref context);
+        public GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
+        {
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.SET_Conditional(ref asSpanByte, ref input, ref output, ref context);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input)
+        {
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.SET_Conditional(ref asSpanByte, ref input, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, Memory<byte> value)
-            => storageSession.SET(key, value, ref context);
+        {
+            return storageSession.SET(key, value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, ArgSlice value)
-            => storageSession.SET(key, value, ref context);
+        {
+            var asSpanByte = key.SpanByte;
+            var valSpanByte = value.SpanByte;
+
+            return storageSession.SET(ref asSpanByte, ref valSpanByte, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SET(byte[] key, IGarnetObject value)
@@ -302,7 +330,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus DELETE(ref SpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.DELETE(ref key, storeType, ref context, ref objectContext);
+        => storageSession.DELETE(ref key, storeType, ref context, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus DELETE(byte[] key, StoreType storeType = StoreType.All)
@@ -474,6 +502,30 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
+        #endregion
+
+        #region VectorSet commands
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
+        => storageSession.VectorSetAdd(SpanByte.FromPinnedPointer(key.ptr, key.length), reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, out result);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        => storageSession.VectorSetValueSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), valueType, values, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetElementSimilarity(ArgSlice key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        => storageSession.VectorSetElementSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances, out result);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetEmbedding(ArgSlice key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        => storageSession.VectorSetEmbedding(SpanByte.FromPinnedPointer(key.ptr, key.length), element, ref outputDistances);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions)
+        => storageSession.VectorSetDimensions(SpanByte.FromPinnedPointer(key.ptr, key.length), out dimensions);
+
         #endregion
     }
 }

@@ -17,13 +17,22 @@ namespace Garnet.server
             ref SpanByte key, ref RawStringInput input,
             ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
         {
-            if (value.MetadataSize != 0 && CheckExpiry(ref value))
+            if (value.MetadataSize == 8 && CheckExpiry(ref value))
             {
                 readInfo.RecordInfo.ClearHasETag();
                 return false;
             }
 
             var cmd = input.header.cmd;
+
+            // Vector sets are reachable (key not mangled) and hidden.
+            // So we can use that to detect type mismatches.
+            if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            {
+                // Attempted an illegal op on a VectorSet
+                CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
+                return true;
+            }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
@@ -87,13 +96,22 @@ namespace Garnet.server
             ref SpanByte key, ref RawStringInput input, ref SpanByte value,
             ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
-            if (value.MetadataSize != 0 && CheckExpiry(ref value))
+            if (value.MetadataSize == 8 && CheckExpiry(ref value))
             {
                 recordInfo.ClearHasETag();
                 return false;
             }
 
             var cmd = input.header.cmd;
+
+            // Vector sets are reachable (key not mangled) and hidden.
+            // So we can use that to detect type mismatches.
+            if (recordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            {
+                // Attempted an illegal op on a VectorSet
+                CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
+                return true;
+            }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
@@ -136,7 +154,6 @@ namespace Garnet.server
                 EtagState.ResetState(ref functionsState.etagState);
                 return true;
             }
-
 
             if (cmd == RespCommand.NONE)
                 CopyRespTo(ref value, ref dst, functionsState.etagState.etagSkippedStart, functionsState.etagState.etagAccountedLength);

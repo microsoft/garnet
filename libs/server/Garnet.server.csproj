@@ -21,6 +21,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="KeraLua" />
+	  <PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
 </Project>
