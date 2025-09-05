@@ -21,16 +21,7 @@
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="KeraLua" />
+	  <PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
-	<PropertyGroup>
-		<DiskAnnLibPath>E:\diskann-garnet\target\release\diskann_garnet.dll</DiskAnnLibPath>
-	</PropertyGroup>
-	
-	<ItemGroup>
-		<None Include="$(DiskAnnLibPath)" Condition="Exists('$(DiskAnnLibPath)')">
-			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
-		</None>
-	</ItemGroup>
-	
 </Project>
