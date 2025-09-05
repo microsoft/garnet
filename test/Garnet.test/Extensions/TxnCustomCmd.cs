@@ -42,7 +42,7 @@ namespace Garnet
             var myDictField = GetNextArg(ref procInput, ref offset);
             var myDictValue = GetNextArg(ref procInput, ref offset);
 
-            var args = new ArgSlice[2];
+            var args = new PinnedSpanByte[2];
             args[0] = myDictField;
             args[1] = myDictValue;
 

@@ -34,6 +34,11 @@ namespace Garnet.server
         // Any new special type inserted here should update GarnetObjectTypeExtensions.FirstSpecialObjectType
 
         /// <summary>
+        /// Special type indicating MIGRATE command
+        /// </summary>
+        Migrate = 0xf6,
+
+        /// <summary>
         /// Special type indicating DELIFEXPIM command, a conditional deletion when a key is in memory and expired
         /// </summary>
         DelIfExpIm = 0xf7,
@@ -83,6 +88,6 @@ namespace Garnet.server
     {
         internal const GarnetObjectType LastObjectType = GarnetObjectType.Set;
 
-        internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.DelIfExpIm;
+        internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.Migrate;
     }
 }

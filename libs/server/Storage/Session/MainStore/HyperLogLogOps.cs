@@ -7,16 +7,16 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
         /// <summary>
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
         /// </summary>
-        public unsafe GarnetStatus HyperLogLogAdd<TContext>(ArgSlice key, string[] elements, out bool updated, ref TContext context)
-             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus HyperLogLogAdd<TContext>(PinnedSpanByte key, string[] elements, out bool updated, ref TContext context)
+             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             updated = false;
 
@@ -32,11 +32,10 @@ namespace Garnet.server
                 var elementSlice = scratchBufferBuilder.CreateArgSlice(element);
                 parseState.SetArgument(0, elementSlice);
 
-                var o = new SpanByteAndMemory(output, 1);
-                var sbKey = key.SpanByte;
-                RMW_MainStore(ref sbKey, ref input, ref o, ref context);
+                var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
+                _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
 
-                scratchBufferBuilder.RewindScratchBuffer(ref elementSlice);
+                scratchBufferBuilder.RewindScratchBuffer(elementSlice);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
@@ -60,12 +59,12 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public GarnetStatus HyperLogLogAdd<TContext>(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-          where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            => RMW_MainStore(ref key, ref input, ref output, ref context);
+        public GarnetStatus HyperLogLogAdd<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
+          where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<PinnedSpanByte> keys, out long count, ref TContext context)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             parseState.Initialize(keys.Length);
             for (var i = 0; i < keys.Length; i++)
@@ -88,7 +87,7 @@ namespace Garnet.server
         /// <param name="context"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HyperLogLogLength<TContext>(ref RawStringInput input, out long count, out bool error, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             error = false;
             count = default;
@@ -109,10 +108,10 @@ namespace Garnet.server
                     var currSrcKey = input.parseState.GetArgSliceByRef(i);
                     txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
                 }
-                txnManager.Run(true);
+                _ = txnManager.Run(true);
             }
 
-            var currLockableContext = txnManager.LockableContext;
+            var currTransactionalContext = txnManager.TransactionalContext;
 
             try
             {
@@ -122,17 +121,17 @@ namespace Garnet.server
                     sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
-                var dstMergeBuffer = new SpanByteAndMemory(srcReadBuffer, hllBufferSize);
-                var srcMergeBuffer = new SpanByteAndMemory(dstReadBuffer, hllBufferSize);
+                var dstMergeBuffer = SpanByteAndMemory.FromPinnedPointer(srcReadBuffer, hllBufferSize);
+                var srcMergeBuffer = SpanByteAndMemory.FromPinnedPointer(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
                 {
                     var currInput = new RawStringInput(RespCommand.PFCOUNT);
 
-                    var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
 
-                    var status = GET(ref srcKey, ref currInput, ref srcMergeBuffer, ref currLockableContext);
+                    var status = GET(srcKey, ref currInput, ref srcMergeBuffer, ref currTransactionalContext);
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
@@ -159,7 +158,7 @@ namespace Garnet.server
                         continue;
                     }
 
-                    HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
+                    _ = HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
 
                     if (i == input.parseState.Count - 1)
                     {
@@ -202,17 +201,17 @@ namespace Garnet.server
                     var currSrcKey = input.parseState.GetArgSliceByRef(i);
                     txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
                 }
-                txnManager.Run(true);
+                _ = txnManager.Run(true);
             }
 
-            var currLockableContext = txnManager.LockableContext;
+            var currTransactionalContext = txnManager.TransactionalContext;
 
             try
             {
                 sectorAlignedMemoryHll1 ??= new SectorAlignedMemory(hllBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 var readBuffer = sectorAlignedMemoryHll1.GetValidPointer();
 
-                var dstKey = input.parseState.GetArgSliceByRef(0).SpanByte;
+                var dstKey = input.parseState.GetArgSliceByRef(0);
 
                 for (var i = 1; i < input.parseState.Count; i++)
                 {
@@ -220,10 +219,10 @@ namespace Garnet.server
 
                     var currInput = new RawStringInput(RespCommand.PFMERGE);
 
-                    var mergeBuffer = new SpanByteAndMemory(readBuffer, hllBufferSize);
-                    var srcKey = input.parseState.GetArgSliceByRef(i).SpanByte;
+                    var mergeBuffer = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
+                    var srcKey = input.parseState.GetArgSliceByRef(i);
 
-                    var status = GET(ref srcKey, ref currInput, ref mergeBuffer, ref currLockableContext);
+                    var status = GET(srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
                     // Handle case merging source key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
@@ -238,12 +237,12 @@ namespace Garnet.server
 
                     #region mergeToDst
 
-                    var mergeSlice = new ArgSlice(ref mergeBuffer.SpanByte);
+                    var mergeSlice = mergeBuffer.SpanByte;
 
                     parseState.InitializeWithArgument(mergeSlice);
 
                     currInput.parseState = parseState;
-                    SET_Conditional(ref dstKey, ref currInput, ref mergeBuffer, ref currLockableContext);
+                    SET_Conditional(dstKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
 
                     #endregion
                 }
