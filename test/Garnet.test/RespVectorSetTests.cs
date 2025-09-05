@@ -56,6 +56,29 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)res4);
 
             // TODO: exact duplicates - what does Redis do?
+
+            // Add without specifying reductions after first vector
+            var res5 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res5);
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]));
+            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 4 but set has 50", exc1.Message);
+
+            // Add without specifying quantization after first vector
+            var res6 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "4", "9.0", "10.0", "11.0", "12.0", new byte[] { 0, 0, 0, 2 }, "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res6);
+
+            // Add without specifying EF after first vector
+            var res7 = db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "4", "13.0", "14.0", "15.0", "16.0", new byte[] { 0, 0, 0, 3 }, "CAS", "Q8", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res7);
+
+            // Add without specifying M after first vector
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "4", "17.0", "18.0", "19.0", "20.0", new byte[] { 0, 0, 0, 4 }, "CAS", "Q8", "EF", "16"]));
+            ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc2.Message);
+
+            // Mismatch vector size for projection
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]));
+            ClassicAssert.AreEqual("ERR Input dimension mismatch for projection - got 5 but projection expects 4", exc3.Message);
         }
 
         [Test]
