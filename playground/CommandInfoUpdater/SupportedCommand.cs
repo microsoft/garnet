@@ -12,7 +12,7 @@ namespace CommandInfoUpdater
     public class SupportedCommand
     {
         private static readonly SupportedCommand[] AllSupportedCommands = [
-            new("ACL", RespCommand.ACL,
+            new("ACL", RespCommand.ACL, 0,
             [
                 new("ACL|CAT", RespCommand.ACL_CAT),
                 new("ACL|DELUSER", RespCommand.ACL_DELUSER),
@@ -26,25 +26,25 @@ namespace CommandInfoUpdater
                 new("ACL|WHOAMI", RespCommand.ACL_WHOAMI),
             ]),
             new("EXPDELSCAN", RespCommand.EXPDELSCAN),
-            new("APPEND", RespCommand.APPEND),
+            new("APPEND", RespCommand.APPEND, StoreType.Main),
             new("ASKING", RespCommand.ASKING),
             new("ASYNC", RespCommand.ASYNC),
             new("AUTH", RespCommand.AUTH),
             new("BGSAVE", RespCommand.BGSAVE),
-            new("BITCOUNT", RespCommand.BITCOUNT),
-            new("BITFIELD", RespCommand.BITFIELD),
-            new("BITFIELD_RO", RespCommand.BITFIELD_RO),
-            new("BITOP", RespCommand.BITOP),
-            new("BITPOS", RespCommand.BITPOS),
-            new("BLPOP", RespCommand.BLPOP),
-            new("BRPOP", RespCommand.BRPOP),
-            new("BLMOVE", RespCommand.BLMOVE),
-            new("BRPOPLPUSH", RespCommand.BRPOPLPUSH),
-            new("BZMPOP", RespCommand.BZMPOP),
-            new("BZPOPMAX", RespCommand.BZPOPMAX),
-            new("BZPOPMIN", RespCommand.BZPOPMIN),
-            new("BLMPOP", RespCommand.BLMPOP),
-            new("CLIENT", RespCommand.CLIENT,
+            new("BITCOUNT", RespCommand.BITCOUNT, StoreType.Main),
+            new("BITFIELD", RespCommand.BITFIELD, StoreType.Main),
+            new("BITFIELD_RO", RespCommand.BITFIELD_RO, StoreType.Main),
+            new("BITOP", RespCommand.BITOP, StoreType.Main),
+            new("BITPOS", RespCommand.BITPOS, StoreType.Main),
+            new("BLPOP", RespCommand.BLPOP, StoreType.Object),
+            new("BRPOP", RespCommand.BRPOP, StoreType.Object),
+            new("BLMOVE", RespCommand.BLMOVE, StoreType.Object),
+            new("BRPOPLPUSH", RespCommand.BRPOPLPUSH, StoreType.Object),
+            new("BZMPOP", RespCommand.BZMPOP, StoreType.Object),
+            new("BZPOPMAX", RespCommand.BZPOPMAX, StoreType.Object),
+            new("BZPOPMIN", RespCommand.BZPOPMIN, StoreType.Object),
+            new("BLMPOP", RespCommand.BLMPOP, StoreType.Object),
+            new("CLIENT", RespCommand.CLIENT, 0,
             [
                 new("CLIENT|ID", RespCommand.CLIENT_ID),
                 new("CLIENT|INFO", RespCommand.CLIENT_INFO),
@@ -55,7 +55,7 @@ namespace CommandInfoUpdater
                 new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
                 new("CLIENT|UNBLOCK", RespCommand.CLIENT_UNBLOCK),
             ]),
-            new("CLUSTER", RespCommand.CLUSTER,
+            new("CLUSTER", RespCommand.CLUSTER, 0,
             [
                 new("CLUSTER|ADDSLOTS", RespCommand.CLUSTER_ADDSLOTS),
                 new("CLUSTER|ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
@@ -103,7 +103,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
                 new("CLUSTER|SYNC", RespCommand.CLUSTER_SYNC),
             ]),
-            new("COMMAND", RespCommand.COMMAND,
+            new("COMMAND", RespCommand.COMMAND, 0,
             [
                 new("COMMAND|INFO", RespCommand.COMMAND_INFO),
                 new("COMMAND|COUNT", RespCommand.COMMAND_COUNT),
@@ -112,50 +112,50 @@ namespace CommandInfoUpdater
                 new("COMMAND|GETKEYSANDFLAGS", RespCommand.COMMAND_GETKEYSANDFLAGS),
             ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
-            new("CONFIG", RespCommand.CONFIG,
+            new("CONFIG", RespCommand.CONFIG, 0,
             [
                 new("CONFIG|GET", RespCommand.CONFIG_GET),
                 new("CONFIG|SET", RespCommand.CONFIG_SET),
                 new("CONFIG|REWRITE", RespCommand.CONFIG_REWRITE),
             ]),
-            new("COSCAN", RespCommand.COSCAN),
-            new("CustomRawStringCmd", RespCommand.CustomRawStringCmd),
-            new("CustomObjCmd", RespCommand.CustomObjCmd),
+            new("COSCAN", RespCommand.COSCAN, StoreType.Object),
+            new("CustomRawStringCmd", RespCommand.CustomRawStringCmd, StoreType.Main),
+            new("CustomObjCmd", RespCommand.CustomObjCmd, StoreType.Object),
             new("CustomTxn", RespCommand.CustomTxn),
             new("CustomProcedure", RespCommand.CustomProcedure),
             new("DBSIZE", RespCommand.DBSIZE),
             new("DEBUG", RespCommand.DEBUG),
-            new("DECR", RespCommand.DECR),
-            new("DECRBY", RespCommand.DECRBY),
-            new("DEL", RespCommand.DEL),
-            new("DELIFEXPIM", RespCommand.DELIFEXPIM),
-            new("DELIFGREATER", RespCommand.DELIFGREATER),
+            new("DECR", RespCommand.DECR, StoreType.Main),
+            new("DECRBY", RespCommand.DECRBY, StoreType.Main),
+            new("DEL", RespCommand.DEL, StoreType.All),
+            new("DELIFEXPIM", RespCommand.DELIFEXPIM, StoreType.Main),
+            new("DELIFGREATER", RespCommand.DELIFGREATER, StoreType.Main),
             new("DISCARD", RespCommand.DISCARD),
-            new("DUMP", RespCommand.DUMP),
+            new("DUMP", RespCommand.DUMP, StoreType.All),
             new("ECHO", RespCommand.ECHO),
             new("EXEC", RespCommand.EXEC),
-            new("EXISTS", RespCommand.EXISTS),
-            new("EXPIRE", RespCommand.EXPIRE),
-            new("EXPIREAT", RespCommand.EXPIREAT),
-            new("EXPIRETIME", RespCommand.EXPIRETIME),
+            new("EXISTS", RespCommand.EXISTS, StoreType.All),
+            new("EXPIRE", RespCommand.EXPIRE, StoreType.All),
+            new("EXPIREAT", RespCommand.EXPIREAT, StoreType.All),
+            new("EXPIRETIME", RespCommand.EXPIRETIME, StoreType.All),
             new("FAILOVER", RespCommand.FAILOVER),
             new("FLUSHALL", RespCommand.FLUSHALL),
             new("FLUSHDB", RespCommand.FLUSHDB),
             new("FORCEGC", RespCommand.FORCEGC),
-            new("GEOADD", RespCommand.GEOADD),
-            new("GEODIST", RespCommand.GEODIST),
-            new("GEOHASH", RespCommand.GEOHASH),
-            new("GEOPOS", RespCommand.GEOPOS),
-            new("GEORADIUS", RespCommand.GEORADIUS),
-            new("GEORADIUS_RO", RespCommand.GEORADIUS_RO),
-            new("GEORADIUSBYMEMBER", RespCommand.GEORADIUSBYMEMBER),
-            new("GEORADIUSBYMEMBER_RO", RespCommand.GEORADIUSBYMEMBER_RO),
-            new("GEOSEARCH", RespCommand.GEOSEARCH),
-            new("GEOSEARCHSTORE", RespCommand.GEOSEARCHSTORE),
-            new("GET", RespCommand.GET),
-            new("GETEX", RespCommand.GETEX),
-            new("GETBIT", RespCommand.GETBIT),
-            new("GETDEL", RespCommand.GETDEL),
+            new("GEOADD", RespCommand.GEOADD, StoreType.Object),
+            new("GEODIST", RespCommand.GEODIST, StoreType.Object),
+            new("GEOHASH", RespCommand.GEOHASH, StoreType.Object),
+            new("GEOPOS", RespCommand.GEOPOS, StoreType.Object),
+            new("GEORADIUS", RespCommand.GEORADIUS, StoreType.Object),
+            new("GEORADIUS_RO", RespCommand.GEORADIUS_RO, StoreType.Object),
+            new("GEORADIUSBYMEMBER", RespCommand.GEORADIUSBYMEMBER, StoreType.Object),
+            new("GEORADIUSBYMEMBER_RO", RespCommand.GEORADIUSBYMEMBER_RO, StoreType.Object),
+            new("GEOSEARCH", RespCommand.GEOSEARCH, StoreType.Object),
+            new("GEOSEARCHSTORE", RespCommand.GEOSEARCHSTORE, StoreType.Object),
+            new("GET", RespCommand.GET, StoreType.Main),
+            new("GETEX", RespCommand.GETEX, StoreType.Main),
+            new("GETBIT", RespCommand.GETBIT, StoreType.Main),
+            new("GETDEL", RespCommand.GETDEL, StoreType.Main),
             new("GETIFNOTMATCH", RespCommand.GETIFNOTMATCH),
             new("GETRANGE", RespCommand.GETRANGE),
             new("GETWITHETAG", RespCommand.GETWITHETAG),
@@ -420,6 +420,11 @@ namespace CommandInfoUpdater
         public RespCommand RespCommand { get; set; }
 
         /// <summary>
+        /// Store type that the command operates on (Main/Object/All). Default: 0 for non-data commands.
+        /// </summary>
+        public StoreType StoreType { get; set; }
+
+        /// <summary>
         /// Default constructor provided for JSON serialization
         /// </summary>
         public SupportedCommand()
@@ -432,12 +437,14 @@ namespace CommandInfoUpdater
         /// </summary>
         /// <param name="command">Supported command name</param>
         /// <param name="respCommand">RESP Command enum</param>
+        /// <param name="storeType">Store type that the command operates on (Main/Object/All). Default: 0 for non-data commands.</param>
         /// <param name="subCommands">List of supported sub-command names (optional)</param>
-        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, IEnumerable<SupportedCommand> subCommands = null) : this()
+        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, StoreType storeType = 0, IEnumerable<SupportedCommand> subCommands = null) : this()
         {
             Command = command;
             SubCommands = subCommands?.ToDictionary(sc => sc.Command, sc => sc);
             RespCommand = respCommand;
+            StoreType = storeType;
         }
     }
 }
