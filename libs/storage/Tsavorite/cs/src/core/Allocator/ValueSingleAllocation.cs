@@ -33,17 +33,11 @@ namespace Tsavorite.core.Allocator
 
         internal int AvailableLength => length - currentPosition;
 
-        /// <summary>The cumulative length read; this includes page-break metadata, optionals if read, etc. It allows us to position ourselves to the next record start after the
-        /// Read() is complete.</summary>
-        long readCumulativeLength;
-
         /// <summary>The cumulative length of object data read from the device.</summary>
         internal long valueCumulativeLength;
 
         internal void Set(SectorAlignedMemory memory, int currentPosition)
         {
-            TODO("Need to set readCumulativeLength");
-
             Debug.Assert(IsEmpty, "Should not reassign");
             this.memoryBuffer = memory;
             length = Span.Length;
@@ -60,7 +54,7 @@ namespace Tsavorite.core.Allocator
         internal void ExtractOptionals(RecordInfo recordInfo, int offsetToOptionals, out RecordOptionals optionals)
         {
             var longSpan = MemoryMarshal.Cast<byte, long>(Span.Slice(offsetToOptionals));
-            int spanIndex = 0;
+            var spanIndex = 0;
             optionals = default;
             if (recordInfo.HasETag)
             {

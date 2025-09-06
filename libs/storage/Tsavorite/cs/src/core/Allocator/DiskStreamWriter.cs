@@ -225,7 +225,8 @@ namespace Tsavorite.core
                 // If we do, we'll save off the span, then write it in FlushKeyInterior.
                 if (hasPageBreaks)
                 {
-                    var interiorLength = usablePageSize * keyInteriorPageBreakInfo.internalPageCount;
+                    // Keys are limited to 32 bit sizes so casting to int is safe
+                    var interiorLength = usablePageSize * (int)keyInteriorPageBreakInfo.internalPageCount;
                     if (logRecord.IsPinnedKey)
                         keyInteriorPinnedSpan = PinnedSpanByte.FromPinnedSpan(keySpan.Slice(keyInteriorPageBreakInfo.firstPageFragmentSize, interiorLength));
                     else
@@ -249,17 +250,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>Determine the number of pages spanned by this size and start position. Used for writing directly from byte[] (rather than copying to the page disk buffer(s)).</summary>
-        /// <param name="dataSize">Size to be written; this is the remainder after an initial sector-aligned startCap offset on the original page</param>
+        /// <param name="dataSize">Size to be written</param>
         /// <param name="initialPageSpaceRemaining">Space remaining in the current disk page buffer</param> 
         /// <param name="usablePageSize">Size between disk page header and footer</param>
         /// <param name="info">The page break info</param>
         /// <returns>True if there are any page breaks, else false.</returns>
-        internal static bool CalculatePageBreaks(int dataSize, int initialPageSpaceRemaining, int usablePageSize, out PageBreakInfo info)
+        internal static bool CalculatePageBreaks(long dataSize, int initialPageSpaceRemaining, int usablePageSize, out PageBreakInfo info)
         {
             info = default;
             if (dataSize <= initialPageSpaceRemaining)
             {
-                info.lastPageFragmentSize = dataSize;
+                info.lastPageFragmentSize = (int)dataSize;
                 return false;
             }
 
@@ -274,7 +275,7 @@ namespace Tsavorite.core
 
             // Last fragment size (on final page)
             dataSize -= info.internalPageCount * usablePageSize;
-            info.lastPageFragmentSize = dataSize;    // This includes the zero case
+            info.lastPageFragmentSize = (int)dataSize;    // This includes the zero case
             return info.hasPageBreak = true;
         }
 
@@ -397,9 +398,10 @@ namespace Tsavorite.core
             }
 
             // Here is where we write the first chained-chunk's value length in prevPage. Using two pages has two advantages:
-            //  - Handles the edge case where the key ends less than 4 bytes from the end of the buffer, thereby preventing writing the int "next chunk length"
+            //  - For the first page, it means the first valueLengthPosition remains in the length metadata. This avoids the edge case where the key ends less than 4 bytes from
+            //    the end of the buffer, thereby preventing writing the int "next chunk length"
             //  - Lets us use the entire second buffer (as well as any remainder of the first buffer, for the first chunk) for value serialization, resulting in less IO calls.
-            // If there is no prevPageBuffer then this means we just serialized to the end of the current buffer without arriving at the end of serialization; if we had,
+            // If there is no prevPageBuffer then this means we have serialized to the end of the current buffer without arriving at the end of serialization; if we had,
             // we'd be calling OnSerializationComplete instead. So the current serialization must continue into the next buffer, and the current pageBuffer becomes prevPageBuffer.
             if (prevPageBuffer is null)
             {

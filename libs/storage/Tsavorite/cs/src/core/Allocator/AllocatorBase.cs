@@ -1915,7 +1915,7 @@ namespace Tsavorite.core
                     ? new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions)
                     : new(bufferPool, PageSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions);
                 var readBuffer = new DiskStreamReader<TStoreFunctions>(in readParams, device, deserializationBuffers, logger);
-                if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord))
+                if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord, out _ /*recordLength*/))
                 {
                     Debug.Assert(!readBuffer.recordInfo.Invalid, "Invalid records should not be in the hash chain for pending IO");
 

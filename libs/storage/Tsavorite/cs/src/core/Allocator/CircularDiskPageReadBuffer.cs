@@ -56,7 +56,7 @@ namespace Tsavorite.core
 
         /// <summary>If true, then there is another chunk to read after the currently in-flight chunk read.</summary>
         /// <remarks>This becomes false on the last chunk, which does not have the continuation bit set.</remarks>
-        bool hasContinuationChunk;
+        internal bool hasContinuationChunk;
 
         /// <summary>For object deserialization we need to track the remaining chunk length to be read.</summary>
         /// <remarks>For chained chunks with the continuation tag, this is the next chunk length to read.
@@ -77,10 +77,10 @@ namespace Tsavorite.core
 
         /// <summary>The cumulative length read; this includes page-break metadata, optionals if read, etc. It allows us to position ourselves to the next record start after the
         /// <see cref="DiskStreamReader{TStoreFunctions}.ReadFromDevice(SectorAlignedMemory, long, int, int, System.Threading.CountdownEvent)"/>> is complete.</summary>
-        long readCumulativeLength = 0;
+        internal long readCumulativeLength = 0;
 
         /// <summary>The cumulative length of object data read from the device.</summary>
-        long valueCumulativeLength;
+        internal long valueCumulativeLength;
 
         internal CircularDiskPageReadBuffer(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger) 
         {
@@ -279,7 +279,7 @@ namespace Tsavorite.core
             return true;
         }
 
-        private unsafe void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
+        internal unsafe void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
                 logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);

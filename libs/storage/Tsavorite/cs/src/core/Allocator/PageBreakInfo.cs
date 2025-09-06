@@ -12,12 +12,12 @@ namespace Tsavorite.core
         /// <summary>
         /// The number of internal pages (complete pages of data, not including the first and last page).
         /// </summary>
-        internal int internalPageCount;
+        internal long internalPageCount;
 
         /// <summary>
         /// The total number of bytes taken by page headers and footers in the written span.
         /// </summary>
-        internal readonly int TotalPageBreakBytes
+        internal readonly long TotalPageBreakBytes
         {
             get
             {

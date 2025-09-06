@@ -40,7 +40,7 @@ namespace Tsavorite.core
             /// <summary>The last usable position on the page.</summary>
             internal int PageEndPosition => pageBufferSize - DiskPageFooter.Size;
 
-            /// <summary>The record address (without AddressType), i.e. the unaligned start of the record on the device</summary>
+            /// <summary>The record address (without AddressType), i.e. the sector-unaligned (but record-aligned) start of the record on the device</summary>
             internal readonly long recordAddress;
 
             /// <summary>The <see cref="IStoreFunctions"/> implementation to use</summary>
@@ -88,7 +88,7 @@ namespace Tsavorite.core
             internal int CalculateOffsetDistanceFromEndOfPage(long offset) => (int)(recordAddress + offset) & (pageBufferSize - 1);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal bool CalculatePageBreaks(int length, int distanceFromEndOfPage, out PageBreakInfo pageBreakInfo) 
+            internal bool CalculatePageBreaks(long length, int distanceFromEndOfPage, out PageBreakInfo pageBreakInfo) 
                 => DiskStreamWriter.CalculatePageBreaks(length, distanceFromEndOfPage, UsablePageSize, out pageBreakInfo);
         }
     }
