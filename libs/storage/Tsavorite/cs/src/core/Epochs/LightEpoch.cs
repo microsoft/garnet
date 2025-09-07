@@ -195,10 +195,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Thread resumes its epoch entry
         /// </summary>
+        /// <param name="maxSpins">
+        /// Maximum number of spins to attempt when acquiring the epoch entry. Default -1 means spin forver.
+        /// </param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Resume()
+        public void Resume(int maxSpins = -1)
         {
-            Acquire();
+            Acquire(maxSpins);
             ProtectAndDrain();
         }
 
@@ -366,10 +369,10 @@ namespace Tsavorite.core
         /// Thread acquires its epoch entry
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void Acquire()
+        void Acquire(int maxSpins)
         {
             if (Metadata.threadEntryIndex == kInvalidIndex)
-                Metadata.threadEntryIndex = ReserveEntryForThread();
+                Metadata.threadEntryIndex = ReserveEntryForThread(maxSpins);
 
             Debug.Assert((*(tableAligned + Metadata.threadEntryIndex)).localCurrentEpoch == 0,
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
@@ -407,9 +410,10 @@ namespace Tsavorite.core
         /// thread will ever have ID 0.
         /// </summary>
         /// <returns>Reserved entry</returns>
-        static int ReserveEntry()
+        static int ReserveEntry(int maxSpins)
         {
-            while (true)
+            // uint means that overflows go to 0 and -1 maxSpin means spin forever; same as while (true)
+            for (uint i = 0; i < maxSpins; i++)
             {
                 // Try to acquire entry
                 if (0 == (threadIndexAligned + Metadata.startOffset1)->threadId)
@@ -433,6 +437,8 @@ namespace Tsavorite.core
                     Thread.Yield();
                 }
             }
+
+            throw new TimeoutException($"Could not reserve epoch entry for thread after {maxSpins} spins");
         }
 
         /// <summary>
@@ -440,7 +446,7 @@ namespace Tsavorite.core
         /// once for a thread.
         /// </summary>
         /// <returns>Reserved entry</returns>
-        static int ReserveEntryForThread()
+        static int ReserveEntryForThread(int maxSpins)
         {
             if (Metadata.threadId == 0) // run once per thread for performance
             {
@@ -449,7 +455,7 @@ namespace Tsavorite.core
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
-            return ReserveEntry();
+            return ReserveEntry(maxSpins);
         }
 
         /// <inheritdoc/>

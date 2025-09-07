@@ -16,6 +16,8 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+        private const int kMaxSpins = 10_000;
+
         readonly ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession;
         internal readonly SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
 
@@ -33,7 +35,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnsafeResumeThread()
-            => clientSession.UnsafeResumeThread(sessionFunctions);
+            => clientSession.UnsafeResumeThread(sessionFunctions, kMaxSpins);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -479,7 +481,7 @@ namespace Tsavorite.core
         /// <returns>Status</returns>
         internal Status ContainsKeyInMemory(ref TKey key, out long logicalAddress, long fromAddress = -1)
         {
-            UnsafeResumeThread();
+            UnsafeResumeThread(kMaxSpins);
             try
             {
                 return store.InternalContainsKeyInMemory<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
