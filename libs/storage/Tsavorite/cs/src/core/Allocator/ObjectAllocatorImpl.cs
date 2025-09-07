@@ -47,10 +47,17 @@ namespace Tsavorite.core
 
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
+        // Default to max sizes so testing a size as "greater than" will always be false
+        readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
+        readonly int maxInlineValueSize = int.MaxValue;
+
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, isObjectAllocator: true)
         {
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
+
+            maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
+            maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
 
             values = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
@@ -526,6 +533,27 @@ namespace Tsavorite.core
                 if (epochWasProtected)
                     epoch.Resume();
             }
+        }
+
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        {
+            prevLengthToRead = IStreamBuffer.InitialIOSize;
+
+            var deserializationBuffers = CreateDeserializationBuffers(bufferPool, IStreamBuffer.PageBufferSize, numberOfFlushPageBuffers, device, logger);
+
+            DiskStreamReader<TStoreFunctions>.DiskReadParameters readParams = 
+                new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions);
+            var readBuffer = new DiskStreamReader<TStoreFunctions>(in readParams, device, deserializationBuffers, logger);
+            if (readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord, out _ /*recordLength*/))
+            {
+                // Success; default the output arguments.
+                prevAddressToRead = 0;
+                return true;
+            }
+
+            // If readBuffer.Read returned false it was due to key mismatch or Invalid record, so get the previous record.
+            prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
+            return false;
         }
 
         protected override void ReadAsync<TContext>(

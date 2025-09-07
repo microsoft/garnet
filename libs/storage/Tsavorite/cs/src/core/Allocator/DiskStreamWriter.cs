@@ -504,7 +504,7 @@ namespace Tsavorite.core
             FlushPartialBuffer(pageBuffer);
             pageBuffer = circularPageFlushBuffers.MoveToAndInitializeNextBuffer();
 
-            // Write any interior full pages. These will be done in the context of the current pageBuffer. TODO: Use a circularPageBuffers-level countdownEvent instead, to free up the buffer earlier
+            // Write any interior full pages.
             if (pageBreakInfo.internalPageCount > 0)
                 WriteDirectInterior(data, ref pageBreakInfo, targetArray);
 

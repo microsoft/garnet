@@ -11,6 +11,7 @@ namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
+    using static VarbyteLengthUtility;
 
     // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
@@ -215,6 +216,57 @@ namespace Tsavorite.core
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
+
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        {
+            // Initialize to "key does not match so get previous record" length to read
+            prevLengthToRead = IStreamBuffer.InitialIOSize;
+
+            // See if we have a complete record.
+            var currentLength = ctx.record.available_bytes;
+            if (currentLength >= RecordInfo.GetLength() + LogRecord.MinLengthMetadataBytes)
+            {
+                var ptr = ctx.record.GetValidPointer();
+                var (keyLengthBytes, valueLengthBytes, _ /*usesChainedChunks*/) = DeconstructIndicatorByte(*(ptr + RecordInfo.GetLength()));
+                var recordInfo = *(RecordInfo*)ptr;
+
+                // Initialize to "key does not match so get previous record" address to read
+                prevAddressToRead = recordInfo.PreviousAddress;
+
+                if (recordInfo.Invalid) // includes IsNull
+                    return false;
+
+                var optionalLength = LogRecord.GetOptionalLength(recordInfo);
+                var offsetToKeyStart = RecordInfo.GetLength() + LogRecord.IndicatorBytes + keyLengthBytes + valueLengthBytes;
+
+                // If the length is up to offsetToKeyStart, we can read the full lengths.
+                if (currentLength >= offsetToKeyStart)
+                {
+                    var keyLengthPtr = ptr + RecordInfo.GetLength() + LogRecord.IndicatorBytes;
+                    var keyLength = GetKeyLength(keyLengthBytes, keyLengthPtr);
+
+                    // We have the full key, so check for a match if we had a requested key, and return if not.
+                    if (!ctx.request_key.IsEmpty && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(ptr + offsetToKeyStart, keyLength)))
+                        return false;
+
+                    // Values in SpanByteAllocator will always be string, thus limited to 512MB, so cast to int is OK.
+                    var valueLength = (int)GetValueLength(valueLengthBytes, keyLengthPtr + keyLengthBytes);
+                    var recordLength = offsetToKeyStart + keyLength + valueLength + optionalLength;
+
+                    // If we have the full record and the keys match, success.
+                    if (currentLength >= recordLength)
+                        return true;
+
+                    // We need to read the same address, but with the full record length we now know.
+                    prevLengthToRead = recordLength;
+                }
+            }
+
+            // Either we didn't have the full record size, or we didn't have enough bytes to even read the full record size. Either way, prevLengthToRead
+            // is set for a re-read of the same record.
+            prevAddressToRead = ctx.logicalAddress;
+            return false;
+        }
 
         internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
         {

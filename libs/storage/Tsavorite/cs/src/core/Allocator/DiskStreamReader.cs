@@ -108,15 +108,9 @@ namespace Tsavorite.core
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
         /// <param name="diskLogRecord">The output <see cref="DiskLogRecord"/>, which may be entirely defined by spans within <paramref name="recordBuffer"/>, or
         ///     may contain Key or Value overflows or Value Objects.</param>
-        /// <remarks>
-        /// The "fast path" for SpanByteAllocator goes through here with <see cref="DiskReadParameters.fixedPageSize"/> set to nonzero, checking for having
-        /// a complete key for comparison and for having a complete record, allocating a full-size record if another read is necessary, in the same way as
-        /// was previously done in <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AsyncGetFromDiskCallback(uint, uint, object)"/>
-        /// </remarks>
+        /// <param name="recordLength">Receives the length of the record, so the caller can align to get the next record from disk</param>
         public bool Read(ref SectorAlignedMemory recordBuffer, ReadOnlySpan<byte> requestedKey, out DiskLogRecord diskLogRecord, out long recordLength)
         {
-            TODO("Include cumulativeReadLength output so caller can advance; make sure it has forced alignment to following sector when needed");
-
             var ptr = recordBuffer.GetValidPointer();
             diskLogRecord = default;
 
@@ -143,6 +137,7 @@ namespace Tsavorite.core
                 // when we start doing calculations based on the actual layout.
                 var offsetToKeyStart = RecordInfo.GetLength() + LogRecord.IndicatorBytes + keyLengthBytes + valueLengthBytes;
 
+                // If the length is up to offsetToKeyStart, we can read the full lengths.
                 if (currentLength >= offsetToKeyStart)
                 {
                     // We've checked whether the indicator byte says it is a chained chunk, but we need to recheck on the actual length retrieval
@@ -155,10 +150,10 @@ namespace Tsavorite.core
                         : GetValueLength(valueLengthBytes, keyLengthPtr + keyLengthBytes);
 
                     // We have the key and value lengths here so we can calculate page break info. If the key was short, as is almost always the case,
-                    // then we already have the full key, and it can only have at most one page break and we've already calculated it if so.
-                    // If it's longer, we do the full page-break calculation, which requires the actual key offset in the full on-disk page(s).
+                    // then we already have the full key, and it can only have at most one page break and we've already calculated it if so. If it's longer
+                    // than the key data we already have, do the full page-break calculation, which requires the actual key offset in the full on-disk page(s).
                     var actualOffsetToKeyStart = (offsetToKeyStart > offsetToInitialPageBreak) ? offsetToKeyStart + initialPageBreakBytes : offsetToKeyStart;
-                    if (keyLength > readParams.UsablePageSize && readParams.fixedPageSize <= 0)
+                    if (keyLength >= currentLength - offsetToKeyStart)
                     {
                         if (readParams.CalculatePageBreaks(keyLength, readParams.CalculateOffsetDistanceFromEndOfPage(actualOffsetToKeyStart), out keyPageBreakInfo))
                         {
@@ -176,7 +171,7 @@ namespace Tsavorite.core
                     var valueStartDistanceFromEndOfPage = readParams.CalculateOffsetDistanceFromEndOfPage(actualOffsetToValueStart);
 
                     // If the value is not a chained-chunk object we can determine how many page breaks are in it.
-                    if (!recordInfo.ValueIsObject && valueLength > valueStartDistanceFromEndOfPage && readParams.fixedPageSize <= 0)
+                    if (!recordInfo.ValueIsObject && valueLength > valueStartDistanceFromEndOfPage)
                         _ = readParams.CalculatePageBreaks(valueLength, valueStartDistanceFromEndOfPage, out valuePageBreakInfo);
                     
                     // Initialize this to what will be the valid value for everything except chained chunks. It will be overridden for large chunked value objects
@@ -204,24 +199,11 @@ namespace Tsavorite.core
                             recordBuffer = default;
 
                             // This is using the compacted-over-pagebreak buffer, so does not need to use pagebreak info.
-                            TODO("Optionals need to be extracted into the DiskLogRecord.recordOptionals field (and eTag/expiration need to be moved into that)");
+                            // If the optionals are present in the recordBuffer DiskLogRecord.Transfer extracts them, so ignore the outparam.
                             RecordOptionals optionals = default;
-                            var valueObject = recordInfo.ValueIsObject ? DoDeserialize(ref optionals) : null;       // optionals are in the recordBuffer if present, so ignore the outparams for them
+                            var valueObject = recordInfo.ValueIsObject ? DoDeserialize(ref optionals) : null;
                             diskLogRecord = DiskLogRecord.Transfer(ref valueSingleAllocation.memoryBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
                             recordLength = totalLength;
-                            return true;
-                        }
-
-                        // We have the full key in recordBuffer (and maybe in requestedKey) but don't have the (full) value or optionals.
-                        // If we have a fixed-size page, just read it and return; we won't have overflow or objects.
-                        if (readParams.fixedPageSize > 0)
-                        {
-                            TODO("Remove fixed-len pages");
-                            Debug.Assert(totalLength <= readParams.fixedPageSize, $"totalLength {totalLength} cannot be greater than fixedPageSize {readParams.fixedPageSize}");
-                            
-                            // Since we're fixed-size pages we did not populate either key or value pageBreakInfos, so just use either.
-                            var fixedSizeRecordBuffer = AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, (int)totalLength, ref keyPageBreakInfo);
-                            diskLogRecord = DiskLogRecord.Transfer(ref fixedSizeRecordBuffer, offsetToKeyStart, keyLength, (int)valueLength);
                             return true;
                         }
 
@@ -409,7 +391,7 @@ namespace Tsavorite.core
                 {
                     valueSingleAllocation.Set(AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, (int)totalLength, ref pageBreakInfo), currentPosition: offsetToKeyStart + keyLength);
 
-                    TODO("Optionals need to be extracted into the DiskLogRecord.recordOptionals field (and eTag/expiration need to be moved into that)");
+                    // If the optionals are present in the recordBuffer DiskLogRecord.Transfer extracts them, so ignore the outparam.
                     var valueObject = recordInfo.ValueIsObject ? DoDeserialize(ref optionals) : null;   // optionals are in the recordBuffer if present, so ignore the outparams for them
 
                     // We have the full key, so check for a match if we had a requested key.
@@ -522,7 +504,7 @@ namespace Tsavorite.core
 
                 // The common case is that we already got the key on the first read, so here we do not have a multiCountdownEvent and thus will create
                 // our own local countdownEvent and Wait() for it here. This also means we can use 'fixed' instead of incurring GCHandle.Alloc overhead.
-                // TODO: Include optionals in this read
+                TODO("Include optionals in this read");
                 DiskReadCallbackContext context = new(multiCountdownEvent ?? new CountdownEvent(1), refCountedGCHandle: default);
                 if (multiCountdownEvent is null)
                 {
@@ -550,7 +532,9 @@ namespace Tsavorite.core
             // We will copy the actual data spans to their locations in the buffer (or read them directly to the buffer), so we don't need any sector alignment in this OverflowByteArray.
             // As this is a string which is limited to 512MB we are safe to cast to int.
             var overflowLen = pageBreakInfo.firstPageFragmentSize + (readParams.UsablePageSize * pageBreakInfo.internalPageCount) + pageBreakInfo.lastPageFragmentSize;
-            overflowArray = new OverflowByteArray((int)overflowLen, startOffset: 0, endOffset:0, zeroInit: false);
+
+            // We will adjust endOffset below.
+            overflowArray = new OverflowByteArray((int)overflowLen, startOffset: startPadding, endOffset:0, zeroInit: false);
             
             // Create the refcounted pinned GCHandle with a refcount of 1, so that if a read completes while we're still setting up, we won't get an early unpin.
             RefCountedPinnedGCHandle refCountedGCHandle = new(GCHandle.Alloc(overflowArray.Data, GCHandleType.Pinned), initialCount: 1);
@@ -659,8 +643,8 @@ namespace Tsavorite.core
             // Handle the last-page fragment
             if (pageBreakInfo.lastPageFragmentSize > SectorSize - DiskPageHeader.Size)
             {
-                // TODO: Include the full lastPageFragmentSize in the last "interior page to next page" transition if it is < MaxCopyLen, including optionals if space available
-                // TODO: include optionals on this read. Need to flag which context has them so the callback can copy them into member variables.
+                TODO("Include the full lastPageFragmentSize in the [last interior page to next page] transition if it is < MaxCopyLen, including optionals if space available.");
+                TODO("Include optionals in this read. Need to flag which context has them so the callback can copy them into member variables.");
                 // The start boundary of this read is already sector-aligned. We'll need to sector-align the length.
                 var remainingLastFragmentSize = pageBreakInfo.lastPageFragmentSize - (SectorSize - DiskPageHeader.Size);
                 alignedBytesToRead = RoundUp(remainingLastFragmentSize, SectorSize);
@@ -674,7 +658,7 @@ namespace Tsavorite.core
                 };
 
                 logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-                // We're done; no need to update offset variables
+                // This is the last read; no need to update offset variables
             }
 
             // We had the initial count in either multiCountdownEvent before it was passed in, or in the countdownEvent we created here. We incremented for each
@@ -807,8 +791,7 @@ namespace Tsavorite.core
 
         IHeapObject DoDeserialize(ref RecordOptionals optionals)
         {
-            // TODO: For multi-buffer, consider using two buffers, with the next one being read from disk on a background thread while the foreground thread processes the current one in parallel.
-            // This could simply hold the CountdownEvent for the "disk read in progress" buffer and Wait() on it when DoDeserialize() is ready for the next buffer.
+            // If we haven't yet instantiated the serializer do so now.
             if (valueObjectSerializer is null)
             {
                 pinnedMemoryStream = new(this);
@@ -867,6 +850,7 @@ namespace Tsavorite.core
                 var (alignedDeviceAddress, padding) = readParams.GetAlignedReadStart(optionalAddress);
                 var optionalPositionInBuffer = optionalAddress & (SectorSize - 1);  // Set this to Sector alignment, not Page-alignment
                 buffer.ReadFromDevice((ulong)alignedDeviceAddress, (int)optionalPositionInBuffer, readLength, circularDeserializationBuffers.ReadFromDeviceCallback);
+                _ = buffer.WaitForDataAvailable();
 
                 _ = CompactOverPageBreakIfNeeded(buffer.memory, offsetToOptionalPosition, out var offsetToInitialPageBreak);
                 var ptrToOptionals = buffer.memory.GetValidPointer() + offsetToOptionalPosition;

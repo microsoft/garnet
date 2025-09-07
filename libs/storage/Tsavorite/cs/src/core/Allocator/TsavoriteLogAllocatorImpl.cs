@@ -116,6 +116,9 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+            => throw new TsavoriteException("TsavoriteLogAllocator does not support VerifyRecordFromDiskCallback");
+
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);

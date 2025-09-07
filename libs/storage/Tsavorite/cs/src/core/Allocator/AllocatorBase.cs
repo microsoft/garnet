@@ -70,9 +70,6 @@ namespace Tsavorite.core
         /// <summary>Segment buffer size</summary>
         protected readonly int SegmentBufferSize;
 
-        protected readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
-        protected readonly int maxInlineValueSize = int.MaxValue;
-
         protected readonly int numberOfFlushPageBuffers;
 
         /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
@@ -542,11 +539,6 @@ namespace Tsavorite.core
             _wrapper = wrapperCreator(this);
 
             this.IsObjectAllocator = isObjectAllocator;
-            if (isObjectAllocator)
-            {
-                maxInlineKeySize = 1 << logSettings.MaxInlineKeySizeBits;
-                maxInlineValueSize = 1 << logSettings.MaxInlineValueSizeBits;
-            }
 
             // Validation
             if (logSettings.PageSizeBits < LogSettings.kMinPageSizeBits || logSettings.PageSizeBits > LogSettings.kMaxPageSizeBits)
@@ -1889,6 +1881,8 @@ namespace Tsavorite.core
             AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
         }
 
+        private protected abstract bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead);
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
@@ -1900,31 +1894,19 @@ namespace Tsavorite.core
             try
             {
                 // Note: don't test for (numBytes >= ctx.record.required_bytes) for this initial read, as the file may legitimately end before the
-                // InitialIOSize request can be fulfilled. DiskStreamReader reads will only request reads of known intra-record sizes, so
-                // will test to ensure they get the expected number of bytes.
+                // InitialIOSize request can be fulfilled.
                 ctx.record.available_bytes = (int)numBytes;
 
-                // Create the buffers we will use for object deserialization.
-                var deserializationBuffers = (*(RecordInfo*)ctx.record.GetValidPointer()).ValueIsObject
-                    ? CreateDeserializationBuffers(bufferPool, IStreamBuffer.PageBufferSize, numberOfFlushPageBuffers, device, logger)
-                    : default;
-
-                // Note: logicalAddress is actually physicalAddress here, with the OnDisk AddressType; there can't be fixed pages for expanded records.
-                // TODO: move this "if" to an IAllocator function call to do the DiskStreamReadBuffer.Read().
-                DiskStreamReader<TStoreFunctions>.DiskReadParameters readParams = IsObjectAllocator
-                    ? new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions)
-                    : new(bufferPool, PageSize, device.SectorSize, IStreamBuffer.PageBufferSize, AbsoluteAddress(ctx.logicalAddress), storeFunctions);
-                var readBuffer = new DiskStreamReader<TStoreFunctions>(in readParams, device, deserializationBuffers, logger);
-                if (!readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord, out _ /*recordLength*/))
+                if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
                 {
-                    Debug.Assert(!readBuffer.recordInfo.Invalid, "Invalid records should not be in the hash chain for pending IO");
+                    Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, "Invalid records should not be in the hash chain for pending IO");
 
                     // Keys don't match so request the previous record in the chain if it is in the range to resolve, else fall through to signal "IO complete".
-                    ctx.logicalAddress = readBuffer.recordInfo.PreviousAddress;
+                    ctx.logicalAddress = prevAddressToRead;
                     if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
                         ctx.Dispose();
-                        AsyncGetFromDisk(ctx.logicalAddress, IStreamBuffer.InitialIOSize, ctx);
+                        AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
                         return;
                     }
                 }
