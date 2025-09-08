@@ -292,16 +292,9 @@ namespace Tsavorite.core
             {
                 if (buffer.optionalLength > 0)
                 {
+                    // We no longer want the optionals to count in the size of the last page fragment
                     buffer.endPosition -= buffer.optionalLength;
-
-                    var ptrToOptionals = buffer.memory.GetValidPointer() + buffer.endPosition;
-                    if (recordInfo.HasETag)
-                    {
-                        recordOptionals.eTag = *(long*)ptrToOptionals;
-                        ptrToOptionals += LogRecord.ETagSize;
-                    }
-                    if (recordInfo.HasExpiration)
-                        recordOptionals.expiration = *(long*)ptrToOptionals;
+                    ValueSingleAllocation.ExtractOptionals(recordInfo, buffer.memory.GetValidPointer() + buffer.endPosition, out recordOptionals);
                 }
             }
             else if (hasContinuationChunk)

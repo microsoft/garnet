@@ -47,7 +47,8 @@ namespace Tsavorite.core
         /// The number of bytes in the data fragment that follows the last page break. It is up to the caller whether to handle this specially
         /// (e.g. copy to buffer vs. write it directly from the input data if it's past some size such as <see cref="DiskStreamWriter.MaxCopySpanLen"/>).
         /// </summary>
-        /// <remarks>This may be zero, if the interior portion (including insertion of header and footer) ended on a sector boundary.</remarks>
+        /// <remarks>This may be zero, if the interior portion (including insertion of header and footer) ended on a sector boundary. And it end with the
+        /// optionals, which may also cross a page boundary.</remarks>
         internal int lastPageFragmentSize;
 
         /// <summary>

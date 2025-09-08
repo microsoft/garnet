@@ -57,12 +57,14 @@ namespace Tsavorite.core
         public int valid_offset;
 
         /// <summary>
-        /// Required (requested) bytes for the current operation, e.g. number of bytes to read. There will always be at least this much usable space in the allocation.
+        /// Required (requested) bytes for the current operation: the unaligned number of bytes to read. There will always be at least this much usable space in the allocation.
+        /// Use this when the original request size is needed.
         /// </summary>
         public int required_bytes;
 
         /// <summary>
-        /// Available bytes after the operation is complete, e.g. the number of bytes actually read; <see cref="GetValidPointer()"/>, which is <see cref="aligned_pointer"/> + <see cref="valid_offset"/>.
+        /// Available bytes after the operation is complete: the number of bytes actually read, e.g. aligned number of bytes requested. See <see cref="GetValidPointer()"/>.
+        /// Use this to see if there are additional bytes over the original request (see <see cref="required_bytes"/>.
         /// </summary>
         public int available_bytes;
 
@@ -167,12 +169,12 @@ namespace Tsavorite.core
         public Span<byte> TotalValidSpan => new (GetValidPointer(), AlignedTotalCapacity);
 
         /// <summary>
-        /// Get Span of entire allocated space after the valid pointer
+        /// Get Span of entire allocated space after the valid pointer (see <see cref="available_bytes"/>).
         /// </summary>
         public Span<byte> AvailableValidSpan => new(GetValidPointer(), available_bytes);
 
         /// <summary>
-        /// Get Span of used space (required bytes)
+        /// Returns the Span of requested space (see <see cref="required_bytes"/>).
         /// </summary>
         public Span<byte> RequiredValidSpan => new (GetValidPointer(), required_bytes);
 

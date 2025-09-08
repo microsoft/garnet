@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core.Allocator;
 using static Tsavorite.core.VarbyteLengthUtility;
 
 namespace Tsavorite.core
@@ -38,9 +37,9 @@ namespace Tsavorite.core
         /// <summary>Information about page breaks within non-object key data space. The page border metadata size is not part of the key length metadata, plus we have to
         /// omit the page metadata information from the user-visible span.</summary>
         PageBreakInfo keyPageBreakInfo;
-        /// <summary>Information about page breaks within non-object value data space. The page border metadata size is not part of the value length metadata, plus we have to
-        /// omit the page metadata information from the user-visible span.</summary>
-        PageBreakInfo valuePageBreakInfo;
+        /// <summary>Information about page breaks within non-object value data space, and following optionals if present (so we can optimize them along with the value).
+        /// The page border metadata size is not part of the value length metadata, plus we have to omit the page metadata information from the user-visible span.</summary>
+        PageBreakInfo valueAndOptionalsPageBreakInfo;
 
         /// <summary>The offset (past <see cref="DiskReadParameters.recordAddress"/>) of the start of the value bytes.</summary>
         int offsetToValueStart;
@@ -68,20 +67,21 @@ namespace Tsavorite.core
         /// <summary>The circular buffer we cycle through for large-object deserialization.</summary>
         readonly CircularDiskPageReadBuffer circularDeserializationBuffers;
 
+        /// <summary>Record optionals extracted from the buffer or read from disk.</summary>
+        RecordOptionals recordOptionals;
+
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
 
         int SectorSize => (int)logDevice.SectorSize;
 
+#pragma warning disable IDE0290 // Use primary constructor
         public DiskStreamReader(in DiskReadParameters readParams, IDevice logDevice, CircularDiskPageReadBuffer deserializationBuffers, ILogger logger)
         {
             this.readParams = readParams;
             this.logDevice = logDevice ?? throw new ArgumentNullException(nameof(logDevice));
             circularDeserializationBuffers = deserializationBuffers;
             this.logger = logger;
-
-            // Sectors and MaxInternalOffset are powers of 2; we want to be sure we have room for 2 sectors in OverflowByteArray offsets.
-            Debug.Assert(SectorSize < OverflowByteArray.MaxInternalOffset, $"Sector size {SectorSize} must be less than OverflowByteArray.MaxInternalOffset {OverflowByteArray.MaxInternalOffset}");
         }
 
         /// <inheritdoc/>
@@ -113,10 +113,11 @@ namespace Tsavorite.core
         {
             var ptr = recordBuffer.GetValidPointer();
             diskLogRecord = default;
+            recordOptionals = default;
 
             // First see if we have a page footer/header combo in this initial (possibly partial) record, and compact over it if so.
             var initialPageBreakBytes = CompactOverPageBreakIfNeeded(recordBuffer, offsetToStartOfField: 0, out var offsetToInitialPageBreak);
-            var currentLength = recordBuffer.available_bytes;   // This is adjusted if we compacted over the page break
+            var currentLength = recordBuffer.required_bytes;   // This is adjusted if we compacted over the page break
 
             // Check for RecordInfo and indicator byte. If we have that, check for key length; for disk IO we are called for a specific key
             // and can verify it here (unless NoKey, in which case key is empty and we assume we have the record we want; and for Scan(), the same).
@@ -172,11 +173,11 @@ namespace Tsavorite.core
 
                     // If the value is not a chained-chunk object we can determine how many page breaks are in it.
                     if (!recordInfo.ValueIsObject && valueLength > valueStartDistanceFromEndOfPage)
-                        _ = readParams.CalculatePageBreaks(valueLength, valueStartDistanceFromEndOfPage, out valuePageBreakInfo);
+                        _ = readParams.CalculatePageBreaks(valueLength + optionalLength, valueStartDistanceFromEndOfPage, out valueAndOptionalsPageBreakInfo);
                     
                     // Initialize this to what will be the valid value for everything except chained chunks. It will be overridden for large chunked value objects
                     // (more than two buffers).
-                    actualValueLength = valueLength + valuePageBreakInfo.TotalPageBreakBytes;
+                    actualValueLength = valueLength + valueAndOptionalsPageBreakInfo.TotalPageBreakBytes;
 
                     if (currentLength >= offsetToKeyStart + keyLength)
                     {
@@ -199,9 +200,7 @@ namespace Tsavorite.core
                             recordBuffer = default;
 
                             // This is using the compacted-over-pagebreak buffer, so does not need to use pagebreak info.
-                            // If the optionals are present in the recordBuffer DiskLogRecord.Transfer extracts them, so ignore the outparam.
-                            RecordOptionals optionals = default;
-                            var valueObject = recordInfo.ValueIsObject ? DoDeserialize(ref optionals) : null;
+                            var valueObject = recordInfo.ValueIsObject ? DoDeserialize() : null;
                             diskLogRecord = DiskLogRecord.Transfer(ref valueSingleAllocation.memoryBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
                             recordLength = totalLength;
                             return true;
@@ -244,7 +243,7 @@ namespace Tsavorite.core
             {
                 // Read() will clear initialRecordBuffer if it transfers it to the output diskLogRecord.
                 // Since we did not have enough data we did not populate either key or value pageBreakInfos, so just use either.
-                initialRecordBuffer = AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, IStreamBuffer.InitialIOSize, ref keyPageBreakInfo);
+                initialRecordBuffer = AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, IStreamBuffer.InitialIOSize, ref keyPageBreakInfo, extractOptionals: false);
                 return Read(ref initialRecordBuffer, requestedKey, out diskLogRecord, out recordLength);
             }
             finally
@@ -266,7 +265,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// If this record buffer spans a footer/header combo, shift the contents to be contiguous and update the size.
+        /// If this record buffer spans a single footer/header combo, shift the contents to be contiguous and update the size. Caller must ensure the size is less than a full page.
         /// </summary>
         /// <param name="recordBuffer">The record buffer to pack, if needed</param>
         /// <param name="offsetToStartOfField">The offset (from <see cref="DiskReadParameters.recordAddress"/>) to the start of the field (or zero for start of record), which defines its offset in the page buffer</param>
@@ -277,18 +276,20 @@ namespace Tsavorite.core
             Debug.Assert(recordBuffer.required_bytes <= readParams.UsablePageSize, $"recordBuffer.required_bytes {recordBuffer.required_bytes} must be less than one usable page here");
             var fieldOffset = (readParams.recordAddress + offsetToStartOfField) & (readParams.pageBufferSize - 1);
             offsetToPageBreak = (int)(readParams.pageBufferSize - DiskPageFooter.Size - fieldOffset);
-            if (offsetToPageBreak < recordBuffer.available_bytes)
+            if (offsetToPageBreak < recordBuffer.required_bytes)
             {
                 // Pack by doing the shorter copy
-                var spaceOnNextPage = recordBuffer.available_bytes - offsetToPageBreak - DiskPageFooter.Size - DiskPageHeader.Size;
+                var spaceOnNextPage = recordBuffer.required_bytes - offsetToPageBreak - DiskPageFooter.Size - DiskPageHeader.Size;
                 if (offsetToPageBreak < spaceOnNextPage)
                 {
                     new ReadOnlySpan<byte>(recordBuffer.GetValidPointer(), offsetToPageBreak).CopyTo(new Span<byte>(recordBuffer.GetValidPointer() + DiskPageFooter.Size + DiskPageHeader.Size, offsetToPageBreak));
                     recordBuffer.valid_offset += DiskPageFooter.Size + DiskPageHeader.Size;
                 }
                 else
-                    new ReadOnlySpan<byte>(recordBuffer.GetValidPointer() + (recordBuffer.available_bytes - spaceOnNextPage), spaceOnNextPage).CopyTo(new Span<byte>(recordBuffer.GetValidPointer() + offsetToPageBreak, spaceOnNextPage));
-                recordBuffer.available_bytes -= DiskPageFooter.Size + DiskPageHeader.Size;
+                    new ReadOnlySpan<byte>(recordBuffer.GetValidPointer() + (recordBuffer.required_bytes - spaceOnNextPage), spaceOnNextPage).CopyTo(new Span<byte>(recordBuffer.GetValidPointer() + offsetToPageBreak, spaceOnNextPage));
+
+                // Now we no longer want the page-break metadata to count in the "requested size"
+                recordBuffer.required_bytes -= DiskPageFooter.Size + DiskPageHeader.Size;
                 return DiskPageFooter.Size + DiskPageHeader.Size;
             }
 
@@ -302,12 +303,12 @@ namespace Tsavorite.core
         {
             // The most common case is that we have the recordInfo and the key in either keyBuffer or keyOverflow.
             // This broken out into two functions to allow ReadKeyAndValue to wait on an event and then compare the key.
-            BeginReadValue(valueLength, out var optionals);
-            diskLogRecord = EndReadValue(keyOverflow, ref optionals);
+            BeginReadValue(valueLength);
+            diskLogRecord = EndReadValue(keyOverflow);
             return;
         }
 
-        private void BeginReadValue(long valueLength, out RecordOptionals optionals, CountdownEvent multiCountdownEvent = null)
+        private void BeginReadValue(long valueLength, CountdownEvent multiCountdownEvent = null)
         {
             // This is the most common initial case: we have the recordInfo and the key in either keyBuffer or keyOverflow.
             // If multiCountdownEvent is not null, then we're called from ReadKeyAndValue where the key has an IO pending in the countdownEvent; in that case
@@ -316,23 +317,18 @@ namespace Tsavorite.core
             // we prefer the SectorAlignedMemory where possible as we have a pool for it, which saves GC overhead. However, we choose overflow
             // at a lower limit if there is a page break, to minimize copying to cover up the page boundary metadata.
             var valueIsOverflow = !recordInfo.ValueIsObject
-                                    && valueLength > (valuePageBreakInfo.hasPageBreak ? DiskStreamWriter.MaxCopySpanLen : readParams.maxInlineValueLength);
+                                    && valueLength > (valueAndOptionalsPageBreakInfo.hasPageBreak ? DiskStreamWriter.MaxCopySpanLen : readParams.maxInlineValueLength);
             valueSingleAllocation = default;
-            optionals = default;
 
             if (valueIsOverflow)
             {
-                valueSingleAllocation.Set(AllocateOverflowAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), ref valuePageBreakInfo, multiCountdownEvent));
-                if (optionalLength > 0)
-                    valueSingleAllocation.ExtractOptionals(recordInfo, (int)valueLength, out optionals);
+                valueSingleAllocation.Set(AllocateOverflowAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), ref valueAndOptionalsPageBreakInfo, extractOptionals: true, multiCountdownEvent));
                 return;
             }
             
             if (!recordInfo.ValueIsObject)
             {
-                valueSingleAllocation.Set(AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), ref valuePageBreakInfo, multiCountdownEvent), currentPosition:0);
-                if (optionalLength > 0)
-                    valueSingleAllocation.ExtractOptionals(recordInfo, (int)valueLength, out optionals);
+                valueSingleAllocation.Set(AllocateBufferAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), ref valueAndOptionalsPageBreakInfo, extractOptionals: true, multiCountdownEvent), currentPosition:0);
                 return;
             }
 
@@ -340,11 +336,7 @@ namespace Tsavorite.core
             // If this was a non-Exact object that spanned only one or two pages, then we stored the full length without needing to chain-chunk, so isChainedChunk is false;
             // otherwise we will have to go to the circular buffer to handle the chain.
             if (!hasContinuationChunk && (valueLength + optionalLength < readParams.UsablePageSize * 2))
-            {
-                valueSingleAllocation.Set(AllocateOverflowAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), ref valuePageBreakInfo, multiCountdownEvent));
-                if (optionalLength > 0)
-                    valueSingleAllocation.ExtractOptionals(recordInfo, (int)valueLength, out optionals);
-            }
+                valueSingleAllocation.Set(AllocateOverflowAndReadFromDevice(offsetToValueStart, (int)(valueLength + optionalLength), ref valueAndOptionalsPageBreakInfo, extractOptionals: true, multiCountdownEvent));
             else
             {
                 // This is a large object so we will read it into our separate deserialization buffer and then deserialize it from there (we retain ownership of this buffer).
@@ -356,16 +348,16 @@ namespace Tsavorite.core
             }
         }
 
-        private DiskLogRecord EndReadValue(OverflowByteArray keyOverflow, ref RecordOptionals optionals)
+        private DiskLogRecord EndReadValue(OverflowByteArray keyOverflow)
         {
             // Deserialize the object if there is one. This will also read any optionals if they are there (they are after the value object data, so won't have been read yet).
-            var valueObject = recordInfo.ValueIsObject ? DoDeserialize(ref optionals) : null;
+            var valueObject = recordInfo.ValueIsObject ? DoDeserialize() : null;
 
             // We're done reading. Create the new DiskLogRecord, transferring any non-null keyBuffer or valueBuffer to it.
             // If valueObject is not null, Return() our valueBuffer first for immediate reuse.
             if (valueObject is not null)
                 valueSingleAllocation.Dispose();
-            var diskLogRecord = new DiskLogRecord(recordInfo, ref keyBuffer, keyOverflow, ref valueSingleAllocation.memoryBuffer, valueSingleAllocation.overflowArray, optionals, valueObject);
+            var diskLogRecord = new DiskLogRecord(recordInfo, ref keyBuffer, keyOverflow, ref valueSingleAllocation.memoryBuffer, valueSingleAllocation.overflowArray, recordOptionals, valueObject);
 
             // Dispose() unconditionally this time.
             valueSingleAllocation.Dispose();
@@ -377,22 +369,19 @@ namespace Tsavorite.core
         {
             Debug.Assert(offsetToValueStart == offsetToKeyStart + keyLength, $"valueDataStartPosition {offsetToValueStart} should == offsetToKeyStart ({offsetToKeyStart}) + keyLength ({keyLength})");
 
-            // If the total length is small enough, just read the entire thing into a SectorAlignedMemory unless we have a value object that has a succeeding chunk.
+            // If the total length is small enough, just read the entire thing into a SectorAlignedMemory unless we have a value object that has a continuation chunk.
             var totalLength = offsetToKeyStart + keyLength + valueLength + optionalLength;
-            RecordOptionals optionals = default;
 
-            var recordHasPageBreaks = readParams.CalculatePageBreaks((int)totalLength, distanceFromEndOfPage: 0, out var pageBreakInfo);
+            var recordHasPageBreaks = readParams.CalculatePageBreaks((int)totalLength, distanceFromEndOfPage: readParams.CalculateOffsetDistanceFromEndOfPage(0), out var recordPageBreakInfo);
 
             if (totalLength < MaxBufferSize && !hasContinuationChunk)
             {
-                // See if this record crosses a page boundary. If it does and is less than MaxCopySpanLen, just read and compact it in-place.
-                // Othrwise we'll fall through to do more complex reading.
+                // See if this record crosses a page boundary. If it does and is less than MaxCopySpanLen, just read and compact it in-place; otherwise fall through to do more complex reading.
                 if (!recordHasPageBreaks || totalLength <= DiskStreamWriter.MaxCopySpanLen)
                 {
-                    valueSingleAllocation.Set(AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, (int)totalLength, ref pageBreakInfo), currentPosition: offsetToKeyStart + keyLength);
-
-                    // If the optionals are present in the recordBuffer DiskLogRecord.Transfer extracts them, so ignore the outparam.
-                    var valueObject = recordInfo.ValueIsObject ? DoDeserialize(ref optionals) : null;   // optionals are in the recordBuffer if present, so ignore the outparams for them
+                    // If the optionals are present in the recordBuffer DiskLogRecord.Transfer extracts them, so we don't need to process them here.
+                    valueSingleAllocation.Set(AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, (int)totalLength, ref recordPageBreakInfo, extractOptionals: false), currentPosition: offsetToValueStart);
+                    var valueObject = recordInfo.ValueIsObject ? DoDeserialize() : null;
 
                     // We have the full key, so check for a match if we had a requested key.
                     if (!requestedKey.IsEmpty && !readParams.storeFunctions.KeysEqual(requestedKey, valueSingleAllocation.Span.Slice(offsetToKeyStart, keyLength)))
@@ -406,22 +395,22 @@ namespace Tsavorite.core
                 }
             }
 
-            // At this point we read "large" keys, values, or both. 
+            // At this point we are reading "large" keys, values, or both. 
             var keyIsOverflow = keyLength > readParams.maxInlineKeyLength;
 
             // The record is large or has page breaks. If there is no page break and the key is not overflow then the value is large, either an overflow or a chunked object.
-            // If the value is large and not an object then it is overflow and we may be able to combine the Key and Value (and optional) reads to reduce copying of the large value,
-            // while reading into an OverflowByteArray that can be directly transferred to a LogRecord to be inserted to log tail or readcache.
+            // If the value is large and not an object then it is overflow and we may be able to combine the Key and Value (and optional) reads to reduce copying of the large
+            // value, while reading into an OverflowByteArray that can be directly transferred to a LogRecord to be inserted to log tail or readcache.
             if (!recordHasPageBreaks && !keyIsOverflow && !recordInfo.ValueIsObject)
             {
-                // Since keys are usually small and optionals are at most two longs (which will at worst add an additional sector, which we've asserted are < MaxInternalOffset),
-                // we can usually get all the data with one IO via ReadOverflowFromDevice, then copy out the key and optionals, set the Value offsets, and we're done.
-                var alignedKeyStart = RoundDown(offsetToKeyStart, SectorSize);
-                if (offsetToValueStart - alignedKeyStart <= OverflowByteArray.MaxInternalOffset)
+                // Since keys are usually small and optionals are at most two longs (which will at worst add an additional sector), we can usually get all the data with one
+                // IO via AllocateOverflowAndReadFromDevice, then copy out the key and optionals, set the Value offsets, and we're done. See if the key is small enough to 
+                // read and copy (if it is too large, we'll prefer multiple IOs).
+                if (keyLength <= DiskStreamWriter.MaxCopySpanLen)
                 {
-                    // Yes it will fit. We'll start reading at alignedKeyStart, which will use offsetToKeyStart as the OverflowByteArray's start, and include optionals.
-                    // From that we'll extract the key, then update the offset to be at the beginning of the actual value.
-                    valueSingleAllocation.Set(AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength), ref keyPageBreakInfo));
+                    // We'll start reading at alignedKeyStart, which will use offsetToKeyStart as the OverflowByteArray's start, and include optionals.
+                    // From that we'll extract the key and update the offset to be at the beginning of the actual value, and extract optionals and adjust the end offset.
+                    valueSingleAllocation.Set(AllocateOverflowAndReadFromDevice(offsetToKeyStart, unalignedBytesToRead: (int)(keyLength + valueLength + optionalLength), ref recordPageBreakInfo, extractOptionals: true));
                     var keySpan = valueSingleAllocation.ReadOnlySpan.Slice(0, keyLength);
 
                     // We have the key now so check for a match if we had a requested key.
@@ -435,11 +424,8 @@ namespace Tsavorite.core
                     valueSingleAllocation.ReadOnlySpan.Slice(0, keyLength).CopyTo(keyBuffer.TotalValidSpan);
                     valueSingleAllocation.overflowArray.AdjustOffsetFromStart(keyLength);
 
-                    if (optionalLength > 0)
-                        valueSingleAllocation.ExtractOptionals(recordInfo, (int)(keyLength + valueLength), out optionals);
-
                     // We have not allocated anything into valueSingleAllocation, so use a ref to its memoryBuffer which is not set, since we have the overflow.
-                    diskLogRecord = new(recordInfo, ref keyBuffer, keyOverflow: default, ref valueSingleAllocation.memoryBuffer, valueSingleAllocation.overflowArray, optionals, valueObject: null);
+                    diskLogRecord = new(recordInfo, ref keyBuffer, keyOverflow: default, ref valueSingleAllocation.memoryBuffer, valueSingleAllocation.overflowArray, recordOptionals, valueObject: null);
                     return true;
                 }
             }
@@ -459,12 +445,12 @@ namespace Tsavorite.core
             // Initiate reading the key.
             using var countdownEvent = new CountdownEvent(2);
             if (keyIsOverflow)
-                keyOverflow = AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength), ref keyPageBreakInfo, countdownEvent);
+                keyOverflow = AllocateOverflowAndReadFromDevice(offsetToKeyStart, (int)(keyLength + valueLength + optionalLength), ref keyPageBreakInfo, extractOptionals: false, countdownEvent);
             else
-                keyBuffer = AllocateBufferAndReadFromDevice(offsetToKeyStart, keyLength, ref keyPageBreakInfo, countdownEvent);
+                keyBuffer = AllocateBufferAndReadFromDevice(offsetToKeyStart, keyLength, ref keyPageBreakInfo, extractOptionals: false, countdownEvent);
 
             // Initiate reading the value, which may be the initial buffer for a chunked object.
-            BeginReadValue(valueLength, out optionals, countdownEvent);
+            BeginReadValue(valueLength, countdownEvent);
 
             // Wait until both ReadFromDevice()s complete.
             countdownEvent?.Wait();
@@ -482,7 +468,7 @@ namespace Tsavorite.core
             }
 
             // Finish the value read, which at this point is done unless we are deserializing objects, and create and return the DiskLogRecord.
-            diskLogRecord = EndReadValue(keyOverflow, ref optionals);
+            diskLogRecord = EndReadValue(keyOverflow);
             return true;
         }
 
@@ -490,7 +476,8 @@ namespace Tsavorite.core
         /// Read data from the device as an overflow allocation. This is because we may copy the record we've Read() to Tail or ReadCache, or the field
         /// may be larger than a single buffer (or even log page); in that case it was that size when it was created, so we're just restoring that.
         /// </summary>
-        private OverflowByteArray AllocateOverflowAndReadFromDevice(int offsetToFieldStart, int unalignedBytesToRead, ref PageBreakInfo pageBreakInfo, CountdownEvent multiCountdownEvent = null)
+        private OverflowByteArray AllocateOverflowAndReadFromDevice(int offsetToFieldStart, int unalignedBytesToRead, ref PageBreakInfo pageBreakInfo,
+            bool extractOptionals, CountdownEvent multiCountdownEvent = null)
         {
             var (alignedReadOffset, startPadding) = readParams.GetAlignedReadStart(offsetToFieldStart);
             OverflowByteArray overflowArray;
@@ -504,7 +491,6 @@ namespace Tsavorite.core
 
                 // The common case is that we already got the key on the first read, so here we do not have a multiCountdownEvent and thus will create
                 // our own local countdownEvent and Wait() for it here. This also means we can use 'fixed' instead of incurring GCHandle.Alloc overhead.
-                TODO("Include optionals in this read");
                 DiskReadCallbackContext context = new(multiCountdownEvent ?? new CountdownEvent(1), refCountedGCHandle: default);
                 if (multiCountdownEvent is null)
                 {
@@ -512,8 +498,8 @@ namespace Tsavorite.core
                     {
                         logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)ptr, (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
                         context.countdownEvent.Wait();
-                        if (context.numBytesRead != (uint)alignedBytesToRead)
-                            throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual {context.numBytesRead}");
+                        if (context.buffer.available_bytes != (uint)alignedBytesToRead)
+                            throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual available_bytes {context.buffer.available_bytes}");
                     }
                 }
                 else
@@ -633,7 +619,7 @@ namespace Tsavorite.core
 
                 // If the next page is not an internal page, make sure we only copy the lastPageFragmentSize (this handles the zero case as well).
                 if (pageBreakInfo.internalPageCount == 0 && pageBreakInfo.lastPageFragmentSize < context.copyTargetSecondSourceLength)
-                    context.copyTargetSecondSourceLength = pageBreakInfo.lastPageFragmentSize;
+                        context.copyTargetSecondSourceLength = pageBreakInfo.lastPageFragmentSize;
 
                 logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
                 alignedReadOffset += alignedBytesToRead;
@@ -643,8 +629,7 @@ namespace Tsavorite.core
             // Handle the last-page fragment
             if (pageBreakInfo.lastPageFragmentSize > SectorSize - DiskPageHeader.Size)
             {
-                TODO("Include the full lastPageFragmentSize in the [last interior page to next page] transition if it is < MaxCopyLen, including optionals if space available.");
-                TODO("Include optionals in this read. Need to flag which context has them so the callback can copy them into member variables.");
+                // TODO optimization: Include the full lastPageFragmentSize in the [last interior page to next page] transition if it is < MaxCopyLen.
                 // The start boundary of this read is already sector-aligned. We'll need to sector-align the length.
                 var remainingLastFragmentSize = pageBreakInfo.lastPageFragmentSize - (SectorSize - DiskPageHeader.Size);
                 alignedBytesToRead = RoundUp(remainingLastFragmentSize, SectorSize);
@@ -671,17 +656,23 @@ namespace Tsavorite.core
             // we just did) will final-release it.
             refCountedGCHandle.Release();
 
+            if (extractOptionals && optionalLength > 0)
+                overflowArray.ExtractOptionalsAtEnd(recordInfo, optionalLength, out recordOptionals);
+
             return overflowArray;
         }
 
-        private SectorAlignedMemory AllocateBufferAndReadFromDevice(int offsetToStartOfField, int unalignedBytesToRead, ref PageBreakInfo pageBreakInfo, CountdownEvent multiCountdownEvent = null)
+        private SectorAlignedMemory AllocateBufferAndReadFromDevice(int offsetToStartOfField, int unalignedBytesToRead, ref PageBreakInfo pageBreakInfo, bool extractOptionals, CountdownEvent multiCountdownEvent = null)
         {
-            var recordBuffer = AllocateBuffer(offsetToStartOfField, unalignedBytesToRead, out var alignedReadStart, out var alignedBytesToRead);
+            var recordBuffer = AllocateBuffer(offsetToStartOfField, unalignedBytesToRead + (int)pageBreakInfo.TotalPageBreakBytes, out var alignedReadStart, out var alignedBytesToRead);
             ReadFromDevice(recordBuffer, alignedReadStart, alignedBytesToRead, startOffsetInBuffer:0, multiCountdownEvent);
 
             // If we are calling this routine, we have already determined there is no page break or the length is small enough to just copy over it.
             if (pageBreakInfo.hasPageBreak)
                 _ = CompactOverPageBreakIfNeeded(recordBuffer, offsetToStartOfField, out _ /*offsetToPageBreak*/);
+
+            if (extractOptionals && optionalLength > 0)
+                valueSingleAllocation.ExtractOptionalsAtEnd(recordInfo, optionalLength, out recordOptionals);
 
             return recordBuffer;
         }
@@ -708,8 +699,8 @@ namespace Tsavorite.core
             if (multiCountdownEvent is null)
             {
                 context.countdownEvent.Wait();
-                if (context.numBytesRead != (uint)alignedBytesToRead)
-                    throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual {context.numBytesRead}");
+                if (context.buffer.available_bytes != (uint)alignedBytesToRead)
+                    throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual available_bytes {context.buffer.available_bytes}");
             }
         }
 
@@ -719,7 +710,7 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
 
             var result = (DiskReadCallbackContext)context;
-            result.numBytesRead = numBytes;
+            result.buffer.available_bytes = (int)numBytes;
 
             if (result.CopyTarget is not null)
             {
@@ -789,7 +780,7 @@ namespace Tsavorite.core
             }
         }
 
-        IHeapObject DoDeserialize(ref RecordOptionals optionals)
+        IHeapObject DoDeserialize()
         {
             // If we haven't yet instantiated the serializer do so now.
             if (valueObjectSerializer is null)
@@ -800,11 +791,11 @@ namespace Tsavorite.core
             }
 
             valueObjectSerializer.Deserialize(out var valueObject);
-            OnDeserializeComplete(valueObject, ref optionals);
+            OnDeserializeComplete(valueObject);
             return valueObject;
         }
 
-        void OnDeserializeComplete(IHeapObject valueObject, ref RecordOptionals optionals)
+        void OnDeserializeComplete(IHeapObject valueObject)
         {
             Debug.Assert(usesChainedChunks == !valueObject.SerializedSizeIsExact, $"usesChainedChunks ({usesChainedChunks}) == !valueObject.SerializedSizeIsExact ({valueObject.SerializedSizeIsExact})");
             if (!valueSingleAllocation.IsEmpty)
@@ -829,12 +820,11 @@ namespace Tsavorite.core
                 // Extract optionals if they have not yet been obtained. This assumes currentPosition has been correctly set to the first byte after value data.
                 if (circularDeserializationBuffers.optionalsWereRead)
                 {
-                    optionals = circularDeserializationBuffers.recordOptionals;
+                    recordOptionals = circularDeserializationBuffers.recordOptionals;
                     return;
                 }
 
                 // If there are no optionals, there's nothing to do.
-                optionals = default;
                 if (optionalLength == 0)
                     return;
 
@@ -844,23 +834,18 @@ namespace Tsavorite.core
                 buffer.isLastChunk = false;
                 Debug.Assert(!circularDeserializationBuffers.hasContinuationChunk, "circularDeserializationBuffers.hasContinuationChunk should have been set false to complete deserialization");
 
-                var offsetToOptionalPosition = offsetToValueStart + actualValueLength;
-                var optionalAddress = readParams.recordAddress + offsetToOptionalPosition;
+                var actualOptionalPosition = offsetToValueStart + actualValueLength;
+                var optionalAddress = readParams.recordAddress + actualOptionalPosition;
                 var readLength = DiskPageFooter.Size + DiskPageHeader.Size + optionalLength;
                 var (alignedDeviceAddress, padding) = readParams.GetAlignedReadStart(optionalAddress);
                 var optionalPositionInBuffer = optionalAddress & (SectorSize - 1);  // Set this to Sector alignment, not Page-alignment
                 buffer.ReadFromDevice((ulong)alignedDeviceAddress, (int)optionalPositionInBuffer, readLength, circularDeserializationBuffers.ReadFromDeviceCallback);
                 _ = buffer.WaitForDataAvailable();
 
+                var offsetToOptionalPosition = (int)(actualOptionalPosition & (readParams.pageBufferSize - 1));
                 _ = CompactOverPageBreakIfNeeded(buffer.memory, offsetToOptionalPosition, out var offsetToInitialPageBreak);
-                var ptrToOptionals = buffer.memory.GetValidPointer() + offsetToOptionalPosition;
-                if (recordInfo.HasETag)
-                {
-                    optionals.eTag = *(long*)ptrToOptionals;
-                    ptrToOptionals += LogRecord.ETagSize;
-                }
-                if (recordInfo.HasExpiration)
-                    optionals.expiration = *(long*)ptrToOptionals;
+                if (optionalLength > 0)
+                    ValueSingleAllocation.ExtractOptionalsAtEnd(recordInfo, buffer.memory, optionalLength, out recordOptionals);
             }
         }
 

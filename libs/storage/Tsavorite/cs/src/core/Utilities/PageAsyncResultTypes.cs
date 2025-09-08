@@ -316,9 +316,6 @@ namespace Tsavorite.core
 
         internal int TotalCopyLength => copyTargetFirstSourceLength + copyTargetSecondSourceLength;
 
-        /// <summary>The number of bytes actually read; carried through from the caller's callback to any <see cref="countdownEvent"/> waiter.</summary>
-        internal uint numBytesRead;
-
         /// <summary>Constructor that also adds a reference or count to the parameters</summary>
         internal DiskReadCallbackContext(CountdownEvent countdownEvent, RefCountedPinnedGCHandle refCountedGCHandle)
         {

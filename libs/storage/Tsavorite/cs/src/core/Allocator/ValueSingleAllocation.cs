@@ -3,9 +3,8 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 
-namespace Tsavorite.core.Allocator
+namespace Tsavorite.core
 {
     internal struct ValueSingleAllocation
     {
@@ -29,9 +28,9 @@ namespace Tsavorite.core.Allocator
         /// <summary>The span of the value allocation.</summary>
         internal readonly Span<byte> Span => memoryBuffer is null ? overflowArray.Span : memoryBuffer.RequiredValidSpan;
 
-        internal bool IsEmpty => memoryBuffer is null && overflowArray.IsEmpty;
+        internal readonly bool IsEmpty => memoryBuffer is null && overflowArray.IsEmpty;
 
-        internal int AvailableLength => length - currentPosition;
+        internal readonly int AvailableLength => length - currentPosition;
 
         /// <summary>The cumulative length of object data read from the device.</summary>
         internal long valueCumulativeLength;
@@ -39,7 +38,7 @@ namespace Tsavorite.core.Allocator
         internal void Set(SectorAlignedMemory memory, int currentPosition)
         {
             Debug.Assert(IsEmpty, "Should not reassign");
-            this.memoryBuffer = memory;
+            memoryBuffer = memory;
             length = Span.Length;
             this.currentPosition = currentPosition;
         }
@@ -47,25 +46,35 @@ namespace Tsavorite.core.Allocator
         internal void Set(OverflowByteArray array)
         {
             Debug.Assert(IsEmpty, "Should not reassign");
-            this.overflowArray = array;
+            overflowArray = array;
             length = Span.Length;
         }
 
-        internal void ExtractOptionals(RecordInfo recordInfo, int offsetToOptionals, out RecordOptionals optionals)
+        internal readonly void ExtractOptionalsAtEnd(RecordInfo recordInfo, int optionalLength, out RecordOptionals optionals)
         {
-            var longSpan = MemoryMarshal.Cast<byte, long>(Span.Slice(offsetToOptionals));
-            var spanIndex = 0;
+            if (overflowArray.IsEmpty)
+                overflowArray.ExtractOptionalsAtEnd(recordInfo, optionalLength, out optionals);
+            else
+                ExtractOptionalsAtEnd(recordInfo, memoryBuffer, optionalLength, out optionals);
+        }
+
+        internal static unsafe void ExtractOptionalsAtEnd(RecordInfo recordInfo, SectorAlignedMemory memory, int optionalLength, out RecordOptionals optionals)
+        {
+            // We no longer want the optionals to count in the "requested size"
+            memory.required_bytes -= optionalLength;
+            ExtractOptionals(recordInfo, memory.GetValidPointer() + memory.required_bytes, out optionals);
+        }
+
+        internal static unsafe void ExtractOptionals(RecordInfo recordInfo, byte* ptrToOptionals, out RecordOptionals optionals)
+        {
             optionals = default;
             if (recordInfo.HasETag)
             {
-                Debug.Assert(LogRecord.ETagSize == sizeof(long), "LogRecord.ETagSize != sizeof(long)");
-                optionals.eTag = longSpan[spanIndex++];
+                optionals.eTag = *(long*)ptrToOptionals;
+                ptrToOptionals += LogRecord.ETagSize;
             }
             if (recordInfo.HasExpiration)
-            {
-                Debug.Assert(LogRecord.ExpirationSize == sizeof(long), "LogRecord.ExpirationSize != sizeof(long)");
-                optionals.expiration = longSpan[spanIndex];
-            }
+                optionals.expiration = *(long*)ptrToOptionals;
         }
 
         public void Dispose()
