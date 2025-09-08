@@ -98,7 +98,7 @@ namespace Garnet.server
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
-        /// Take checkpoint of all active databases
+        /// Take checkpoint of all active databases if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="logger">Logger</param>
@@ -107,7 +107,7 @@ namespace Garnet.server
         public bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
 
         /// <summary>
-        /// Take checkpoint of specified database ID
+        /// Take checkpoint of specified database ID if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="dbId">ID of database to checkpoint</param>
