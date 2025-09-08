@@ -1197,7 +1197,9 @@ namespace Garnet.server
             if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
 
-            var keys = parseState.ExtractKeysFromSpecs(simpleCmdInfo.KeySpecs);
+            // An offset is applied to the key extraction as the command (and subcommand, if any) are included in the parse state.
+            var slicedParseState = parseState.Slice(simpleCmdInfo.IsSubCommand ? 2 : 1);
+            var keys = slicedParseState.ExtractCommandKeys(simpleCmdInfo);
 
             while (!RespWriteUtils.TryWriteArrayLength(keys.Length, ref dcurr, dend))
                 SendAndReset();
@@ -1244,7 +1246,9 @@ namespace Garnet.server
             if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
 
-            var keysAndFlags = parseState.ExtractKeysAndFlagsFromSpecs(simpleCmdInfo.KeySpecs);
+            // An offset is applied to the key extraction as the command (and subcommand, if any) are included in the parse state.
+            var slicedParseState = parseState.Slice(simpleCmdInfo.IsSubCommand ? 2 : 1);
+            var keysAndFlags = slicedParseState.ExtractCommandKeysAndFlags(simpleCmdInfo);
 
             while (!RespWriteUtils.TryWriteArrayLength(keysAndFlags.Length, ref dcurr, dend))
                 SendAndReset();

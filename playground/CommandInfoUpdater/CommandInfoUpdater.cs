@@ -62,7 +62,7 @@ namespace CommandInfoUpdater
 
             IDictionary<string, RespCommandsInfo> queriedCommandsInfo = new Dictionary<string, RespCommandsInfo>();
             var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
-                .Where(c => !garnetCommandsInfo.ContainsKey(c)).ToArray();
+                .Where(c => !garnetCommandsInfo.ContainsKey(c) || (garnetCommandsInfo[c].SubCommands?.Length > 0 && !garnetCommandsInfo[c].IsInternal)).ToArray();
 
             if (commandsToQuery.Length > 0)
             {

@@ -65,7 +65,7 @@ namespace Garnet.server
 
             foreach (var keySpec in cmdInfo.KeySpecs)
             {
-                var (firstKeyIdx, lastKeyIdx, keyStep) = respSession.parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec);
+                var (firstKeyIdx, lastKeyIdx, keyStep) = respSession.parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec, cmdInfo.IsSubCommand);
 
                 var isReadOnly = (keySpec.Flags & KeySpecificationFlags.RO) == KeySpecificationFlags.RO;
                 var lockType = isReadOnly ? LockType.Shared : LockType.Exclusive;
