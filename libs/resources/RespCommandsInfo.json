@@ -24,6 +24,20 @@
         ]
       },
       {
+        "Command": "ACL_GENPASS",
+        "Name": "ACL|GENPASS",
+        "Arity": -2,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Slow"
+      },
+      {
+        "Command": "ACL_GETUSER",
+        "Name": "ACL|GETUSER",
+        "Arity": 3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Admin, Dangerous, Slow"
+      },
+      {
         "Command": "ACL_LIST",
         "Name": "ACL|LIST",
         "Arity": 2,
@@ -72,32 +86,8 @@
         "Arity": 2,
         "Flags": "Loading, NoScript, Stale",
         "AclCategories": "Slow"
-      },
-      {
-        "Command": "ACL_GETUSER",
-        "Name": "ACL|GETUSER",
-        "Arity": 3,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
-        "Command": "ACL_GENPASS",
-        "Name": "ACL|GENPASS",
-        "Arity": -2,
-        "Flags": "Loading, NoScript, Stale",
-        "AclCategories": "Slow"
       }
     ]
-  },
-  {
-    "Command": "EXPDELSCAN",
-    "Name": "EXPDELSCAN",
-    "Arity": -1,
-    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Admin, Garnet"
   },
   {
     "Command": "APPEND",
@@ -122,7 +112,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "ASKING",
@@ -175,7 +166,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "BITFIELD",
@@ -201,7 +193,8 @@
         "Notes": "This command allows both access and modification of the key",
         "Flags": "RW, Access, Update, VariableFlags"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "BITFIELD_RO",
@@ -226,7 +219,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "BITOP",
@@ -264,7 +258,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "BITPOS",
@@ -289,7 +284,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "BLMOVE",
@@ -327,7 +323,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BLMPOP",
@@ -349,7 +346,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BLPOP",
@@ -374,7 +372,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BRPOP",
@@ -399,7 +398,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BRPOPLPUSH",
@@ -437,7 +437,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BZMPOP",
@@ -459,7 +460,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BZPOPMAX",
@@ -484,7 +486,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "BZPOPMIN",
@@ -509,7 +512,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "CLIENT",
@@ -596,20 +600,6 @@
     "AclCategories": "Slow",
     "SubCommands": [
       {
-        "Command": "CLUSTER_ADDSLOTS",
-        "Name": "CLUSTER|ADDSLOTS",
-        "Arity": -3,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
-        "Command": "CLUSTER_ADDSLOTSRANGE",
-        "Name": "CLUSTER|ADDSLOTSRANGE",
-        "Arity": -4,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
         "Command": "CLUSTER_AOFSYNC",
         "Name": "CLUSTER|AOFSYNC",
         "IsInternal": true,
@@ -622,14 +612,6 @@
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,
         "Arity": 6,
-        "Flags": "Admin, NoMulti, NoScript",
-        "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_ATTACH_SYNC",
-        "Name": "CLUSTER|ATTACH_SYNC",
-        "IsInternal": true,
-        "Arity": 3,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
@@ -650,23 +632,6 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_BUMPEPOCH",
-        "Name": "CLUSTER|BUMPEPOCH",
-        "Arity": 2,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
-      },
-      {
-        "Command": "CLUSTER_COUNTKEYSINSLOT",
-        "Name": "CLUSTER|COUNTKEYSINSLOT",
-        "Arity": 3,
-        "Flags": "Stale",
-        "AclCategories": "Slow"
-      },
-      {
         "Command": "CLUSTER_DELKEYSINSLOT",
         "Name": "CLUSTER|DELKEYSINSLOT",
         "IsInternal": true,
@@ -683,33 +648,12 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_DELSLOTS",
-        "Name": "CLUSTER|DELSLOTS",
-        "Arity": -3,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
-        "Command": "CLUSTER_DELSLOTSRANGE",
-        "Name": "CLUSTER|DELSLOTSRANGE",
-        "Arity": -4,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
         "Command": "CLUSTER_ENDPOINT",
         "Name": "CLUSTER|ENDPOINT",
         "IsInternal": true,
         "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_FAILOVER",
-        "Name": "CLUSTER|FAILOVER",
-        "Arity": -2,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
       },
       {
         "Command": "CLUSTER_FAILREPLICATIONOFFSET",
@@ -728,21 +672,12 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_FORGET",
-        "Name": "CLUSTER|FORGET",
-        "Arity": 3,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
-        "Command": "CLUSTER_GETKEYSINSLOT",
-        "Name": "CLUSTER|GETKEYSINSLOT",
-        "Arity": 4,
-        "Flags": "Stale",
-        "AclCategories": "Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "IsInternal": true,
+        "Arity": 2,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
         "Command": "CLUSTER_GOSSIP",
@@ -760,36 +695,12 @@
         "AclCategories": "Admin, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_INFO",
-        "Name": "CLUSTER|INFO",
-        "Arity": 2,
-        "Flags": "Stale",
-        "AclCategories": "Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
-      },
-      {
         "Command": "CLUSTER_INITIATE_REPLICA_SYNC",
         "Name": "CLUSTER|INITIATE_REPLICA_SYNC",
         "IsInternal": true,
         "Arity": 6,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_KEYSLOT",
-        "Name": "CLUSTER|KEYSLOT",
-        "Arity": 3,
-        "Flags": "Stale",
-        "AclCategories": "Slow"
-      },
-      {
-        "Command": "CLUSTER_MEET",
-        "Name": "CLUSTER|MEET",
-        "Arity": -4,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
       },
       {
         "Command": "CLUSTER_MIGRATE",
@@ -808,29 +719,12 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_MYID",
-        "Name": "CLUSTER|MYID",
-        "Arity": 2,
-        "Flags": "Stale",
-        "AclCategories": "Slow"
-      },
-      {
         "Command": "CLUSTER_MYPARENTID",
         "Name": "CLUSTER|MYPARENTID",
         "IsInternal": true,
         "Arity": 2,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Garnet"
-      },
-      {
-        "Command": "CLUSTER_NODES",
-        "Name": "CLUSTER|NODES",
-        "Arity": 2,
-        "Flags": "Stale",
-        "AclCategories": "Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
       },
       {
         "Command": "CLUSTER_PUBLISH",
@@ -842,30 +736,6 @@
         "LastKey": 1,
         "Step": 1,
         "AclCategories": "Admin, PubSub, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_REPLICAS",
-        "Name": "CLUSTER|REPLICAS",
-        "Arity": 3,
-        "Flags": "Admin, Stale",
-        "AclCategories": "Admin, Dangerous, Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
-      },
-      {
-        "Command": "CLUSTER_REPLICATE",
-        "Name": "CLUSTER|REPLICATE",
-        "Arity": 3,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
-        "Command": "CLUSTER_RESET",
-        "Name": "CLUSTER|RESET",
-        "Arity": -2,
-        "Flags": "Admin, NoScript, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
       },
       {
         "Command": "CLUSTER_SEND_CKPT_FILE_SEGMENT",
@@ -884,46 +754,12 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
-        "Command": "CLUSTER_SETCONFIGEPOCH",
-        "Name": "CLUSTER|SET-CONFIG-EPOCH",
-        "Arity": 3,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
-        "Command": "CLUSTER_SETSLOT",
-        "Name": "CLUSTER|SETSLOT",
-        "Arity": -4,
-        "Flags": "Admin, NoAsyncLoading, Stale",
-        "AclCategories": "Admin, Dangerous, Slow"
-      },
-      {
         "Command": "CLUSTER_SETSLOTSRANGE",
         "Name": "CLUSTER|SETSLOTSRANGE",
         "IsInternal": true,
         "Arity": -4,
         "Flags": "Admin, NoMulti, NoScript",
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_SHARDS",
-        "Name": "CLUSTER|SHARDS",
-        "Arity": 2,
-        "Flags": "Loading, Stale",
-        "AclCategories": "Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
-      },
-      {
-        "Command": "CLUSTER_SLOTS",
-        "Name": "CLUSTER|SLOTS",
-        "Arity": 2,
-        "Flags": "Loading, Stale",
-        "AclCategories": "Slow",
-        "Tips": [
-          "nondeterministic_output"
-        ]
       },
       {
         "Command": "CLUSTER_SLOTSTATE",
@@ -958,22 +794,6 @@
             "Flags": "RO"
           }
         ]
-      },
-      {
-        "Command": "CLUSTER_SYNC",
-        "Name": "CLUSTER|SYNC",
-        "IsInternal": true,
-        "Arity": 4,
-        "Flags": "Admin, NoMulti, NoScript",
-        "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
-        "Command": "CLUSTER_FLUSHALL",
-        "Name": "CLUSTER|FLUSHALL",
-        "IsInternal": true,
-        "Arity": 2,
-        "Flags": "Admin, NoMulti, NoScript",
-        "AclCategories": "Admin, Dangerous, Slow, Garnet"
       }
     ]
   },
@@ -1085,14 +905,16 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Read, Slow, Garnet"
+    "AclCategories": "Read, Slow, Garnet",
+    "StoreType": "Object"
   },
   {
     "Command": "CustomObjCmd",
     "Name": "CustomObjCmd",
     "IsInternal": true,
     "Arity": 1,
-    "AclCategories": "Dangerous, Slow, Garnet, Custom"
+    "AclCategories": "Dangerous, Slow, Garnet, Custom",
+    "StoreType": "Object"
   },
   {
     "Command": "CustomProcedure",
@@ -1106,7 +928,8 @@
     "Name": "CustomRawStringCmd",
     "IsInternal": true,
     "Arity": 1,
-    "AclCategories": "Dangerous, Slow, Garnet, Custom"
+    "AclCategories": "Dangerous, Slow, Garnet, Custom",
+    "StoreType": "Main"
   },
   {
     "Command": "CustomTxn",
@@ -1156,7 +979,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "DECRBY",
@@ -1181,7 +1005,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "DEL",
@@ -1210,7 +1035,33 @@
         },
         "Flags": "RM, Delete"
       }
-    ]
+    ],
+    "StoreType": "All"
+  },
+  {
+    "Command": "DELIFEXPIM",
+    "Name": "DELIFEXPIM",
+    "Arity": 2,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RM, Delete"
+      }
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "DELIFGREATER",
@@ -1234,7 +1085,8 @@
         },
         "Flags": "RM, Delete"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "DISCARD",
@@ -1269,7 +1121,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "ECHO",
@@ -1357,7 +1210,18 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "All"
+  },
+  {
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
+    "Arity": -1,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet"
   },
   {
     "Command": "EXPIRE",
@@ -1382,7 +1246,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "EXPIREAT",
@@ -1407,7 +1272,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "EXPIRETIME",
@@ -1432,7 +1298,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "FAILOVER",
@@ -1496,7 +1363,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEODIST",
@@ -1521,7 +1389,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEOHASH",
@@ -1546,7 +1415,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEOPOS",
@@ -1571,7 +1441,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEORADIUS",
@@ -1624,7 +1495,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEORADIUS_RO",
@@ -1649,7 +1521,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEORADIUSBYMEMBER",
@@ -1702,7 +1575,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEORADIUSBYMEMBER_RO",
@@ -1727,7 +1601,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEOSEARCH",
@@ -1752,7 +1627,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GEOSEARCHSTORE",
@@ -1790,7 +1666,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "GET",
@@ -1815,7 +1692,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETBIT",
@@ -1840,7 +1718,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETDEL",
@@ -1865,7 +1744,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETEX",
@@ -1891,7 +1771,8 @@
         "Notes": "RW and UPDATE because it changes the TTL",
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETIFNOTMATCH",
@@ -1915,7 +1796,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETRANGE",
@@ -1940,7 +1822,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETSET",
@@ -1965,7 +1848,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "GETWITHETAG",
@@ -1989,7 +1873,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "HCOLLECT",
@@ -2014,7 +1899,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HDEL",
@@ -2039,7 +1925,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HELLO",
@@ -2071,7 +1958,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HEXPIRE",
@@ -2096,7 +1984,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HEXPIREAT",
@@ -2121,7 +2010,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HEXPIRETIME",
@@ -2146,7 +2036,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HGET",
@@ -2171,7 +2062,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HGETALL",
@@ -2199,7 +2091,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HINCRBY",
@@ -2224,7 +2117,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HINCRBYFLOAT",
@@ -2249,7 +2143,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HKEYS",
@@ -2277,7 +2172,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HLEN",
@@ -2302,7 +2198,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HMGET",
@@ -2327,7 +2224,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HMSET",
@@ -2352,7 +2250,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HPERSIST",
@@ -2377,7 +2276,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HPEXPIRE",
@@ -2402,7 +2302,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HPEXPIREAT",
@@ -2427,7 +2328,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HPEXPIRETIME",
@@ -2452,7 +2354,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HPTTL",
@@ -2477,7 +2380,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HRANDFIELD",
@@ -2505,7 +2409,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HSCAN",
@@ -2533,7 +2438,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HSET",
@@ -2558,7 +2464,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HSETNX",
@@ -2583,7 +2490,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HSTRLEN",
@@ -2608,7 +2516,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HTTL",
@@ -2633,7 +2542,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "HVALS",
@@ -2661,7 +2571,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "INCR",
@@ -2686,7 +2597,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "INCRBY",
@@ -2711,7 +2623,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "INCRBYFLOAT",
@@ -2736,7 +2649,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "INFO",
@@ -2783,29 +2697,6 @@
         "Arity": 2,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Slow, Garnet"
-      },
-      {
-        "Command": "LATENCY_HISTOGRAM",
-        "Name": "LATENCY|HISTOGRAM",
-        "Arity": -2,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Admin, Dangerous, Slow",
-        "Tips": [
-          "nondeterministic_output",
-          "request_policy:all_nodes",
-          "response_policy:special"
-        ]
-      },
-      {
-        "Command": "LATENCY_RESET",
-        "Name": "LATENCY|RESET",
-        "Arity": -2,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Admin, Dangerous, Slow",
-        "Tips": [
-          "request_policy:all_nodes",
-          "response_policy:agg_sum"
-        ]
       }
     ]
   },
@@ -2832,7 +2723,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "LINDEX",
@@ -2857,7 +2749,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LINSERT",
@@ -2882,7 +2775,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LLEN",
@@ -2907,7 +2801,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LMOVE",
@@ -2945,7 +2840,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LMPOP",
@@ -2967,7 +2863,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LPOP",
@@ -2992,7 +2889,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LPOS",
@@ -3017,7 +2915,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LPUSH",
@@ -3042,7 +2941,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LPUSHX",
@@ -3067,7 +2967,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LRANGE",
@@ -3092,7 +2993,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LREM",
@@ -3117,7 +3019,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LSET",
@@ -3142,7 +3045,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "LTRIM",
@@ -3167,7 +3071,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "MEMORY",
@@ -3228,7 +3133,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "MIGRATE",
@@ -3322,7 +3228,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "MSETNX",
@@ -3347,7 +3254,8 @@
         },
         "Flags": "OW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "MULTI",
@@ -3379,7 +3287,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "PEXPIRE",
@@ -3404,7 +3313,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "PEXPIREAT",
@@ -3429,7 +3339,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "PEXPIRETIME",
@@ -3454,7 +3365,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "PFADD",
@@ -3479,7 +3391,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "PFCOUNT",
@@ -3505,7 +3418,8 @@
         "Notes": "RW because it may change the internal representation of the key, and propagate to replicas",
         "Flags": "RW, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "PFMERGE",
@@ -3543,7 +3457,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "PING",
@@ -3579,7 +3494,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "PSUBSCRIBE",
@@ -3614,7 +3530,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "PUBLISH",
@@ -3736,7 +3653,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "RENAMENX",
@@ -3774,7 +3692,8 @@
         },
         "Flags": "OW, Insert"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "REPLICAOF",
@@ -3806,7 +3725,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "ROLE",
@@ -3838,7 +3758,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "RPOPLPUSH",
@@ -3876,7 +3797,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "RPUSH",
@@ -3901,7 +3823,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "RPUSHX",
@@ -3926,7 +3849,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "RUNTXP",
@@ -3961,7 +3885,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SAVE",
@@ -3980,7 +3905,8 @@
       "nondeterministic_output",
       "request_policy:special",
       "response_policy:special"
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "SCARD",
@@ -4005,7 +3931,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SCRIPT",
@@ -4074,7 +4001,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SDIFFSTORE",
@@ -4112,7 +4040,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SECONDARYOF",
@@ -4152,7 +4081,8 @@
         "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
         "Flags": "RW, Access, Update, VariableFlags"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SETBIT",
@@ -4177,7 +4107,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SETEX",
@@ -4202,7 +4133,8 @@
         },
         "Flags": "OW, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SETIFGREATER",
@@ -4226,7 +4158,8 @@
         },
         "Flags": "RW, Access, Update, VariableFlags"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SETIFMATCH",
@@ -4250,7 +4183,8 @@
         },
         "Flags": "RW, Access, Update, VariableFlags"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SETNX",
@@ -4275,7 +4209,8 @@
         },
         "Flags": "OW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SETRANGE",
@@ -4300,7 +4235,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SINTER",
@@ -4328,7 +4264,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SINTERCARD",
@@ -4350,7 +4287,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SINTERSTORE",
@@ -4373,7 +4311,7 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Flags": "OW, Update"
+        "Flags": "RW, Update"
       },
       {
         "BeginSearch": {
@@ -4388,7 +4326,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SISMEMBER",
@@ -4413,7 +4352,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SECONDARYOF",
@@ -4497,7 +4437,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SMISMEMBER",
@@ -4522,7 +4463,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SMOVE",
@@ -4560,7 +4502,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SPOP",
@@ -4588,7 +4531,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SPUBLISH",
@@ -4641,7 +4585,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SREM",
@@ -4666,7 +4611,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SSCAN",
@@ -4694,7 +4640,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SSUBSCRIBE",
@@ -4744,7 +4691,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SUBSCRIBE",
@@ -4776,7 +4724,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "SUNION",
@@ -4804,7 +4753,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SUNIONSTORE",
@@ -4842,7 +4792,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "SWAPDB",
@@ -4887,7 +4838,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "TYPE",
@@ -4912,7 +4864,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "UNLINK",
@@ -4941,7 +4894,8 @@
         },
         "Flags": "RM, Delete"
       }
-    ]
+    ],
+    "StoreType": "All"
   },
   {
     "Command": "UNSUBSCRIBE",
@@ -5055,7 +5009,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZCARD",
@@ -5080,7 +5035,34 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Object"
+  },
+  {
+    "Command": "ZCOLLECT",
+    "Name": "ZCOLLECT",
+    "Arity": 2,
+    "Flags": "Admin, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, SortedSet, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZCOUNT",
@@ -5105,32 +5087,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
-  },
-  {
-    "Command": "ZCOLLECT",
-    "Name": "ZCOLLECT",
-    "Arity": 2,
-    "Flags": "Admin, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "SortedSet, Write, Admin, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update"
-      }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZDIFF",
@@ -5152,7 +5110,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZDIFFSTORE",
@@ -5190,7 +5149,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZEXPIRE",
@@ -5200,7 +5160,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "AclCategories": "Fast, SortedSet, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5215,7 +5175,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZEXPIREAT",
@@ -5225,7 +5186,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "AclCategories": "Fast, SortedSet, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5240,7 +5201,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZEXPIRETIME",
@@ -5250,7 +5212,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "AclCategories": "Fast, Read, SortedSet, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5265,7 +5227,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZINCRBY",
@@ -5290,7 +5253,8 @@
         },
         "Flags": "RW, Access, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZINTER",
@@ -5312,7 +5276,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZINTERCARD",
@@ -5334,7 +5299,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZINTERSTORE",
@@ -5372,7 +5338,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZLEXCOUNT",
@@ -5397,7 +5364,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZMPOP",
@@ -5419,7 +5387,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZMSCORE",
@@ -5444,7 +5413,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZPERSIST",
@@ -5454,7 +5424,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "AclCategories": "Fast, SortedSet, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5469,7 +5439,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZPEXPIRE",
@@ -5479,7 +5450,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "AclCategories": "Fast, SortedSet, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5494,7 +5465,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZPEXPIREAT",
@@ -5504,7 +5476,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Write, Garnet",
+    "AclCategories": "Fast, SortedSet, Write, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5519,7 +5491,8 @@
         },
         "Flags": "RW, Update"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZPEXPIRETIME",
@@ -5529,7 +5502,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "SortedSet, Fast, Read, Garnet",
+    "AclCategories": "Fast, Read, SortedSet, Garnet",
     "KeySpecifications": [
       {
         "BeginSearch": {
@@ -5544,32 +5517,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
-  },
-  {
-    "Command": "ZPTTL",
-    "Name": "ZPTTL",
-    "Arity": -5,
-    "Flags": "Fast, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "SortedSet, Fast, Read, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
-      }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZPOPMAX",
@@ -5594,7 +5543,8 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZPOPMIN",
@@ -5619,7 +5569,34 @@
         },
         "Flags": "RW, Access, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
+  },
+  {
+    "Command": "ZPTTL",
+    "Name": "ZPTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZRANDMEMBER",
@@ -5647,7 +5624,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZRANGE",
@@ -5672,7 +5650,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZRANGEBYLEX",
@@ -5697,7 +5676,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZRANGEBYSCORE",
@@ -5722,7 +5702,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZRANGESTORE",
@@ -5760,7 +5741,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZRANK",
@@ -5785,7 +5767,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREM",
@@ -5810,7 +5793,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREMRANGEBYLEX",
@@ -5835,7 +5819,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREMRANGEBYRANK",
@@ -5860,7 +5845,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREMRANGEBYSCORE",
@@ -5885,7 +5871,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREVRANGE",
@@ -5910,7 +5897,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREVRANGEBYLEX",
@@ -5935,7 +5923,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREVRANGEBYSCORE",
@@ -5960,7 +5949,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZREVRANK",
@@ -5985,7 +5975,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZSCAN",
@@ -6013,32 +6004,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
-  },
-  {
-    "Command": "ZTTL",
-    "Name": "ZTTL",
-    "Arity": -5,
-    "Flags": "Fast, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "SortedSet, Fast, Read, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
-      }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZSCORE",
@@ -6063,7 +6030,34 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
+  },
+  {
+    "Command": "ZTTL",
+    "Name": "ZTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZUNION",
@@ -6085,7 +6079,8 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   },
   {
     "Command": "ZUNIONSTORE",
@@ -6123,6 +6118,7 @@
         },
         "Flags": "RO, Access"
       }
-    ]
+    ],
+    "StoreType": "Object"
   }
 ]
