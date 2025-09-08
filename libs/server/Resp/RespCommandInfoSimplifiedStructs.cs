@@ -40,6 +40,11 @@ namespace Garnet.server
         public SimpleRespKeySpec[] KeySpecs;
 
         /// <summary>
+        /// Store type that the command operates on (None/Main/Object/All). Default: None for commands without key arguments.
+        /// </summary>
+        public StoreType StoreType;
+
+        /// <summary>
         /// Default SimpleRespCommandInfo
         /// </summary>
         public static SimpleRespCommandInfo Default = new();
@@ -215,6 +220,7 @@ namespace Garnet.server
             simpleCmdInfo.AllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
             simpleCmdInfo.IsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
             simpleCmdInfo.IsSubCommand = cmdInfo.Parent != null;
+            simpleCmdInfo.StoreType = cmdInfo.StoreType;
 
             if (cmdInfo.KeySpecifications != null)
             {
