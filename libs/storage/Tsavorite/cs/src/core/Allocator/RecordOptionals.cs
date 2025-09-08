@@ -10,5 +10,11 @@ namespace Tsavorite.core
     {
         internal long eTag;
         internal long expiration;
+
+        internal void Initialize()
+        {
+            eTag = LogRecord.NoETag;
+            expiration = 0;
+        }
     }
 }

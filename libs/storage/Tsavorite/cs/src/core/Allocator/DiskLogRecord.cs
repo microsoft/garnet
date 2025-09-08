@@ -50,10 +50,8 @@ namespace Tsavorite.core
         // large buffers. However, this is used only for ObjectAllocatorIterator frames, not SpanByteAllocator, and we control the size of the read buffer
         // for that, so there is a limit to the number of records at once (which may be large).
 
-        /// <summary>If Info.HasETag, this is the ETag.</summary>
-        long eTag;
-        /// <summary>If Info.HasExpiration, this is the Expiration.</summary>
-        long expiration;
+        /// <summary>Record optionals extracted from the buffer or read from disk.</summary>
+        RecordOptionals recordOptionals;
 
         /// <summary>
         /// If this record was read from the disk, this is its length; used to move to the next record. Note that this may have been filled in by object
@@ -246,8 +244,7 @@ namespace Tsavorite.core
                 valueOverflowOrObject = valueOverflow.Data;     // *not* the OverflowByteArray
                 recordInfo.SetValueIsOverflow();
             }
-            eTag = Info.HasETag ? optionals.eTag : LogRecord.NoETag;
-            expiration = Info.HasExpiration ? optionals.expiration : 0;
+            recordOptionals = optionals;
         }
 
         /// <summary>A ref to the record header</summary>
@@ -278,8 +275,7 @@ namespace Tsavorite.core
             valueSpan = default;
             valueOverflowOrObject = default;
 
-            eTag = LogRecord.NoETag;
-            expiration = 0;
+            recordOptionals.Initialize();
         }
 
         #region ISourceLogRecord
@@ -341,10 +337,10 @@ namespace Tsavorite.core
                 : throw new TsavoriteException("DiskLogRecord without Info.ValueIsObject does not allow ValueObject");
 
         /// <inheritdoc/>
-        public readonly long ETag => eTag;
+        public readonly long ETag => recordOptionals.eTag;
 
         /// <inheritdoc/>
-        public readonly long Expiration => expiration;
+        public readonly long Expiration => recordOptionals.expiration;
 
         /// <inheritdoc/>
         public readonly bool IsMemoryLogRecord => false;
@@ -416,6 +412,7 @@ namespace Tsavorite.core
         private void CopyFrom(long physicalAddress, in SerializedFieldInfo fieldInfo, IHeapObject valueObject)
         {
             this.physicalAddress = physicalAddress;
+            recordOptionals.Initialize();
 
             var ptr = (byte*)physicalAddress;
             recordInfo = *(RecordInfo*)ptr;
@@ -436,13 +433,10 @@ namespace Tsavorite.core
 
             if (recordInfo.HasETag)
             {
-                eTag = *(long*)ptr;
+                recordOptionals.eTag = *(long*)ptr;
                 ptr += LogRecord.ETagSize;
             }
-            else
-                eTag = LogRecord.NoETag;
-
-            expiration = recordInfo.HasExpiration ? *(long*)ptr : 0;
+            recordOptionals.expiration = recordInfo.HasExpiration ? *(long*)ptr : 0;
         }
 
         /// <summary>
@@ -454,6 +448,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyFrom(in LogRecord logRecord, SectorAlignedBufferPool bufferPool)
         {
+            recordOptionals.Initialize();
+
             if (logRecord.Info.RecordIsInline)
             {
                 keyBuffer?.Return();
@@ -503,8 +499,8 @@ namespace Tsavorite.core
             }
 
             // Set optionals; recordInfo already has the flags set correctly.
-            eTag = logRecord.ETag;
-            expiration = logRecord.Expiration;
+            recordOptionals.eTag = logRecord.ETag;
+            recordOptionals.expiration = logRecord.Expiration;
         }
 
         /// <summary>
@@ -515,6 +511,7 @@ namespace Tsavorite.core
         public void CopyFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool)
         {
             Debug.Assert(inputDiskLogRecord.IsSet, "inputDiskLogRecord is not set");
+            recordOptionals.Initialize();
 
             // If the inputDiskLogRecord is inline it may be split between keyBuffer and recordOrValueBuffer, in recordOrValueBuffer only, or just physicalAddress.
             // We optimize the second and third cases here to a direct copy.
@@ -552,8 +549,8 @@ namespace Tsavorite.core
             }
 
             // Set optionals; recordInfo already has the flags set correctly.
-            eTag = inputDiskLogRecord.ETag;
-            expiration = inputDiskLogRecord.Expiration;
+            recordOptionals.eTag = inputDiskLogRecord.ETag;
+            recordOptionals.expiration = inputDiskLogRecord.Expiration;
         }
 
         /// <summary>
@@ -799,8 +796,7 @@ namespace Tsavorite.core
             valueSpan = inputDiskLogRecord.valueSpan;
             inputDiskLogRecord.valueSpan = default;
 
-            eTag = inputDiskLogRecord.eTag;
-            expiration = inputDiskLogRecord.expiration;
+            recordOptionals = inputDiskLogRecord.recordOptionals;
         }
 
         /// <summary>

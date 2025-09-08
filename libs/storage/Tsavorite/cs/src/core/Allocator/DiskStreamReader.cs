@@ -113,7 +113,7 @@ namespace Tsavorite.core
         {
             var ptr = recordBuffer.GetValidPointer();
             diskLogRecord = default;
-            recordOptionals = default;
+            recordOptionals.Initialize();
 
             // First see if we have a page footer/header combo in this initial (possibly partial) record, and compact over it if so.
             var initialPageBreakBytes = CompactOverPageBreakIfNeeded(recordBuffer, offsetToStartOfField: 0, out var offsetToInitialPageBreak);
@@ -199,7 +199,7 @@ namespace Tsavorite.core
                             valueSingleAllocation.Set(recordBuffer, currentPosition: offsetToKeyStart + keyLength);
                             recordBuffer = default;
 
-                            // This is using the compacted-over-pagebreak buffer, so does not need to use pagebreak info.
+                            // This is using the compacted-over-pagebreak buffer, so does not need to use pagebreak info. And Transfer() will extract optionals.
                             var valueObject = recordInfo.ValueIsObject ? DoDeserialize() : null;
                             diskLogRecord = DiskLogRecord.Transfer(ref valueSingleAllocation.memoryBuffer, offsetToKeyStart, keyLength, (int)valueLength, valueObject);
                             recordLength = totalLength;
@@ -483,7 +483,7 @@ namespace Tsavorite.core
             OverflowByteArray overflowArray;
             var alignedBytesToRead = 0;
 
-            // The common case is a single-page value read with no page breaks, so handle that with a 'fixed' so we don't have GCHandle.Alloc overhead.
+            // The common case is a reasonably small key and a single-page value read with no page breaks.
             if (!pageBreakInfo.hasPageBreak)
             {
                 (alignedBytesToRead, var endPadding) = readParams.GetAlignedBytesToRead(unalignedBytesToRead + startPadding);
@@ -494,12 +494,19 @@ namespace Tsavorite.core
                 DiskReadCallbackContext context = new(multiCountdownEvent ?? new CountdownEvent(1), refCountedGCHandle: default);
                 if (multiCountdownEvent is null)
                 {
-                    fixed (byte* ptr = overflowArray.AlignedReadSpan)
+                    try
                     {
-                        logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)ptr, (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-                        context.countdownEvent.Wait();
-                        if (context.buffer.available_bytes != (uint)alignedBytesToRead)
-                            throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual available_bytes {context.buffer.available_bytes}");
+                        fixed (byte* ptr = overflowArray.AlignedReadSpan)
+                        {
+                            logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)ptr, (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                            context.countdownEvent.Wait();
+                            if (context.buffer.available_bytes != (uint)alignedBytesToRead)
+                                throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual available_bytes {context.buffer.available_bytes}");
+                        }
+                    }
+                    finally
+                    {
+                        context.countdownEvent.Dispose();
                     }
                 }
                 else
@@ -528,133 +535,144 @@ namespace Tsavorite.core
 
             // Leave an extra sector out of the page border allowance; PageBorderLen is probably a multiple of OS page size, so we don't want to force it to read
             // another OS page of data just to get the first sector on the following page.
-            var bufferSizeAtEndOfPage = DiskStreamWriter.PageBorderLen - SectorSize; 
+            var bufferSizeAtEndOfPage = DiskStreamWriter.PageBorderLen - SectorSize;
 
-            // Handle the first-page fragment
-            if (pageBreakInfo.firstPageFragmentSize > 0)
+            // Do this inside try/finally to ensure we release resources.
+            try
             {
-                var alignedFirstFragmentSize = readParams.CalculateOffsetDistanceFromEndOfPage(alignedReadOffset);
-                alignedBytesToRead = readParams.pageBufferSize - alignedFirstFragmentSize;
-
-                DiskReadCallbackContext context = new(countdownEvent, refCountedGCHandle)
+                // Handle the first-page fragment
+                if (pageBreakInfo.firstPageFragmentSize > 0)
                 {
-                    copyTargetFirstSourceOffset = startPadding,
-                    copyTargetFirstSourceLength = pageBreakInfo.firstPageFragmentSize,
-                    copyTargetDestinationOffset = destinationOffset
-                };
+                    var alignedFirstFragmentSize = readParams.CalculateOffsetDistanceFromEndOfPage(alignedReadOffset);
+                    alignedBytesToRead = readParams.pageBufferSize - alignedFirstFragmentSize;
 
-                // If the first fragment is large, issue a direct read for the longest sector-aligned portion so we don't have to allocate and copy from a large buffer.
-                if (pageBreakInfo.firstPageFragmentSize > DiskStreamWriter.MaxCopySpanLen)
-                {
-                    // Read up to the last sector of the page before, and adjust the copy length to be from bufferSizeAtEndOfPage to one sector before end of page.
-                    var firstReadLen = alignedFirstFragmentSize - bufferSizeAtEndOfPage;
-                    context.copyTargetFirstSourceLength = firstReadLen - startPadding;
-                    context.buffer = readParams.bufferPool.Get(firstReadLen);
-                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)firstReadLen, ReadFromDeviceCallback, context);
-
-                    alignedBytesToRead -= firstReadLen;
-                    alignedReadOffset += firstReadLen;
-                    destinationOffset += context.TotalCopyLength;
-
-                    // Now replace the context with a new one with updated start and length of copy.
-                    context = new(countdownEvent, refCountedGCHandle)
+                    DiskReadCallbackContext context = new(countdownEvent, refCountedGCHandle)
                     {
-                        copyTargetFirstSourceOffset = 0,    // Already sector-aligned
-                        copyTargetFirstSourceLength = alignedBytesToRead - DiskPageFooter.Size,
+                        copyTargetFirstSourceOffset = startPadding,
+                        copyTargetFirstSourceLength = pageBreakInfo.firstPageFragmentSize,
                         copyTargetDestinationOffset = destinationOffset
                     };
-                }
 
-                // We know there's a following page so we'll read up to the first sector on that following page; there'll be two pieces separated by the page break metadata.
-                alignedBytesToRead += SectorSize;
-                context.copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageFooter.Size + DiskPageHeader.Size;
-                context.copyTargetSecondSourceLength = SectorSize - DiskPageHeader.Size;
+                    // If the first fragment is large, issue a direct read for the longest sector-aligned portion so we don't have to allocate and copy from a large buffer.
+                    if (pageBreakInfo.firstPageFragmentSize > DiskStreamWriter.MaxCopySpanLen)
+                    {
+                        // Read up to the last sector of the page before, and adjust the copy length to be from bufferSizeAtEndOfPage to one sector before end of page.
+                        var firstReadLen = alignedFirstFragmentSize - bufferSizeAtEndOfPage;
+                        context.copyTargetFirstSourceLength = firstReadLen - startPadding;
+                        context.buffer = readParams.bufferPool.Get(firstReadLen);
+                        logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)firstReadLen, ReadFromDeviceCallback, context);
 
-                // If the next page is not an internal page, make sure we only copy the lastPageFragmentSize (this handles the zero case as well).
-                if (pageBreakInfo.internalPageCount == 0 && pageBreakInfo.lastPageFragmentSize < context.copyTargetSecondSourceLength)
-                    context.copyTargetSecondSourceLength = pageBreakInfo.lastPageFragmentSize;
+                        alignedBytesToRead -= firstReadLen;
+                        alignedReadOffset += firstReadLen;
+                        destinationOffset += context.TotalCopyLength;
 
-                // Get the buffer we'll read this fragment into.
-                context = new (countdownEvent, refCountedGCHandle) { buffer = readParams.bufferPool.Get(alignedBytesToRead) };
-                logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-                alignedReadOffset += alignedBytesToRead;
-                destinationOffset += context.TotalCopyLength;
-            }
+                        // Now replace the context with a new one with updated start and length of copy.
+                        context = new(countdownEvent, refCountedGCHandle)
+                        {
+                            copyTargetFirstSourceOffset = 0,    // Already sector-aligned
+                            copyTargetFirstSourceLength = alignedBytesToRead - DiskPageFooter.Size,
+                            copyTargetDestinationOffset = destinationOffset
+                        };
+                    }
 
-            // Handle internal pages. The alignedBytesToRead components are all already sector-aligned. TODO: Should this throttle the # of simultaneous reads?
-            for (var ii = 0; ii < pageBreakInfo.internalPageCount; ii++)
-            {
-                // Minus sectorSize for header (already read on previous iteration); minus bufferSizeAtEndOfPage for footer
-                alignedBytesToRead = readParams.pageBufferSize - SectorSize - bufferSizeAtEndOfPage;
+                    // We know there's a following page so we'll read up to the first sector on that following page; there'll be two pieces separated by the page break metadata.
+                    alignedBytesToRead += SectorSize;
+                    context.copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageFooter.Size + DiskPageHeader.Size;
+                    context.copyTargetSecondSourceLength = SectorSize - DiskPageHeader.Size;
 
-                // Direct-read the page interior. The boundaries of this read are already sector-aligned.
-                DiskReadCallbackContext context = new(countdownEvent, refCountedGCHandle)
-                {
-                    buffer = readParams.bufferPool.Get(alignedBytesToRead),
-
-                    copyTargetFirstSourceOffset = 0,    // Already sector-aligned
-                    copyTargetFirstSourceLength = alignedBytesToRead,
-                    copyTargetDestinationOffset = destinationOffset
-                };
-
-                logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-                alignedReadOffset += alignedBytesToRead;
-                destinationOffset += context.TotalCopyLength;
-
-                // Direct-write the page interior. The start of this read us already sector-aligned. As above, read over into the following page, which may be an
-                // interior page (taking the whole page) or may be the end page (with a limited fragment size, which may be smaller than a sector).
-                alignedBytesToRead = bufferSizeAtEndOfPage + SectorSize;
-                context = new(countdownEvent, refCountedGCHandle)
-                {
-                    buffer = readParams.bufferPool.Get(alignedBytesToRead),
-
-                    copyTargetFirstSourceOffset = 0,    // Already sector-aligned
-                    copyTargetFirstSourceLength = alignedBytesToRead,
-                    copyTargetDestinationOffset = destinationOffset,
-
-                    // Calculate based on previous context, before we assign the newly-constructed replacement context to the local variable.
-                    copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageFooter.Size + DiskPageHeader.Size,
-                    copyTargetSecondSourceLength = SectorSize - DiskPageHeader.Size
-                };
-
-                // If the next page is not an internal page, make sure we only copy the lastPageFragmentSize (this handles the zero case as well).
-                if (pageBreakInfo.internalPageCount == 0 && pageBreakInfo.lastPageFragmentSize < context.copyTargetSecondSourceLength)
+                    // If the next page is not an internal page, make sure we only copy the lastPageFragmentSize (this handles the zero case as well).
+                    if (pageBreakInfo.internalPageCount == 0 && pageBreakInfo.lastPageFragmentSize < context.copyTargetSecondSourceLength)
                         context.copyTargetSecondSourceLength = pageBreakInfo.lastPageFragmentSize;
 
-                logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-                alignedReadOffset += alignedBytesToRead;
-                destinationOffset += context.TotalCopyLength;
-            }
+                    // Get the buffer we'll read this fragment into.
+                    context = new(countdownEvent, refCountedGCHandle) { buffer = readParams.bufferPool.Get(alignedBytesToRead) };
+                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                    alignedReadOffset += alignedBytesToRead;
+                    destinationOffset += context.TotalCopyLength;
+                }
 
-            // Handle the last-page fragment
-            if (pageBreakInfo.lastPageFragmentSize > SectorSize - DiskPageHeader.Size)
-            {
-                // TODO optimization: Include the full lastPageFragmentSize in the [last interior page to next page] transition if it is < MaxCopyLen.
-                // The start boundary of this read is already sector-aligned. We'll need to sector-align the length.
-                var remainingLastFragmentSize = pageBreakInfo.lastPageFragmentSize - (SectorSize - DiskPageHeader.Size);
-                alignedBytesToRead = RoundUp(remainingLastFragmentSize, SectorSize);
-                DiskReadCallbackContext context = new(countdownEvent, refCountedGCHandle)
+                // Handle internal pages. The alignedBytesToRead components are all already sector-aligned. TODO: Should this throttle the # of simultaneous reads?
+                for (var ii = 0; ii < pageBreakInfo.internalPageCount; ii++)
                 {
-                    buffer = readParams.bufferPool.Get(alignedBytesToRead),
+                    // Minus sectorSize for header (already read on previous iteration); minus bufferSizeAtEndOfPage for footer
+                    alignedBytesToRead = readParams.pageBufferSize - SectorSize - bufferSizeAtEndOfPage;
 
-                    copyTargetFirstSourceOffset = 0,    // Already sector-aligned
-                    copyTargetFirstSourceLength = remainingLastFragmentSize,
-                    copyTargetDestinationOffset = destinationOffset
-                };
+                    // Direct-read the page interior. The boundaries of this read are already sector-aligned.
+                    DiskReadCallbackContext context = new(countdownEvent, refCountedGCHandle)
+                    {
+                        buffer = readParams.bufferPool.Get(alignedBytesToRead),
 
-                logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-                // This is the last read; no need to update offset variables
+                        copyTargetFirstSourceOffset = 0,    // Already sector-aligned
+                        copyTargetFirstSourceLength = alignedBytesToRead,
+                        copyTargetDestinationOffset = destinationOffset
+                    };
+
+                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                    alignedReadOffset += alignedBytesToRead;
+                    destinationOffset += context.TotalCopyLength;
+
+                    // Direct-write the page interior. The start of this read us already sector-aligned. As above, read over into the following page, which may be an
+                    // interior page (taking the whole page) or may be the end page (with a limited fragment size, which may be smaller than a sector).
+                    alignedBytesToRead = bufferSizeAtEndOfPage + SectorSize;
+                    context = new(countdownEvent, refCountedGCHandle)
+                    {
+                        buffer = readParams.bufferPool.Get(alignedBytesToRead),
+
+                        copyTargetFirstSourceOffset = 0,    // Already sector-aligned
+                        copyTargetFirstSourceLength = alignedBytesToRead,
+                        copyTargetDestinationOffset = destinationOffset,
+
+                        // Calculate based on previous context, before we assign the newly-constructed replacement context to the local variable.
+                        copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageFooter.Size + DiskPageHeader.Size,
+                        copyTargetSecondSourceLength = SectorSize - DiskPageHeader.Size
+                    };
+
+                    // If the next page is not an internal page, make sure we only copy the lastPageFragmentSize (this handles the zero case as well).
+                    if (pageBreakInfo.internalPageCount == 0 && pageBreakInfo.lastPageFragmentSize < context.copyTargetSecondSourceLength)
+                        context.copyTargetSecondSourceLength = pageBreakInfo.lastPageFragmentSize;
+
+                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                    alignedReadOffset += alignedBytesToRead;
+                    destinationOffset += context.TotalCopyLength;
+                }
+
+                // Handle the last-page fragment
+                if (pageBreakInfo.lastPageFragmentSize > SectorSize - DiskPageHeader.Size)
+                {
+                    // TODO optimization: Include the full lastPageFragmentSize in the [last interior page to next page] transition if it is < MaxCopyLen.
+                    // The start boundary of this read is already sector-aligned. We'll need to sector-align the length.
+                    var remainingLastFragmentSize = pageBreakInfo.lastPageFragmentSize - (SectorSize - DiskPageHeader.Size);
+                    alignedBytesToRead = RoundUp(remainingLastFragmentSize, SectorSize);
+                    DiskReadCallbackContext context = new(countdownEvent, refCountedGCHandle)
+                    {
+                        buffer = readParams.bufferPool.Get(alignedBytesToRead),
+
+                        copyTargetFirstSourceOffset = 0,    // Already sector-aligned
+                        copyTargetFirstSourceLength = remainingLastFragmentSize,
+                        copyTargetDestinationOffset = destinationOffset
+                    };
+
+                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)context.buffer.GetValidPointer(), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                    // This is the last read; no need to update offset variables
+                }
             }
+            finally
+            {
+                // We had the initial count in either multiCountdownEvent before it was passed in, or in the countdownEvent we created here. We incremented for each
+                // fragment, so now we decrement to remove the original one, then Wait if *not* multi; multi is waited on after we return.
+                _ = countdownEvent.Signal();
 
-            // We had the initial count in either multiCountdownEvent before it was passed in, or in the countdownEvent we created here. We incremented for each
-            // fragment, so now we decrement to remove the original one, then Wait if *not* multi; multi is waited on after we return.
-            _ = countdownEvent.Signal();
-            if (multiCountdownEvent is null)
-                countdownEvent.Wait();
+                // MultiCountdown is awaited above us; a single countdown should be awaited (then disposed) here.
+                if (multiCountdownEvent is null)
+                {
+                    countdownEvent.Wait();
+                    countdownEvent.Dispose();
+                }
 
-            // Remove the refcount we initialized refCountedGCHandle with, so the final read completion (which may have been the non-multiCountdownEvent Wait()
-            // we just did) will final-release it.
-            refCountedGCHandle.Release();
+                // Remove the refcount we initialized refCountedGCHandle with, so the final read completion (which may have been the non-multiCountdownEvent Wait()
+                // we just did) will final-release it.
+                refCountedGCHandle.Release();
+            }
 
             if (extractOptionals && optionalLength > 0)
                 overflowArray.ExtractOptionalsAtEnd(recordInfo, optionalLength, out recordOptionals);
@@ -695,12 +713,20 @@ namespace Tsavorite.core
 
             // If a CountdownEvent was passed in, we're part of a multi-IO operation; otherwise, just create one for a single IO and wait for it here.
             DiskReadCallbackContext context = new(multiCountdownEvent ?? new CountdownEvent(1), refCountedGCHandle: default);
-            logDevice.ReadAsync((ulong)alignedReadStart, (IntPtr)recordBuffer.aligned_pointer + startOffsetInBuffer, (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
-            if (multiCountdownEvent is null)
+            try
             {
-                context.countdownEvent.Wait();
-                if (context.buffer.available_bytes != (uint)alignedBytesToRead)
-                    throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual available_bytes {context.buffer.available_bytes}");
+                logDevice.ReadAsync((ulong)alignedReadStart, (IntPtr)recordBuffer.aligned_pointer + startOffsetInBuffer, (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                if (multiCountdownEvent is null)
+                {
+                    context.countdownEvent.Wait();
+                    if (context.buffer.available_bytes != (uint)alignedBytesToRead)
+                        throw new TsavoriteException($"Expected number of alignedBytesToRead {alignedBytesToRead}, actual available_bytes {context.buffer.available_bytes}");
+                }
+            }
+            finally
+            {
+                if (multiCountdownEvent is null)
+                    context.countdownEvent.Dispose();
             }
         }
 
@@ -726,6 +752,7 @@ namespace Tsavorite.core
 
             // Signal the event so the waiter can continue
             _ = result.countdownEvent?.Signal();
+            result.Dispose();
         }
 
         /// <inheritdoc/>
