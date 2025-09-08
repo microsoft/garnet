@@ -88,6 +88,11 @@ namespace Garnet.server
         /// </summary>
         public RespCommandKeySpecification[] KeySpecifications { get; init; }
 
+        /// <summary>
+        /// Store type that the command operates on (None/Main/Object/All). Default: None for commands without key arguments.
+        /// </summary>
+        public StoreType StoreType { get; set; }
+
         /// <inheritdoc />
         public RespCommandsInfo[] SubCommands { get; init; }
 
