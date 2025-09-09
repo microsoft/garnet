@@ -86,7 +86,7 @@ namespace Tsavorite.core
         /// <param name="bufferPosition">Input; the start offset in the buffer, calculated by the caller</param>
         /// <param name="flushedDiskTailOffset">Output: updated with the number of bytes if we had to skip over the <see cref="DiskPageHeader"/>.</param>
         /// <return>Whether this was the first partial flush for this instance of <see cref="CircularDiskPageWriteBuffer"/></return>
-        internal bool OnPartialFlushStart(int bufferPosition, ref long flushedDiskTailOffset)
+        internal bool OnBeginPartialFlush(int bufferPosition, ref long flushedDiskTailOffset)
         {
             // Partial flushes end with a sector-aligned Flush, and this is also reflected in FlushDiskTailOffset, which has already been added to bufferPosition.
             Debug.Assert(IsAligned(bufferPosition, SectorSize), $"bufferPosition {bufferPosition} is not sector-aligned at the start of the partial flush, implying FlushedDiskTailOffset was not correctly incremented");
@@ -143,27 +143,52 @@ namespace Tsavorite.core
             countdownCallbackAndContext.Increment();
 
             var buffer = GetCurrentBuffer();
-            if (buffer.currentPosition != 0)
+            if (buffer.currentPosition > DiskPageHeader.Size)
             {
                 Debug.Assert(RoundUp(buffer.flushedUntilPosition, SectorSize) == buffer.flushedUntilPosition, $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");
                 Debug.Assert(RoundUp(buffer.currentPosition, Constants.kRecordAlignment) == buffer.currentPosition, $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
                 Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
-                // See if we have anything to flush to ensure sector-alignment.
-                var end = RoundUp(buffer.currentPosition, SectorSize);
-                if (end > buffer.currentPosition)
+                // See if we have anything to flush to ensure sector-alignment. This is necessary to avoid rewriting sectors, which can be a problem for some devices
+                // due to inefficiencies in rewriting or inability to back up (or both).
+                var sectorEnd = RoundUp(buffer.currentPosition, SectorSize);
+                if (sectorEnd > buffer.currentPosition)
                 {
+                    TODO("If we keep footer we'll need to adjust this as recordEnd could be just before footer, which isn't sector-aligned");
+                    var recordEnd = RoundUp(buffer.currentPosition, Constants.kRecordAlignment);
+                    if (sectorEnd > recordEnd)
+                    {
+                        // Force to sector alignment. If this would be more padding than forcing to record alignment would be, then we must handle this specially, so that all
+                        // 3 scenarios are satisfied:
+                        // 1. Flush: Forces sector alignment in two parts, the current Flush operation *and* OnBeginPartialFlush:
+                        //    a. Here, if we have to force sector-alignment, we write into the "normal" next-record position (the location the next record would have started at if it
+                        //       was not force-aligned to sector) an invalid RecordInfo that has the IsSectorForceAligned bit set. This is necessary for Scan, which would otherwise not
+                        //       be able to determine that we should move to the next sector after the end of the previous record. The we increment FlushedDiskTailOffset to the next sector.
+                        //       Note: if currentPosition is DiskPageHeader.Size there is no data in the buffer; the last write was to disk-page end boundary, which is automatically sector-aligned.
+                        //    b. In OnBeginPartialFlush, we always set the first LogRecord of the flush to have IsSectorForceAligned bit set. This tells PatchExpandedAddresses to ensure
+                        //       ClosedDiskTailOffset is sector-aligned. We have to always set this bit for the first record of the flush because we've already sector-aligned bufferPosition
+                        //       and we have no (easy) way to know whether it was forced or not.
+                        // 2. PatchExpandedAddresses: If the current LogRecord.Info.IsSectorForceAligned is true, adjusts ClosedDiskTailOffset to start on the next sector boundary,
+                        //    to stay in sync with FlushedDiskTailOffset. Note: It would not work to have the IsSectorForcedAlign bit in the previous LogRecord, as that may have been evicted.
+                        // 3. Scan: When this does next-record processing, if it lands on an invalid record with LogRecord.Info.IsSectorForceAligned true, it jumps to the next sector.
+                        Debug.Assert(sectorEnd - recordEnd >= RecordInfo.GetLength(), $"sectorEnd - recordEnd ({sectorEnd - recordEnd}) should be >= RecordInfo.GetLength()");
+                        ref var recordInfo = ref *(RecordInfo*)recordEnd;
+                        recordInfo = default;
+                        recordInfo.SetInvalid();
+                        recordInfo.IsSectorForceAligned = true;
+                    }
+
                     countdownCallbackAndContext.Set(externalCallback, externalContext, numBytes);
 
                     // Flush the final piece to disk, zero-initializing the sector-alignment padding.
-                    new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, end - buffer.currentPosition).Clear();
+                    new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, sectorEnd - buffer.currentPosition).Clear();
 
-                    var flushLength = end - buffer.flushedUntilPosition;
+                    var flushLength = sectorEnd - buffer.flushedUntilPosition;
                     var pageWriteCallbackContext = new DiskWriteCallbackContext();
                     buffer.FlushToDevice(buffer.memory.TotalValidSpan.Slice(buffer.flushedUntilPosition, flushLength), alignedDeviceAddress, FlushToDeviceCallback, pageWriteCallbackContext);
                     alignedDeviceAddress += (uint)flushLength;
-                    var flushedUntilAdjustment = end - buffer.currentPosition;
-                    buffer.currentPosition = end;
+                    var flushedUntilAdjustment = sectorEnd - buffer.currentPosition;
+                    buffer.currentPosition = sectorEnd;
                     Debug.Assert(flushedUntilAdjustment == 0 || SectorSize > 0, $"flushedUntilAdjustment {flushedUntilAdjustment} is nonzero when SectorSize is 0");
                     return flushedUntilAdjustment;
                 }

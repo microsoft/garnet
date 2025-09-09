@@ -14,7 +14,7 @@ namespace Tsavorite.core
 
     // RecordInfo layout (64 bits total, high to low):
     //   RecordInfo bits:
-    //      [Unused1][Modified][InNewVersion][Unused2][Dirty][Unused3][Sealed][Valid][Tombstone]
+    //      [Unused1][Modified][InNewVersion][Unused2][Dirty][IsSectorForceAligned][Sealed][Valid][Tombstone]
     //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline]
     //   LogAddress bits (where A = address):
     //      [AddressTypeHigh][AddressTypeLow] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] 
@@ -22,7 +22,7 @@ namespace Tsavorite.core
     public struct RecordInfo
     {
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
-        const int kTotalSizeInBytes = 8;
+        const int kTotalSizeInBytes = sizeof(long);
         const int kTotalBits = kTotalSizeInBytes * 8;
 
         // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
@@ -34,8 +34,8 @@ namespace Tsavorite.core
         const int kTombstoneBitOffset = kHasExpirationBitOffset + 1;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kSealedBitOffset = kValidBitOffset + 1;
-        const int kUnused3BitOffset = kSealedBitOffset + 1;
-        const int kDirtyBitOffset = kUnused3BitOffset + 1;
+        const int kIsSectorForceAlignedBitOffset = kSealedBitOffset + 1;
+        const int kDirtyBitOffset = kIsSectorForceAlignedBitOffset + 1;
         const int kUnused2BitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kUnused2BitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
@@ -49,7 +49,7 @@ namespace Tsavorite.core
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
-        const long kUnused3BitMask = 1L << kUnused3BitOffset;
+        const long kIsSectorForceAlignedBitMask = 1L << kIsSectorForceAlignedBitOffset;
         const long kDirtyBitMask = 1L << kDirtyBitOffset;
         const long kUnused2BitMask = 1L << kUnused2BitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
@@ -319,7 +319,7 @@ namespace Tsavorite.core
         public readonly bool KeyIsOverflow => !KeyIsInline;
         public void SetKeyIsOverflow() => word &= ~kKeyIsInlineBitMask;
 
-        // Note: ValueIsOveflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
+        // Note: a ValueIsOverflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
         public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
         public void SetValueIsInline() => word = (word & ~kValueIsObjectBitMask) | kValueIsInlineBitMask;
         public void ClearValueIsInline() => word &= ~kValueIsInlineBitMask;
@@ -327,11 +327,29 @@ namespace Tsavorite.core
         public readonly bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
         public void SetValueIsObject() => word = (word & ~kValueIsInlineBitMask) | kValueIsObjectBitMask;
 
-        // "Overflow" is determined by lack of Inline and lack of Object
+        // Value "Overflow" is determined by lack of Inline and lack of Object
         public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
         public void SetValueIsOverflow() => word &= ~(kValueIsInlineBitMask | kValueIsObjectBitMask);
 
         public void SetKeyAndValueInline() => word = (word & ~kValueIsObjectBitMask) | kKeyIsInlineBitMask | kValueIsInlineBitMask;
+
+        /// <summary>If true, the record has been force-aligned to a sector boundary.</summary>
+        internal bool IsSectorForceAligned
+        {
+            readonly get => (word & kIsSectorForceAlignedBitMask) != 0;
+            set
+            {
+                while (true)
+                {
+                    var expected_info = this;
+                    if (expected_info.IsSectorForceAligned)
+                        return;
+                    var new_word = value ? (expected_info.word | kIsSectorForceAlignedBitMask) : (expected_info.word & ~kIsSectorForceAlignedBitMask);
+                    if (Interlocked.CompareExchange(ref word, new_word, expected_info.word) == expected_info.word)
+                        return;
+                }
+            }
+        }
 
         public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
@@ -350,19 +368,13 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused2BitMask : word & ~kUnused2BitMask;
         }
 
-        internal bool Unused3
-        {
-            readonly get => (word & kUnused3BitMask) != 0;
-            set => word = value ? word | kUnused3BitMask : word & ~kUnused3BitMask;
-        }
-
         public override readonly string ToString()
         {
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {AddressString(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
                  + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, KisInl {KeyIsInline}, VisInl {ValueIsInline}, VisObj {bstr(ValueIsObject)},"
-                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}";
+                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(IsSectorForceAligned)}";
         }
     }
 }

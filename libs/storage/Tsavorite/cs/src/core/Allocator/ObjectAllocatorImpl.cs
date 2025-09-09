@@ -271,6 +271,18 @@ namespace Tsavorite.core
                     if (!storeBase.FindTag(ref hei) || hei.Address < BeginAddress)
                         continue;
 
+                    // See if we need to bump to next sector alignment.
+                    if (closeLogRecord.Info.IsSectorForceAligned)
+                    {
+                        var unalignedPatchedAddress = closeAddress + ClosedDiskTailOffset;
+                        var alignedPatchedAddress = RoundUp(unalignedPatchedAddress, sectorSize);
+                        if (alignedPatchedAddress > unalignedPatchedAddress)
+                        {
+                            _ = MonotonicUpdate(ref ClosedDiskTailOffset, ClosedDiskTailOffset + (alignedPatchedAddress - unalignedPatchedAddress), out _);
+                            TraceExpansion($"ClosedDiskTailOffset pt 1 (sector-align record): {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
+                        }
+                    }
+
                     // If the address is in the HashBucketEntry, this will update it; otherwise we will have to traverse the tag chain.
                     if (!hei.UpdateToOnDiskAddress(closeAddress, ClosedDiskTailOffset))
                     {
@@ -310,7 +322,7 @@ namespace Tsavorite.core
                     // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
                     // TODO is MonotonicUpdate needed? The OnPagesClosedWorker page-fragment ordering sequence should guarantee that only one thread at a time will be doing this
                     _ = MonotonicUpdate(ref ClosedDiskTailOffset, ClosedDiskTailOffset + closeLogRecord.CalculateExpansion(), out _);
-                    TraceExpansion($"ClosedDiskTailOffset pt 1: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
+                    TraceExpansion($"ClosedDiskTailOffset pt 2 (after record): {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
                 }
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
@@ -433,7 +445,7 @@ namespace Tsavorite.core
             var alignedDestinationAddress = RoundDown(destinationAddress, sectorSize);
 
             // Now make sure the circular buffer is consistent with bufferPosition, including if necessary updating FlushedDiskTailOffset to account for an initial DiskPageHeader.
-            var isFirstPartialFlush = diskPageBuffers.OnPartialFlushStart(bufferPosition, ref FlushedDiskTailOffset);
+            var isFirstPartialFlush = diskPageBuffers.OnBeginPartialFlush(bufferPosition, ref FlushedDiskTailOffset);
 
             // Hang onto local copies of the objects and page inline data, so they are kept valid even if the original page is reclaimed.
             // TODO: Should Page eviction null the ObjectIdMap, or its internal MultiLevelPageArray, vs. just clearing the objects
@@ -473,6 +485,7 @@ namespace Tsavorite.core
 
                 // We need to hang onto the last logicalAddress so we can set a flag indicating if FlushedUntilAddress had a jump due to final-sector alignment.
                 var lastLogicalAddress = logicalAddress;
+                var isFirstRecordInPartialFlush = true;
                 for (var physicalAddress = (long)srcBuffer.GetValidPointer(); physicalAddress < endPhysicalAddress; /* incremented in loop */)
                 {
                     lastLogicalAddress = logicalAddress;
@@ -481,16 +494,21 @@ namespace Tsavorite.core
                     // Use allocatedSize here because that is what LogicalAddress is based on.
                     var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
 
-                    // Do not write Invalid records or v+1 records (e.g. during a checkpoint).
-                    if (logRecord.Info.Invalid || (logicalAddress >= fuzzyStartLogicalAddress && logRecord.Info.IsInNewVersion))
+                    // Do not write Invalid records
+                    if (logRecord.Info.Invalid)
                     {
                         // Shrink the expansion for skipped records. We still have to step over the record to get to the next one.
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
                         _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset - logRecordSize, out _);
-                        TraceExpansion($"FlushedDiskTailOffset pt 1: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                        TraceExpansion($"FlushedDiskTailOffset pt 1 (IsInvalid): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                     }
                     else
                     {
+                        if (isFirstRecordInPartialFlush)
+                        {
+                            logRecord.InfoRef.IsSectorForceAligned = true;
+                            isFirstRecordInPartialFlush = false;
+                        }
                         logRecord.InfoRef.PreviousAddress += FlushedDiskTailOffset;
                         var prevPosition = diskWriter.circularPageFlushBuffers.TotalWrittenLength;
 
@@ -508,18 +526,13 @@ namespace Tsavorite.core
 
                         // TODO is MonotonicUpdate needed? The flush "next adjacent" sequence should guarantee that only one thread at a time will be doing this
                         _ = MonotonicUpdate(ref FlushedDiskTailOffset, FlushedDiskTailOffset + streamExpansion, out _);
-                        TraceExpansion($"FlushedDiskTailOffset pt 2: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                        TraceExpansion($"FlushedDiskTailOffset pt 2 (IsValid): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                     }
 
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
 
-                // We need to store the PartialFlushComplete forced sector alignment offset change so it can be recalculated by ClosedDiskTailOffset:
-                //   - Storing an indicator bit in the prev logRecord to tell us this happened won't work because fine-grained eviction won't have it available anymore (or we would have to store that 
-                //     information across recovery
-                //   - Similarly, storing it in the allocator-page structure won't survive recovery
-                TODO("This may cause a sector-aligning final flush that can bump FlushedDiskTailOffset. We need to reflect that in the ClosedDiskTailOffset calculations.");
                 var flushedUntilAdjustment = diskWriter.circularPageFlushBuffers.OnPartialFlushComplete(callback, asyncResult);
                 if (flushedUntilAdjustment > 0)
                 {
