@@ -115,6 +115,9 @@ namespace Garnet.server
         /// </summary>
         internal StorageSession ObjectStoreExpiredKeyDeletionDbStorageSession;
 
+
+        internal StorageSession HybridLogStatScanStorageSession;
+
         bool disposed = false;
 
         public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
