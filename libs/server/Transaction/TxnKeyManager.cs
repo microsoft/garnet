@@ -65,12 +65,13 @@ namespace Garnet.server
 
             foreach (var keySpec in cmdInfo.KeySpecs)
             {
-                var (firstKeyIdx, lastKeyIdx, keyStep) = respSession.parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec, cmdInfo.IsSubCommand);
+                if (!respSession.parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, cmdInfo.IsSubCommand, out var searchArgs))
+                    continue;
 
                 var isReadOnly = (keySpec.Flags & KeySpecificationFlags.RO) == KeySpecificationFlags.RO;
                 var lockType = isReadOnly ? LockType.Shared : LockType.Exclusive;
 
-                for (var currIdx = firstKeyIdx; currIdx <= lastKeyIdx; currIdx += keyStep + 1)
+                for (var currIdx = searchArgs.firstIdx; currIdx <= searchArgs.lastIdx; currIdx += searchArgs.step + 1)
                 {
                     var key = respSession.parseState.GetArgSliceByRef(currIdx);
                     if (cmdInfo.StoreType is StoreType.Main or StoreType.All)

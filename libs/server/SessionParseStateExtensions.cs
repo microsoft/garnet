@@ -854,7 +854,7 @@ namespace Garnet.server
             var keys = new List<ArgSlice>();
 
             foreach (var spec in commandInfo.KeySpecs)
-                AppendKeysFromSpec(ref state, spec, commandInfo.IsSubCommand, keys);
+                TryAppendKeysFromSpec(ref state, spec, commandInfo.IsSubCommand, keys);
 
             return keys.ToArray();
         }
@@ -870,7 +870,7 @@ namespace Garnet.server
             var keysAndFlags = new List<(ArgSlice, KeySpecificationFlags)>();
             
             foreach (var spec in commandInfo.KeySpecs)
-                AppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysAndFlags);
+                TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysAndFlags);
 
             return keysAndFlags.ToArray();
         }
@@ -882,11 +882,12 @@ namespace Garnet.server
         /// <param name="keySpec">The key specification to use for extraction.</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
         /// <param name="keys">The list to store extracted keys</param>
-        private static void AppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<ArgSlice> keys)
+        private static bool TryAppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<ArgSlice> keys)
         {
-            var (firstKeyIdx, lastKeyIdx, keyStep) = parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand);
-
-            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep)
+            if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
+                return false;
+            
+            for (var i = searchArgs.firstIdx; i <= searchArgs.lastIdx; i += searchArgs.step)
             {
                 var key = parseState.GetArgSliceByRef(i);
                 if (key.Length == 0)
@@ -894,6 +895,8 @@ namespace Garnet.server
 
                 keys.Add(key);
             }
+
+            return true;
         }
 
         /// <summary>
@@ -903,11 +906,12 @@ namespace Garnet.server
         /// <param name="keySpec">The key specification to use for extraction.</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
         /// <param name="keysAndFlags">The list to store extracted keys and flags</param>
-        private static void AppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, KeySpecificationFlags)> keysAndFlags)
+        private static bool TryAppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, KeySpecificationFlags)> keysAndFlags)
         {
-            var (firstKeyIdx, lastKeyIdx, keyStep) = parseState.GetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand);
+            if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
+                return false;
 
-            for (var i = firstKeyIdx; i <= lastKeyIdx; i += keyStep)
+            for (var i = searchArgs.firstIdx; i <= searchArgs.lastIdx; i += searchArgs.step)
             {
                 var key = parseState.GetArgSliceByRef(i);
                 if (key.Length == 0)
@@ -915,6 +919,8 @@ namespace Garnet.server
 
                 keysAndFlags.Add((key, keySpec.Flags));
             }
+
+            return true;
         }
 
         /// <summary>
@@ -923,15 +929,19 @@ namespace Garnet.server
         /// <param name="parseState">The current parse state</param>
         /// <param name="keySpec">The simplified key specification</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
-        /// <returns>First, last, and step arguments for key searching</returns>
-        internal static (int firstIdx, int lastIdx, int step) GetKeySearchArgsFromSimpleKeySpec(this ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand)
+        /// <param name="searchArgs">First, last, and step arguments for key searching</param>
+        /// <returns></returns>
+        internal static bool TryGetKeySearchArgsFromSimpleKeySpec(this ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, out (int firstIdx, int lastIdx, int step) searchArgs)
         {
+            searchArgs = (-1, -1, -1);
+
             // Determine the starting index for searching keys
             var beginSearchIdx = keySpec.BeginSearch.Index < 0
                 ? parseState.Count + keySpec.BeginSearch.Index
                 : keySpec.BeginSearch.Index - (isSubCommand ? 2 : 1);
-            
-            Debug.Assert(beginSearchIdx >= 0 && beginSearchIdx < parseState.Count);
+
+            if (beginSearchIdx < 0 && beginSearchIdx >= parseState.Count)
+                return false;
 
             var firstKeyIdx = -1;
 
@@ -992,7 +1002,9 @@ namespace Garnet.server
             }
 
             Debug.Assert(lastKeyIdx < parseState.Count);
-            return (firstKeyIdx, lastKeyIdx, keyStep);
+
+            searchArgs = (firstKeyIdx, lastKeyIdx, keyStep);
+            return true;
         }
     }
 }
