@@ -96,7 +96,7 @@ namespace Tsavorite.core
             this.logDevice = logDevice ?? throw new ArgumentNullException(nameof(logDevice));
             this.valueObjectSerializer = valueObjectSerializer;
 
-            this.circularPageFlushBuffers = circularPageBuffers;
+            circularPageFlushBuffers = circularPageBuffers;
             pageBuffer = circularPageBuffers.GetCurrentBuffer();
 
             valueLengthPosition = NoPosition;
@@ -133,7 +133,7 @@ namespace Tsavorite.core
             {
                 // We know the exact values for the varbyte key and value lengths.
                 var valueSpan = logRecord.ValueSpan;
-                WriteLengthMetadata(keySpan.Length, valueSpan.Length);
+                WriteLengthMetadata(in logRecord, keySpan.Length, valueSpan.Length);
                 if (keySpan.Length > MaxCopySpanLen)
                     WriteKeyDirect(in logRecord);
                 else
@@ -155,7 +155,7 @@ namespace Tsavorite.core
             var valueObject = logRecord.ValueObject;
             if (valueObject is null)
             {
-                WriteLengthMetadata(keySpan.Length, valueLength: 0);
+                WriteLengthMetadata(in logRecord, keySpan.Length, valueLength: 0);
                 if (keySpan.Length > MaxCopySpanLen)
                     WriteKeyDirect(in logRecord);
                 else
@@ -169,7 +169,7 @@ namespace Tsavorite.core
             if (valueObject.SerializedSizeIsExact)
             {
                 // We can write the exact value length, so we will write the indicator byte with the key length and value length, then write the key and value spans.
-                WriteLengthMetadata(keySpan.Length, valueObject.SerializedSize);
+                WriteLengthMetadata(in logRecord, keySpan.Length, valueObject.SerializedSize);
                 if (keySpan.Length > MaxCopySpanLen)
                     WriteKeyDirect(in logRecord);
                 else
@@ -198,7 +198,7 @@ namespace Tsavorite.core
             if (keySpan.Length < MaxCopySpanLen)
             {
                 // Max value chunk size is limited to a single buffer so fits in an int. Use int.MaxValue to get the int varbyte size, but we won't write a chunk that large.
-                WriteLengthMetadata(keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
+                WriteLengthMetadata(in logRecord, keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
                 Write(keySpan);
 
                 // Serialize the value object into possibly multiple buffers; we will manage chunk updating in Write(ReadOnlySpan<byte> data).
@@ -209,7 +209,7 @@ namespace Tsavorite.core
             }
 
             // TODO test with large keys, e.g. 10MB key, with and without sector alignment.
-            WriteLengthMetadata(keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
+            WriteLengthMetadata(in logRecord, keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
 
             var usablePageSize = circularPageFlushBuffers.UsablePageSize;
             var hasPageBreaks = CalculatePageBreaks(keySpan.Length, initialPageSpaceRemaining: 0, usablePageSize, out keyInteriorPageBreakInfo);
@@ -282,39 +282,35 @@ namespace Tsavorite.core
         /// <summary>
         /// Write the indicator byte and key/value lengths for string (byte stream) values.
         /// </summary>
-        /// <param name="keyLength"></param>
-        /// <param name="valueLength"></param>
-        /// <param name="isChunked"></param>
-        private void WriteLengthMetadata(int keyLength, long valueLength, bool isChunked = false)
+        private void WriteLengthMetadata(in LogRecord logRecord, int keyLength, long valueLength, bool isChunked = false)
         {
             // Use a local buffer so we can call Write() just once.
             var indicatorBuffer = stackalloc byte[RoundUp(LogRecord.MaxLengthMetadataBytes, sizeof(long))];
             var indicatorByte = ConstructIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
-
-            TODO("Read must reconstruct this into DiskLogRecord: if space available < valueLenbytes THEN use pageFooter.valueLength");
-            var truncateToSizeOfLong = false;
             if (isChunked)
-            {
                 SetChunkedValueIndicator(ref indicatorByte);
-                valueLengthPosition = pageBuffer.currentPosition + LogRecord.IndicatorBytes + keyByteCount;   // skip indicator byte and key length varbytes
 
-                // The start of the length metadata is aligned to sizeof(long) but if the key requires 3 or 4 bytes then the metadata 'long' may end
-                // with less than valueByteCount space, so store the length in pageFooter.valueLength.
-                if (valueLengthPosition > PageEndPosition - sizeof(int))
-                {
-                    // valueLength is a long; this is an int*. UpdateValueLength will convert.
-                    var footerPtr = (DiskPageFooter*)PageEndPosition;
-                    valueLengthPosition = PageEndPosition + (int)((long)&footerPtr->valueLength - (long)footerPtr);
-                    truncateToSizeOfLong = true;
-                }
-            }
-            else if (pageBuffer.currentPosition + LogRecord.IndicatorBytes + keyByteCount + valueByteCount > PageEndPosition)
+            // We always write two pages for the first chained chunk, with the second page's chunk length added into the first page's normal valueLength
+            // position. Therefore we don't need the continuation int at the end of the page. So all we have to do here for both chained and Exact is make
+            // sure there is enough room for the varbyte length metadata; if we have a long key and value, they may not all fit into a single long. If not,
+            // it means we are sizeof(long) from the end of the page; we'll back up to set the RecordInfo to Invalid+IsSectorForceAligned and bump the start
+            // of the record to the next page. See CircularDiskPageWriteBuffer.OnPartialFlushComplete for a detailed explanation of IsSectorForceAligned.
+            var valLenPos = pageBuffer.currentPosition + LogRecord.IndicatorBytes + keyByteCount + valueByteCount;  // Use a local; only set this.valueLengthPosition if isChunked
+            if (valueLengthPosition > PageEndPosition - sizeof(int))
             {
-                // This is an overflow or an object with SerializedSizeIsExact (with large key or value or both), so store the length in pageFooter.valueLength.
-                // Note: We can't slide the record start position instead; we would have to communicate back to the caller that we did that, but even if we did,
-                // that would make flushDiskTailOffset no longer entirely based on previous records.
-                ((DiskPageFooter*)PageEndPosition)->valueLength = valueLength;
-                truncateToSizeOfLong = true;
+                Debug.Assert(PageEndPosition - pageBuffer.currentPosition == sizeof(long), $"currentPosition expected to be sizeof(long) bytes from end of buffer but was ({PageEndPosition - pageBuffer.currentPosition})");
+
+                ref var redirectRecordInfo = ref *(RecordInfo*)(pageBuffer.currentPosition - RecordInfo.GetLength());
+                redirectRecordInfo = default;
+                redirectRecordInfo.SetInvalid();
+                redirectRecordInfo.IsSectorForceAligned = true;
+                logRecord.InfoRef.IsSectorForceAligned = true;
+
+                // Write a dummy long to the current location and then rewrite the original recordInfo; that should cause a page buffer flush
+                // and start the recordInfo on the next page (after header).
+                var logRecordInfo = logRecord.Info;
+                Write(new ReadOnlySpan<byte>((long*)pageBuffer.currentPosition, sizeof(long)));
+                Write(new ReadOnlySpan<byte>(&logRecordInfo, RecordInfo.GetLength()));
             }
 
             var ptr = indicatorBuffer;
@@ -323,7 +319,7 @@ namespace Tsavorite.core
             ptr += keyByteCount;
             WriteVarbyteLength(valueLength, valueByteCount, ptr);
             ptr += valueByteCount;
-            Write(new ReadOnlySpan<byte>(indicatorBuffer, truncateToSizeOfLong ? sizeof(long) : (int)(ptr - indicatorBuffer)));
+            Write(new ReadOnlySpan<byte>(indicatorBuffer, (int)(ptr - indicatorBuffer)));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
