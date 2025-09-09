@@ -30,7 +30,7 @@ namespace Tsavorite.core
         internal CircularDiskPageWriteBuffer circularPageFlushBuffers;
 
         /// <summary>The last usable position on the page.</summary>
-        internal int PageEndPosition => circularPageFlushBuffers.pageBufferSize - DiskPageFooter.Size;
+        internal int PageEndPosition => circularPageFlushBuffers.pageBufferSize;
 
         /// <summary>The current buffer being written to in the circular buffer list.</summary>
         internal DiskPageWriteBuffer pageBuffer;
@@ -55,7 +55,7 @@ namespace Tsavorite.core
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
         internal const int MaxCopySpanLen = 128 * 1024;
 
-        /// <summary>The number of data bytes to allocate for a temp buffer to use to insert <see cref="DiskPageHeader"/> and <see cref="DiskPageFooter"/> 
+        /// <summary>The number of data bytes to allocate for a temp buffer to use to insert <see cref="DiskPageHeader"/>
         ///     into long keys or values that we will be writing the page-interior portion of directly from the data span, rather than copying to the buffer.</summary>
         /// <remarks>This must be a multiple of OS page size, and not too large so we don't spend too much time copying, and at least a couple sectors (assuming max at 4k).</remarks>
         internal const int PageBorderLen = 16 * 1024;
@@ -252,7 +252,7 @@ namespace Tsavorite.core
         /// <summary>Determine the number of pages spanned by this size and start position. Used for writing directly from byte[] (rather than copying to the page disk buffer(s)).</summary>
         /// <param name="dataSize">Size to be written</param>
         /// <param name="initialPageSpaceRemaining">Space remaining in the current disk page buffer</param> 
-        /// <param name="usablePageSize">Size between disk page header and footer</param>
+        /// <param name="usablePageSize">Size between disk page header and end of page</param>
         /// <param name="info">The page break info</param>
         /// <returns>True if there are any page breaks, else false.</returns>
         internal static bool CalculatePageBreaks(long dataSize, int initialPageSpaceRemaining, int usablePageSize, out PageBreakInfo info)
@@ -270,7 +270,7 @@ namespace Tsavorite.core
             if (dataSize == 0)
                 return false;
 
-            // Number of internal pages. For each, there is paired header and footer overhead.
+            // Number of internal pages. For each, there is page header overhead.
             info.internalPageCount = dataSize / usablePageSize;
 
             // Last fragment size (on final page)
@@ -346,17 +346,18 @@ namespace Tsavorite.core
             // reads. This means we need to flush up to the last sector of space, then shift that sector to the start of the buffer, leaving the entire buffer
             // (less that sector) available for the next chunk to be written. (This is one reason it's not a circular buffer: We want to have the entire buffer
             // space available for each chunk, and a circular buffer could not be written in one Write() call).
+            var lengthSpaceReserve = valueLengthPosition == NoPosition ? 0 : sizeof(int);
             var dataStart = 0;
             while (data.Length - dataStart > 0)
             {
-                Debug.Assert(pageBuffer.RemainingCapacity > 0, 
-                        $"RemainingCapacity {pageBuffer.RemainingCapacity} == 0 (data.Length {data.Length}, dataStart {dataStart}) should have already triggered an OnChunkComplete call, which would have reset the buffer");
+                Debug.Assert(pageBuffer.RemainingCapacity - lengthSpaceReserve > 0, 
+                        $"RemainingCapacity {pageBuffer.RemainingCapacity} - lengthSpaceReserve {lengthSpaceReserve} == 0 (data.Length {data.Length}, dataStart {dataStart}) should have already triggered an OnChunkComplete call, which would have reset the buffer");
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
 
                 // If it won't all fit in the remaining buffer, write as much as will.
                 var requestLength = data.Length - dataStart;
-                if (requestLength > pageBuffer.RemainingCapacity)
-                    requestLength = pageBuffer.RemainingCapacity;
+                if (requestLength > pageBuffer.RemainingCapacity - lengthSpaceReserve)
+                    requestLength = pageBuffer.RemainingCapacity - lengthSpaceReserve;
 
                 data.Slice(dataStart, requestLength).CopyTo(pageBuffer.memory.TotalValidSpan.Slice(pageBuffer.currentPosition));
                 dataStart += requestLength;
@@ -365,8 +366,8 @@ namespace Tsavorite.core
                     currentChunkLength += requestLength;
 
                 // See if we're at the end of the buffer.
-                if (pageBuffer.RemainingCapacity == 0)
-                    OnBufferComplete();
+                if (pageBuffer.RemainingCapacity - lengthSpaceReserve == 0)
+                    OnBufferComplete(lengthSpaceReserve);
             }
         }
 
@@ -376,11 +377,11 @@ namespace Tsavorite.core
         /// value space in the buffer (i.e. key ends 2 bytes before end of buffer).
         /// <remarks>Called both during Serialize() and after Serialize() completes.</remarks>
         /// </summary>
-        void OnBufferComplete()
+        void OnBufferComplete(int lengthSpaceReserve)
         {
             // This should only be called when the object serialization hits the end of the buffer; for partial buffers we will call
-            // OnSerializeComplete() after the Serialize() call has returned.
-            Debug.Assert(pageBuffer.currentPosition == PageEndPosition, $"CurrentPosition {pageBuffer.currentPosition} must be at PageEndPosition {PageEndPosition} (just before footer).");
+            // OnSerializeComplete() after the Serialize() call has returned. "End of buffer" ends before lengthSpaceReserve if any.
+            Debug.Assert(pageBuffer.currentPosition == PageEndPosition - lengthSpaceReserve, $"CurrentPosition {pageBuffer.currentPosition} must be at PageEndPosition {PageEndPosition} - lengthSpaceReserve ({lengthSpaceReserve}).");
 
             // Iff we have a valueLengthPosition then we are doing chained-chunks, which we do as a "paired buffer" approach: we hold the pre-Key
             // data (the record data up to valueLengthPosition, as well as the first sector-aligning "cap" in buffer 1 and then write the pre-Key.
@@ -392,6 +393,8 @@ namespace Tsavorite.core
                 FlushPartialBuffer(pageBuffer);
                 return;
             }
+
+            // We're doing chained chunks. 
 
             // Here is where we write the first chained-chunk's value length in prevPage. Using two pages has two advantages:
             //  - For the first page, it means the first valueLengthPosition remains in the length metadata. This avoids the edge case where the key ends less than 4 bytes from
@@ -410,18 +413,17 @@ namespace Tsavorite.core
             // If this is the first chunk we may need to flush the key interior, which also flushes the rest of the prev buffer. Otherwise just flush the prev buffer.
             if (!FlushKeyInteriorIfNeeded(prevPageBuffer))
                 FlushPartialBuffer(prevPageBuffer);
-            prevPageBuffer = null;
 
-            // If we're doing chunk chaining and have another chunk, the next chunk's length is in the last 'int' of the current page.
-            // Note that if serialization ends right on the end of the sector, we'll call OnSerializeComplete which will set this to zero with
-            // no continuation bit; that's fine, just a wasted int we can't avoid.
-            if (valueLengthPosition != NoPosition)
-            {
-                valueLengthPosition = pageBuffer.currentPosition;
-                pageBuffer.currentPosition += sizeof(int);
-                numRecordOverheadBytes += sizeof(int);
-            }
-            Debug.Assert(pageBuffer.RemainingCapacity > 0, $"RemainingCapacity {pageBuffer.RemainingCapacity} == 0 at end of OnChunkComplete");
+            // We're doing chunk chaining so the next chunk's length is in the last 'int' of the current page. Note that if serialization ends right on the end of the page
+            // before this continuation length, OnSerializeComplete will set this to zero with no continuation bit; that's fine, just a wasted int we can't avoid.
+            valueLengthPosition = pageBuffer.currentPosition;
+            pageBuffer.currentPosition += sizeof(int);
+            numRecordOverheadBytes += sizeof(int);
+            Debug.Assert(pageBuffer.RemainingCapacity == 0, $"Current buffer RemainingCapacity {pageBuffer.RemainingCapacity} should == 0 at end of OnChunkComplete when chaining chunks");
+
+            // Now make the current buffer the previous buffer and get the next buffer as the current buffer.
+            prevPageBuffer = pageBuffer;
+            pageBuffer = circularPageFlushBuffers.MoveToAndInitializeNextBuffer();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -433,12 +435,9 @@ namespace Tsavorite.core
             if (valueLengthPosition != NoPosition)
             {
                 // This may set the value length to 0 if we didn't have any value data in this chunk (e.g. the value ended on the prior chunk boundary).
-                // Note that valueLengthPosition may be in the page footer.
                 var buffer = prevPageBuffer ?? pageBuffer;
-                if (valueLengthPosition >= PageEndPosition)
-                    ((DiskPageFooter*)PageEndPosition)->SetValueLength(currentChunkLength | continuationBit);
-                else
-                    *(int*)(buffer.memory.GetValidPointer() + valueLengthPosition) = currentChunkLength | continuationBit;
+                var lengthSpaceReserve = continuationBit == 0 ? 0 : sizeof(int);
+                *(int*)(buffer.memory.GetValidPointer() + valueLengthPosition) = (currentChunkLength + lengthSpaceReserve) | continuationBit;
             }
             valueCumulativeLength += currentChunkLength;
             currentChunkLength = 0;
@@ -526,76 +525,28 @@ namespace Tsavorite.core
             // Cumulative offset into the input data span.
             var dataOffset = 0;
 
-            // Write the first page header and PageBorderLen - headerSize bytes of the data span. We do not need to set any members of the 
-            // page header or footer beyond the basic Initialize(), since we have no records starting or other operations other than copy/flush data.
-            {
-                var pageWriteCallback = new DiskWriteCallbackContext { buffer = circularPageFlushBuffers.bufferPool.Get(PageBorderLen) };
-                var bufferPtr = pageWriteCallback.buffer.GetValidPointer();
-                // Initialize the footer at the beginning of the buffer
-                _ = (*(DiskPageHeader*)bufferPtr).Initialize(SectorSize);
-                var bufferSpan = new Span<byte>(bufferPtr, PageBorderLen);
-                var copyLen = PageBorderLen - DiskPageHeader.Size;
-                data.Slice(dataOffset, copyLen).CopyTo(bufferSpan.Slice(DiskPageHeader.Size, copyLen));
-                circularPageFlushBuffers.FlushToDevice(bufferSpan, pageWriteCallback);
-                dataOffset += copyLen;
-            }
-
-            // Write the fully interior pages. Interior pages between the first and last can write the PageBorderLen buffer over the page break with footer+header combined. TODO: Should this throttle the # of simultaneous writes?
+            // Write the fully interior pages. Interior pages between the first and last can write the PageBorderLen buffer over the page break. TODO: Should this throttle the # of simultaneous writes?
             var bufferPageStartOffset = PageBorderLen;
-            var bufferPageEndOffset = circularPageFlushBuffers.pageBufferSize - SectorSize;
+            var bufferPageEndOffset = circularPageFlushBuffers.pageBufferSize;
             for (var ii = 0; ii < pageBreakInfo.internalPageCount; ii++)
             {
-                // For the last page we don't write a footer+header pair, only the footer, and so we want to break out after we've written the page
-                // interior data, and we have a different length for that.
-                if (ii == pageBreakInfo.internalPageCount - 1)
-                    bufferPageEndOffset = circularPageFlushBuffers.pageBufferSize - PageBorderLen;
-
-                // Write the interior portion of the page that would be between start and end offsets if we were actually copying. We're between the header
-                // and footer here, so it's just a simple write with no other operations.
-                {
-                    var interiorLen = bufferPageEndOffset - bufferPageStartOffset;
-                    var pageWriteCallback = new DiskWriteCallbackContext { gcHandle = gcHandle, refCountedGCHandle = refCountedGcHandle };
-                    circularPageFlushBuffers.FlushToDevice(data.Slice(dataOffset, interiorLen), pageWriteCallback);
-                    dataOffset += interiorLen;
-                }
-
-                // If we're before the last page, write the page boundary consisting of footer+header, as well as surrounding data.
-                // If we're at the last page, break out, because we only want to write the footer, so we handle that separately below.
-                if (ii < pageBreakInfo.internalPageCount - 1)
-                {
-                    var pageWriteCallback = new DiskWriteCallbackContext { buffer = circularPageFlushBuffers.bufferPool.Get(PageBorderLen) };
-                    var bufferPtr = pageWriteCallback.buffer.GetValidPointer();
-                    // Copy the sector-footerSize portion to the beginning of the block.
-                    var bufferSpan = new Span<byte>(bufferPtr, PageBorderLen);
-                    var copyLen = SectorSize - DiskPageFooter.Size;
-                    data.Slice(dataOffset, copyLen).CopyTo(bufferSpan.Slice(0, copyLen));
-                    dataOffset += copyLen;
-
-                    // Initialize the footer at the end of the first sector
-                    _ = (*(DiskPageFooter*)(bufferPtr + copyLen)).Initialize();
-                    // Initialize the header at the start of the second sector
-                    _ = (*(DiskPageHeader*)(bufferPtr + SectorSize)).Initialize(SectorSize);
-
-                    // Copy the remaining data for this page boundary after the header.
-                    copyLen = PageBorderLen - SectorSize - DiskPageHeader.Size;
-                    data.Slice(dataOffset, copyLen).CopyTo(bufferSpan.Slice(SectorSize + DiskPageHeader.Size, copyLen));
-                    circularPageFlushBuffers.FlushToDevice(bufferSpan, pageWriteCallback);
-                }
-            }
-            bufferPageEndOffset = circularPageFlushBuffers.pageBufferSize - PageBorderLen;
-
-            // Write the last page footer and PageBorderLen - footerSize bytes of the data span. Do NOT write the header for the following page
-            // (if there even is a following page), because we will need the following page to set the header's record start offset, etc.
-            {
+                // Write the PageBorderLen bytes containing header + some bytes from the data (adjust this number for efficiency).
                 var pageWriteCallback = new DiskWriteCallbackContext { buffer = circularPageFlushBuffers.bufferPool.Get(PageBorderLen) };
                 var bufferPtr = pageWriteCallback.buffer.GetValidPointer();
-                // Initialize the footer at the end of the buffer
-                _ = (*(DiskPageFooter*)(bufferPtr + PageBorderLen - DiskPageFooter.Size)).Initialize();
+                // Initialize the header at the start of the PageBorder
+                _ = (*(DiskPageHeader*)bufferPtr).Initialize(SectorSize);
+
+                // Copy the remaining data for this page boundary after the header.
+                var copyLen = PageBorderLen - DiskPageHeader.Size;
                 var bufferSpan = new Span<byte>(bufferPtr, PageBorderLen);
-                var copyLen = PageBorderLen - DiskPageFooter.Size;
-                data.Slice(dataOffset, copyLen).CopyTo(bufferSpan.Slice(0, copyLen));
+                data.Slice(dataOffset, copyLen).CopyTo(bufferSpan.Slice(SectorSize + DiskPageHeader.Size, copyLen));
                 circularPageFlushBuffers.FlushToDevice(bufferSpan, pageWriteCallback);
-                // No need to update dataOffset; we're done
+                dataOffset += copyLen;
+
+                var interiorLen = bufferPageEndOffset - bufferPageStartOffset;
+                pageWriteCallback = new DiskWriteCallbackContext { gcHandle = gcHandle, refCountedGCHandle = refCountedGcHandle };
+                circularPageFlushBuffers.FlushToDevice(data.Slice(dataOffset, interiorLen), pageWriteCallback);
+                dataOffset += interiorLen;
             }
         }
 

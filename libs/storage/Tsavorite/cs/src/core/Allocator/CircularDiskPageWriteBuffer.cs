@@ -47,8 +47,9 @@ namespace Tsavorite.core
 
         internal int SectorSize => (int)device.SectorSize;
 
-        /// <summary>The amount of data space on the disk page between the header and footer</summary>
-        internal int UsablePageSize => pageBufferSize - DiskPageHeader.Size - DiskPageFooter.Size;
+        /// <summary>The amount of data space on the disk page between the header and end of page. Does not include any lengthSpaceReserve for continuation-chunk lengths; this is
+        /// handled by <see cref="DiskStreamWriter.Write(ReadOnlySpan{byte}, System.Threading.CancellationToken)"/> and <see cref="DiskStreamWriter.OnBufferComplete(int)"/>.</summary>
+        internal int UsablePageSize => pageBufferSize - DiskPageHeader.Size;
 
         internal CircularDiskPageWriteBuffer(SectorAlignedBufferPool bufferPool, int pageBufferSize, int numPageBuffers, IDevice device, ILogger logger)
         {
@@ -154,7 +155,6 @@ namespace Tsavorite.core
                 var sectorEnd = RoundUp(buffer.currentPosition, SectorSize);
                 if (sectorEnd > buffer.currentPosition)
                 {
-                    TODO("If we keep footer we'll need to adjust this as recordEnd could be just before footer, which isn't sector-aligned");
                     var recordEnd = RoundUp(buffer.currentPosition, Constants.kRecordAlignment);
                     if (sectorEnd > recordEnd)
                     {

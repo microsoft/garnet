@@ -48,7 +48,7 @@ namespace Tsavorite.core
             flushedUntilPosition = currentPosition;
         }
 
-        internal int RemainingCapacity => memory.AlignedTotalCapacity - DiskPageFooter.Size - currentPosition;  // DiskPageHeader.Size is included in currentPosition
+        internal int RemainingCapacity => memory.AlignedTotalCapacity - currentPosition;  // DiskPageHeader.Size is included in currentPosition
 
         internal ReadOnlySpan<byte> GetTailSpan(int start) => new(memory.GetValidPointer() + start, currentPosition - start);
 

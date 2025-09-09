@@ -31,11 +31,8 @@ namespace Tsavorite.core
             /// <summary>The page buffer size; current a global constant but if it becomes customizable it will have to be read.</summary>
             internal readonly int pageBufferSize;
 
-            /// <summary>The amount of data space on the disk page between the header and footer</summary>
-            internal int UsablePageSize => pageBufferSize - DiskPageHeader.Size - DiskPageFooter.Size;
-
-            /// <summary>The last usable position on the page.</summary>
-            internal int PageEndPosition => pageBufferSize - DiskPageFooter.Size;
+            /// <summary>The amount of data space on the disk page between the header and end of page</summary>
+            internal int UsablePageSize => pageBufferSize - DiskPageHeader.Size;
 
             /// <summary>The record address (without AddressType), i.e. the sector-unaligned (but record-aligned) start of the record on the device</summary>
             internal readonly long recordAddress;

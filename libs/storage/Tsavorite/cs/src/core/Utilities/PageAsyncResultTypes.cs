@@ -166,7 +166,7 @@ namespace Tsavorite.core
         /// unnecessary allocation. It is freed (and the object unpinned) after the Write.</summary>
         public GCHandle gcHandle;
 
-        /// <summary> If this non-null it means a Write was at a page boundary where we had to insert a <see cref="DiskPageHeader"/> or <see cref="DiskPageFooter"/>, or for some other reason
+        /// <summary> If this non-null it means a Write was at a page boundary where we had to insert a <see cref="DiskPageHeader"/>, or for some other reason
         /// had to allocate a temp buffer to insert something.</summary>
         public SectorAlignedMemory buffer;
 
@@ -291,17 +291,17 @@ namespace Tsavorite.core
         public GCHandle gcHandle;
 
         /// <summary>If this non-null it means a Read was either not at a page boundary, or is small enough that we will read and then shift-copy over the
-        /// <see cref="DiskPageHeader"/> or <see cref="DiskPageFooter"/> because it can't be part of the data returned to the caller.
+        /// <see cref="DiskPageHeader"/> because it can't be part of the data returned to the caller.
         /// </summary>
         public SectorAlignedMemory buffer;
 
         /// <summary>If <see cref="CopyTarget"/> is not null, these are the start offset(s) of the range(s) to copy to it from <see cref="buffer"/>;
-        /// i.e. the start(s) of the range(s) before or after the page boundary header+footer combo in the read that will be skipped in the copy to a final buffer
+        /// i.e. the start(s) of the range(s) before or after the page boundary header in the read that will be skipped in the copy to a final buffer
         /// (this copy will be done by the caller's callback). If negative, no copy is done.</summary>
         public int copyTargetFirstSourceOffset, copyTargetSecondSourceOffset;
 
         /// <summary>If <see cref="CopyTarget"/> is not null, these are the length(s) of the range(s) to copy to it from <see cref="buffer"/>;
-        /// i.e. the length(s) of the range(s) before or after the page boundary header+footer combo in the read that will be skipped in the copy to a final buffer
+        /// i.e. the length(s) of the range(s) before or after the page boundary header in the read that will be skipped in the copy to a final buffer
         /// (this copy will be done by the caller's callback).</summary>
         public int copyTargetFirstSourceLength, copyTargetSecondSourceLength;
 

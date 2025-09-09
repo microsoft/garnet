@@ -15,20 +15,18 @@ namespace Tsavorite.core
         internal long internalPageCount;
 
         /// <summary>
-        /// The total number of bytes taken by page headers and footers in the written span.
+        /// The total number of bytes taken by page headers in the written span.
         /// </summary>
         internal readonly long TotalPageBreakBytes
         {
             get
             {
-                var result = internalPageCount * (DiskPageHeader.Size + DiskPageFooter.Size);
+                var result = internalPageCount * DiskPageHeader.Size;
                 
                 // We split first and last page fragments even if there are no page breaks, if the data length is longer than MaxCopySpanLen.
                 // This isn't strictly a "page break" but it allows the caller to do a direct read/write of the larger sector-aligned portions, if desired.
                 if (hasPageBreak)
                 {
-                    if (firstPageFragmentSize > 0)
-                        result += DiskPageFooter.Size;
                     if (lastPageFragmentSize > 0)
                         result += DiskPageHeader.Size;
                 }
@@ -47,7 +45,7 @@ namespace Tsavorite.core
         /// The number of bytes in the data fragment that follows the last page break. It is up to the caller whether to handle this specially
         /// (e.g. copy to buffer vs. write it directly from the input data if it's past some size such as <see cref="DiskStreamWriter.MaxCopySpanLen"/>).
         /// </summary>
-        /// <remarks>This may be zero, if the interior portion (including insertion of header and footer) ended on a sector boundary. And it end with the
+        /// <remarks>This may be zero, if the interior portion (including insertion of header) ended on a sector boundary. And it end with the
         /// optionals, which may also cross a page boundary.</remarks>
         internal int lastPageFragmentSize;
 

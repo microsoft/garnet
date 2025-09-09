@@ -21,17 +21,14 @@ namespace Tsavorite.core
     ///         of all buffers, then as soon as we finish processing a buffer we enqueue a read of the next chunk into that buffer before
     ///         moving to the next buffer.</item>
     ///     <item>Not supported: We don't know the full object size up front; we didn't know it at write time, so we generated page
-    ///         images that have a "continuation length" in <see cref="DiskPageFooter.valueLength"/> to "chain" the chunks together.
+    ///         images that have a "continuation length" in the last sizeof(int) bytes of the page, to "chain" the chunks together.
     ///         This tells us how much data to read on the next page. It may be zero, in which case we are done. Unlike the case where
     ///         <see cref="IHeapObject.SerializedSizeIsExact"/> is supported, we cannot read multiple pages at once because we don't
     ///         know the total size, except for the second page, which is part of the first page's "valueLength" (because Flush must
-    ///         serialize one page ahead before updating the length on the current page). Therefore, on deserialization start, we read
-    ///         the first page into the first buffer, the second page into the second buffer, and then let the callbacks follow the chain.
-    ///         In the callback, we inspect the <see cref="DiskPageFooter.valueLength"/> and if it is nonzero, we issue a read to the next
-    ///         buffer. Similarly, when that next page's read completes, its callback looks to see if <see cref="DiskPageFooter.valueLength"/>
-    ///         shows more pages to be read. This continues (while the earlier pages are executing deserialization logic) until there is no
-    ///         more data or there are no more free buffers. As with the previous case, if there is more data to retrieve after a buffer is
-    ///         done processing deserialization logic, we issue a read of the next chunk into that buffer before moving to the next buffer.</item>
+    ///         serialize one page ahead before updating the length on the current page). After that we simply read ahead one buffer
+    ///         (when we move to a buffer, we read its continuation length and issue a read for the next buffer, which executes while
+    ///         we are doing deserialization of the newly moved-to buffer). We also limit the buffer count to two for chained chunks,
+    ///         as we can only read one buffer ahead at a time (the initial read of two buffers is consistent with this).</item>
     /// </list>
     /// </summary>
     /// <remarks>This class implements <see cref="IDisposable"/> because reads are all Wait()ed on (in parallel) before the
@@ -51,8 +48,9 @@ namespace Tsavorite.core
 
         internal int SectorSize => (int)device.SectorSize;
 
-        /// <summary>The amount of data space on the disk page between the header and footer</summary>
-        internal int UsablePageSize => pageBufferSize - DiskPageHeader.Size - DiskPageFooter.Size;
+        /// <summary>The amount of data space on the disk page between the header and end of page. Does not include any lengthSpaceReserve for continuation-chunk lengths;
+        /// that's included in the read-request length and examined in the buffer processing.</summary>
+        internal int UsablePageSize => pageBufferSize - DiskPageHeader.Size;
 
         /// <summary>If true, then there is another chunk to read after the currently in-flight chunk read.</summary>
         /// <remarks>This becomes false on the last chunk, which does not have the continuation bit set.</remarks>
@@ -196,11 +194,11 @@ namespace Tsavorite.core
             var alignedStartPosition = RoundDown(startPosition, SectorSize);
             var startPadding = startPosition - alignedStartPosition;
 
-            buffer.isLastChunk = startPosition + chunkLength < pageBufferSize - DiskPageFooter.Size;
+            buffer.isLastChunk = startPosition + chunkLength < pageBufferSize;
             if (buffer.isLastChunk)
             {
                 // It all fits on one page. See if there is room on the page to add the optionals to it, then issue the read and return.
-                if (optionalLength > 0 && startPosition + (int)chunkLength < pageBufferSize - optionalLength - DiskPageFooter.Size)
+                if (optionalLength > 0 && startPosition + (int)chunkLength < pageBufferSize - optionalLength)
                 {
                     buffer.optionalLength = optionalLength;
                     optionalsWereRead = true;
@@ -210,16 +208,11 @@ namespace Tsavorite.core
             }
             else
             {
-                unalignedReadLength = pageBufferSize - DiskPageFooter.Size - startPosition;
+                unalignedReadLength = pageBufferSize - startPosition;
                 alignedReadLength = (uint)(pageBufferSize - alignedStartPosition);
             }
             readCumulativeLength += unalignedReadLength;
             return buffer;
-        }
-
-        internal void OnDeserializationComplete()
-        {
-            // Currently nothing to do here.
         }
 
         /// <summary>

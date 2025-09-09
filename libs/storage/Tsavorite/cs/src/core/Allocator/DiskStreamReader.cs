@@ -115,7 +115,7 @@ namespace Tsavorite.core
             diskLogRecord = default;
             recordOptionals.Initialize();
 
-            // First see if we have a page footer/header combo in this initial (possibly partial) record, and compact over it if so.
+            // First see if we have a page break in this initial (possibly partial) record, and compact over it if so.
             var initialPageBreakBytes = CompactOverPageBreakIfNeeded(recordBuffer, offsetToStartOfField: 0, out var offsetToInitialPageBreak);
             var currentLength = recordBuffer.required_bytes;   // This is adjusted if we compacted over the page break
 
@@ -261,36 +261,38 @@ namespace Tsavorite.core
             var result = address + optionalLength;
             if (optionalLength == 0)
                 return result;
-            return GetPage(address) == GetPage(result) ? result : result + DiskPageFooter.Size + DiskPageHeader.Size;
+
+            // There is a page break so add space for the header.
+            return GetPage(address) == GetPage(result) ? result : result + DiskPageHeader.Size;
         }
 
         /// <summary>
-        /// If this record buffer spans a single footer/header combo, shift the contents to be contiguous and update the size. Caller must ensure the size is less than a full page.
+        /// If this record buffer spans a single page break, shift the contents to be contiguous and update the size. Caller must ensure the size is less than a full page.
         /// </summary>
         /// <param name="recordBuffer">The record buffer to pack, if needed</param>
         /// <param name="offsetToStartOfField">The offset (from <see cref="DiskReadParameters.recordAddress"/>) to the start of the field (or zero for start of record), which defines its offset in the page buffer</param>
         /// <param name="offsetToPageBreak">The offset to the page break, if one was detected</param>
-        /// <returns>The number of bytes removed (due to the footer+header); may be 0</returns>
+        /// <returns>The number of bytes removed (due to the page header); may be 0</returns>
         internal int CompactOverPageBreakIfNeeded(SectorAlignedMemory recordBuffer, long offsetToStartOfField, out int offsetToPageBreak)
         {
             Debug.Assert(recordBuffer.required_bytes <= readParams.UsablePageSize, $"recordBuffer.required_bytes {recordBuffer.required_bytes} must be less than one usable page here");
             var fieldOffset = (readParams.recordAddress + offsetToStartOfField) & (readParams.pageBufferSize - 1);
-            offsetToPageBreak = (int)(readParams.pageBufferSize - DiskPageFooter.Size - fieldOffset);
+            offsetToPageBreak = (int)(readParams.pageBufferSize - fieldOffset);
             if (offsetToPageBreak < recordBuffer.required_bytes)
             {
                 // Pack by doing the shorter copy
-                var spaceOnNextPage = recordBuffer.required_bytes - offsetToPageBreak - DiskPageFooter.Size - DiskPageHeader.Size;
+                var spaceOnNextPage = recordBuffer.required_bytes - offsetToPageBreak - DiskPageHeader.Size;
                 if (offsetToPageBreak < spaceOnNextPage)
                 {
-                    new ReadOnlySpan<byte>(recordBuffer.GetValidPointer(), offsetToPageBreak).CopyTo(new Span<byte>(recordBuffer.GetValidPointer() + DiskPageFooter.Size + DiskPageHeader.Size, offsetToPageBreak));
-                    recordBuffer.valid_offset += DiskPageFooter.Size + DiskPageHeader.Size;
+                    new ReadOnlySpan<byte>(recordBuffer.GetValidPointer(), offsetToPageBreak).CopyTo(new Span<byte>(recordBuffer.GetValidPointer() + DiskPageHeader.Size, offsetToPageBreak));
+                    recordBuffer.valid_offset += DiskPageHeader.Size;
                 }
                 else
                     new ReadOnlySpan<byte>(recordBuffer.GetValidPointer() + (recordBuffer.required_bytes - spaceOnNextPage), spaceOnNextPage).CopyTo(new Span<byte>(recordBuffer.GetValidPointer() + offsetToPageBreak, spaceOnNextPage));
 
                 // Now we no longer want the page-break metadata to count in the "requested size"
-                recordBuffer.required_bytes -= DiskPageFooter.Size + DiskPageHeader.Size;
-                return DiskPageFooter.Size + DiskPageHeader.Size;
+                recordBuffer.required_bytes -= DiskPageHeader.Size;
+                return DiskPageHeader.Size;
             }
 
             // There is no page break. Set offsetToPageBreak to the max value so callers don't have to do two "if"s
@@ -570,14 +572,14 @@ namespace Tsavorite.core
                         context = new(countdownEvent, refCountedGCHandle)
                         {
                             copyTargetFirstSourceOffset = 0,    // Already sector-aligned
-                            copyTargetFirstSourceLength = alignedBytesToRead - DiskPageFooter.Size,
+                            copyTargetFirstSourceLength = alignedBytesToRead,
                             copyTargetDestinationOffset = destinationOffset
                         };
                     }
 
                     // We know there's a following page so we'll read up to the first sector on that following page; there'll be two pieces separated by the page break metadata.
                     alignedBytesToRead += SectorSize;
-                    context.copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageFooter.Size + DiskPageHeader.Size;
+                    context.copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageHeader.Size;
                     context.copyTargetSecondSourceLength = SectorSize - DiskPageHeader.Size;
 
                     // If the next page is not an internal page, make sure we only copy the lastPageFragmentSize (this handles the zero case as well).
@@ -594,7 +596,7 @@ namespace Tsavorite.core
                 // Handle internal pages. The alignedBytesToRead components are all already sector-aligned. TODO: Should this throttle the # of simultaneous reads?
                 for (var ii = 0; ii < pageBreakInfo.internalPageCount; ii++)
                 {
-                    // Minus sectorSize for header (already read on previous iteration); minus bufferSizeAtEndOfPage for footer
+                    // Minus sectorSize for header (already read on previous iteration); minus bufferSizeAtEndOfPage page breaks
                     alignedBytesToRead = readParams.pageBufferSize - SectorSize - bufferSizeAtEndOfPage;
 
                     // Direct-read the page interior. The boundaries of this read are already sector-aligned.
@@ -623,7 +625,7 @@ namespace Tsavorite.core
                         copyTargetDestinationOffset = destinationOffset,
 
                         // Calculate based on previous context, before we assign the newly-constructed replacement context to the local variable.
-                        copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageFooter.Size + DiskPageHeader.Size,
+                        copyTargetSecondSourceOffset = context.copyTargetFirstSourceOffset + context.copyTargetFirstSourceLength + DiskPageHeader.Size,
                         copyTargetSecondSourceLength = SectorSize - DiskPageHeader.Size
                     };
 
@@ -863,7 +865,7 @@ namespace Tsavorite.core
 
                 var actualOptionalPosition = offsetToValueStart + actualValueLength;
                 var optionalAddress = readParams.recordAddress + actualOptionalPosition;
-                var readLength = DiskPageFooter.Size + DiskPageHeader.Size + optionalLength;
+                var readLength = DiskPageHeader.Size + optionalLength;
                 var (alignedDeviceAddress, padding) = readParams.GetAlignedReadStart(optionalAddress);
                 var optionalPositionInBuffer = optionalAddress & (SectorSize - 1);  // Set this to Sector alignment, not Page-alignment
                 buffer.ReadFromDevice((ulong)alignedDeviceAddress, (int)optionalPositionInBuffer, readLength, circularDeserializationBuffers.ReadFromDeviceCallback);

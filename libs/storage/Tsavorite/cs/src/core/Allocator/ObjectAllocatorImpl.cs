@@ -421,7 +421,7 @@ namespace Tsavorite.core
             // and accounts for the growth due to both DiskPageHeader and key/value expansion. Note: "Aligned" in this discussion refers to sector aligned (as opposed to record alignment).
 
             // Initialize offsets into the allocator page based on full-page, then override them if partial. pageStart subtraction is needed because it offsets all logicalAddresses;
-            // we must adjust them to start at zero, then add FlushDiskTailOffset (which includes Header, Footer, and forced sector alignment on the final flush to disk of the partialflush).
+            // we must adjust them to start at zero, then add FlushDiskTailOffset (which includes Header and forced sector alignment on the final flush to disk of the partial flush).
             int startOffset = 0, endOffset = (int)numBytesToWrite;
             var pageStart = GetStartLogicalAddressOfPage(asyncResult.page);
             if (asyncResult.partial)
