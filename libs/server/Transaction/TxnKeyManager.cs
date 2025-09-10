@@ -71,7 +71,7 @@ namespace Garnet.server
                 var isReadOnly = (keySpec.Flags & KeySpecificationFlags.RO) == KeySpecificationFlags.RO;
                 var lockType = isReadOnly ? LockType.Shared : LockType.Exclusive;
 
-                for (var currIdx = searchArgs.firstIdx; currIdx <= searchArgs.lastIdx; currIdx += searchArgs.step + 1)
+                for (var currIdx = searchArgs.firstIdx; currIdx <= searchArgs.lastIdx; currIdx += searchArgs.step)
                 {
                     var key = respSession.parseState.GetArgSliceByRef(currIdx);
                     if (cmdInfo.StoreType is StoreType.Main or StoreType.All)

@@ -922,7 +922,7 @@ namespace Garnet.server
 
             return true;
         }
-
+        
         /// <summary>
         /// Extracts the first, last, and step arguments for key searching based on a simplified RESP key specification and the current parse state.
         /// </summary>
@@ -940,7 +940,7 @@ namespace Garnet.server
                 ? parseState.Count + keySpec.BeginSearch.Index
                 : keySpec.BeginSearch.Index - (isSubCommand ? 2 : 1);
 
-            if (beginSearchIdx < 0 && beginSearchIdx >= parseState.Count)
+            if (beginSearchIdx < 0 || beginSearchIdx >= parseState.Count)
                 return false;
 
             var firstKeyIdx = -1;

@@ -162,7 +162,7 @@ namespace CommandInfoUpdater
                 if (subCommandsToRemove.Length > 0)
                 {
                     commandsToRemove.Add(
-                        new SupportedCommand(existingCommand.Key, existingCommand.Value.Command, 0, subCommandsToRemove), false);
+                        new SupportedCommand(existingCommand.Key, existingCommand.Value.Command, StoreType.None, subCommandsToRemove), false);
                 }
             }
 

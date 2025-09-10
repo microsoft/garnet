@@ -12,7 +12,7 @@ namespace CommandInfoUpdater
     public class SupportedCommand
     {
         private static readonly SupportedCommand[] AllSupportedCommands = [
-            new("ACL", RespCommand.ACL, 0,
+            new("ACL", RespCommand.ACL, StoreType.None,
             [
                 new("ACL|CAT", RespCommand.ACL_CAT),
                 new("ACL|DELUSER", RespCommand.ACL_DELUSER),
@@ -44,7 +44,7 @@ namespace CommandInfoUpdater
             new("BZPOPMAX", RespCommand.BZPOPMAX, StoreType.Object),
             new("BZPOPMIN", RespCommand.BZPOPMIN, StoreType.Object),
             new("BLMPOP", RespCommand.BLMPOP, StoreType.Object),
-            new("CLIENT", RespCommand.CLIENT, 0,
+            new("CLIENT", RespCommand.CLIENT, StoreType.None,
             [
                 new("CLIENT|ID", RespCommand.CLIENT_ID),
                 new("CLIENT|INFO", RespCommand.CLIENT_INFO),
@@ -55,7 +55,7 @@ namespace CommandInfoUpdater
                 new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
                 new("CLIENT|UNBLOCK", RespCommand.CLIENT_UNBLOCK),
             ]),
-            new("CLUSTER", RespCommand.CLUSTER, 0,
+            new("CLUSTER", RespCommand.CLUSTER, StoreType.None,
             [
                 new("CLUSTER|ADDSLOTS", RespCommand.CLUSTER_ADDSLOTS),
                 new("CLUSTER|ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
@@ -103,7 +103,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
                 new("CLUSTER|SYNC", RespCommand.CLUSTER_SYNC),
             ]),
-            new("COMMAND", RespCommand.COMMAND, 0,
+            new("COMMAND", RespCommand.COMMAND, StoreType.None,
             [
                 new("COMMAND|INFO", RespCommand.COMMAND_INFO),
                 new("COMMAND|COUNT", RespCommand.COMMAND_COUNT),
@@ -112,7 +112,7 @@ namespace CommandInfoUpdater
                 new("COMMAND|GETKEYSANDFLAGS", RespCommand.COMMAND_GETKEYSANDFLAGS),
             ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
-            new("CONFIG", RespCommand.CONFIG, 0,
+            new("CONFIG", RespCommand.CONFIG, StoreType.None,
             [
                 new("CONFIG|GET", RespCommand.CONFIG_GET),
                 new("CONFIG|SET", RespCommand.CONFIG_SET),
@@ -193,7 +193,7 @@ namespace CommandInfoUpdater
             new("KEYS", RespCommand.KEYS),
             new("LCS", RespCommand.LCS, StoreType.Main),
             new("LASTSAVE", RespCommand.LASTSAVE),
-            new("LATENCY", RespCommand.LATENCY, 0,
+            new("LATENCY", RespCommand.LATENCY, StoreType.None,
             [
                 new("LATENCY|HELP", RespCommand.LATENCY_HELP),
                 new("LATENCY|HISTOGRAM", RespCommand.LATENCY_HISTOGRAM),
@@ -212,14 +212,14 @@ namespace CommandInfoUpdater
             new("LREM", RespCommand.LREM, StoreType.Object),
             new("LSET", RespCommand.LSET, StoreType.Object),
             new("LTRIM", RespCommand.LTRIM, StoreType.Object),
-            new("MEMORY", RespCommand.MEMORY, 0,
+            new("MEMORY", RespCommand.MEMORY, StoreType.None,
             [
                 new("MEMORY|USAGE", RespCommand.MEMORY_USAGE),
             ]),
             new("MGET", RespCommand.MGET, StoreType.Main),
             new("MIGRATE", RespCommand.MIGRATE),
             new("PURGEBP", RespCommand.PURGEBP),
-            new("MODULE", RespCommand.MODULE, 0,
+            new("MODULE", RespCommand.MODULE, StoreType.None,
             [
                 new("MODULE|LOADCS", RespCommand.MODULE_LOADCS),
             ]),
@@ -239,7 +239,7 @@ namespace CommandInfoUpdater
             new("PSUBSCRIBE", RespCommand.PSUBSCRIBE),
             new("PTTL", RespCommand.PTTL, StoreType.All),
             new("PUBLISH", RespCommand.PUBLISH),
-            new("PUBSUB", RespCommand.PUBSUB, 0,
+            new("PUBSUB", RespCommand.PUBSUB, StoreType.None,
             [
                 new("PUBSUB|CHANNELS", RespCommand.PUBSUB_CHANNELS),
                 new("PUBSUB|NUMPAT", RespCommand.PUBSUB_NUMPAT),
@@ -277,7 +277,7 @@ namespace CommandInfoUpdater
             new("SETRANGE", RespCommand.SETRANGE, StoreType.Main),
             new("SISMEMBER", RespCommand.SISMEMBER, StoreType.Object),
             new("SLAVEOF", RespCommand.SECONDARYOF),
-            new("SLOWLOG", RespCommand.SLOWLOG, 0,
+            new("SLOWLOG", RespCommand.SLOWLOG, StoreType.None,
             [
                 new("SLOWLOG|GET", RespCommand.SLOWLOG_GET),
                 new("SLOWLOG|LEN", RespCommand.SLOWLOG_LEN),
@@ -355,7 +355,7 @@ namespace CommandInfoUpdater
             new("ZUNIONSTORE", RespCommand.ZUNIONSTORE, StoreType.Object),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
-            new("SCRIPT", RespCommand.SCRIPT, 0,
+            new("SCRIPT", RespCommand.SCRIPT, StoreType.None,
             [
                 new("SCRIPT|EXISTS", RespCommand.SCRIPT_EXISTS),
                 new("SCRIPT|FLUSH", RespCommand.SCRIPT_FLUSH),
