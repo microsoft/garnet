@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -14,10 +12,10 @@ namespace Garnet.server
         /// Get supported latency commands and a short description
         /// </summary>
         /// <returns></returns>
-        public static List<string> GetSlowLogCommands()
+        public static string[] GetSlowLogCommands()
         {
-            return new List<string>()
-            {
+            return
+            [
                 "SLOWLOG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                 "GET [<count>]",
                 "\tReturn top <count> entries from the slowlog (default: 10, -1 mean all).",
@@ -30,7 +28,7 @@ namespace Garnet.server
                 "\tReset the slowlog.",
                 "HELP",
                 "\tPrints this help"
-            };
+            ];
         }
     }
 }

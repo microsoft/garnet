@@ -86,6 +86,16 @@ Array reply: a nested array where each item contains:
 2. An array of access flag strings that apply to that key
 
 ---
+
+### COMMAND HELP
+
+```bash
+    COMMAND HELP
+```
+
+The COMMAND HELP command returns a helpful text describing the different subcommands.
+
+---
 ### COMMAND INFO
 #### Syntax
 
@@ -130,6 +140,16 @@ The CONFIG GET command is used to read the configuration parameters of a running
 #### Resp Reply
 
 Array reply: a list of configuration parameters matching the provided arguments.
+
+---
+
+### CONFIG HELP
+
+```bash
+    CONFIG HELP
+```
+
+The CONFIG HELP command returns a helpful text describing the different subcommands.
 
 ---
 ### CONFIG SET
@@ -276,6 +296,16 @@ SLOWLOG HELP
 ```
 
 Returns a list of supported SLOWLOG sub-commands.
+
+---
+
+### MEMORY HELP
+
+```bash
+    MEMORY HELP
+```
+
+The MEMORY HELP command returns a helpful text describing the different subcommands.
 
 ---
 ### MEMORY USAGE

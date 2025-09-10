@@ -18,6 +18,7 @@ namespace CommandInfoUpdater
                 new("ACL|DELUSER", RespCommand.ACL_DELUSER),
                 new("ACL|GENPASS", RespCommand.ACL_GENPASS),
                 new("ACL|GETUSER", RespCommand.ACL_GETUSER),
+                new("ACL|HELP", RespCommand.ACL_HELP),
                 new("ACL|LIST", RespCommand.ACL_LIST),
                 new("ACL|LOAD", RespCommand.ACL_LOAD),
                 new("ACL|SAVE", RespCommand.ACL_SAVE),
@@ -54,6 +55,7 @@ namespace CommandInfoUpdater
                 new("CLIENT|SETNAME", RespCommand.CLIENT_SETNAME),
                 new("CLIENT|SETINFO", RespCommand.CLIENT_SETINFO),
                 new("CLIENT|UNBLOCK", RespCommand.CLIENT_UNBLOCK),
+                new("CLIENT|HELP", RespCommand.CLIENT_HELP),
             ]),
             new("CLUSTER", RespCommand.CLUSTER,
             [
@@ -110,11 +112,13 @@ namespace CommandInfoUpdater
                 new("COMMAND|DOCS", RespCommand.COMMAND_DOCS),
                 new("COMMAND|GETKEYS", RespCommand.COMMAND_GETKEYS),
                 new("COMMAND|GETKEYSANDFLAGS", RespCommand.COMMAND_GETKEYSANDFLAGS),
+                new("COMMAND|HELP", RespCommand.COMMAND_HELP),
             ]),
             new("COMMITAOF", RespCommand.COMMITAOF),
             new("CONFIG", RespCommand.CONFIG,
             [
                 new("CONFIG|GET", RespCommand.CONFIG_GET),
+                new("CONFIG|HELP", RespCommand.CONFIG_HELP),
                 new("CONFIG|SET", RespCommand.CONFIG_SET),
                 new("CONFIG|REWRITE", RespCommand.CONFIG_REWRITE),
             ]),
@@ -215,6 +219,7 @@ namespace CommandInfoUpdater
             new("LTRIM", RespCommand.LTRIM),
             new("MEMORY", RespCommand.MEMORY,
             [
+                new("MEMORY|HELP", RespCommand.MEMORY_HELP),
                 new("MEMORY|USAGE", RespCommand.MEMORY_USAGE),
             ]),
             new("MGET", RespCommand.MGET),
@@ -222,6 +227,7 @@ namespace CommandInfoUpdater
             new("PURGEBP", RespCommand.PURGEBP),
             new("MODULE", RespCommand.MODULE,
             [
+                new("MODULE|HELP", RespCommand.MODULE_HELP),
                 new("MODULE|LOADCS", RespCommand.MODULE_LOADCS),
             ]),
             new("MONITOR", RespCommand.MONITOR),
@@ -243,6 +249,7 @@ namespace CommandInfoUpdater
             new("PUBSUB", RespCommand.PUBSUB,
             [
                 new("PUBSUB|CHANNELS", RespCommand.PUBSUB_CHANNELS),
+                new("PUBSUB|HELP", RespCommand.PUBSUB_HELP),
                 new("PUBSUB|NUMPAT", RespCommand.PUBSUB_NUMPAT),
                 new("PUBSUB|NUMSUB", RespCommand.PUBSUB_NUMSUB),
             ]),
@@ -360,6 +367,7 @@ namespace CommandInfoUpdater
             [
                 new("SCRIPT|EXISTS", RespCommand.SCRIPT_EXISTS),
                 new("SCRIPT|FLUSH", RespCommand.SCRIPT_FLUSH),
+                new("SCRIPT|HELP", RespCommand.SCRIPT_HELP),
                 new("SCRIPT|LOAD", RespCommand.SCRIPT_LOAD),
             ])
         ];

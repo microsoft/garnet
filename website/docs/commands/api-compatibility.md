@@ -46,7 +46,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETUSER](acl.md#acl-getuser) | ➕ |  |
 |  | [LIST](acl.md#acl-list) | ➕ |  |
 |  | [LOAD](acl.md#acl-load) | ➕ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | LOG | ➖ |  |
 |  | [SAVE](acl.md#acl-save) | ➕ |  |
 |  | [SETUSER](acl.md#acl-setuser) | ➕ |  |
@@ -63,7 +63,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="client">**CLIENT**</span> | CACHING | ➖ |  |
 |  | [GETNAME](client.md#client-getname) | ➕ |  |
 |  | GETREDIR | ➖ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | [ID](client.md#client-id) | ➕ |  |
 |  | [INFO](client.md#client-info) | ➕ |  |
 |  | [KILL](client.md#client-kill) | ➕ |  |
@@ -113,7 +113,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DOCS](server.md#command-docs) | ➕ |  |
 |  | [GETKEYS](server.md#command-getkeys) | ➕ |  |
 |  | [GETKEYSANDFLAGS](server.md#command-getkeysandflags) | ➕ |  |
-|  | HELP | ➖ |  | 
+|  | HELP | ➕ |  | 
 |  | [INFO](server.md#command-info) | ➕ |  | 
 |  | LIST | ➖ |  | 
 | <span id="connection">**CONNECTION**</span> | [AUTH](generic-commands.md#auth) | ➕ |  |
@@ -203,7 +203,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | MOVE | ➖ |  |
 | <span id="latency">**LATENCY**</span> | DOCTOR | ➖ |  |
 |  | GRAPH | ➖ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | [HISTOGRAM](server.md#latency-histogram) | ➕ |  |
 |  | HISTORY | ➖ |  |
 |  | LATEST | ➖ |  |
@@ -231,12 +231,12 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [RPUSH](data-structures.md#rpush) | ➕ |  |
 |  | [RPUSHX](data-structures.md#rpushx) | ➕ |  |
 | <span id="memory">**MEMORY**</span> | DOCTOR | ➖ |  |
-|  | HELP | ➖ |  |
+|  | HELP | ➕ |  |
 |  | MALLOC-STATS | ➖ |  |
 |  | PURGE | ➖ |  |
 |  | STATS | ➖ |  |
 |  | [USAGE](server.md#memory-usage) | ➕ |  |
-| <span id="module">**MODULE**</span> | HELP | ➖ |  |
+| <span id="module">**MODULE**</span> | HELP | ➕ |  |
 |  | LIST | ➖ |  |
 |  | LOAD | ➖ |  |
 |  | LOADEX | ➖ |  |
@@ -249,7 +249,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="pubsub">**PUB/SUB**</span> | [PSUBSCRIBE](analytics.md#psubscribe) | ➕ |  |
 |  | [PUBLISH](analytics.md#publish) | ➕ |  |
 |  | [PUBSUB CHANNELS](analytics.md#pubsub-channels) | ➕ |  |
-|  | PUBSUB HELP | ➖ |  |
+|  | PUBSUB HELP | ➕ |  |
 |  | [PUBSUB NUMPAT](analytics.md#pubsub-numpat) | ➕ |  |
 |  | [PUBSUB NUMSUB](analytics.md#pubsub-numsub) | ➕ |  |
 |  | PUBSUB SHARDCHANNELS | ➖ |  |
@@ -264,7 +264,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SCRIPT DEBUG | ➖ |  |
 |  | [SCRIPT EXISTS](scripting-and-functions.md#script-exists) | ➕ |  |
 |  | [SCRIPT FLUSH](scripting-and-functions.md#script-flush) | ➕ |  |
-|  | SCRIPT HELP | ➖ |  |
+|  | SCRIPT HELP | ➕ |  |
 |  | SCRIPT KILL | ➖ |  |
 |  | [SCRIPT LOAD](scripting-and-functions.md#script-load) | ➕ |  |
 | <span id="server">**SERVER**</span> | ACL | ➖ |  |
@@ -272,7 +272,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
-|  | CONFIG HELP | ➖ |  |
+|  | CONFIG HELP | ➕ |  |
 |  | CONFIG RESETSTAT | ➖ |  |
 |  | CONFIG REWRITE | ➖ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |

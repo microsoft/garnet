@@ -234,6 +234,16 @@ Array reply: a list of active channels, optionally matching the specified patter
 
 ---
 
+### PUBSUB HELP
+
+```bash
+    PUBSUB HELP
+```
+
+The PUBSUB HELP command returns a helpful text describing the different subcommands.
+
+---
+
 ### PUBSUB NUMPAT
 #### Syntax
 

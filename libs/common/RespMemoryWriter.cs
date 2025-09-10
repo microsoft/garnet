@@ -57,7 +57,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Writes an array str to memory.
+        /// Writes an array item to memory.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteArrayItem(long item)
@@ -192,7 +192,6 @@ namespace Garnet.common
         /// Write simple error to memory.
         /// </summary>
         /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteError(scoped ReadOnlySpan<byte> errorString)
         {
             while (!RespWriteUtils.TryWriteError(errorString, ref curr, end))
@@ -224,6 +223,18 @@ namespace Garnet.common
             {
                 while (!RespWriteUtils.TryWriteZero(ref curr, end))
                     ReallocateOutput();
+            }
+        }
+
+        /// <summary>
+        /// Write Help output
+        /// </summary>
+        public void WriteHelp(params string[] Help)
+        {
+            WriteArrayLength(Help.Length);
+            foreach (var help in Help)
+            {
+                WriteSimpleString(help);
             }
         }
 

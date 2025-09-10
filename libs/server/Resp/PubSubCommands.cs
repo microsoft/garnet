@@ -419,6 +419,28 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkPUBSUB_HELP()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments("pubsub|help");
+            }
+
+            WriteHelp(
+                "PUBSUB <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "CHANNELS [<pattern>]",
+                "\tReturn the currently active channels matching a <pattern> (default: '*').",
+                "NUMPAT",
+                "\tReturn number of subscriptions to patterns.",
+                "NUMSUB [<channel>...]",
+                "\tReturn the number of subscribers for the specified channels, excluding",
+                "\tpattern subscriptions(default: no channels).",
+                "HELP",
+                "\tPrint this help.");
+
+            return true;
+        }
+
         private bool NetworkPUBSUB_NUMPAT()
         {
             if (parseState.Count > 0)

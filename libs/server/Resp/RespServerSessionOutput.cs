@@ -123,6 +123,15 @@ namespace Garnet.server
                 SendAndReset();
         }
 
+        private void WriteHelp(params string[] Help)
+        {
+            WriteArrayLength(Help.Length);
+            foreach (var help in Help)
+            {
+                WriteSimpleString(help);
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteInt32(int value)
         {
