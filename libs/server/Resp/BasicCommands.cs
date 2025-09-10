@@ -1178,7 +1178,7 @@ namespace Garnet.server
 
             var cmdFound = false;
             var simpleCmdInfo = SimpleRespCommandInfo.Default;
-            
+
             if (Enum.TryParse<RespCommand>(cmdName, true, out var cmd))
             {
                 if (RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
@@ -1190,7 +1190,7 @@ namespace Garnet.server
                     cmdFound = true;
                 }
             }
-        
+
             if (!cmdFound)
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
 

@@ -138,7 +138,7 @@ namespace CommandInfoUpdater
                     continue;
 
                 commandInfo.StoreType = sc.StoreType;
-                
+
                 if (commandInfo.SubCommands == null)
                     continue;
 

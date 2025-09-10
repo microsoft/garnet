@@ -20,22 +20,22 @@ namespace Garnet.server
         public sbyte Arity;
 
         /// <summary>
-        /// If command is allowed in a transaction context
+        /// True if command is allowed in a transaction context
         /// </summary>
         public bool AllowedInTxn;
 
         /// <summary>
-        /// If command has sub-commands
+        /// True if command has sub-commands
         /// </summary>
         public bool IsParent;
 
         /// <summary>
-        /// If command is a sub-command
+        /// True if command is a sub-command
         /// </summary>
         public bool IsSubCommand;
 
         /// <summary>
-        /// Command key specifications
+        /// Simplified command key specifications
         /// </summary>
         public SimpleRespKeySpec[] KeySpecs;
 
@@ -53,30 +53,21 @@ namespace Garnet.server
     /// <summary>
     /// Represents a simplified version of a single key specification of a RESP command
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
     public struct SimpleRespKeySpecBeginSearch
     {
         /// <summary>
-        /// Size of struct
-        /// </summary>
-        public const int Size = 13;
-
-        /// <summary>
         /// Keyword that precedes the keys in the command arguments
         /// </summary>
-        [FieldOffset(0)]
         public byte[] Keyword;
 
         /// <summary>
         /// Index of first key or the index at which to start searching for keyword (if begin search is of keyword type)
         /// </summary>
-        [FieldOffset(8)]
         public int Index;
 
         /// <summary>
         /// If true - begin search is of type index, otherwise begin search is of type keyword
         /// </summary>
-        [FieldOffset(12)]
         public bool IsIndexType;
 
         /// <summary>

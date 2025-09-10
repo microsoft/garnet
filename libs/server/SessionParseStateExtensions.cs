@@ -868,7 +868,7 @@ namespace Garnet.server
         internal static (ArgSlice, KeySpecificationFlags)[] ExtractCommandKeysAndFlags(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
             var keysAndFlags = new List<(ArgSlice, KeySpecificationFlags)>();
-            
+
             foreach (var spec in commandInfo.KeySpecs)
                 TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysAndFlags);
 
@@ -886,7 +886,7 @@ namespace Garnet.server
         {
             if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
                 return false;
-            
+
             for (var i = searchArgs.firstIdx; i <= searchArgs.lastIdx; i += searchArgs.step)
             {
                 var key = parseState.GetArgSliceByRef(i);
@@ -958,7 +958,7 @@ namespace Garnet.server
                 {
                     if (parseState.GetArgSliceByRef(i).ReadOnlySpan
                         .EqualsUpperCaseSpanIgnoringCase(keySpec.BeginSearch.Keyword))
-                    {   
+                    {
                         // The begin search index is the argument immediately after the keyword
                         firstKeyIdx = i + 1;
                         break;
