@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Garnet.server.Metrics;
 
 namespace Garnet.server
 {
@@ -20,6 +21,7 @@ namespace Garnet.server
                 InfoMetricsType.OBJECTSTOREHASHTABLE => false,
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
+                InfoMetricsType.HLOGSCAN => false,
                 _ => true
             })];
 
@@ -39,6 +41,7 @@ namespace Garnet.server
         MetricsItem[] keyspaceInfo = null;
         MetricsItem[] bufferPoolStats = null;
         MetricsItem[] checkpointStats = null;
+        MetricsItem[][] hlogScanStats = null;
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
@@ -397,6 +400,26 @@ namespace Garnet.server
             checkpointStats = storeWrapper.clusterProvider?.GetCheckpointInfo();
         }
 
+        private void PopulateHlogScanInfo(StoreWrapper storeWrapper)
+        {
+            (HybridLogScanMetrics mainStoreMetrics, HybridLogScanMetrics objectStoreMetrics)[] res = storeWrapper.HybridLogDistributionScan();
+            var result = new List<MetricsItem[]>();
+            for (int i = 0; i < res.Length; i++)
+            {
+                var mainStoreMetric = res[i].mainStoreMetrics.DumpScanMetricsInfo();
+                mainStoreMetric = string.IsNullOrEmpty(mainStoreMetric) ? "Empty" : mainStoreMetric;
+                var objectStoreMetric = res[i].objectStoreMetrics.DumpScanMetricsInfo();
+                objectStoreMetric = string.IsNullOrEmpty(objectStoreMetric) ? "Empty" : objectStoreMetric;
+                result.Add(
+                    [
+                        new MetricsItem($"MainStore_HLog_{i}", mainStoreMetric),
+                        new MetricsItem($"ObjectStore_HLog_{i}", objectStoreMetric)
+                    ]);
+            }
+
+            hlogScanStats = result.ToArray();
+        }
+
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
         {
             // No word separators inside section names, some clients will then fail to process INFO output.
@@ -420,6 +443,7 @@ namespace Garnet.server
                 InfoMetricsType.MODULES => "Modules",
                 InfoMetricsType.BPSTATS => "BufferPoolStats",
                 InfoMetricsType.CINFO => "CheckpointInfo",
+                InfoMetricsType.HLOGSCAN => $"MainStoreHLogScan_DB_{dbId}",
                 _ => "Default",
             };
         }
@@ -523,6 +547,10 @@ namespace Garnet.server
                 case InfoMetricsType.CINFO:
                     PopulateCheckpointInfo(storeWrapper);
                     GetSectionRespInfo(header, checkpointStats, sbResponse);
+                    return;
+                case InfoMetricsType.HLOGSCAN:
+                    PopulateHlogScanInfo(storeWrapper);
+                    GetSectionRespInfo(header, hlogScanStats[dbId], sbResponse);
                     return;
                 default:
                     return;
