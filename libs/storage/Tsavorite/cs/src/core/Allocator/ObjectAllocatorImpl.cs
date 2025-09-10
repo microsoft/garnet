@@ -259,7 +259,10 @@ namespace Tsavorite.core
             // addresses), but all on-disk pages have a DiskPageHeader. The on-disk address is essentially the physical address, and accounts for the growth due to
             // both DiskPageHeader and key/value expansion.
             if (closeStartAddress == GetFirstValidLogicalAddressOnPage(0))
-                ClosedDiskTailOffset = DiskPageHeader.Size - GetFirstValidLogicalAddressOnPage(0);
+            {
+                ClosedDiskTailOffset = DiskPageHeader.Size - AbsoluteAddress(GetFirstValidLogicalAddressOnPage(0));
+                TraceExpansion($"ClosedDiskTailOffset pt 0 (initial record): {ClosedDiskTailOffset}, closeStartAddress {AbsoluteAddress(closeStartAddress)}");
+            }
 
             // Scan forward to process each closing LogRecord and advance to the next one.
             for (var closeAddress = closeStartAddress; closeAddress < closeEndAddress; /* incremented in loop*/)
@@ -448,7 +451,10 @@ namespace Tsavorite.core
 
             // If this is the first record, initialize FlushedDiskTailOffset to be the difference between the first allocator page's first valid address and the disk page header.
             if (logicalAddress == GetFirstValidLogicalAddressOnPage(0))
-                FlushedDiskTailOffset = DiskPageHeader.Size - GetFirstValidLogicalAddressOnPage(0);
+            {
+                FlushedDiskTailOffset = DiskPageHeader.Size - AbsoluteAddress(GetFirstValidLogicalAddressOnPage(0));
+                TraceExpansion($"FlushedDiskTailOffset pt 0 (initial record): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+            }
 
             // Destination address is the equivalent of physicalAddress, since there is no longer a connection between logicalAddress space and disk pages in the expanded disk page space.
             // Align destination address to the location we'll start the first write to the disk for this flush operation. This address does not have the AddressType prefix, as it is the
@@ -544,7 +550,7 @@ namespace Tsavorite.core
                 if (flushedUntilAdjustment > 0)
                 {
                     FlushedDiskTailOffset += flushedUntilAdjustment;
-                    TraceExpansion($"FlushedDiskTailOffset pt 3: {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                    TraceExpansion($"FlushedDiskTailOffset pt 3 (FUAdjustment): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
                 }
             }
             finally
