@@ -7590,6 +7590,23 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task VIsMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VISMEMBER",
+                [DoVIsMemberAsync]
+            );
+
+            static async Task DoVIsMemberAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
         public async Task VLinksACLsAsync()
         {
             await CheckCommandsAsync(

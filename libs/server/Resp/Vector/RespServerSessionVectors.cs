@@ -908,6 +908,17 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkVISMEMBER<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            // TODO: implement!
+
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
         private bool NetworkVLINKS<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {

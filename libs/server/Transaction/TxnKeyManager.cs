@@ -230,7 +230,7 @@ namespace Garnet.server
                 RespCommand.ZUNION => SortedSetObjectKeys(command, inputCount),
                 RespCommand.ZUNIONSTORE => SortedSetObjectKeys(command, inputCount),
                 // TODO: Actually implement as commands are implemented
-                RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or
+                RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or
                 RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM => SingleKey(StoreType.Object, LockType.Exclusive),
                 _ => OtherCommands(command, out error)
             };

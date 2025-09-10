@@ -7754,6 +7754,28 @@
     ]
   },
   {
+    "Command": "VISMEMBER",
+    "Name": "VISMEMBER",
+    "Summary": "Determines whether a member belongs to vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      }
+    ]
+  },
+  {
     "Command": "VLINKS",
     "Name": "VLINKS",
     "Summary": "Return the neighbors of an element in a vector set.",
