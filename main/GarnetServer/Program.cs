@@ -54,9 +54,45 @@ namespace Garnet
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
             server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
-            // Register custom command on raw strings (DELIFM = "delete if value matches")
-            server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
 
+
+
+	    // VADD: vector add (raw-string command)
+	    // Arity: 5 -> VADD key dim dtype payload
+	    // FirstKey/LastKey ensure proper key-tracking for cluster/AOF semantics
+	    var vaddInfo = new RespCommandsInfo
+		{
+		    Name = "VADD",
+		    Arity = 5,          // command + 4 args
+		    FirstKey = 1,
+		    LastKey = 1,
+		    Step = 1,
+		    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
+		    AclCategories = RespAclCategories.String | RespAclCategories.Write,
+		};
+	    server.Register.NewCommand("VADD", CommandType.ReadModifyWrite, new VAddCustomCommand(), vaddInfo);
+
+	    // VGET: vector get (read-only, returns [dim, dtype, payload])
+	    var vgetInfo = new RespCommandsInfo
+		    {
+		        Name = "VGET",
+		        Arity = 2,           // command + key
+		        FirstKey = 1,
+		        LastKey = 1,
+		        Step = 1,
+		        // No Flags field needed for read
+		        AclCategories = RespAclCategories.Read | RespAclCategories.String,
+		    };
+	    server.Register.NewCommand("VGET", CommandType.Read, new VGetCustomCommand(), vgetInfo);
+	    
+	    
+
+	    
+	    
+            // Register custom command on raw strings (DELIFM = "delete if value matches")
+            server.Register.NewCommand("DELXIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
+	    Console.WriteLine("Registered DELIFM");
+	    
             // Register custom commands on objects
             var factory = new MyDictFactory();
             server.Register.NewType(factory);
