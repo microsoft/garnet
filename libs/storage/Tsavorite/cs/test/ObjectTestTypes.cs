@@ -11,7 +11,7 @@ namespace Tsavorite.test
 {
     public enum TestValueStyle : byte { None, Inline, Overflow, Object };
 
-    public struct TestObjectKey
+    public struct  TestObjectKey
     {
         public int key;
 

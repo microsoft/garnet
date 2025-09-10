@@ -43,9 +43,9 @@ namespace Tsavorite.core
             // First wait for any pending write in this buffer to complete. If this is our first time in this buffer there won't be a CountdownEvent yet;
             // we defer that because we may not need all the buffers in the circular buffer.
             countdownEvent?.Wait();
-            memory.valid_offset = memory.available_bytes = 0;
+            memory.valid_offset = 0;
             currentPosition = (*(DiskPageHeader*)memory.GetValidPointer()).Initialize(sectorSize);
-            flushedUntilPosition = currentPosition;
+            flushedUntilPosition = 0;
         }
 
         internal int RemainingCapacity => memory.AlignedTotalCapacity - currentPosition;  // DiskPageHeader.Size is included in currentPosition
@@ -97,7 +97,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() 
-            => $"currPos {currentPosition}; flushedUntilPos {flushedUntilPosition}; countDown {countdownEvent?.CurrentCount}; buf: {memory}";
+        public override string ToString()
+        {
+            var countdownString = countdownEvent?.CurrentCount.ToString() ?? "-0-";
+            return $"currPos {currentPosition}; flushedUntilPos {flushedUntilPosition}; countDown {countdownEvent?.CurrentCount}; buf: {memory}";
+        }
     }
 }

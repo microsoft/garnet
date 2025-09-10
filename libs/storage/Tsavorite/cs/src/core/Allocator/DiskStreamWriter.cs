@@ -113,6 +113,7 @@ namespace Tsavorite.core
             expectedSerializedLength = NoPosition;
 
             // Everything writes the RecordInfo first. Update to on-disk address if it's not done already (the OnPagesClosed thread may have already done it).
+            // Do not update the logRecord with the on-disk address; until OnPagesClosed modifies PreviousAddress due to eviction, we can still access it in-memory.
             var tempInfo = logRecord.Info;
             if (!IsOnDisk(tempInfo.PreviousAddress) && tempInfo.PreviousAddress > kTempInvalidAddress)
                 tempInfo.PreviousAddress = SetIsOnDisk(tempInfo.PreviousAddress + diskTailOffset);
@@ -429,7 +430,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void UpdateValueLength(int continuationBit)
         {
-            Debug.Assert(inSerialize && valueLengthPosition != NoPosition, "Must be inSerialize and tracking valueLength to UpdateValueLength");
+            Debug.Assert(inSerialize, "Must be inSerialize and tracking valueLength to UpdateValueLength");
 
             // If we are not chaining chunks, we already wrote the SerializedSizeIsExact length, so there is nothing to do here.
             if (valueLengthPosition != NoPosition)
@@ -531,7 +532,8 @@ namespace Tsavorite.core
             for (var ii = 0; ii < pageBreakInfo.internalPageCount; ii++)
             {
                 // Write the PageBorderLen bytes containing header + some bytes from the data (adjust this number for efficiency).
-                var pageWriteCallback = new DiskWriteCallbackContext { buffer = circularPageFlushBuffers.bufferPool.Get(PageBorderLen) };
+                var pageWriteCallback = circularPageFlushBuffers.CreateDiskWriteCallbackContext();
+                pageWriteCallback.buffer = circularPageFlushBuffers.bufferPool.Get(PageBorderLen);
                 var bufferPtr = pageWriteCallback.buffer.GetValidPointer();
                 // Initialize the header at the start of the PageBorder
                 _ = (*(DiskPageHeader*)bufferPtr).Initialize(SectorSize);
@@ -544,7 +546,9 @@ namespace Tsavorite.core
                 dataOffset += copyLen;
 
                 var interiorLen = bufferPageEndOffset - bufferPageStartOffset;
-                pageWriteCallback = new DiskWriteCallbackContext { gcHandle = gcHandle, refCountedGCHandle = refCountedGcHandle };
+                pageWriteCallback = circularPageFlushBuffers.CreateDiskWriteCallbackContext();
+                pageWriteCallback.gcHandle = gcHandle;
+                pageWriteCallback.refCountedGCHandle = refCountedGcHandle;
                 circularPageFlushBuffers.FlushToDevice(data.Slice(dataOffset, interiorLen), pageWriteCallback);
                 dataOffset += interiorLen;
             }
@@ -592,9 +596,9 @@ namespace Tsavorite.core
                 return; // Nothing to flush
 
             var flushLength = endPosition - startPosition;
-            Debug.Assert(RoundUp(startPosition, SectorSize) == startPosition, $"startPosition {startPosition} should be sector-aligned and was not");
-            Debug.Assert(RoundUp(endPosition, SectorSize) == endPosition, $"endPosition {endPosition} should be sector-aligned and was not");
-            Debug.Assert(RoundUp(flushLength, SectorSize) == flushLength, $"flushLength {flushLength} should be sector-aligned and was not");
+            Debug.Assert(IsAligned(startPosition, SectorSize), $"startPosition {startPosition} should be sector-aligned and was not");
+            Debug.Assert(IsAligned(endPosition, SectorSize), $"endPosition {endPosition} should be sector-aligned and was not");
+            Debug.Assert(IsAligned(flushLength, SectorSize), $"flushLength {flushLength} should be sector-aligned and was not");
 
             FlushToDevice(buffer, buffer.memory.TotalValidSpan.Slice(startPosition, flushLength));
         }
@@ -602,9 +606,8 @@ namespace Tsavorite.core
         /// <summary>Write the span directly to the device without changing the buffer.</summary>
         private void FlushToDevice(DiskPageWriteBuffer buffer, ReadOnlySpan<byte> span, DiskWriteCallbackContext pageWriteCallbackContext = null)
         {
-            Debug.Assert(RoundUp(span.Length, SectorSize) == span.Length, $"span.Length {span.Length} should be sector-aligned and was not");
-            Debug.Assert(RoundUp((long)circularPageFlushBuffers.alignedDeviceAddress, SectorSize) == (long)circularPageFlushBuffers.alignedDeviceAddress,
-                        $"alignedDeviceAddress {circularPageFlushBuffers.alignedDeviceAddress} should be sector-aligned and was not");
+            Debug.Assert(IsAligned(span.Length, SectorSize), $"span.Length {span.Length} should be sector-aligned and was not");
+            Debug.Assert(IsAligned((long)circularPageFlushBuffers.alignedDeviceAddress, SectorSize), $"alignedDeviceAddress {circularPageFlushBuffers.alignedDeviceAddress} should be sector-aligned and was not");
             circularPageFlushBuffers.FlushToDevice(buffer, span, pageWriteCallbackContext);
 
             // This does not alter currentPosition; that is the caller's responsibility, e.g. it may ShiftTailToNextBuffer if this is called for partial flushes.

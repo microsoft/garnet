@@ -34,6 +34,8 @@ namespace Tsavorite.core
         /// <remarks><see cref="DiskPageWriteBuffer.currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer. Subtract the intermediate chain-chunk length markers.</remarks>
         internal long TotalWrittenLength => priorCumulativeLength + buffers[currentIndex].currentPosition;
 
+        private long prevPartialFlushTotalWrittenLength;
+
         /// <summary>Device address to write to; incremented with each buffer flush or out-of-line write by the caller; all of these should be aligned to sector size, so this address remains sector-aligned.</summary>
         internal ulong alignedDeviceAddress;
 
@@ -89,8 +91,12 @@ namespace Tsavorite.core
         /// <return>Whether this was the first partial flush for this instance of <see cref="CircularDiskPageWriteBuffer"/></return>
         internal bool OnBeginPartialFlush(int bufferPosition, ref long flushedDiskTailOffset)
         {
+            if (buffers is not null && buffers[currentIndex] is not null)
+                prevPartialFlushTotalWrittenLength = TotalWrittenLength;
+
             // Partial flushes end with a sector-aligned Flush, and this is also reflected in FlushDiskTailOffset, which has already been added to bufferPosition.
-            Debug.Assert(IsAligned(bufferPosition, SectorSize), $"bufferPosition {bufferPosition} is not sector-aligned at the start of the partial flush, implying FlushedDiskTailOffset was not correctly incremented");
+            Debug.Assert(IsAligned(bufferPosition, SectorSize) || bufferPosition == DiskPageHeader.Size, 
+                $"bufferPosition {bufferPosition} is not DiskPageHeader.Size and is not sector-aligned at the start of the partial flush, implying FlushedDiskTailOffset was not correctly incremented");
             if (bufferPosition == 0)
             {
                 bufferPosition = DiskPageHeader.Size;
@@ -104,6 +110,11 @@ namespace Tsavorite.core
             {
                 var buffer = GetAndInitializeCurrentBuffer();
                 buffer.currentPosition = bufferPosition;
+                if (bufferPosition > DiskPageHeader.Size)
+                {
+                    Debug.Assert(IsAligned(bufferPosition, SectorSize), $"bufferPosition ({bufferPosition}) is not DiskPageHeader.Size or sector-aligned on isFirstPartialFlush");
+                    buffer.flushedUntilPosition = bufferPosition;
+                }
                 isFirstPartialFlush = false;
             }
             else
@@ -111,6 +122,7 @@ namespace Tsavorite.core
                 // It's not the first partial flush, so the current buffer's currentPosition should be the same as bufferPosition, except for the case where the current
                 // buffer has just completed a record at the end; in that case we need to jump to the next buffer, and will offset buffer.currentPosition for DiskPageHeader,
                 // which will match the flushedDiskTailIncrement we added above.
+                // The high-level view is that the log file is a streamed append-only file broken into PageBufferSize pages with headers.
                 var buffer = GetCurrentBuffer();
                 if (buffer.RemainingCapacity != 0)
                     Debug.Assert(buffer.currentPosition == bufferPosition, $"Not the first partial flush so buffer.currentPosition {buffer.currentPosition} should equal bufferPosition {bufferPosition}");
@@ -140,14 +152,20 @@ namespace Tsavorite.core
         internal unsafe int OnPartialFlushComplete(DeviceIOCompletionCallback externalCallback, object externalContext)
         {
             // TODO: TotalWrittenLength may exceed uint.MaxValue in which case the callback's numBytes will be incorrect.
-            var numBytes = (uint)TotalWrittenLength;
-            countdownCallbackAndContext.Increment();
+            var numBytes = (uint)(TotalWrittenLength - prevPartialFlushTotalWrittenLength);
 
+            // Lock this with a reference until we have set the callback.
+            countdownCallbackAndContext.Increment();
+            countdownCallbackAndContext.Set(externalCallback, externalContext, numBytes);
+
+            // buffer.currentPosition should have been record-aligned by DiskStreamWriter.OnRecordComplete.
             var buffer = GetCurrentBuffer();
+            Debug.Assert(IsAligned(buffer.currentPosition, Constants.kRecordAlignment), $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
+
             if (buffer.currentPosition > DiskPageHeader.Size)
             {
-                Debug.Assert(RoundUp(buffer.flushedUntilPosition, SectorSize) == buffer.flushedUntilPosition, $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");
-                Debug.Assert(RoundUp(buffer.currentPosition, Constants.kRecordAlignment) == buffer.currentPosition, $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
+                Debug.Assert(buffer.flushedUntilPosition == DiskPageHeader.Size || IsAligned(buffer.flushedUntilPosition, SectorSize), $"flushedUntilOffset {buffer.flushedUntilPosition} is not DiskPageHeader.Size or sector-aligned");
+                Debug.Assert(IsAligned(buffer.currentPosition, Constants.kRecordAlignment), $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
                 Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
                 // See if we have anything to flush to ensure sector-alignment. This is necessary to avoid rewriting sectors, which can be a problem for some devices
@@ -155,8 +173,7 @@ namespace Tsavorite.core
                 var sectorEnd = RoundUp(buffer.currentPosition, SectorSize);
                 if (sectorEnd > buffer.currentPosition)
                 {
-                    var recordEnd = RoundUp(buffer.currentPosition, Constants.kRecordAlignment);
-                    if (sectorEnd > recordEnd)
+                    if (sectorEnd > buffer.currentPosition)
                     {
                         // Force to sector alignment. If this would be more padding than forcing to record alignment would be, then we must handle this specially, so that all
                         // 3 scenarios are satisfied:
@@ -171,25 +188,33 @@ namespace Tsavorite.core
                         // 2. PatchExpandedAddresses: If the current LogRecord.Info.IsSectorForceAligned is true, adjusts ClosedDiskTailOffset to start on the next sector boundary,
                         //    to stay in sync with FlushedDiskTailOffset. Note: It would not work to have the IsSectorForcedAlign bit in the previous LogRecord, as that may have been evicted.
                         // 3. Scan: When this does next-record processing, if it lands on an invalid record with LogRecord.Info.IsSectorForceAligned true, it jumps to the next sector.
-                        Debug.Assert(sectorEnd - recordEnd >= RecordInfo.GetLength(), $"sectorEnd - recordEnd ({sectorEnd - recordEnd}) should be >= RecordInfo.GetLength()");
-                        ref var recordInfo = ref *(RecordInfo*)recordEnd;
+                        Debug.Assert(sectorEnd - buffer.currentPosition >= RecordInfo.GetLength(), $"sectorEnd - buffer.currentPosition ({sectorEnd - buffer.currentPosition}) should be >= RecordInfo.GetLength()");
+                        ref var recordInfo = ref *(RecordInfo*)(buffer.memory.GetValidPointer() + buffer.currentPosition);
                         recordInfo = default;
                         recordInfo.SetInvalid();
                         recordInfo.IsSectorForceAligned = true;
                     }
 
-                    countdownCallbackAndContext.Set(externalCallback, externalContext, numBytes);
-
-                    // Flush the final piece to disk, zero-initializing the sector-alignment padding.
+                    // Prepare to flush the final piece to disk by zero-initializing the sector-alignment padding.
                     new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, sectorEnd - buffer.currentPosition).Clear();
+                }
 
+                if (sectorEnd > buffer.flushedUntilPosition)
+                {
                     var flushLength = sectorEnd - buffer.flushedUntilPosition;
-                    var pageWriteCallbackContext = new DiskWriteCallbackContext();
+                    Debug.Assert(IsAligned(flushLength, SectorSize), $"flushLength {flushLength} is not sector-aligned");
+                    var pageWriteCallbackContext = CreateDiskWriteCallbackContext();
                     buffer.FlushToDevice(buffer.memory.TotalValidSpan.Slice(buffer.flushedUntilPosition, flushLength), alignedDeviceAddress, FlushToDeviceCallback, pageWriteCallbackContext);
                     alignedDeviceAddress += (uint)flushLength;
                     var flushedUntilAdjustment = sectorEnd - buffer.currentPosition;
+
+                    // Set this for the next partial buffer.
                     buffer.currentPosition = sectorEnd;
+                    buffer.flushedUntilPosition = buffer.currentPosition;
                     Debug.Assert(flushedUntilAdjustment == 0 || SectorSize > 0, $"flushedUntilAdjustment {flushedUntilAdjustment} is nonzero when SectorSize is 0");
+
+                    // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
+                    countdownCallbackAndContext.Decrement();
                     return flushedUntilAdjustment;
                 }
             }
@@ -201,11 +226,12 @@ namespace Tsavorite.core
             return 0;
         }
 
+        internal DiskWriteCallbackContext CreateDiskWriteCallbackContext() => new DiskWriteCallbackContext(countdownCallbackAndContext);
+
         /// <summary>Flush to disk for a span associated with a particular buffer.</summary>
         internal void FlushToDevice(DiskPageWriteBuffer buffer, ReadOnlySpan<byte> span, DiskWriteCallbackContext pageWriteCallbackContext)
         {
             Debug.Assert(IsAligned(span.Length, SectorSize), "Span is not aligned to sector size");
-            pageWriteCallbackContext.SetAndIncrementCountdownCallback(countdownCallbackAndContext);
             buffer.FlushToDevice(span, alignedDeviceAddress, FlushToDeviceCallback, pageWriteCallbackContext);
             alignedDeviceAddress += (uint)span.Length;
         }
@@ -214,7 +240,6 @@ namespace Tsavorite.core
         internal unsafe void FlushToDevice(ReadOnlySpan<byte> span, DiskWriteCallbackContext pageWriteCallbackContext)
         {
             Debug.Assert(IsAligned(span.Length, SectorSize), "Span is not aligned to sector size");
-            pageWriteCallbackContext.SetAndIncrementCountdownCallback(countdownCallbackAndContext);
 
             // The span must already be pinned, as it must remain pinned after this call returns; here, we used fixed only to convert it to a byte*.
             fixed (byte* spanPtr = span)
@@ -243,7 +268,7 @@ namespace Tsavorite.core
             // We should have no data to flush--the last partial flush, which may have been a full page, should have ended with PartialFlushComplete
             // which flushes the last of the data for that flush fragment.
             var buffer = GetCurrentBuffer();
-            Debug.Assert(buffer.currentPosition == buffer.flushedUntilPosition, $"Unflushed data remains in buffer");
+            Debug.Assert(buffer.flushedUntilPosition == buffer.currentPosition, $"Unflushed data remains in buffer: buffer.flushedUntilPosition {buffer.flushedUntilPosition} != buffer.currentPosition {buffer.currentPosition}");
 
             // Call the originalCallback on a background thread so any time-consuming work will not block the main Flush thread from moving on to the next (sub-)page to flush.
             _ = Task.Run(EndFlushComplete);
@@ -265,6 +290,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString() 
-            => $"currIdx {currentIndex}; pageBufSize {pageBufferSize}; UsablePageSize {UsablePageSize}; priCumLen {priorCumulativeLength}, alignDevAddr {alignedDeviceAddress}, isFirsPartial {isFirstPartialFlush}; SecSize {SectorSize}";
+            => $"currIdx {currentIndex}; pageBufSize {pageBufferSize}; UsablePageSize {UsablePageSize}; priCumLen {priorCumulativeLength},"
+                + " alignDevAddr {alignedDeviceAddress} = {alignedDeviceAddress:H}, isFirsPartial {isFirstPartialFlush}; SecSize {SectorSize}";
     }
 }

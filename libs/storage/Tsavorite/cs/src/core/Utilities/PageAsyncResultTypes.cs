@@ -175,7 +175,7 @@ namespace Tsavorite.core
         /// </summary>
         public CountdownCallbackAndContext countdownCallbackAndContext;
 
-        public void SetAndIncrementCountdownCallback(CountdownCallbackAndContext callbackAndContext)
+        public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext)
         {
             countdownCallbackAndContext = callbackAndContext;
             callbackAndContext.Increment();
@@ -187,7 +187,7 @@ namespace Tsavorite.core
             if (gcHandle.IsAllocated)
                 gcHandle.Free();
             buffer?.Return();
-            countdownCallbackAndContext.Decrement();
+            countdownCallbackAndContext?.Decrement();
         }
     }
 

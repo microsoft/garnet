@@ -184,7 +184,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         public override string ToString()
         {
-            return string.Format($"aligned: offset {aligned_offset}, ptr {(long)aligned_pointer}; valid: offset {valid_offset} ptr {(long)GetValidPointer()};" +
+            return string.Format($"aligned: [offset {aligned_offset}, ptr {(long)aligned_pointer} = 0x{(long)aligned_pointer:X}];" +
+                $" valid: [offset {valid_offset} ptr {(long)GetValidPointer()} = 0x{(long)GetValidPointer():X}];" +
                 $" reqBytes {required_bytes}; availBytes {available_bytes}; cap {AlignedTotalCapacity}"
 #if CHECK_FREE
                 + $" {Free}"
