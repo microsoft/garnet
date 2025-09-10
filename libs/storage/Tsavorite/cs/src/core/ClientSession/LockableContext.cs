@@ -24,6 +24,7 @@ namespace Tsavorite.core
         public bool IsNull => clientSession is null;
 
         const int KeyLockMaxRetryAttempts = 1000;
+        const int MaxSpinCount = KeyLockMaxRetryAttempts;
 
         internal LockableContext(ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
@@ -235,7 +236,7 @@ namespace Tsavorite.core
             var lockAcquired = false;
             while (!lockAcquired)
             {
-                clientSession.UnsafeResumeThread(sessionFunctions);
+                clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
                 try
                 {
                     lockAcquired = DoManualLock(sessionFunctions, clientSession, keys);
@@ -269,7 +270,7 @@ namespace Tsavorite.core
             clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
 
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return DoManualTryLock(sessionFunctions, clientSession, keys, timeout, cancellationToken);
@@ -302,7 +303,7 @@ namespace Tsavorite.core
             clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
 
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return DoManualTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
@@ -320,7 +321,7 @@ namespace Tsavorite.core
             clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Unlock()");
 
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, -1);
             try
             {
                 DoManualUnlock(clientSession, keys);
@@ -353,7 +354,7 @@ namespace Tsavorite.core
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.UnsafeCompletePending(sessionFunctions, false, wait, spinWaitForCommit);
@@ -368,7 +369,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.UnsafeCompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
@@ -392,7 +393,7 @@ namespace Tsavorite.core
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
@@ -481,7 +482,7 @@ namespace Tsavorite.core
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
@@ -497,7 +498,7 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
@@ -513,7 +514,7 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
@@ -557,7 +558,7 @@ namespace Tsavorite.core
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
@@ -583,7 +584,7 @@ namespace Tsavorite.core
         private Status Upsert(ref TKey key, long keyHash, ref TInput input, ref TValue desiredValue, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
@@ -639,7 +640,7 @@ namespace Tsavorite.core
         private Status RMW(ref TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
@@ -713,7 +714,7 @@ namespace Tsavorite.core
         private Status Delete(ref TKey key, long keyHash, TContext userContext = default)
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 return clientSession.store.ContextDelete<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
@@ -749,7 +750,7 @@ namespace Tsavorite.core
         public void Refresh()
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.UnsafeResumeThread(sessionFunctions);
+            clientSession.UnsafeResumeThread(sessionFunctions, MaxSpinCount);
             try
             {
                 clientSession.store.InternalRefresh<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(sessionFunctions);
