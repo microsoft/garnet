@@ -32,6 +32,7 @@ namespace Resp.benchmark
 
         volatile bool done = false;
         long total_ops_done = 0;
+        long total_bytes_processed = 0;
 
         public RespPerfBench(Options opts, int Start, IConnectionMultiplexer redis)
         {
@@ -392,6 +393,7 @@ namespace Resp.benchmark
 
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
             var opsPerSecond = total_ops_done / seconds;
+            var bytesPerSecond = (total_bytes_processed / seconds) / (double)1_000_000_000;
 
             if (verbose)
             {
@@ -400,6 +402,7 @@ namespace Resp.benchmark
                 if (ClientType.InProc == opts.Client)
                 {
                     var count = sessions[0].DbSize();
+                    Console.WriteLine($"Bandwidth: {bytesPerSecond:N2} GiB/sec");
                     Console.WriteLine($"[DB Size: {count}]");
                 }
             }
@@ -516,6 +519,7 @@ namespace Resp.benchmark
             waiter.Wait();
 
             Stopwatch sw = new();
+            var bytesProcessed = 0L;
             sw.Start();
             while (!done)
             {
@@ -523,12 +527,14 @@ namespace Resp.benchmark
                 fixed (byte* ptr = buf)
                     _ = sessions[threadId].TryConsumeMessages(ptr, len);
 
+                bytesProcessed += len;
                 numReqs++;
                 if (numReqs == maxReqs) break;
             }
             sw.Stop();
 
             Interlocked.Add(ref total_ops_done, numReqs * rg.BatchCount);
+            Interlocked.Add(ref total_bytes_processed, bytesProcessed);
         }
 
         private void MGetThreadRunner(int threadid, int NumOps, int BatchSize = 1 << 12)
