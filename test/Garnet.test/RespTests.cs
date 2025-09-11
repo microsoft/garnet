@@ -289,7 +289,7 @@ namespace Garnet.test
 
             var expectedValue = new byte[]
             {
-                 0x00, // value type 
+                 0x00, // value type
                  0x03, // length of payload
                  0x76, 0x61, 0x6C,       // 'v', 'a', 'l'
                  0x0B, 0x00, // RDB version
@@ -2346,7 +2346,7 @@ namespace Garnet.test
             response = lightClientRequest.Execute("GET mykey", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
 
-            // DECR            
+            // DECR
             expectedResponse = "+OK\r\n";
             response = lightClientRequest.Execute("SET mykeydecr 1", expectedResponse.Length, bytesSent);
             ClassicAssert.AreEqual(expectedResponse, response);
@@ -3868,7 +3868,7 @@ namespace Garnet.test
         [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
         public async Task RespOutputTests(byte respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
         {
-            using var c = TestUtils.GetGarnetClientSession(raw: true);
+            using var c = TestUtils.GetGarnetClientSession(rawResult: true);
             c.Connect();
 
             var response = await c.ExecuteAsync("HELLO", respVersion.ToString());
