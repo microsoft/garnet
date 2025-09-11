@@ -32,6 +32,7 @@ namespace Garnet.server
                 $"{nameof(InfoMetricsType.CLIENTS)}: Information related to client connections.",
                 $"{nameof(InfoMetricsType.KEYSPACE)}: Database related statistics.",
                 $"{nameof(InfoMetricsType.MODULES)}: Information related to loaded modules.",
+                $"{nameof(InfoMetricsType.HLOGSCAN)}: Distribution of records in main store's hybrid log in-memory portion.",
                 $"{nameof(ALL)}: Return all informational sections.",
                 $"{nameof(HELP)}: Print this help message.",
                 $"{nameof(RESET)}: Reset stats.",
