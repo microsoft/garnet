@@ -57,6 +57,8 @@ namespace Garnet
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
 
+        private VectorManager vectorManager;
+
         /// <summary>
         /// Store and associated information used by this Garnet server
         /// </summary>
@@ -254,9 +256,12 @@ namespace Garnet
                 }
             }
 
+            vectorManager = new();
+
             storeWrapper = new StoreWrapper(version, RedisProtocolVersion, servers, customCommandManager, opts, subscribeBroker,
                 createDatabaseDelegate: createDatabaseDelegate,
                 clusterFactory: clusterFactory,
+                vectorManager: vectorManager,
                 loggerFactory: loggerFactory);
 
             if (logger != null)

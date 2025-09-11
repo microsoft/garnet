@@ -380,7 +380,7 @@ namespace Garnet.server
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             return new(AppendOnlyFile, VersionMap, StoreWrapper.customCommandManager, null, ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, respProtocolVersion);
+                StoreWrapper.GarnetObjectSerializer, StoreWrapper.vectorManager, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
