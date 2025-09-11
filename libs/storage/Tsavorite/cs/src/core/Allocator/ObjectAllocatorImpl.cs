@@ -13,8 +13,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
-    using static Utility;
 
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, ObjectAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
@@ -25,31 +25,30 @@ namespace Tsavorite.core
         {
             internal readonly ObjectIdMap objectIdMap { get; init; }
 
+            internal readonly DiskAddressMap diskAddressMap { get; init; }
+
             public ObjectPage() => objectIdMap = new();
 
             internal readonly void Clear() => objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
         }
 
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
-        internal ObjectPage[] values;
-
-        /// <summary>
-        /// Offset of expanded IO tail on the disk for Flush. This is added to .PreviousAddress for all records being flushed. It leads <see cref="ClosedDiskTailOffset"/>.
-        /// </summary>
-        long FlushedDiskTailOffset;
-
-        /// <summary>
-        /// Offset of expanded IO tail on the disk for Close. When we arrive at <see cref="AllocatorBase{TStoreFunctions, TAllocator}.OnPagesClosed(long)"/>
-        /// this is used to calculate the offset for each .PreviousAddress in the in-memory log that references the record(s) being closed, so it can be patched up
-        /// to the on-disk address for that record by <see cref="PatchExpandedAddresses"/>.
-        /// </summary>
-        long ClosedDiskTailOffset;
-
+        internal ObjectPage[] pages;
+        /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
+
+        /// <summary>The address of the next write to the device. Will always be sector-aligned.</summary>
+        ulong alignedNextDiskFlushAddress;
 
         // Default to max sizes so testing a size as "greater than" will always be false
         readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
         readonly int maxInlineValueSize = int.MaxValue;
+
+        // This determines how large the diskAddressMap array is.
+        const int ExpectedAverageRecordSize = 64;
+
+        // This determines how large the diskAddressMap array is.
+        readonly int expectedRecordsPerPage;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, isObjectAllocator: true)
@@ -58,10 +57,11 @@ namespace Tsavorite.core
 
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
+            expectedRecordsPerPage = PageSize / ExpectedAverageRecordSize;
 
-            values = new ObjectPage[BufferSize];
+            pages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
-                values[ii] = new();
+                pages[ii] = new();
 
             Debug.Assert(ObjectIdMap.ObjectIdSize == sizeof(int), "InlineLengthPrefixSize must be equal to ObjectIdMap.ObjectIdSize");
         }
@@ -87,7 +87,7 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
-                values[index] = item.value;
+                pages[index] = item.value;
                 // TODO resize the values[index] arrays smaller if they are above a certain point
                 return;
             }
@@ -95,7 +95,7 @@ namespace Tsavorite.core
             // No free pages are available so allocate new
             pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
             NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
-            values[index] = new();
+            pages[index] = new();
         }
 
         void ReturnPage(int index)
@@ -106,7 +106,7 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
-                    value = values[index]
+                    value = pages[index]
                 });
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -117,10 +117,10 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, values[GetPageIndexForAddress(logicalAddress)].objectIdMap);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndexForAddress(logicalAddress)].objectIdMap;
+        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => pages[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
         public override void Initialize(TsavoriteBase storeBase) => Initialize(storeBase, FirstValidAddress);
 
@@ -243,7 +243,7 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            var localValues = Interlocked.Exchange(ref values, null);
+            var localValues = Interlocked.Exchange(ref pages, null);
             if (localValues != null)
             {
                 freePagePool.Dispose();
@@ -255,46 +255,23 @@ namespace Tsavorite.core
 
         internal override void PatchExpandedAddresses(long closeStartAddress, long closeEndAddress, TsavoriteBase storeBase)
         {
-            // If we are closing the first record, initialize ClosedDiskTailOffset. Note that only the first in-memory page has the invalid header (which offsets all
-            // addresses), but all on-disk pages have a DiskPageHeader. The on-disk address is essentially the physical address, and accounts for the growth due to
-            // both DiskPageHeader and key/value expansion.
-            if (closeStartAddress == GetFirstValidLogicalAddressOnPage(0))
-            {
-                ClosedDiskTailOffset = DiskPageHeader.Size - AbsoluteAddress(GetFirstValidLogicalAddressOnPage(0));
-                TraceExpansion($"ClosedDiskTailOffset pt 0 (initial record): {ClosedDiskTailOffset}, closeStartAddress {AbsoluteAddress(closeStartAddress)}");
-            }
+            var allocatorPage = pages[GetPage(closeStartAddress)];
 
             // Scan forward to process each closing LogRecord and advance to the next one.
             for (var closeAddress = closeStartAddress; closeAddress < closeEndAddress; /* incremented in loop*/)
             {
                 // Get the key from the logRecord being closed, and use that to get to the start of the tag chain.
                 var closeLogRecord = CreateLogRecord(closeAddress);
-                if (closeLogRecord.Info.Invalid)
-                {
-                    // Shrink the expansion for skipped records, corresponding to WriteAsync()--see comments there for more details.
-                    ClosedDiskTailOffset -= closeLogRecord.GetInlineRecordSizes().allocatedSize;
-                    TraceExpansion($"ClosedDiskTailOffset pt 1 (IsInvalid): {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
-                }
-                else
+                if (!closeLogRecord.Info.Invalid)
                 {
                     HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(closeLogRecord.Key));
                     if (!storeBase.FindTag(ref hei) || hei.Address < BeginAddress)
                         continue;
 
-                    // See if we need to bump to next sector alignment.
-                    if (closeLogRecord.Info.IsSectorForceAligned)
-                    {
-                        var unalignedPatchedAddress = closeAddress + ClosedDiskTailOffset;
-                        var alignedPatchedAddress = RoundUp(unalignedPatchedAddress, sectorSize);
-                        if (alignedPatchedAddress > unalignedPatchedAddress)
-                        {
-                            ClosedDiskTailOffset += alignedPatchedAddress - unalignedPatchedAddress;
-                            TraceExpansion($"ClosedDiskTailOffset pt 2 (sector-align record): {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
-                        }
-                    }
+                    var diskAddress = allocatorPage.diskAddressMap[(int)(closeAddress & (PageSize - 1))];
 
                     // If the address is in the HashBucketEntry, this will update it; otherwise we will have to traverse the tag chain.
-                    if (!hei.UpdateToOnDiskAddress(closeAddress, ClosedDiskTailOffset))
+                    if (!hei.UpdateToOnDiskAddress(closeAddress, diskAddress))
                     {
                         // Tag chains are singly-linked lists so we have to iterate the tag chain until we find the record pointing to closeAddress.
                         for (var prevAddress = hei.entry.Address; prevAddress >= closeAddress; /*adjusted in loop*/)
@@ -305,10 +282,9 @@ namespace Tsavorite.core
                             {
                                 if (logRecord.Info.PreviousAddress == closeAddress)
                                 {
-                                    logRecord.InfoRef.UpdateToOnDiskAddress(ClosedDiskTailOffset);
+                                    logRecord.InfoRef.UpdateToOnDiskAddress(diskAddress);
                                     Debug.Assert((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress < BeginAddress || IsOnDisk((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress),
                                                 $"RI: Expected PrevAddress {AbsoluteAddress((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress)} to be on Disk, but wasn't");
-                                    TraceExpansion($"PatchAddressUpdate  RI: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(logRecord.Info.PreviousAddress)}");
                                     break;
                                 }
                             }
@@ -324,17 +300,7 @@ namespace Tsavorite.core
                     {
                         Debug.Assert((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress < BeginAddress || IsOnDisk((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress),
                                     $"HBE: Expected PrevAddress {AbsoluteAddress((*(RecordInfo*)GetPhysicalAddress(closeAddress)).PreviousAddress)} to be on Disk, but wasn't");
-                        TraceExpansion($"PatchAddressUpdate HBE: {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)} -> {AbsoluteAddress(hei.Address)}");
                     }
-
-                    // Now update ClosedDiskTailOffset. This is the same computation that is done during Flush, but we already know the object size here
-                    // as we saved it in the object's.SerializedSize (and we ignore SerializedSizeIsExact because we know it hasn't changed) or, if it's
-                    // Overflow, we already have it in the OverflowByteArray. OnPagesClosedWorker ensures only one thread is doing this update.
-                    // Note: We can just add instead of MonotonicUpdate because the OnPagesClosedWorker page/page-fragment ordering sequence guarantees that
-                    // only one thread at a time will be doing this, which is important to ensure FlushDiskTailOffset and ClosedDiskTailOffset ordering.
-                    // Also, this line decrements ClosedDiskTailOffset, which is a no-op in MonotonicUpdate.
-                    ClosedDiskTailOffset += closeLogRecord.CalculateExpansion();
-                    TraceExpansion($"ClosedDiskTailOffset pt 3 (after record): {ClosedDiskTailOffset}, closeAddress {AbsoluteAddress(closeAddress)}");
                 }
 
                 // Move to the next record being closed. OnPagesClosedWorker only calls this one page at a time, so we won't cross a page boundary.
@@ -351,10 +317,6 @@ namespace Tsavorite.core
         internal void FreePage(long page)
         {
             ClearPage(page, 0);
-
-            // Close segments
-            var thisCloseSegment = page >> (LogSegmentSizeBits - LogPageSizeBits);
-            var nextCloseSegment = (page + 1) >> (LogSegmentSizeBits - LogPageSizeBits);
 
             // If all pages are being used (i.e. EmptyPageCount == 0), nothing to re-utilize by adding
             // to overflow pool.
@@ -421,6 +383,8 @@ namespace Tsavorite.core
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
+            var allocatorPage = pages[flushPage];
+            allocatorPage.diskAddressMap.Initialize(expectedRecordsPerPage);
 
             // TODO: If ObjectIdMap for this page is empty and FlushedDiskTailOffset is 0, we can write directly from the page to disk (with DiskPageHeader and DiskPageBuffer postion adjusted for DiskBufferSize).
 
@@ -449,26 +413,17 @@ namespace Tsavorite.core
             // the first flush in this CircularDiskPageWriteBuffer, FlushedDiskTailOffset will be set so we are sector aligned for the first record.
             var logicalAddress = asyncResult.fromAddress;
 
-            // If this is the first record, initialize FlushedDiskTailOffset to be the difference between the first allocator page's first valid address and the disk page header.
-            if (logicalAddress == GetFirstValidLogicalAddressOnPage(0))
-            {
-                FlushedDiskTailOffset = DiskPageHeader.Size - AbsoluteAddress(GetFirstValidLogicalAddressOnPage(0));
-                TraceExpansion($"FlushedDiskTailOffset pt 0 (initial record): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
-            }
-
             // Destination address is the equivalent of physicalAddress, since there is no longer a connection between logicalAddress space and disk pages in the expanded disk page space.
             // Align destination address to the location we'll start the first write to the disk for this flush operation. This address does not have the AddressType prefix, as it is the
             // IO address in the file.
-            var destinationAddress = AbsoluteAddress(logicalAddress) + FlushedDiskTailOffset;
-            var alignedDestinationAddress = RoundDown(destinationAddress, sectorSize);
-            var bufferPosition = (int)(destinationAddress & (IStreamBuffer.PageBufferSize - 1));
+            var bufferPosition = (int)(alignedNextDiskFlushAddress & (IStreamBuffer.PageBufferSize - 1));
 
             // Now make sure the circular buffer is consistent with bufferPosition, including if necessary updating FlushedDiskTailOffset to account for an initial DiskPageHeader.
-            var isFirstPartialFlush = diskPageBuffers.OnBeginPartialFlush(bufferPosition, ref FlushedDiskTailOffset);
+            diskPageBuffers.OnBeginPartialFlush(bufferPosition);
 
             // Hang onto local copies of the objects and page inline data, so they are kept valid even if the original page is reclaimed.
             // TODO: Should Page eviction null the ObjectIdMap, or its internal MultiLevelPageArray, vs. just clearing the objects
-            var localObjectIdMap = values[flushPage % BufferSize].objectIdMap;
+            var localObjectIdMap = pages[flushPage % BufferSize].objectIdMap;
             var srcBuffer = bufferPool.Get((int)numBytesToWrite);
             var pageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
             pageSpan.CopyTo(srcBuffer.TotalValidSpan);
@@ -486,7 +441,7 @@ namespace Tsavorite.core
 
             try
             {
-                diskWriter.circularPageFlushBuffers.alignedDeviceAddress = (ulong)alignedDestinationAddress;
+                diskWriter.circularPageFlushBuffers.alignedNextDiskFlushAddress = alignedNextDiskFlushAddress;
                 valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
 
                 // AddressType consistency check
@@ -495,7 +450,6 @@ namespace Tsavorite.core
                 Debug.Assert(fuzzyStartLogicalAddress < 0 || IsInLogMemory(fuzzyStartLogicalAddress), "fromAddress is not marked as in Log memory");
 
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
-                var isFirstRecordInPartialFlush = true;
                 for (var physicalAddress = (long)srcBuffer.GetValidPointer(); physicalAddress < endPhysicalAddress; /* incremented in loop */)
                 {
                     var logRecord = new LogRecord(physicalAddress, localObjectIdMap);
@@ -504,54 +458,35 @@ namespace Tsavorite.core
                     var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
 
                     // Do not write Invalid records. This includes IsNull records.
-                    if (logRecord.Info.Invalid)
+                    if (!logRecord.Info.Invalid)
                     {
-                        // Shrink the expansion for skipped records. This is also critical at end-of-page, where there is no valid record, so we decrement
-                        // FlushDiskTailOffset by the amount of unused space at the end of the allocator page (as it counts in the logicalAddress of the 
-                        // records on subsequent pages). This avoids double-counting the sector alignment at the end of the page. PatchExpandedAddresses
-                        // does the corresponding decrement of ClosedDiskTailOffset.
-                        // Note: We can just add instead of MonotonicUpdate because the Flush page/page-fragment ordering sequence guarantees that
-                        // only one thread at a time will be doing this, which is important to ensure FlushDiskTailOffset and ClosedDiskTailOffset ordering.
-                        // Also, this line decrements FlushedDiskTailOffset, which is a no-op in MonotonicUpdate.
-                        FlushedDiskTailOffset -= logRecordSize;
-                        TraceExpansion($"FlushedDiskTailOffset pt 1 (IsInvalid): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
-                    }
-                    else
-                    {
-                        if (isFirstRecordInPartialFlush && logicalAddress > GetFirstValidLogicalAddressOnPage(0))
-                            logRecord.InfoRef.IsSectorForceAligned = true;
-                        isFirstRecordInPartialFlush = false;
-                        var prevPosition = diskWriter.circularPageFlushBuffers.TotalWrittenLength;
-
-                        Debug.Assert(((logicalAddress + FlushedDiskTailOffset) & (diskWriter.circularPageFlushBuffers.pageBufferSize - 1)) == diskWriter.pageBuffer.currentPosition, 
-                            $"logicalAddress + FlushedDiskTailOffset does not match buffer.currentPosition");
+                        var recordStartPosition = diskWriter.circularPageFlushBuffers.TotalWrittenLength;
 
                         // The Write will update the flush image's .PreviousAddress, but NOT logRecord.Info.PreviousAddress, as that will be set later during page eviction.
-                        diskWriter.Write(in logRecord, FlushedDiskTailOffset);
-                        var streamRecordSize = diskWriter.circularPageFlushBuffers.TotalWrittenLength - prevPosition;
+                        // We know that any .PreviousAddress will have been flushed so it's either on-disk already or will have its diskAddressMap set.
+                        var diskPreviousAddress = IsOnDisk(logRecord.Info.PreviousAddress)
+                            ? logRecord.Info.PreviousAddress
+                            : pages[GetPage(logRecord.Info.PreviousAddress)].diskAddressMap[(int)(logRecord.Info.PreviousAddress & (PageSize - 1))];
+                        diskWriter.Write(in logRecord, diskPreviousAddress, out var recordStartAdjustment);
+                        var streamRecordSize = diskWriter.circularPageFlushBuffers.TotalWrittenLength - recordStartPosition;
 
                         var streamExpansion = streamRecordSize - logRecordSize;
                         Debug.Assert(streamExpansion % Constants.kRecordAlignment == 0, $"streamExpansion {streamExpansion} is not record-aligned (streamRecordSize {streamRecordSize})");
 #if DEBUG
                         // Note: It is OK for the "expansion" to be negative; we don't preserve Filler here, we just write only the actual data.
-                        var logRecExpansion = logRecord.CalculateExpansion();
+                        var logRecExpansion = logRecord.CalculateExpansion() + recordStartAdjustment;
                         Debug.Assert(streamExpansion == logRecExpansion, $"logRecSize to StreamSize expansion {streamExpansion} does not equal calculated expansion {logRecExpansion}");
 #endif
 
-                        FlushedDiskTailOffset += streamExpansion;
-                        TraceExpansion($"FlushedDiskTailOffset pt 2 (IsValid): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
+                        allocatorPage.diskAddressMap.Add((int)(logicalAddress & (PageSize - 1)), SetIsOnDisk(recordStartPosition + recordStartAdjustment));
                     }
 
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
 
-                var flushedUntilAdjustment = diskWriter.circularPageFlushBuffers.OnPartialFlushComplete(callback, asyncResult);
-                if (flushedUntilAdjustment > 0)
-                {
-                    FlushedDiskTailOffset += flushedUntilAdjustment;
-                    TraceExpansion($"FlushedDiskTailOffset pt 3 (FUAdjustment): {FlushedDiskTailOffset}, logicalAddress {AbsoluteAddress(logicalAddress)}");
-                }
+                diskWriter.circularPageFlushBuffers.OnPartialFlushComplete(callback, asyncResult);
+                alignedNextDiskFlushAddress = diskWriter.circularPageFlushBuffers.alignedNextDiskFlushAddress;
             }
             finally
             {

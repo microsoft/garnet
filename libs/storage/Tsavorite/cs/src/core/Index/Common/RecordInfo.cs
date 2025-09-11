@@ -138,9 +138,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Update this record's PreviousAddress to point on-disk
         /// </summary>
-        /// <param name="diskTailOffset">The cumulative offset from record expansion to be added to PreviousAddress</param>
+        /// <param name="diskAddress">The cumulative offset from record expansion to be added to PreviousAddress</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UpdateToOnDiskAddress(long diskTailOffset)
+        public void UpdateToOnDiskAddress(long diskAddress)
         {
             while (true)
             {
@@ -148,7 +148,7 @@ namespace Tsavorite.core
                 if (IsOnDisk(expected_info.PreviousAddress))
                     return;
                 var new_info = expected_info;
-                new_info.PreviousAddress = SetIsOnDisk(new_info.PreviousAddress + diskTailOffset);
+                new_info.PreviousAddress = diskAddress;
                 var result_info = FromWord(Interlocked.CompareExchange(ref word, new_info.word, expected_info.word));
                 if (expected_info.word == result_info.word)
                     return;
@@ -372,9 +372,9 @@ namespace Tsavorite.core
         {
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
-            return $"prev {AddressString(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, IsSecAlgn {bstr(IsSectorForceAligned)},"
+            return $"prev {AddressString(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},,"
                  + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, KisInl {KeyIsInline}, VisInl {ValueIsInline}, VisObj {bstr(ValueIsObject)},"
-                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
+                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)} IsSecAlgn {bstr(IsSectorForceAligned)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}";
         }
     }
 }

@@ -420,9 +420,7 @@ namespace Tsavorite.core
                 // Try to acquire entry
                 if (0 == (threadIndexAligned + Metadata.startOffset1)->threadId)
                 {
-                    if (0 == Interlocked.CompareExchange(
-                        ref (threadIndexAligned + Metadata.startOffset1)->threadId,
-                        Metadata.threadId, 0))
+                    if (0 == Interlocked.CompareExchange(ref (threadIndexAligned + Metadata.startOffset1)->threadId, Metadata.threadId, 0))
                         return Metadata.startOffset1;
                 }
 

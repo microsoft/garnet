@@ -88,7 +88,7 @@ namespace Tsavorite.core
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("FlushAndReset is not supported for DiskStreamReadBuffer");
 
         /// <inheritdoc/>
-        public void Write(in LogRecord logRecord, long diskTailOffset) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
+        public void Write(in LogRecord logRecord, long diskTailOffset, out int recordStartAdjustment) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <inheritdoc/>
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");

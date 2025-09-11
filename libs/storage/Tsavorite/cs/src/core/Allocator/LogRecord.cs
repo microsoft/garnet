@@ -34,9 +34,9 @@ namespace Tsavorite.core
         internal readonly ObjectIdMap objectIdMap;
 
         /// <summary>The minimum number of length metadata bytes--1 indicator byte, 1 byte key length, 1 byte value length</summary>
-        internal const int MinLengthMetadataBytes = 3;
-        /// <summary>The maximum number of length metadata bytes--1 indicator byte, 3 bytes key length, 7 bytes value length</summary>
-        internal const int MaxLengthMetadataBytes = 11;
+        public const int MinLengthMetadataBytes = 3;
+        /// <summary>The maximum number of length metadata bytes--1 indicator byte, 4 bytes key length, 7 bytes value length</summary>
+        internal const int MaxLengthMetadataBytes = 12;
 
         /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
         internal const int IndicatorBytes = 1;

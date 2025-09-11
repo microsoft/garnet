@@ -37,18 +37,24 @@ namespace Tsavorite.core
         /// <summary>
         /// Write a full buffer to storage or network and reset the buffer to the starting position.
         /// </summary>
+        /// <param name="cancellationToken">Optional cancellation token</param>
         void FlushAndReset(CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Write a <see cref="LogRecord"/> to the storage or network buffer. Actual flushing (e.g. to disk) is done as needed.
+        /// Write a <see cref="LogRecord"/> to the device.
         /// </summary>
+        /// <param name="logRecord">The <see cref="LogRecord"/> to write to the device.</param>
+        /// <param name="diskPreviousAddress">The on-disk address to replace the <see cref="RecordInfo.PreviousAddress"/> of this record</param>
+        /// <param name="recordStartAdjustment">If we had to bump the start of the record forward (e.g. to the next page), this is the number of bytes.</param>
         /// <remarks>This is the serialization driver for the passed <see cref="LogRecord"/>; if the value is an object, then the 
         /// implementation calls valueObjectSerializer to serialize, which in turn calls <see cref="Write(ReadOnlySpan{byte}, CancellationToken)"/>.</remarks>
-        void Write(in LogRecord logRecord, long diskTailOffset);
+        void Write(in LogRecord logRecord, long diskPreviousAddress, out int recordStartAdjustment);
 
         /// <summary>
         /// Write span of bytes to the storage or network buffer. Actual flushing (e.g. to disk) is done as needed..
         /// </summary>
+        /// <param name="data">The data span to write to the device.</param>
+        /// <param name="cancellationToken">Optional cancellation token</param>
         /// <remarks>This implements the standard Stream functionality, called from the Value Serializer</remarks>
         void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default);
 
@@ -56,6 +62,8 @@ namespace Tsavorite.core
         /// Read more bytes from the disk or network, up to <paramref name="destinationSpan.Length"/>, and store in the buffer. It may not read all bytes
         /// depending on the internal buffer management.
         /// </summary>
+        /// <param name="destinationSpan">The span to receive data from the device</param>
+        /// <param name="cancellationToken">Optional cancellation token</param>
         /// <remarks>This implements the standard Stream functionality, called from the Value Serializer</remarks>
         /// <returns>The number of bytes read into <paramref name="destinationSpan"/>, which may be less than <paramref name="destinationSpan.Length"/>.</returns>
         int Read(Span<byte> destinationSpan, CancellationToken cancellationToken = default);

@@ -106,7 +106,7 @@ namespace Tsavorite.core
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Flushing must only be done under control of the Write() methods, due to possible Value length adjustments.");
 
         /// <inheritdoc/>
-        public void Write(in LogRecord logRecord, long diskTailOffset)
+        public void Write(in LogRecord logRecord, long diskPreviousAddress, out int recordStartAdjustment)
         {
             // Initialize to not track the value length position (not serializing an object, or we know its exact length up-front so are not doing chunk chaining)
             valueLengthPosition = NoPosition;
@@ -116,7 +116,7 @@ namespace Tsavorite.core
             // Do not update the logRecord with the on-disk address; until OnPagesClosed modifies PreviousAddress due to eviction, we can still access it in-memory.
             var tempInfo = logRecord.Info;
             if (!IsOnDisk(tempInfo.PreviousAddress) && tempInfo.PreviousAddress > kTempInvalidAddress)
-                tempInfo.PreviousAddress = SetIsOnDisk(tempInfo.PreviousAddress + diskTailOffset);
+                tempInfo.PreviousAddress = diskPreviousAddress;
             Write(new ReadOnlySpan<byte>(&tempInfo, RecordInfo.GetLength()));
 
             // If the record is inline, we can just write it directly; the indicator bytes will be correct.
@@ -124,6 +124,7 @@ namespace Tsavorite.core
             {
                 Write(logRecord.AsReadOnlySpan().Slice(RecordInfo.GetLength()));
                 OnRecordComplete();
+                recordStartAdjustment = 0;
                 return;
             }
 
@@ -134,7 +135,7 @@ namespace Tsavorite.core
             {
                 // We know the exact values for the varbyte key and value lengths.
                 var valueSpan = logRecord.ValueSpan;
-                WriteLengthMetadata(in logRecord, keySpan.Length, valueSpan.Length);
+                recordStartAdjustment = WriteLengthMetadata(in logRecord, keySpan.Length, valueSpan.Length);
                 if (keySpan.Length > MaxCopySpanLen)
                     WriteKeyDirect(in logRecord);
                 else
@@ -156,7 +157,7 @@ namespace Tsavorite.core
             var valueObject = logRecord.ValueObject;
             if (valueObject is null)
             {
-                WriteLengthMetadata(in logRecord, keySpan.Length, valueLength: 0);
+                recordStartAdjustment = WriteLengthMetadata(in logRecord, keySpan.Length, valueLength: 0);
                 if (keySpan.Length > MaxCopySpanLen)
                     WriteKeyDirect(in logRecord);
                 else
@@ -170,7 +171,7 @@ namespace Tsavorite.core
             if (valueObject.SerializedSizeIsExact)
             {
                 // We can write the exact value length, so we will write the indicator byte with the key length and value length, then write the key and value spans.
-                WriteLengthMetadata(in logRecord, keySpan.Length, valueObject.SerializedSize);
+                recordStartAdjustment = WriteLengthMetadata(in logRecord, keySpan.Length, valueObject.SerializedSize);
                 if (keySpan.Length > MaxCopySpanLen)
                     WriteKeyDirect(in logRecord);
                 else
@@ -199,7 +200,7 @@ namespace Tsavorite.core
             if (keySpan.Length < MaxCopySpanLen)
             {
                 // Max value chunk size is limited to a single buffer so fits in an int. Use int.MaxValue to get the int varbyte size, but we won't write a chunk that large.
-                WriteLengthMetadata(in logRecord, keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
+                recordStartAdjustment = WriteLengthMetadata(in logRecord, keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
                 Write(keySpan);
 
                 // Serialize the value object into possibly multiple buffers; we will manage chunk updating in Write(ReadOnlySpan<byte> data).
@@ -210,7 +211,7 @@ namespace Tsavorite.core
             }
 
             // TODO test with large keys, e.g. 10MB key, with and without sector alignment.
-            WriteLengthMetadata(in logRecord, keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
+            recordStartAdjustment = WriteLengthMetadata(in logRecord, keySpan.Length, int.MaxValue, isChunked: true);    // valueLengthPosition is set because isChunked is true.
 
             var usablePageSize = circularPageFlushBuffers.UsablePageSize;
             var hasPageBreaks = CalculatePageBreaks(keySpan.Length, initialPageSpaceRemaining: 0, usablePageSize, out keyInteriorPageBreakInfo);
@@ -283,13 +284,15 @@ namespace Tsavorite.core
         /// <summary>
         /// Write the indicator byte and key/value lengths for string (byte stream) values.
         /// </summary>
-        private void WriteLengthMetadata(in LogRecord logRecord, int keyLength, long valueLength, bool isChunked = false)
+        /// <returns>The adjustment to record start position, if we had to advance it.</returns>
+        private int WriteLengthMetadata(in LogRecord logRecord, int keyLength, long valueLength, bool isChunked = false)
         {
             // Use a local buffer so we can call Write() just once.
             var indicatorBuffer = stackalloc byte[RoundUp(LogRecord.MaxLengthMetadataBytes, sizeof(long))];
             var indicatorByte = ConstructIndicatorByte(keyLength, valueLength, out var keyByteCount, out var valueByteCount);
             if (isChunked)
                 SetChunkedValueIndicator(ref indicatorByte);
+            var recordStartAdjustment = 0;
 
             // We always write two pages for the first chained chunk, with the second page's chunk length added into the first page's normal valueLength
             // position. Therefore we don't need the continuation int at the end of the page. So all we have to do here for both chained and Exact is make
@@ -301,11 +304,12 @@ namespace Tsavorite.core
             {
                 Debug.Assert(PageEndPosition - pageBuffer.currentPosition == sizeof(long), $"currentPosition expected to be sizeof(long) bytes from end of buffer but was ({PageEndPosition - pageBuffer.currentPosition})");
 
-                ref var redirectRecordInfo = ref *(RecordInfo*)(pageBuffer.currentPosition - RecordInfo.GetLength());
+                var recordInfoPosition = pageBuffer.currentPosition - RecordInfo.GetLength();
+                ref var redirectRecordInfo = ref *(RecordInfo*)recordInfoPosition;
                 redirectRecordInfo = default;
                 redirectRecordInfo.SetInvalid();
                 redirectRecordInfo.IsSectorForceAligned = true;
-                logRecord.InfoRef.IsSectorForceAligned = true;
+                recordStartAdjustment = PageEndPosition - recordInfoPosition;
 
                 // Write a dummy long to the current location and then rewrite the original recordInfo; that should cause a page buffer flush
                 // and start the recordInfo on the next page (after header).
@@ -321,6 +325,7 @@ namespace Tsavorite.core
             WriteVarbyteLength(valueLength, valueByteCount, ptr);
             ptr += valueByteCount;
             Write(new ReadOnlySpan<byte>(indicatorBuffer, (int)(ptr - indicatorBuffer)));
+            return recordStartAdjustment;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -607,7 +612,7 @@ namespace Tsavorite.core
         private void FlushToDevice(DiskPageWriteBuffer buffer, ReadOnlySpan<byte> span, DiskWriteCallbackContext pageWriteCallbackContext = null)
         {
             Debug.Assert(IsAligned(span.Length, SectorSize), $"span.Length {span.Length} should be sector-aligned and was not");
-            Debug.Assert(IsAligned((long)circularPageFlushBuffers.alignedDeviceAddress, SectorSize), $"alignedDeviceAddress {circularPageFlushBuffers.alignedDeviceAddress} should be sector-aligned and was not");
+            Debug.Assert(IsAligned((long)circularPageFlushBuffers.alignedNextDiskFlushAddress, SectorSize), $"alignedDeviceAddress {circularPageFlushBuffers.alignedNextDiskFlushAddress} should be sector-aligned and was not");
             circularPageFlushBuffers.FlushToDevice(buffer, span, pageWriteCallbackContext);
 
             // This does not alter currentPosition; that is the caller's responsibility, e.g. it may ShiftTailToNextBuffer if this is called for partial flushes.
@@ -616,7 +621,7 @@ namespace Tsavorite.core
             // and then start adding more into that buffer. This saves us having to track a lastFlushedPosition for the chunk; the only time we would enqueue
             // multiple flushes currently is for keyInterior which should be quite rare.
             circularPageFlushBuffers.priorCumulativeLength += span.Length;
-            circularPageFlushBuffers.alignedDeviceAddress += (ulong)span.Length;
+            circularPageFlushBuffers.alignedNextDiskFlushAddress += (ulong)span.Length;
         }
 
         void DoSerialize(IHeapObject valueObject)

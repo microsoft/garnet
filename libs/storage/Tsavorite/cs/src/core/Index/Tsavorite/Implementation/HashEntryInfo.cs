@@ -77,29 +77,30 @@ namespace Tsavorite.core
         /// Update this entry's Address to point on-disk if it matches <paramref name="targetAddress"/>
         /// </summary>
         /// <param name="targetAddress">The address to change</param>
-        /// <param name="diskTailOffset">The cumulative offset from record expansion to be added to PreviousAddress</param>
+        /// <param name="diskAddress">The on-disk address to replace PreviousAddress</param>
         /// <return>True if the address was updated in the <see cref="HashBucketEntry"/>, else false and the caller will traverse the chain
         ///     to find <paramref name="targetAddress"/>.</return>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool UpdateToOnDiskAddress(long targetAddress, long diskTailOffset)
+        public bool UpdateToOnDiskAddress(long targetAddress, long diskAddress)
         {
             while (true)
             {
                 HashBucketEntry currentEntry = new() { word = bucket->bucket_entries[slot] };
-                var newTargetAddress = targetAddress + diskTailOffset;
 
                 // If the address is not in the HashBucketEntry, do some sanity checks then return false.
                 if (currentEntry.Address != targetAddress)
                 {
-                    Debug.Assert(SetIsOnDisk(newTargetAddress) != currentEntry.Address, "Unexpected re-setting of same address to OnDisk; should only be done once");
-                    if (SetIsOnDisk(newTargetAddress) == currentEntry.Address)
+                    if (diskAddress == currentEntry.Address)
+                    {
+                        Debug.Fail("Unexpected re-setting of same address to OnDisk; should only be done once");
                         return true;
+                    }
                     Debug.Assert(currentEntry.Address >= targetAddress, "Unexpected miss of targetAddress; should have found it while looking to update");
                     return false;
                 }
 
                 // Try to update the HashBucketEntry
-                HashBucketEntry updatedEntry = new(tag, SetIsOnDisk(newTargetAddress));
+                HashBucketEntry updatedEntry = new(tag, diskAddress);
                 if (currentEntry.word == Interlocked.CompareExchange(ref bucket->bucket_entries[slot], updatedEntry.word, currentEntry.word))
                 {
                     entry.word = updatedEntry.word;
