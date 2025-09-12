@@ -10,11 +10,11 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class SnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class SnapshotCheckpointSMTask<TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        public SnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public SnapshotCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
         }

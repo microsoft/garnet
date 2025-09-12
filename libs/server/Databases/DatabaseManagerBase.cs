@@ -10,11 +10,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Base class for logical database management
@@ -120,10 +120,10 @@ namespace Garnet.server
         public abstract IDatabaseManager Clone(bool enableAof);
 
         /// <inheritdoc/>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
+        public TsavoriteKV<MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
 
         /// <inheritdoc/>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
+        public TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
 
         /// <inheritdoc/>
         public TsavoriteLog AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
@@ -519,7 +519,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
+                        mainStoreLog.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof(db);
@@ -528,7 +528,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Lookup:
-                        mainStoreLog.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
+                        mainStoreLog.Compact<PinnedSpanByte, Empty, Empty>(untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof(db);
@@ -564,8 +564,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty>(untilAddress, CompactionType.Scan);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof(db);
@@ -574,8 +573,7 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        objectStoreLog.Compact<IGarnetObject, IGarnetObject, Empty>(untilAddress, CompactionType.Lookup);
                         if (compactionForceDelete)
                         {
                             CompactionCommitAof(db);
@@ -687,11 +685,12 @@ namespace Garnet.server
                 // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
                 // We can now safely remove these serialized versions as they are no longer needed.
                 using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
-                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
-                while (iter1.GetNext(out _, out _, out var value))
+                    db.ObjectStore.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
+                while (iter1.GetNext())
                 {
-                    if (value != null)
-                        ((GarnetObjectBase)value).serialized = null;
+                    var valueObject = iter1.ValueObject;
+                    if (valueObject != null)
+                        ((GarnetObjectBase)iter1.ValueObject).serialized = null;
                 }
             }
 
@@ -703,7 +702,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
             var input = new ObjectInput(header);
 
-            ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
+            ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
             storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
             storageSession.scratchBufferBuilder.Reset();
         }
@@ -768,12 +767,12 @@ namespace Garnet.server
             return (mainStoreStats, objectStoreStats);
         }
 
-        private HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
+        private HybridLogScanMetrics CollectHybridLogStats<TFuncs, TAllocator, TInput, TOutput>(
             GarnetDatabase db,
-            TsavoriteKV<TKey, TValue, TFuncs, TAllocator> store,
-            ISessionFunctions<TKey, TValue, TInput, TOutput, long> sessionFunctions)
-            where TFuncs : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TFuncs>
+            TsavoriteKV<TFuncs, TAllocator> store,
+            ISessionFunctions<TInput, TOutput, long> sessionFunctions)
+            where TFuncs : IStoreFunctions
+            where TAllocator : IAllocator<TFuncs>
         {
             if (db.HybridLogStatScanStorageSession == null)
             {
@@ -781,7 +780,7 @@ namespace Garnet.server
                 db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
             }
 
-            using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TKey, TValue, TInput, TOutput, long>>(sessionFunctions);
+            using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TInput, TOutput, long>>(sessionFunctions);
             var basicContext = session.BasicContext;
             // region: Immutable || Mutable
             // state: RCUdSealed || RCUdUnsealed || Tombstoned || ElidedFromHashIndex || Live
@@ -790,27 +789,25 @@ namespace Garnet.server
             var toAddr = store.Log.TailAddress;
             using var iter = store.Log.Scan(fromAddr, toAddr, includeClosedRecords: true);
             // Records can be in readonly region, or mutable region
-            while (iter.GetNext(out RecordInfo recordInfo))
+            while (iter.GetNext())
             {
-                TKey key = iter.GetKey();
-                TValue value = iter.GetValue();
                 string region = iter.CurrentAddress >= db.MainStore.Log.ReadOnlyAddress ? "Mutable" : "Immutable";
                 string state = "Live";
-                if (recordInfo.IsSealed)
+                if (iter.Info.IsSealed)
                 {
                     // while the server is live, this is true for RCUd records, when we recover from checkpoints, we unseal the records, so some RCUd records may not be sealed
                     state = "RCUdSealed";
                 }
-                else if (recordInfo.Invalid)
+                else if (iter.Info.Invalid)
                 {
                     // Setting invalid is done when a record has been elided from the hash index
                     state = "ElidedFromHashIndex";
                 }
-                else if (recordInfo.Tombstone)
+                else if (iter.Info.Tombstone)
                 {
                     state = "Tombstoned";
                 }
-                else if (!basicContext.ContainsKeyInMemory(ref key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
+                else if (!basicContext.ContainsKeyInMemory(iter.Key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
                 {
                     // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
                     state = "RCUdUnsealed";

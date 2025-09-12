@@ -7,24 +7,16 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Abstract session provider for TsavoriteKV store based on
-    /// [K, V, I, O, F, P]
+    /// Abstract session provider for TsavoriteKV store
     /// </summary>
-    public abstract class TsavoriteKVProviderBase<TKey, TValue, TInput, TOutput, TSessionFunctions, TStoreFunctions, TAllocator, TParameterSerializer> : ISessionProvider
-        where TSessionFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, long>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-        where TParameterSerializer : IServerSerializer<TKey, TValue, TInput, TOutput>
+    public abstract class TsavoriteKVProviderBase<TInput, TOutput, TStoreFunctions, TAllocator> : ISessionProvider
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Store
         /// </summary>
-        protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
-
-        /// <summary>
-        /// Serializer
-        /// </summary>
-        protected readonly TParameterSerializer serializer;
+        protected readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
 
         /// <summary>
         /// Broker
@@ -39,14 +31,11 @@ namespace Garnet.server
         /// <summary>
         /// Create TsavoriteKV backend
         /// </summary>
-        /// <param name="serializer"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>
-        public TsavoriteKVProviderBase(TParameterSerializer serializer,
-                SubscribeBroker broker = null, MaxSizeSettings maxSizeSettings = default)
+        public TsavoriteKVProviderBase(SubscribeBroker broker = null, MaxSizeSettings maxSizeSettings = default)
         {
             this.broker = broker;
-            this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();
         }
 
@@ -54,12 +43,6 @@ namespace Garnet.server
         /// Get MaxSizeSettings
         /// </summary>
         public MaxSizeSettings GetMaxSizeSettings => this.maxSizeSettings;
-
-        /// <summary>
-        /// GetFunctions() for custom functions provided by the client
-        /// </summary>
-        /// <returns></returns>
-        public abstract TSessionFunctions GetFunctions();
 
         /// <inheritdoc />
         public abstract IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender);

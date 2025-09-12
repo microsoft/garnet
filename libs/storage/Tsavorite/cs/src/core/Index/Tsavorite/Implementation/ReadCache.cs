@@ -1,24 +1,26 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     // Partial file for readcache functions
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool FindInReadCache(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
+        internal bool FindInReadCache(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress = kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
             // minAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
-            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : readCacheBase.HeadAddress;
+            minAddress = IsReadCache(minAddress) ? minAddress : readCacheBase.HeadAddress;
 
         RestartChain:
 
@@ -27,42 +29,45 @@ namespace Tsavorite.core
                 return false;
 
             // This is also part of the initialization process for stackCtx.recSrc for each API/InternalXxx call.
-            stackCtx.recSrc.LogicalAddress = Constants.kInvalidAddress;
+            stackCtx.recSrc.LogicalAddress = kInvalidAddress;
             stackCtx.recSrc.PhysicalAddress = 0;
-
-            // LatestLogicalAddress is the "leading" pointer and will end up as the highest logical address in the main log for this tag chain.
-            stackCtx.recSrc.LatestLogicalAddress &= ~Constants.kReadCacheBitMask;
 
             while (true)
             {
                 if (ReadCacheNeedToWaitForEviction(ref stackCtx))
                     goto RestartChain;
 
+                // LatestLogicalAddress is the "leading" pointer and will end up as the highest logical address in the main log for this tag chain.
                 // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
                 // Use a non-ref local, because we don't need to update.
-                RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+                var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
 
                 // When traversing the readcache, we skip Invalid (Closed) records. We don't have Sealed records in the readcache because they cause
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
-                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc
-                    && storeFunctions.KeysEqual(ref key, ref readcache.GetKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)))
+                if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    // Keep these at the current readcache location; they'll be the caller's source record.
-                    stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
-                    stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
-                    stackCtx.recSrc.SetHasReadCacheSrc();
-                    stackCtx.recSrc.SetAllocator(readCacheBase);
+                    ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
+                        ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)
+                        : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
+                    if (storeFunctions.KeysEqual(key, keySpan))
+                    {
+                        // Keep these at the current readcache location; they'll be the caller's source record.
+                        stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LowestReadCacheLogicalAddress;
+                        stackCtx.recSrc.PhysicalAddress = stackCtx.recSrc.LowestReadCachePhysicalAddress;
+                        stackCtx.recSrc.SetAllocator(readCacheBase);
+                        stackCtx.recSrc.SetHasReadCacheSrc();
 
-                    // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
-                    if (!alwaysFindLatestLA)
-                        return true;
+                        // Read() does not need to continue past the found record; updaters need to continue to find latestLogicalAddress and lowestReadCache*Address.
+                        if (!alwaysFindLatestLA)
+                            return true;
+                    }
                 }
 
                 // Update the leading LatestLogicalAddress to recordInfo.PreviousAddress, and if that is a main log record, break out.
-                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress & ~Constants.kReadCacheBitMask;
+                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
                 if (!IsReadCache(recordInfo.PreviousAddress))
                     goto InMainLog;
             }
@@ -73,14 +78,14 @@ namespace Tsavorite.core
 
             // We did not find the record in the readcache, so set these to the start of the main log entries, and the caller will call TracebackForKeyMatch
             Debug.Assert(ReferenceEquals(stackCtx.recSrc.AllocatorBase, hlogBase), "Expected recSrc.AllocatorBase == hlogBase");
-            Debug.Assert(stackCtx.recSrc.LatestLogicalAddress > Constants.kTempInvalidAddress, "Must have a main-log address after readcache");
+            Debug.Assert(stackCtx.recSrc.LatestLogicalAddress > kTempInvalidAddress, "Must have a main-log address after readcache");
             stackCtx.recSrc.LogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             stackCtx.recSrc.PhysicalAddress = 0; // do *not* call hlog.GetPhysicalAddress(); LogicalAddress may be below hlog.HeadAddress. Let the caller decide when to do this.
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx)
+        bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
             if (stackCtx.recSrc.LatestLogicalAddress < readCacheBase.HeadAddress)
             {
@@ -94,7 +99,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool SpliceIntoHashChainAtReadCacheBoundary(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
+        private bool SpliceIntoHashChainAtReadCacheBoundary(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
             Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.ClosedUntilAddress,
@@ -102,13 +107,13 @@ namespace Tsavorite.core
 
             // If the LockTable is enabled, then we either have an exclusive lock and thus cannot have a competing insert to the readcache, or we are doing a
             // Read() so we allow a momentary overlap of records because they're the same value (no update is being done).
-            ref RecordInfo rcri = ref readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+            ref var rcri = ref LogRecord.GetInfoRef(stackCtx.recSrc.LowestReadCachePhysicalAddress);
             return rcri.TryUpdateAddress(stackCtx.recSrc.LatestLogicalAddress, newLogicalAddress);
         }
 
         // Skip over all readcache records in this key's chain, advancing stackCtx.recSrc to the first non-readcache record we encounter.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SkipReadCache(ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, out bool didRefresh)
+        internal void SkipReadCache(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, out bool didRefresh)
         {
             Debug.Assert(UseReadCache, "Should not call SkipReadCache if !UseReadCache");
             didRefresh = false;
@@ -119,10 +124,8 @@ namespace Tsavorite.core
                 return;
 
             // This is FindInReadCache without the key comparison or untilAddress.
-            stackCtx.recSrc.LogicalAddress = Constants.kInvalidAddress;
+            stackCtx.recSrc.LogicalAddress = kInvalidAddress;
             stackCtx.recSrc.PhysicalAddress = 0;
-
-            stackCtx.recSrc.LatestLogicalAddress = AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress);
 
             while (true)
             {
@@ -136,7 +139,7 @@ namespace Tsavorite.core
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
                 stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
-                RecordInfo recordInfo = readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+                var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
                 if (!IsReadCache(recordInfo.PreviousAddress))
                 {
                     stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
@@ -144,7 +147,7 @@ namespace Tsavorite.core
                     stackCtx.recSrc.PhysicalAddress = 0;
                     return;
                 }
-                stackCtx.recSrc.LatestLogicalAddress = AbsoluteAddress(recordInfo.PreviousAddress);
+                stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
             }
         }
 
@@ -152,39 +155,40 @@ namespace Tsavorite.core
         // Called during checkpointing; we create a copy of the hash table page, eliminate read cache pointers from this copy, then write this copy to disk.
         private void SkipReadCacheBucket(HashBucket* bucket)
         {
-            for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+            for (var index = 0; index < Constants.kOverflowBucketIndex; index++)
             {
-                HashBucketEntry* entry = (HashBucketEntry*)&bucket->bucket_entries[index];
+                var entry = (HashBucketEntry*)&bucket->bucket_entries[index];
                 if (0 == entry->word)
                     continue;
 
-                if (!entry->ReadCache) continue;
+                if (!entry->IsReadCache) continue;
                 var logicalAddress = entry->Address;
-                var physicalAddress = readcache.GetPhysicalAddress(AbsoluteAddress(logicalAddress));
+                var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
 
                 while (true)
                 {
-                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                    logicalAddress = LogRecord.GetInfo(physicalAddress).PreviousAddress;
                     entry->Address = logicalAddress;
-                    if (!entry->ReadCache)
+                    if (!entry->IsReadCache)
                         break;
-                    physicalAddress = readcache.GetPhysicalAddress(AbsoluteAddress(logicalAddress));
+                    physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
                 }
             }
         }
 
         // Called after a readcache insert, to make sure there was no race with another session that added a main-log record at the same time.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool EnsureNoNewMainLogRecordWasSpliced(ref TKey key, RecordSource<TKey, TValue, TStoreFunctions, TAllocator> recSrc, long highestSearchedAddress, ref OperationStatus failStatus)
+        private bool EnsureNoNewMainLogRecordWasSpliced(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long highestSearchedAddress, ref OperationStatus failStatus)
         {
-            bool success = true;
-            ref RecordInfo lowest_rcri = ref readcache.GetInfo(recSrc.LowestReadCachePhysicalAddress);
+            Debug.Assert(!IsReadCache(highestSearchedAddress), "highestSearchedAddress should be a main-log address");
+            var success = true;
+            var lowest_rcri = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
             Debug.Assert(!IsReadCache(lowest_rcri.PreviousAddress), "lowest-rcri.PreviousAddress should be a main-log address");
             if (lowest_rcri.PreviousAddress > highestSearchedAddress)
             {
                 // Someone added a new record in the splice region. It won't be readcache; that would've been added at tail. See if it's our key.
                 var minAddress = highestSearchedAddress > hlogBase.HeadAddress ? highestSearchedAddress : hlogBase.HeadAddress;
-                if (TraceBackForKeyMatch(ref key, lowest_rcri.PreviousAddress, minAddress + 1, out long prevAddress, out _))
+                if (TraceBackForKeyMatch(key, lowest_rcri.PreviousAddress, minAddress + 1, out var prevAddress, out _))
                     success = false;
                 else if (prevAddress > highestSearchedAddress && prevAddress < hlogBase.HeadAddress)
                 {
@@ -206,7 +210,7 @@ namespace Tsavorite.core
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void ReadCacheCheckTailAfterSplice(ref TKey key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
+        private void ReadCacheCheckTailAfterSplice(ReadOnlySpan<byte> key, ref HashEntryInfo hei, long highestReadCacheAddressChecked)
         {
             Debug.Assert(UseReadCache, "Should not call ReadCacheCheckTailAfterSplice if !UseReadCache");
 
@@ -215,11 +219,11 @@ namespace Tsavorite.core
             HashBucketEntry untilEntry = new() { word = highestReadCacheAddressChecked };
 
             // Traverse for the key above untilAddress (which may not be in the readcache if there were no readcache records when it was retrieved).
-            while (entry.ReadCache && (entry.Address > untilEntry.Address || !untilEntry.ReadCache))
+            while (entry.IsReadCache && (!!untilEntry.IsReadCache || entry.Address > untilEntry.Address))
             {
-                var physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
-                if (!recordInfo.Invalid && storeFunctions.KeysEqual(ref key, ref readcache.GetKey(physicalAddress)))
+                var logRecord = readcache.CreateLogRecord(entry.Address);
+                ref var recordInfo = ref logRecord.InfoRef;
+                if (!recordInfo.Invalid && storeFunctions.KeysEqual(key, logRecord.Key))
                 {
                     recordInfo.SetInvalidAtomic();
                     return;
@@ -235,23 +239,25 @@ namespace Tsavorite.core
         void ReadCacheAbandonRecord(long physicalAddress)
         {
             // TODO: We currently don't save readcache allocations for retry, but we could
-            ref var ri = ref readcache.GetInfo(physicalAddress);
+            ref var ri = ref LogRecord.GetInfoRef(physicalAddress);
             ri.SetInvalid();
-            ri.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
+            ri.PreviousAddress = kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
         }
 
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
+            Debug.Assert(IsReadCache(rcLogicalAddress) && IsReadCache(rcToLogicalAddress), "rcLogicalAddress and rcToLogicalAddress must be readcache addresses");
+
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)
             {
-                var rcPhysicalAddress = readcache.GetPhysicalAddress(rcLogicalAddress);
-                var (_, rcAllocatedSize) = readcache.GetRecordSize(rcPhysicalAddress);
-                var rcRecordInfo = readcache.GetInfo(rcPhysicalAddress);
+                var logRecord = new LogRecord(readcache.GetPhysicalAddress(rcLogicalAddress));
+                var (_, rcAllocatedSize) = logRecord.GetInlineRecordSizes();
+                var rcRecordInfo = logRecord.Info;
 
                 // Check PreviousAddress for null to handle the info.IsNull() "partial record at end of page" case as well as readcache CAS failures
                 // (such failed records are not in the hash chain, so we must not process them here). We do process other Invalid records here.
-                if (rcRecordInfo.PreviousAddress <= Constants.kTempInvalidAddress)
+                if (rcRecordInfo.PreviousAddress <= kTempInvalidAddress)
                     goto NextRecord;
 
                 // If there are any readcache entries for this key, the hash chain will always be of the form:
@@ -264,20 +270,19 @@ namespace Tsavorite.core
                 //  2. Call FindTag on that key in the main store to get the start of the hash chain.
                 //  3. Walk the hash chain's readcache entries, removing records in the "to be removed" range.
                 //     Do not remove Invalid records outside this range; that leads to race conditions.
-                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
+                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || rcRecordInfo.PreviousAddress < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
-                ref TKey key = ref readcache.GetKey(rcPhysicalAddress);
-                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key));
+                HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
                 if (!FindTag(ref hei))
                     goto NextRecord;
 
                 ReadCacheEvictChain(rcToLogicalAddress, ref hei);
 
             NextRecord:
-                if ((rcLogicalAddress & readCacheBase.PageSizeMask) + rcAllocatedSize > readCacheBase.PageSize)
+                if (readCacheBase.GetOffsetOnPage(rcLogicalAddress) + rcAllocatedSize > readCacheBase.PageSize)
                 {
-                    rcLogicalAddress = (1 + (rcLogicalAddress >> readCacheBase.LogPageSizeBits)) << readCacheBase.LogPageSizeBits;
+                    rcLogicalAddress = readCacheBase.GetStartLogicalAddressOfPage(1 + readCacheBase.GetPage(rcLogicalAddress));
                     continue;
                 }
                 rcLogicalAddress += rcAllocatedSize;
@@ -289,44 +294,43 @@ namespace Tsavorite.core
             // Traverse the chain of readcache entries for this key, looking "ahead" to .PreviousAddress to see if it is less than readcache.HeadAddress.
             // nextPhysicalAddress remains Constants.kInvalidAddress if hei.Address is < HeadAddress; othrwise, it is the lowest-address readcache record
             // remaining following this eviction, and its .PreviousAddress is updated to each lower record in turn until we hit a non-readcache record.
-            long nextPhysicalAddress = Constants.kInvalidAddress;
+            var nextPhysicalAddress = kInvalidAddress;
             HashBucketEntry entry = new() { word = hei.entry.word };
-            while (entry.ReadCache)
+            while (entry.IsReadCache)
             {
-                var la = entry.AbsoluteAddress;
-                var pa = readcache.GetPhysicalAddress(la);
-                ref RecordInfo ri = ref readcache.GetInfo(pa);
+                var logRecord = new LogRecord(readcache.GetPhysicalAddress(entry.Address));
+                ref var recordInfo = ref logRecord.InfoRef;
 
 #if DEBUG
                 // Due to collisions, we can compare the hash code *mask* (i.e. the hash bucket index), not the key
                 var mask = state[resizeInfo.version].size_mask;
                 var rc_mask = hei.hash & mask;
-                var pa_mask = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(pa)) & mask;
+                var pa_mask = storeFunctions.GetKeyHashCode64(logRecord.Key) & mask;
                 Debug.Assert(rc_mask == pa_mask, "The keyHash mask of the hash-chain ReadCache entry does not match the one obtained from the initial readcache address");
 #endif
 
                 // If the record's address is above the eviction range, leave it there and track nextPhysicalAddress.
-                if (la >= rcToLogicalAddress)
+                if (entry.Address >= rcToLogicalAddress)
                 {
-                    nextPhysicalAddress = pa;
-                    entry.word = ri.PreviousAddress;
+                    nextPhysicalAddress = logRecord.physicalAddress;
+                    entry.word = recordInfo.PreviousAddress;
                     continue;
                 }
 
-                // The record is being evicted. If we have a higher readcache record that is not being evicted, unlink 'la' by setting
-                // (nextPhysicalAddress).PreviousAddress to (la).PreviousAddress.
-                if (nextPhysicalAddress != Constants.kInvalidAddress)
+                // The record is being evicted. If we have a higher readcache record that is not being evicted, unlink 'entry.Address' by setting
+                // (nextPhysicalAddress).PreviousAddress to (entry.Address).PreviousAddress.
+                if (nextPhysicalAddress != kInvalidAddress)
                 {
-                    ref RecordInfo nextri = ref readcache.GetInfo(nextPhysicalAddress);
-                    if (nextri.TryUpdateAddress(entry.Address, ri.PreviousAddress))
-                        ri.PreviousAddress = Constants.kTempInvalidAddress;     // The record is no longer in the chain
+                    ref var nextri = ref LogRecord.GetInfoRef(nextPhysicalAddress);
+                    if (nextri.TryUpdateAddress(entry.Address, recordInfo.PreviousAddress))
+                        recordInfo.PreviousAddress = kTempInvalidAddress;     // The record is no longer in the chain
                     entry.word = nextri.PreviousAddress;
                     continue;
                 }
 
                 // We are evicting the record whose address is in the hash bucket; unlink 'la' by setting the hash bucket to point to (la).PreviousAddress.
-                if (hei.TryCAS(ri.PreviousAddress))
-                    ri.PreviousAddress = Constants.kTempInvalidAddress;     // The record is no longer in the chain
+                if (hei.TryCAS(recordInfo.PreviousAddress))
+                    recordInfo.PreviousAddress = kTempInvalidAddress;     // The record is no longer in the chain
                 else
                     hei.SetToCurrent();
                 entry.word = hei.entry.word;

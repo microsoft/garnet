@@ -410,6 +410,8 @@ namespace Garnet.client
         /// <param name="isMainStore"></param>
         public void SetClusterSyncHeader(string sourceNodeId, bool isMainStore)
         {
+            // Unlike Migration, where we don't know at the time of header initialization if we have a record or not, in Replication 
+            // we know we have a record at the time this is called, so we can initialize it directly.
             currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsIterationTask);
             curr = offset;

@@ -19,11 +19,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Wrapper for store and store-specific information
@@ -43,12 +43,12 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => this.databaseManager.MainStore;
+        public TsavoriteKV<MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
 
         /// <summary>
         /// Object store (of DB 0)
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => this.databaseManager.ObjectStore;
+        public TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
 
         /// <summary>
         /// AOF (of DB 0)
@@ -64,6 +64,9 @@ namespace Garnet.server
         /// Object store size tracker (of DB 0)
         /// </summary>
         public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
+
+        public IStoreFunctions mainStoreFunctions => store.StoreFunctions;
+        public IStoreFunctions objectStoreFunctions => objectStore?.StoreFunctions;
 
         /// <summary>
         /// Server options
@@ -839,15 +842,13 @@ namespace Garnet.server
             {
                 bool hasKeyInSlots = false;
                 {
-                    using var iter = store.Iterate<SpanByte, SpanByte, Empty, SimpleSessionFunctions<SpanByte, SpanByte, Empty>>(new SimpleSessionFunctions<SpanByte, SpanByte, Empty>());
-                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    using var iter = store.Iterate<IGarnetObject, IGarnetObject, Empty, SimpleGarnetObjectSessionFunctions>(new SimpleGarnetObjectSessionFunctions());  // TODO replace with Push iterator
+                    while (!hasKeyInSlots && iter.GetNext())
                     {
-                        ref var key = ref iter.GetKey();
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(ref key);
+                        var key = iter.Key;
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key);
                         if (slots.Contains(hashSlotForKey))
-                        {
                             hasKeyInSlots = true;
-                        }
                     }
                 }
 
@@ -857,14 +858,11 @@ namespace Garnet.server
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
                     var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
                     var iter = objectStoreSession.Iterate();
-                    while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
+                    while (!hasKeyInSlots && iter.GetNext())
                     {
-                        ref var key = ref iter.GetKey();
-                        ushort hashSlotForKey = HashSlotUtils.HashSlot(key.AsSpan());
+                        ushort hashSlotForKey = HashSlotUtils.HashSlot(iter.Key);
                         if (slots.Contains(hashSlotForKey))
-                        {
                             hasKeyInSlots = true;
-                        }
                     }
                 }
 

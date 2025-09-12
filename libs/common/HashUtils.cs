@@ -190,7 +190,7 @@ namespace Garnet.common
             return (h1, h2);
         }
 
-        public static unsafe ulong MurmurHash2x64A(Span<byte> bString, uint seed = 0)
+        public static unsafe ulong MurmurHash2x64A(ReadOnlySpan<byte> bString, uint seed = 0)
         {
             fixed (byte* p = bString)
             {

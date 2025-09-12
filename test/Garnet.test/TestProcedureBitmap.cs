@@ -84,7 +84,7 @@ namespace Garnet
                 result = false;
                 goto returnTo;
             }
-            api.GET(destinationKeyBitOp, out var valueData);
+            api.GET(destinationKeyBitOp, out PinnedSpanByte valueData);
             var actualResultBitOp = BitConverter.ToInt64(valueData.ToArray(), 0);
 
             long expectedResultBitOp = ~src;

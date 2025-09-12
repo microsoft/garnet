@@ -4,8 +4,8 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -149,7 +149,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="readOnly"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
-            => migrationTaskStore.CanAccessKey(ref key, slot, readOnly);
+        public bool CanAccessKey(PinnedSpanByte key, int slot, bool readOnly)
+            => migrationTaskStore.CanAccessKey(key, slot, readOnly);
     }
 }

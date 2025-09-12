@@ -3,7 +3,7 @@
 
 using System;
 using Garnet.common;
-using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -31,7 +31,7 @@ namespace Garnet.cluster
         /// <param name="readOnly"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
+        public bool CanAccessKey(PinnedSpanByte key, int slot, bool readOnly)
         {
             // Skip operation check since this session is not responsible for migrating the associated slot
             if (!_sslots.Contains(slot))
@@ -40,7 +40,7 @@ namespace Garnet.cluster
             var state = SketchStatus.INITIALIZING;
             foreach (var migrateTask in migrateOperation)
             {
-                if (migrateTask.sketch.Probe(key.SpanByte, out state))
+                if (migrateTask.sketch.Probe(key, out state))
                     goto found;
             }
 

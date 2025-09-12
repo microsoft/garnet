@@ -77,8 +77,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Previous power of 2
         /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
         internal static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
@@ -89,6 +87,11 @@ namespace Tsavorite.core
             v |= v >> 32;
             return v - (v >> 1);
         }
+
+        /// <summary>
+        /// Next power of 2
+        /// </summary>
+        internal static long NextPowerOf2(long v) => (long)BitOperations.RoundUpToPowerOf2((nuint)v);
 
         /// <summary>
         /// Pretty print value
@@ -123,12 +126,6 @@ namespace Tsavorite.core
                 return v.ToString() + suffix[-exp / 3 - 1] + "B";
             return v.ToString() + "B";
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsReadCache(long address) => (address & Constants.kReadCacheBitMask) != 0;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long AbsoluteAddress(long address) => address & ~Constants.kReadCacheBitMask;
 
         /// <summary>Rounds up value to alignment</summary>
         /// <param name="value">Value to be aligned</param>
@@ -172,27 +169,25 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get 64-bit hash code for a byte array
+        /// Get 64-bit hash code for a byte array. The array does not have to be pinned.
         /// </summary>
-        /// <param name="pbString"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long HashBytes(byte* pbString, int len)
+        public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
             const long magicno = 40343;
-            char* pwString = (char*)pbString;
-            int cbBuf = len / 2;
-            ulong hashState = (ulong)len;
 
-            for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + *pwString;
+            // Convert to char for faster enumeration (two bytes per iteration)
+            var charSpan = byteSpan.UncheckedCast<char>();
+            var hashState = (ulong)byteSpan.Length;
 
-            if ((len & 1) > 0)
-            {
-                byte* pC = (byte*)pwString;
-                hashState = magicno * hashState + *pC;
-            }
+            // Explicit enumerator calls are faster than foreach
+            var charEnumerator = charSpan.GetEnumerator();
+            while (charEnumerator.MoveNext())
+                hashState = (magicno * hashState) + charEnumerator.Current;
+
+            // If we had an odd number of bytes, get the last byte
+            if ((byteSpan.Length & 1) > 0)
+                hashState = magicno * hashState + byteSpan[^1];
 
             return (long)Rotr64(magicno * hashState, 4);
         }
@@ -383,5 +378,11 @@ namespace Tsavorite.core
 
         [DllImport("libc")]
         private static extern IntPtr strerror(int errnum);
+
+        /// <summary>
+        /// Should only be called in Debug.Assert or other DEBUG-conditional code
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static string GetCurrentMethodName([CallerMemberName] string memberName = "") => memberName;
     }
 }

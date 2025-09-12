@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    internal sealed class CheckEmptyWorker<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class CheckEmptyWorker<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         // State control variables.
         internal struct State
@@ -33,9 +33,9 @@ namespace Tsavorite.core
 
         CancellationTokenSource cts = new();
 
-        readonly FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> recordPool;
+        readonly FreeRecordPool<TStoreFunctions, TAllocator> recordPool;
 
-        internal CheckEmptyWorker(FreeRecordPool<TKey, TValue, TStoreFunctions, TAllocator> recordPool) => this.recordPool = recordPool;
+        internal CheckEmptyWorker(FreeRecordPool<TStoreFunctions, TAllocator> recordPool) => this.recordPool = recordPool;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void Start()

@@ -8,11 +8,11 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Represents a logical database in Garnet
@@ -33,12 +33,12 @@ namespace Garnet.server
         /// <summary>
         /// Main Store
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore { get; }
+        public TsavoriteKV<MainStoreFunctions, MainStoreAllocator> MainStore { get; }
 
         /// <summary>
         /// Object Store
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore { get; }
+        public TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore { get; }
 
         /// <summary>
         /// Epoch instance used by server
@@ -120,8 +120,8 @@ namespace Garnet.server
 
         bool disposed = false;
 
-        public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
-            TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
+        public GarnetDatabase(int id, TsavoriteKV<MainStoreFunctions, MainStoreAllocator> mainStore,
+            TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             LightEpoch epoch, StateMachineDriver stateMachineDriver,
             CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
             bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut) : this()

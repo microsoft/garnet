@@ -15,7 +15,7 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="isObject"></param>
         /// <param name="type"></param>
-        public void SaveKeyEntryToLock(ArgSlice key, bool isObject, LockType type)
+        public void SaveKeyEntryToLock(PinnedSpanByte key, bool isObject, LockType type)
         {
             UpdateTransactionStoreType(isObject ? StoreType.Object : StoreType.Main);
             keyEntries.AddKey(key, isObject, type);
@@ -44,7 +44,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        public unsafe void VerifyKeyOwnership(ArgSlice key, LockType type)
+        public unsafe void VerifyKeyOwnership(PinnedSpanByte key, LockType type)
         {
             if (!clusterEnabled) return;
 
@@ -290,7 +290,7 @@ namespace Garnet.server
                 case RespCommand.GEORADIUS:
                 case RespCommand.GEORADIUSBYMEMBER:
                     // These commands may or may not store a result
-                    for (var i = idx; i < inputCount - 1; ++i)
+                    for (var i = idx; i < inputCount - 1; i++)
                     {
                         var span = respSession.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 

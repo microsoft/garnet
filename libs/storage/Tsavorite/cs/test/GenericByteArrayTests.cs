@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.IO;
 using System.Linq;
@@ -92,7 +94,7 @@ namespace Tsavorite.test
             }
         }
 
-        class MyByteArrayFuncs : SimpleSimpleFunctions<byte[], byte[]>
+        class MyByteArrayFuncs : SimpleLongSimpleFunctions<byte[], byte[]>
         {
             public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
@@ -117,3 +119,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

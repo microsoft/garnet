@@ -7,6 +7,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+#pragma warning disable IDE0005 // Using directive is unnecessary.
+    using static LogRecordUtils;
+
     sealed partial class StorageSession : IDisposable
     {
         // These contain classes so instantiate once and re-initialize
@@ -41,9 +44,9 @@ namespace Garnet.server
         /// <param name="count">size of every block or keys to return</param>
         /// <param name="typeObject">The type object to filter out</param>
         /// <returns></returns>
-        internal unsafe bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
+        internal unsafe bool DbScan(PinnedSpanByte patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
         {
-            const long IsObjectStoreCursor = 1L << 49;
+            const long IsObjectStoreCursor = 1L << LogAddress.kAddressBits;
             Keys ??= new();
             Keys.Clear();
 
@@ -79,7 +82,7 @@ namespace Garnet.server
                 }
             }
 
-            byte* patternPtr = patternB.ptr;
+            byte* patternPtr = patternB.ToPointer();
 
             mainStoreDbScanFuncs ??= new();
             mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length);
@@ -147,13 +150,13 @@ namespace Garnet.server
         /// <param name="includeTombstones"></param>
         /// <returns></returns>
         internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
+            where TScanFunctions : IScanIteratorFunctions
             => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
         /// </summary>
-        internal ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
+        internal ITsavoriteScanIterator IterateMainStore()
             => basicContext.Session.Iterate();
 
         /// <summary>
@@ -168,35 +171,34 @@ namespace Garnet.server
         /// <param name="includeTombstones"></param>
         /// <returns></returns>
         internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
-           where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
+           where TScanFunctions : IScanIteratorFunctions
             => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
         /// </summary>
-        internal ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()
+        internal ITsavoriteScanIterator IterateObjectStore()
             => objectStoreBasicContext.Session.Iterate();
 
         /// <summary>
-        ///  Get a list of the keys in the store and object store
-        ///  when using pattern
+        ///  Get a list of the keys in the store and object store when using pattern
         /// </summary>
         /// <returns></returns>
-        internal unsafe List<byte[]> DBKeys(ArgSlice pattern)
+        internal unsafe List<byte[]> DBKeys(PinnedSpanByte pattern)
         {
             Keys ??= new();
             Keys.Clear();
 
-            var allKeys = *pattern.ptr == '*' && pattern.Length == 1;
+            var allKeys = *pattern.ToPointer() == '*' && pattern.Length == 1;
 
             mainStoreDbKeysFuncs ??= new();
-            mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length);
+            mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length);
             basicContext.Session.Iterate(ref mainStoreDbKeysFuncs);
 
             if (!objectStoreBasicContext.IsNull)
             {
                 objStoreDbKeysFuncs ??= new();
-                objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length, matchType: null);
+                objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length, matchType: null);
                 objectStoreBasicContext.Session.Iterate(ref objStoreDbKeysFuncs);
             }
 
@@ -245,28 +247,26 @@ namespace Garnet.server
                 }
             }
 
-            internal sealed class ObjectStoreExpiredKeyDeletionScan : ExpiredKeysBase<byte[], IGarnetObject>
+            internal sealed class ObjectStoreExpiredKeyDeletionScan : ExpiredKeysBase
             {
-                protected override bool IsExpired(ref IGarnetObject value) => value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value);
-                protected override bool DeleteIfExpiredInMemory(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata)
+                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
                 {
                     var input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
                     var output = new GarnetObjectStoreOutput();
-                    return GarnetStatus.OK == storageSession.RMW_ObjectStore(ref key, ref input, ref output, ref storageSession.objectStoreBasicContext);
+                    return GarnetStatus.OK == storageSession.RMW_ObjectStore(logRecord.Key, ref input, ref output, ref storageSession.objectStoreBasicContext);
                 }
             }
 
-            internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase<SpanByte, SpanByte>
+            internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase
             {
-                protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
-                protected override bool DeleteIfExpiredInMemory(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata)
+                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
                 {
                     var input = new RawStringInput(RespCommand.DELIFEXPIM);
-                    return GarnetStatus.OK == storageSession.DEL_Conditional(ref key, ref input, ref storageSession.basicContext);
+                    return GarnetStatus.OK == storageSession.DEL_Conditional(PinnedSpanByte.FromPinnedSpan(logRecord.Key), ref input, ref storageSession.basicContext);
                 }
             }
 
-            internal abstract class ExpiredKeysBase<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
+            internal abstract class ExpiredKeysBase : IScanIteratorFunctions
             {
                 public long totalCount;
                 public long deletedCount;
@@ -275,20 +275,17 @@ namespace Garnet.server
                 public void Initialize(StorageSession storageSession)
                     => this.storageSession = storageSession;
 
-                protected abstract bool IsExpired(ref TValue value);
+                protected abstract bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
+                    where TSourceLogRecord : ISourceLogRecord;
 
-                protected abstract bool DeleteIfExpiredInMemory(ref TKey key, ref TValue value, RecordMetadata recordMetadata);
-
-                public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                        => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     totalCount++;
-                    if (IsExpired(ref value))
+                    if (CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Accept;
-                        if (DeleteIfExpiredInMemory(ref key, ref value, recordMetadata))
+                        if (DeleteIfExpiredInMemory(in logRecord, recordMetadata))
                             deletedCount++;
                     }
                     else
@@ -309,7 +306,7 @@ namespace Garnet.server
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions
             {
                 private readonly GetDBKeysInfo info;
 
@@ -318,21 +315,34 @@ namespace Garnet.server
                 internal void Initialize(List<byte[]> keys, byte* patternB, int length)
                     => info.Initialize(keys, patternB, length);
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                        => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
-                    if ((info.patternB != null && !GlobUtils.Match(info.patternB, info.patternLength, key.ToPointer(), key.Length, true))
-                        || (value.MetadataSize != 0 && MainSessionFunctions.CheckExpiry(ref value)))
+                    var key = logRecord.Key;
+
+                    if (CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
+                        return true;
                     }
-                    else
+
+                    if (info.patternB != null)
                     {
-                        cursorRecordResult = CursorRecordResult.Accept;
-                        info.keys.Add(key.ToByteArray());
+                        bool ok;
+                        if (logRecord.IsPinnedKey)
+                            ok = GlobUtils.Match(info.patternB, info.patternLength, logRecord.PinnedKeyPointer, key.Length, true);
+                        else
+                            fixed (byte* keyPtr = key)
+                                ok = GlobUtils.Match(info.patternB, info.patternLength, keyPtr, key.Length, true);
+                        if (!ok)
+                        {
+                            cursorRecordResult = CursorRecordResult.Skip;
+                            return true;
+                        }
                     }
+
+                    info.keys.Add(key.ToArray());
+                    cursorRecordResult = CursorRecordResult.Accept;
                     return true;
                 }
 
@@ -341,7 +351,7 @@ namespace Garnet.server
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class ObjectStoreGetDBKeys : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal sealed class ObjectStoreGetDBKeys : IScanIteratorFunctions
             {
                 private readonly GetDBKeysInfo info;
 
@@ -350,36 +360,38 @@ namespace Garnet.server
                 internal void Initialize(List<byte[]> keys, byte* patternB, int length, Type matchType = null)
                     => info.Initialize(keys, patternB, length, matchType);
 
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
-                    if (value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value))
+                    if (CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
                     }
 
+                    var key = logRecord.Key;
                     if (info.patternB != null)
                     {
-                        fixed (byte* keyPtr = key)
+                        bool ok;
+                        if (logRecord.IsPinnedKey)
+                            ok = GlobUtils.Match(info.patternB, info.patternLength, logRecord.PinnedKeyPointer, key.Length, true);
+                        else
+                            fixed (byte* keyPtr = key)
+                                ok = GlobUtils.Match(info.patternB, info.patternLength, keyPtr, key.Length, true);
+                        if (!ok)
                         {
-                            if (!GlobUtils.Match(info.patternB, info.patternLength, keyPtr, key.Length, true))
-                            {
-                                cursorRecordResult = CursorRecordResult.Skip;
-                                return true;
-                            }
+                            cursorRecordResult = CursorRecordResult.Skip;
+                            return true;
                         }
                     }
 
-                    if (info.matchType != null && value.GetType() != info.matchType)
+                    if (info.matchType != null && logRecord.ValueObject.GetType() != info.matchType)
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;
                     }
 
-                    info.keys.Add(key);
+                    info.keys.Add(key.ToArray());
                     cursorRecordResult = CursorRecordResult.Accept;
                     return true;
                 }
@@ -397,7 +409,7 @@ namespace Garnet.server
                 internal void Initialize() => count = 0;
             }
 
-            internal sealed class MainStoreGetDBSize : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed class MainStoreGetDBSize : IScanIteratorFunctions
             {
                 private readonly GetDBSizeInfo info;
 
@@ -407,23 +419,21 @@ namespace Garnet.server
 
                 internal void Initialize() => info.Initialize();
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (value.MetadataSize == 0 || !MainSessionFunctions.CheckExpiry(ref value))
-                    {
+                    if (!CheckExpiry(in logRecord))
                         ++info.count;
-                    }
                     return true;
                 }
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class ObjectStoreGetDBSize : IScanIteratorFunctions<byte[], IGarnetObject>
+            internal sealed class ObjectStoreGetDBSize : IScanIteratorFunctions
             {
                 private readonly GetDBSizeInfo info;
 
@@ -433,17 +443,15 @@ namespace Garnet.server
 
                 internal void Initialize() => info.Initialize();
 
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
-                    if (value.Expiration == 0 || !ObjectSessionFunctions.CheckExpiry(value))
-                    {
+                    if (!CheckExpiry(in logRecord))
                         ++info.count;
-                    }
                     return true;
                 }
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }

@@ -92,7 +92,7 @@ namespace Garnet.test
 
             // set 10_000 strings
             const int KeyCount = 10_000;
-            for (int i = 0; i < KeyCount; ++i)
+            for (int i = 0; i < KeyCount; i++)
                 db.StringSet($"try:{i}", i);
 
             // get and count keys using SE Redis, using the default pageSize of 250
@@ -332,19 +332,19 @@ namespace Garnet.test
                 db.StringSet(new RedisKey($"key:{i}"), new RedisValue($"keyvalue-{i}"));
             }
 
-            int cursor = 0;
+            long cursor = 0;
             var recordsReturned = 0;
 
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString());
                 ClassicAssert.AreEqual(ResultType.BulkString, result[0].Resp2Type);
-                _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+                _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
             } while (cursor != 0);
 
-            ClassicAssert.IsTrue(recordsReturned == nKeys);
+            ClassicAssert.AreEqual(nKeys, recordsReturned);
         }
 
         [Test]
@@ -360,14 +360,14 @@ namespace Garnet.test
                 db.StringSet(new RedisKey($"key:{i}"), new RedisValue($"keyvalue-{i}"));
             }
 
-            int cursor = 0;
+            long cursor = 0;
             var recordsReturned = 0;
             var count = rnd.Next(1, 20);
 
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString(), "COUNT", count);
-                _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+                _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
                 count = rnd.Next(1, 20);
@@ -388,9 +388,9 @@ namespace Garnet.test
                 db.StringSet(new RedisKey($"key:{i}"), new RedisValue($"keyvalue-{i}"));
             }
 
-            int cursor = 0;
+            long cursor = 0;
             var result = db.Execute("SCAN", cursor.ToString(), "MATCH", "*11*", "COUNT", 1000);
-            _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+            _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
             RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
             ClassicAssert.IsTrue(cursor == 0);
             ClassicAssert.IsTrue(keysMatch.Length == 11);
@@ -408,9 +408,9 @@ namespace Garnet.test
                 db.StringSet(new RedisKey($"key:{i}"), new RedisValue($"keyvalue-{i}"));
             }
 
-            int cursor = 0;
+            long cursor = 0;
             var result = db.Execute("SCAN", cursor.ToString(), "TYPE", "string", "COUNT", "100");
-            _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+            _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
             RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
             ClassicAssert.IsTrue(cursor == 0);
             ClassicAssert.IsTrue(keysMatch.Length == 100);
@@ -443,16 +443,16 @@ namespace Garnet.test
                 db.ListLeftPush(new RedisKey($"lkey:{i}"), new RedisValue("lvalue"));
             }
 
-            int cursor = 0;
+            long cursor = 0;
             var result = db.Execute("SCAN", cursor.ToString(), "TYPE", "string", "COUNT", "100");
-            _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+            _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
             RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
             ClassicAssert.IsTrue(cursor == 0);
             ClassicAssert.IsTrue(keysMatch.Length == 100);
 
             cursor = 0;
             result = db.Execute("SCAN", cursor.ToString(), "TYPE", "zset");
-            _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+            _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
             keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
             ClassicAssert.IsTrue(cursor == 0);
             ClassicAssert.IsTrue(keysMatch.Length == 10);
@@ -460,7 +460,7 @@ namespace Garnet.test
 
             cursor = 0;
             result = db.Execute("SCAN", cursor.ToString(), "TYPE", "LIST");
-            _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+            _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
             keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
             ClassicAssert.IsTrue(cursor == 0);
             ClassicAssert.IsTrue(keysMatch.Length == 10);
@@ -522,13 +522,13 @@ namespace Garnet.test
                 db.HashSet(new RedisKey($"hskey:{i}"), [new HashEntry("field1", "1")]);
             }
 
-            int cursor = 0;
+            long cursor = 0;
             int recordsReturned = 0;
 
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString(), "TYPE", "HASH", "MATCH", "hs*");
-                _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+                _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
             } while (cursor != 0);
@@ -540,7 +540,7 @@ namespace Garnet.test
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString(), "type", "hash", "match", "hs*");
-                _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+                _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
             } while (cursor != 0);

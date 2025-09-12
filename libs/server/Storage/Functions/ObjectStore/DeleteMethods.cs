@@ -8,30 +8,33 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool SingleDeleter(ref byte[] key, ref IGarnetObject value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             => true;
 
         /// <inheritdoc />
-        public void PostSingleDeleter(ref byte[] key, ref DeleteInfo deleteInfo)
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!deleteInfo.RecordInfo.Modified)
+            if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
+                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref byte[] key, ref IGarnetObject value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!deleteInfo.RecordInfo.Modified)
+            if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
-            value = null;
+                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.MemorySize);
+
+            // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+            functionsState.objectStoreFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+            logRecord.ClearValueObject(obj => { });
             return true;
         }
     }
