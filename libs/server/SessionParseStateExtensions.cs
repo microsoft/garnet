@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 
@@ -853,12 +854,12 @@ namespace Garnet.server
         /// <returns>The extracted keys</returns>
         internal static ArgSlice[] ExtractCommandKeys(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
-            var keys = new List<ArgSlice>();
+            var keysIndexes = new List<(ArgSlice, int)>();
 
             foreach (var spec in commandInfo.KeySpecs)
-                TryAppendKeysFromSpec(ref state, spec, commandInfo.IsSubCommand, keys);
+                TryAppendKeysFromSpec(ref state, spec, commandInfo.IsSubCommand, keysIndexes);
 
-            return keys.ToArray();
+            return keysIndexes.OrderBy(k => k.Item2).Select(k => k.Item1).ToArray();
         }
 
         /// <summary>
@@ -869,12 +870,12 @@ namespace Garnet.server
         /// <returns>The extracted keys and flags</returns>
         internal static (ArgSlice, KeySpecificationFlags)[] ExtractCommandKeysAndFlags(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
-            var keysAndFlags = new List<(ArgSlice, KeySpecificationFlags)>();
+            var keysFlagsIndexes = new List<(ArgSlice, KeySpecificationFlags, int)>();
 
             foreach (var spec in commandInfo.KeySpecs)
-                TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysAndFlags);
+                TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysFlagsIndexes);
 
-            return keysAndFlags.ToArray();
+            return keysFlagsIndexes.OrderBy(k => k.Item3).Select(k => (k.Item1, k.Item2)).ToArray();
         }
 
         /// <summary>
@@ -883,8 +884,8 @@ namespace Garnet.server
         /// <param name="parseState">The SessionParseState instance.</param>
         /// <param name="keySpec">The key specification to use for extraction.</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
-        /// <param name="keys">The list to store extracted keys</param>
-        private static bool TryAppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<ArgSlice> keys)
+        /// <param name="keysToIndexes">The list to store extracted keys and their matching indexes</param>
+        private static bool TryAppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, int)> keysToIndexes)
         {
             if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
                 return false;
@@ -895,7 +896,7 @@ namespace Garnet.server
                 if (key.Length == 0)
                     continue;
 
-                keys.Add(key);
+                keysToIndexes.Add((key, i));
             }
 
             return true;
@@ -907,8 +908,8 @@ namespace Garnet.server
         /// <param name="parseState">The SessionParseState instance.</param>
         /// <param name="keySpec">The key specification to use for extraction.</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
-        /// <param name="keysAndFlags">The list to store extracted keys and flags</param>
-        private static bool TryAppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, KeySpecificationFlags)> keysAndFlags)
+        /// <param name="keysAndFlags">The list to store extracted keys and flags and their indexes</param>
+        private static bool TryAppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, KeySpecificationFlags, int)> keysAndFlags)
         {
             if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
                 return false;
@@ -919,7 +920,7 @@ namespace Garnet.server
                 if (key.Length == 0)
                     continue;
 
-                keysAndFlags.Add((key, keySpec.Flags));
+                keysAndFlags.Add((key, keySpec.Flags, i));
             }
 
             return true;

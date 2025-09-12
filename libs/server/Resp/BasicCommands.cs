@@ -1176,28 +1176,16 @@ namespace Garnet.server
 
             var cmdName = parseState.GetString(0);
 
-            var cmdFound = false;
-            var simpleCmdInfo = SimpleRespCommandInfo.Default;
-
-            if (Enum.TryParse<RespCommand>(cmdName, true, out var cmd))
-            {
-                if (RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
-                    cmdFound = true;
-
-                if (!cmdFound && storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out var cmdInfo))
-                {
-                    cmdInfo.PopulateSimpleCommandInfo(ref simpleCmdInfo);
-                    cmdFound = true;
-                }
-            }
-
-            if (!cmdFound)
+            // Try to parse command and get its simplified info
+            if (!TryGetSimpleCommandInfo(cmdName, out var simpleCmdInfo))
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
 
+            // If command has no key specifications, abort with error
             if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
 
-            // An offset is applied to the key extraction as the command (and subcommand, if any) are included in the parse state.
+            // Extract command keys from parse state and key specification
+            // An offset is applied to the parse state, as the command (and possibly subcommand) are included in the parse state.
             var slicedParseState = parseState.Slice(simpleCmdInfo.IsSubCommand ? 2 : 1);
             var keys = slicedParseState.ExtractCommandKeys(simpleCmdInfo);
 
@@ -1225,28 +1213,16 @@ namespace Garnet.server
 
             var cmdName = parseState.GetString(0);
 
-            var cmdFound = false;
-            var simpleCmdInfo = SimpleRespCommandInfo.Default;
-
-            if (Enum.TryParse<RespCommand>(cmdName, true, out var cmd))
-            {
-                if (RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
-                    cmdFound = true;
-
-                if (!cmdFound && storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out var cmdInfo))
-                {
-                    cmdInfo.PopulateSimpleCommandInfo(ref simpleCmdInfo);
-                    cmdFound = true;
-                }
-            }
-
-            if (!cmdFound)
+            // Try to parse command and get its simplified info
+            if (!TryGetSimpleCommandInfo(cmdName, out var simpleCmdInfo))
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
 
+            // If command has no key specifications, abort with error
             if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
 
-            // An offset is applied to the key extraction as the command (and subcommand, if any) are included in the parse state.
+            // Extract command keys from parse state and key specification
+            // An offset is applied to the parse state, as the command (and possibly subcommand) are included in the parse state.
             var slicedParseState = parseState.Slice(simpleCmdInfo.IsSubCommand ? 2 : 1);
             var keysAndFlags = slicedParseState.ExtractCommandKeysAndFlags(simpleCmdInfo);
 
@@ -1781,6 +1757,29 @@ namespace Garnet.server
                 return false;
             }
             key = parseState.GetArgSliceByRef(0).SpanByte;
+            return true;
+        }
+
+        private bool TryGetSimpleCommandInfo(string cmdName, out SimpleRespCommandInfo simpleCmdInfo)
+        {
+            simpleCmdInfo = SimpleRespCommandInfo.Default;
+
+            // Try to parse known command from name and obtain its command info
+            if (!Enum.TryParse<RespCommand>(cmdName, true, out var cmd) ||
+                !RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
+            {
+                // If we no known command or info was found, attempt to find custom command
+                if (storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out var cmdInfo))
+                {
+                    cmdInfo.PopulateSimpleCommandInfo(ref simpleCmdInfo);
+                }
+                else
+                {
+                    // No matching command was found
+                    return false;
+                }
+            }
+
             return true;
         }
 
