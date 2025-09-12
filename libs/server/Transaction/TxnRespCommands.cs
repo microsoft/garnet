@@ -166,22 +166,17 @@ namespace Garnet.server
                 }
             }
 
-            // Get and add keys to txn key list
-            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error);
-
-            if (skipped < 0)
+            if (cmd == RespCommand.DEBUG && !CanRunDebug())
             {
-                // We ran out of data in network buffer, let caller handler it
-                if (skipped == -2) return false;
-
-                // We found an unsupported command, abort
-                while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(System.Text.Encoding.ASCII.GetBytes(string.Format(
+                           CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.DEBUG, "enable-debug-command")), ref dcurr, dend))
                     SendAndReset();
 
                 txnManager.Abort();
-
                 return true;
             }
+
+            txnManager.LockKeys(commandInfo);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();
