@@ -15,7 +15,7 @@ namespace CommandInfoUpdater
     /// </summary>
     public class CommandInfoUpdater
     {
-        const int QUERY_CMD_BATCH_SIZE = 10;
+        const int QUERY_CMD_BATCH_SIZE = 1;
         private static readonly string CommandInfoFileName = "RespCommandsInfo.json";
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
 

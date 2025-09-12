@@ -1066,6 +1066,14 @@
                         "Token": "NO"
                       }
                     ]
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandBasicArgument",
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
               }

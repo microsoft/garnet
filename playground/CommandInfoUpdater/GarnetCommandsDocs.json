@@ -40,135 +40,144 @@
     ]
   },
   {
-    "Command": "CLIENT_KILL",
-    "Name": "CLIENT|KILL",
-    "Summary": "Terminates open connections.",
+    "Command": "CLIENT",
+    "Name": "CLIENT",
+    "Summary": "A container for client connection commands.",
     "Group": "Connection",
-    "Complexity": "O(N) where N is the number of client connections",
-    "Arguments": [
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
       {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "FILTER",
-        "Type": "OneOf",
+        "Command": "CLIENT_KILL",
+        "Name": "CLIENT|KILL",
+        "Summary": "Terminates open connections.",
+        "Group": "Connection",
+        "Complexity": "O(N) where N is the number of client connections",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "OLD-FORMAT",
-            "DisplayText": "ip:port",
-            "Type": "String"
-          },
-          {
             "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "NEW-FORMAT",
+            "Name": "FILTER",
             "Type": "OneOf",
-            "ArgumentFlags": "Multiple",
             "Arguments": [
               {
                 "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "CLIENT-ID",
-                "DisplayText": "client-id",
-                "Type": "Integer",
-                "Token": "ID",
-                "ArgumentFlags": "Optional"
+                "Name": "OLD-FORMAT",
+                "DisplayText": "ip:port",
+                "Type": "String"
               },
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
-                "Name": "CLIENT-TYPE",
+                "Name": "NEW-FORMAT",
                 "Type": "OneOf",
-                "Token": "TYPE",
-                "ArgumentFlags": "Optional",
+                "ArgumentFlags": "Multiple",
                 "Arguments": [
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "NORMAL",
-                    "DisplayText": "normal",
-                    "Type": "PureToken",
-                    "Token": "NORMAL"
+                    "Name": "CLIENT-ID",
+                    "DisplayText": "client-id",
+                    "Type": "Integer",
+                    "Token": "ID",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "CLIENT-TYPE",
+                    "Type": "OneOf",
+                    "Token": "TYPE",
+                    "ArgumentFlags": "Optional",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "NORMAL",
+                        "DisplayText": "normal",
+                        "Type": "PureToken",
+                        "Token": "NORMAL"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "MASTER",
+                        "DisplayText": "master",
+                        "Type": "PureToken",
+                        "Token": "MASTER"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "SLAVE",
+                        "DisplayText": "slave",
+                        "Type": "PureToken",
+                        "Token": "SLAVE"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "REPLICA",
+                        "DisplayText": "replica",
+                        "Type": "PureToken",
+                        "Token": "REPLICA"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "PUBSUB",
+                        "DisplayText": "pubsub",
+                        "Type": "PureToken",
+                        "Token": "PUBSUB"
+                      }
+                    ]
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "MASTER",
-                    "DisplayText": "master",
-                    "Type": "PureToken",
-                    "Token": "MASTER"
+                    "Name": "USERNAME",
+                    "DisplayText": "username",
+                    "Type": "String",
+                    "Token": "USER",
+                    "ArgumentFlags": "Optional"
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "SLAVE",
-                    "DisplayText": "slave",
-                    "Type": "PureToken",
-                    "Token": "SLAVE"
+                    "Name": "ADDR",
+                    "DisplayText": "ip:port",
+                    "Type": "String",
+                    "Token": "ADDR",
+                    "ArgumentFlags": "Optional"
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "REPLICA",
-                    "DisplayText": "replica",
-                    "Type": "PureToken",
-                    "Token": "REPLICA"
+                    "Name": "LADDR",
+                    "DisplayText": "ip:port",
+                    "Type": "String",
+                    "Token": "LADDR",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "SKIPME",
+                    "Type": "OneOf",
+                    "Token": "SKIPME",
+                    "ArgumentFlags": "Optional",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "YES",
+                        "DisplayText": "yes",
+                        "Type": "PureToken",
+                        "Token": "YES"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "NO",
+                        "DisplayText": "no",
+                        "Type": "PureToken",
+                        "Token": "NO"
+                      }
+                    ]
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "PUBSUB",
-                    "DisplayText": "pubsub",
-                    "Type": "PureToken",
-                    "Token": "PUBSUB"
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "USERNAME",
-                "DisplayText": "username",
-                "Type": "String",
-                "Token": "USER",
-                "ArgumentFlags": "Optional"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "ADDR",
-                "DisplayText": "ip:port",
-                "Type": "String",
-                "Token": "ADDR",
-                "ArgumentFlags": "Optional"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "LADDR",
-                "DisplayText": "ip:port",
-                "Type": "String",
-                "Token": "LADDR",
-                "ArgumentFlags": "Optional"
-              },
-              {
-                "TypeDiscriminator": "RespCommandContainerArgument",
-                "Name": "SKIPME",
-                "Type": "OneOf",
-                "Token": "SKIPME",
-                "ArgumentFlags": "Optional",
-                "Arguments": [
-                  {
-                    "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "YES",
-                    "DisplayText": "yes",
-                    "Type": "PureToken",
-                    "Token": "YES"
-                  },
-                  {
-                    "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "NO",
-                    "DisplayText": "no",
-                    "Type": "PureToken",
-                    "Token": "NO"
-                  }
-                ]
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "MAXAGE",
-                "DisplayText": "maxage",
-                "Type": "Integer",
-                "Token": "MAXAGE",
-                "ArgumentFlags": "Optional"
               }
             ]
           }

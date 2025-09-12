@@ -924,7 +924,7 @@ namespace Garnet.server
 
             return true;
         }
-        
+
         /// <summary>
         /// Extracts the first, last, and step arguments for key searching based on a simplified RESP key specification and the current parse state.
         /// </summary>
