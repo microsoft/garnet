@@ -95,7 +95,7 @@ namespace Tsavorite.core
 
                     // This allocation is below the necessary address so put it on the free list or abandon it, then repeat the loop.
                     if (RevivificationManager.UseFreeRecordPool)
-                    { 
+                    {
                         // Set up a simple LogRecord with specified key size and value size taking the entire non-key space (we don't have optionals now)
                         // so revivification can read the record size.
                         var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);

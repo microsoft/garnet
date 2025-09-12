@@ -269,7 +269,7 @@ namespace Garnet.server
                         if (srcLogRecord.IsPinnedValue)
                             fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.PinnedValuePointer);
                         else
-                            fixed(byte* valuePtr = srcLogRecord.ValueSpan)
+                            fixed (byte* valuePtr = srcLogRecord.ValueSpan)
                                 fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, valuePtr);
                         return fieldInfo;
 
@@ -279,7 +279,7 @@ namespace Garnet.server
                         if (srcLogRecord.IsPinnedValue)
                             fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, srcLogRecord.PinnedValuePointer);
                         else
-                            fixed(byte* dstHLL = srcLogRecord.ValueSpan)
+                            fixed (byte* dstHLL = srcLogRecord.ValueSpan)
                                 fieldInfo.ValueDataSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
                         return fieldInfo;
 
@@ -315,14 +315,14 @@ namespace Garnet.server
                             // Set HasExpiration to match with EvaluateExpireInPlace.
                             if (srcLogRecord.Info.HasExpiration)
                             {
-                                    // case ExpireOption.NX:                // HasExpiration is true so we will retain it
-                                    // case ExpireOption.XX:
-                                    // case ExpireOption.None:
-                                    // case ExpireOption.GT:
-                                    // case ExpireOption.XXGT:
-                                    // case ExpireOption.LT:
-                                    // case ExpireOption.XXLT:
-                                    fieldInfo.HasExpiration = true;         // Will update or retain
+                                // case ExpireOption.NX:                // HasExpiration is true so we will retain it
+                                // case ExpireOption.XX:
+                                // case ExpireOption.None:
+                                // case ExpireOption.GT:
+                                // case ExpireOption.XXGT:
+                                // case ExpireOption.LT:
+                                // case ExpireOption.XXLT:
+                                fieldInfo.HasExpiration = true;         // Will update or retain
                             }
                             else
                             {

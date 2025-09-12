@@ -98,7 +98,7 @@ namespace Garnet.server
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                         if (newExpiry > logRecord.Expiration)
-                        { 
+                        {
                             _ = logRecord.TrySetExpiration(newExpiry);
                             o->result1 = 1;
                         }

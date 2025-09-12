@@ -1157,7 +1157,7 @@ namespace Tsavorite.core
             *(THeader*)(physicalAddress + headerSize) = userHeader;
             var offset = headerSize + sizeof(THeader);
             item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();    
+            offset += item1.TotalSize();
             item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
             SetHeader(length, physicalAddress);
             safeTailRefreshEntryEnqueued?.Signal();

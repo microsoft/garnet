@@ -85,7 +85,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
             => true;
         /// <inheritdoc/>
-        public virtual bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo) 
+        public virtual bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
             => true;
         /// <inheritdoc/>
@@ -118,7 +118,7 @@ namespace Tsavorite.core
             => new() { KeyDataSize = key.Length, ValueDataSize = value.Length, ValueIsObject = false };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TInput input)
-            => new () { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord

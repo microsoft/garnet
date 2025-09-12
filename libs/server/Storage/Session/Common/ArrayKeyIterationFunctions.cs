@@ -332,7 +332,7 @@ namespace Garnet.server
                         if (logRecord.IsPinnedKey)
                             ok = GlobUtils.Match(info.patternB, info.patternLength, logRecord.PinnedKeyPointer, key.Length, true);
                         else
-                            fixed(byte* keyPtr = key)
+                            fixed (byte* keyPtr = key)
                                 ok = GlobUtils.Match(info.patternB, info.patternLength, keyPtr, key.Length, true);
                         if (!ok)
                         {

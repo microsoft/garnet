@@ -6,8 +6,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    using static Utility;
     using static LogAddress;
+    using static Utility;
 
     /// <summary>Hash table entry information for a key</summary>
     public unsafe struct HashEntryInfo

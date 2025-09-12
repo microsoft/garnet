@@ -50,7 +50,7 @@ namespace Tsavorite.core
         /// Get pointer to the start of the slice
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetPointer(byte *newPtr) => ptr = newPtr;
+        public void SetPointer(byte* newPtr) => ptr = newPtr;
 
         /// <summary>
         /// Reset the contained Span

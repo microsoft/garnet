@@ -57,7 +57,7 @@ namespace Garnet.server
                 long size = Utility.RoundUp(logRecord.Key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead;
 
                 if (!logRecord.Info.Tombstone)
-                { 
+                {
                     var value = logRecord.ValueObject;
                     if (value != null) // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)
                         size += value.MemorySize;

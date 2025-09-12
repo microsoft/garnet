@@ -155,7 +155,7 @@ namespace Garnet.server
                     if (srcLogRecord.IsPinnedValue)
                         count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, srcLogRecord.PinnedValuePointer, value.Length);
                     else
-                        fixed(byte* valuePtr = value)
+                        fixed (byte* valuePtr = value)
                             count = BitmapManager.BitCountDriver(bcStartOffset, bcEndOffset, bcOffsetType, valuePtr, value.Length);
 
                     functionsState.CopyRespNumber(count, ref output);
@@ -201,7 +201,7 @@ namespace Garnet.server
                     if (srcLogRecord.IsPinnedValue)
                         *(long*)outPtr = ((IntPtr)srcLogRecord.PinnedValuePointer).ToInt64();
                     else
-                        fixed(byte* valuePtr = value)
+                        fixed (byte* valuePtr = value)
                             *(long*)outPtr = ((IntPtr)valuePtr).ToInt64();
 
                     *(int*)(outPtr + sizeof(long)) = value.Length;
@@ -496,7 +496,7 @@ namespace Garnet.server
             }
             else
             {
-                fixed(byte* valuePtr = value)
+                fixed (byte* valuePtr = value)
                 {
                     if (!IsValidNumber(value.Length, valuePtr, output.SpanByte.Span, out val))
                         return true;

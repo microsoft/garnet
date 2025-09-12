@@ -184,7 +184,7 @@ namespace Tsavorite.core
 
             // We are not here from Read() so have not processed readcache; search that as well as the in-memory log.
             // minAddress is either HeadAddress or ReadOnlyAddress for the main log.
-            if ((UseReadCache && FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress)) 
+            if ((UseReadCache && FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress))
                 || TraceBackForKeyMatch(key, ref stackCtx.recSrc, minAddress: minAddress))
             {
                 if (stackCtx.recSrc.GetInfo().IsClosed)

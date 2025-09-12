@@ -151,7 +151,7 @@ namespace Garnet.server
         /// Constructor
         /// </summary>
         public SortedSetObject()
-            : base(new (MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(new(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int)))
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);

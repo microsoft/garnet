@@ -39,7 +39,7 @@ namespace Tsavorite.core
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
-                long beginAddress, long endAddress, LightEpoch epoch, 
+                long beginAddress, long endAddress, LightEpoch epoch,
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode, includeClosedRecords, epoch, hlogBase.LogPageSizeBits, logger: logger)
@@ -384,7 +384,7 @@ namespace Tsavorite.core
             HasExpiration = Info.HasExpiration
         };
         #endregion // ISourceLogRecord
- 
+
         /// <summary>
         /// Dispose iterator
         /// </summary>

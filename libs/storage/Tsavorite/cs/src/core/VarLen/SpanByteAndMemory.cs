@@ -78,7 +78,7 @@ namespace Tsavorite.core
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => IsSpanByte
-                ? SpanByte.ReadOnlySpan 
+                ? SpanByte.ReadOnlySpan
                 : (Memory != null ? Memory.Memory.Span.Slice(0, Length) : new(null, 0));
         }
 
@@ -93,7 +93,7 @@ namespace Tsavorite.core
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => IsSpanByte
-                ? SpanByte.Span 
+                ? SpanByte.Span
                 : (Memory != null ? MemorySpan.Slice(0, Length) : new(null, 0));
         }
 

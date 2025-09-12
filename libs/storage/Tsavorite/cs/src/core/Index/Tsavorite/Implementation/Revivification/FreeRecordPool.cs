@@ -10,8 +10,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    using static Utility;
     using static LogAddress;
+    using static Utility;
 
     [StructLayout(LayoutKind.Explicit, Size = sizeof(long))]
     internal struct FreeRecord

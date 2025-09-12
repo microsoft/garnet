@@ -413,11 +413,11 @@ namespace Tsavorite.core
                         throw;
                     }
 
-                if (isCommitRecord)
-                {
-                    TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
-                    if (info.CommitNum != long.MaxValue) continue;
+                    if (isCommitRecord)
+                    {
+                        TsavoriteLogRecoveryInfo info = new();
+                        info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
+                        if (info.CommitNum != long.MaxValue) continue;
 
                         // Otherwise, no more entries
                         return false;

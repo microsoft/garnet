@@ -1231,7 +1231,7 @@ namespace Garnet.server
                     if (dstLogRecord.IsPinnedValue)
                         (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, dstLogRecord.PinnedValuePointer, newValue.Length);
                     else
-                        fixed(byte* newValuePtr = newValue)
+                        fixed (byte* newValuePtr = newValue)
                             (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValue.Length);
 
                     if (!overflow)

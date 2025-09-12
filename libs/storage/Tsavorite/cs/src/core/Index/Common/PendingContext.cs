@@ -165,7 +165,7 @@ namespace Tsavorite.core
                     diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
             }
 
-            private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions) 
+            private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions)
                     where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 if (this.input == default)
@@ -241,13 +241,13 @@ namespace Tsavorite.core
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public readonly RecordFieldInfo GetRecordFieldInfo() => new()
-                {
-                    KeyDataSize = Key.Length,
-                    ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
-                    ValueIsObject = Info.ValueIsObject,
-                    HasETag = Info.HasETag,
-                    HasExpiration = Info.HasExpiration
-                };
+            {
+                KeyDataSize = Key.Length,
+                ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+                ValueIsObject = Info.ValueIsObject,
+                HasETag = Info.HasETag,
+                HasExpiration = Info.HasExpiration
+            };
             #endregion // ISourceLogRecord
         }
     }

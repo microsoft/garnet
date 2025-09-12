@@ -103,7 +103,7 @@ namespace Garnet.server
             {
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null) 
+                if (functionsState.appendOnlyFile != null)
                     WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
                 return true;

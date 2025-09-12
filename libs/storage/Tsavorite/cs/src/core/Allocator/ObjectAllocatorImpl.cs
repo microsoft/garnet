@@ -13,8 +13,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    using static Utility;
     using static LogAddress;
+    using static Utility;
 
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, ObjectAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions

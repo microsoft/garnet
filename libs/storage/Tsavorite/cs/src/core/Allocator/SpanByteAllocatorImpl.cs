@@ -9,8 +9,8 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    using static Utility;
     using static LogAddress;
+    using static Utility;
 
     // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
@@ -300,7 +300,7 @@ namespace Tsavorite.core
         {
             using RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
                 includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
-            return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState, 
+            return ScanLookup<PinnedSpanByte, SpanByteAndMemory, TScanFunctions, RecordScanIterator<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>>(store, scanCursorState,
                 ref cursor, count, scanFunctions, iter, validateCursor, maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }
 

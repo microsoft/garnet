@@ -82,7 +82,7 @@ namespace Garnet.server
             var input = new RawStringInput(RespCommand.GET);
             value = default;
 
-            var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice()};
+            var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice() };
 
             var ret = GET(key, ref input, ref _output, ref context);
             if (ret == GarnetStatus.OK)

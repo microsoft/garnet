@@ -545,7 +545,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalUpsert<SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
-                        key, keyHash, ref input, srcStringValue, srcObjectValue:null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
+                        key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
             recordMetadata = new(pcontext.logicalAddress);

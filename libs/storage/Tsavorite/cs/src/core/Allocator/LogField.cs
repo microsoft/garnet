@@ -188,7 +188,7 @@ namespace Tsavorite.core
         {
             var objectId = GetObjectIdRef(fieldAddress);
             if (objectId != ObjectIdMap.InvalidObjectId)
-            { 
+            {
                 // Clear the byte[] from the existing slot
                 objectIdMap.Set(objectId, null);
             }

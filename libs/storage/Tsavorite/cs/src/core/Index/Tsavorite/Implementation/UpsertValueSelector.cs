@@ -13,7 +13,7 @@ namespace Tsavorite.core
         /// </summary>
         internal interface IUpsertValueSelector
         {
-            static abstract RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, ReadOnlySpan<byte> key, 
+            static abstract RecordSizeInfo GetUpsertRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, ReadOnlySpan<byte> key,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>;

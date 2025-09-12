@@ -67,7 +67,7 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input)
             where TSourceLogRecord : ISourceLogRecord
              => throw new NotImplementedException("GetRMWModifiedFieldInfo is not supported in this ISessionFunctions implementation");
-        public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input) 
+        public readonly RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref TInput input)
             => throw new NotImplementedException("GetRMWInitialFieldInfo is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input)
             => throw new NotImplementedException("GetUpsertFieldInfo(ReadOnlySpan<byte> value) is not supported in this ISessionFunctions implementation");
