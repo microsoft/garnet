@@ -235,6 +235,9 @@ namespace Garnet.server
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return sizeof(int);
 
+                    case RespCommand.VADD:
+                        return t.Length;
+
                     default:
                         if (cmd > RespCommandExtensions.LastValidCommand)
                         {

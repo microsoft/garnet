@@ -276,14 +276,21 @@ namespace Garnet.server
                     break;
                 case RespCommand.VADD:
                     {
+                        if(input.arg1 == VectorManager.VADDAppendLogArg)
+                        {
+                            // Synthetic op, do nothing
+                            break;
+                        }
+
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                         var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                        // ValueType is here, skipping during index creation
                         // Values is here, skipping during index creation
                         // Element is here, skipping during index creation
-                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(4).Span);
-                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(5).Span);
+                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
                         // Attributes is here, skipping during index creation
-                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(7).Span);
+                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
 
                         recordInfo.VectorSet = true;
 
@@ -797,7 +804,11 @@ namespace Garnet.server
                     // this is the case where it isn't expired
                     shouldUpdateEtag = false;
                     break;
-                case RespCommand.VADD: // Adding to an existing VectorSet is modeled as a read operations, so this is a no-op
+                case RespCommand.VADD:
+                    // Adding to an existing VectorSet is modeled as a read operations
+                    //
+                    // However, we do synthesize some (pointless) writes to implement replication
+                    // so just ignore them when they do arrive here.
                     return true;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)

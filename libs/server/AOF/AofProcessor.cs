@@ -341,7 +341,7 @@ namespace Garnet.server
                     StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, entryPtr);
+                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, respServerSession.storageSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(basicContext, entryPtr);
@@ -419,7 +419,7 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
+        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, VectorManager vectorManager, StorageSession storageSession, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -428,13 +428,20 @@ namespace Garnet.server
             // Reconstructing RawStringInput
 
             // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
+
+            // VADD requires special handling, shove it over to the VectorManager
+            if (storeInput.header.cmd == RespCommand.VADD)
+            {
+                vectorManager.HandleVectorSetAddReplication(storageSession, key, ref storeInput, ref basicContext);
+                return;
+            }
 
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
             if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
-                basicContext.CompletePending(true);
+                _ = basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }

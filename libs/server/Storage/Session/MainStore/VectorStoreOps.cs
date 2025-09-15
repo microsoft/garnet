@@ -88,6 +88,7 @@ namespace Garnet.server
 
             var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
             var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+            var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
             var valuesArg = values;
             var elementArg = element;
             var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
@@ -95,7 +96,7 @@ namespace Garnet.server
             var attributesArg = attributes;
             var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
 
-            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
+            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
 
             var input = new RawStringInput(RespCommand.VADD, ref parseState);
 
@@ -147,6 +148,12 @@ namespace Garnet.server
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
                     result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks);
+
+                    if (result == VectorManagerResult.OK)
+                    {
+                        // On successful addition, we need to manually replicate the write
+                        vectorManager.ReplicateVectorSetAdd(key, ref input, ref basicContext);
+                    }
 
                     return GarnetStatus.OK;
                 }

@@ -753,6 +753,11 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
+            if (input.header.cmd == RespCommand.VADD && input.arg1 != VectorManager.VADDAppendLogArg)
+            {
+                return;
+            }
+
             // We need this check because when we ingest records from the primary
             // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
             // will incorrectly modify the total length of value.
@@ -773,6 +778,12 @@ namespace Garnet.server
         void WriteLogRMW(ref SpanByte key, ref RawStringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
+
+            if (input.header.cmd == RespCommand.VADD && input.arg1 != VectorManager.VADDAppendLogArg)
+            {
+                return;
+            }
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(

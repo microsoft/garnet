@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -30,6 +31,7 @@ namespace Garnet.server
     public sealed class VectorManager
     {
         internal const int IndexSizeBytes = Index.Size;
+        internal const long VADDAppendLogArg = long.MinValue;
 
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
@@ -80,11 +82,18 @@ namespace Garnet.server
         /// <returns></returns>
         private ulong NextContext()
         {
-            var ret = Interlocked.Add(ref nextContextValue, 4);
+            while (true)
+            {
+                var ret = Interlocked.Add(ref nextContextValue, 4);
 
-            Debug.Assert(ret != 0, "0 is special, cannot use it as vector set context");
+                // 0 is special, don't return it (even if we wrap around)
+                if (ret == 0)
+                {
+                    continue;
+                }
 
-            return ret;
+                return ret;
+            }
         }
 
         /// <summary>
@@ -563,6 +572,135 @@ namespace Garnet.server
             finally
             {
                 ActiveThreadSession = null;
+            }
+        }
+
+        /// <summary>
+        /// For replication purposes, we need a write against the main log.
+        /// 
+        /// But we don't actually want to do the (expensive) vector ops as part of a write.
+        /// 
+        /// So this fakes up a modify operation that we can then intercept as part of replication.
+        /// 
+        /// This the Primary part, on a Replica <see cref="HandleVectorSetAddReplication"/> runs.
+        /// </summary>
+        internal void ReplicateVectorSetAdd<TContext>(SpanByte key, ref RawStringInput input, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
+
+            var inputCopy = input;
+            inputCopy.arg1 = VectorManager.VADDAppendLogArg;
+
+            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload(0);
+            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
+
+            Span<byte> dummyBytes = stackalloc byte[4];
+            var dummy = SpanByteAndMemory.FromPinnedSpan(dummyBytes);
+
+            var res = context.RMW(ref keyWithNamespace, ref inputCopy, ref dummy);
+
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref dummy, ref context);
+            }
+
+            if (!res.IsCompletedSuccessfully)
+            {
+                throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
+            }
+
+            // Helper to complete read/writes during vector set synthetic op goes asyn
+            static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref TContext context)
+            {
+                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                var more = completedOutputs.Next();
+                Debug.Assert(more);
+                status = completedOutputs.Current.Status;
+                output = completedOutputs.Current.Output;
+                more = completedOutputs.Next();
+                Debug.Assert(!more);
+                completedOutputs.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Vector Set adds are phrased as reads (once the index is created), so they require special handling.
+        /// 
+        /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
+        /// </summary>
+        internal void HandleVectorSetAddReplication<TContext>(StorageSession storageSession, SpanByte keyWithNamespace, ref RawStringInput input, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            // Undo mangling that got replication going
+            input.arg1 = default;
+            Span<byte> keyBytes = stackalloc byte[keyWithNamespace.Length - 1];
+
+            var key = SpanByte.FromPinnedSpan(keyBytes);
+            keyWithNamespace.AsReadOnlySpan().CopyTo(key.AsSpan());
+
+            Span<byte> indexBytes = stackalloc byte[128];
+            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexBytes);
+
+            // Equivalent to VectorStoreOps.VectorSetAdd, except with no locking or formatting
+            while (true)
+            {
+                var readStatus = context.Read(ref key, ref input, ref indexConfig);
+                if (readStatus.IsPending)
+                {
+                    CompletePending(ref readStatus, ref indexConfig, ref context);
+                }
+
+                if (!readStatus.Found)
+                {
+                    // Create the vector set index
+                    var writeStatus = context.RMW(ref key, ref input);
+                    if (writeStatus.IsPending)
+                    {
+                        CompletePending(ref writeStatus, ref indexConfig, ref context);
+                    }
+
+                    if (!writeStatus.IsCompletedSuccessfully)
+                    {
+                        throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
+                    }
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+            var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+            var valueType = MemoryMarshal.Read<VectorValueType>(input.parseState.GetArgSliceByRef(2).Span);
+            var values = input.parseState.GetArgSliceByRef(3).Span;
+            var element = input.parseState.GetArgSliceByRef(4).Span;
+            var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+            var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+            var attributes = input.parseState.GetArgSliceByRef(7).Span;
+            var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+
+            var addRes = TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks);
+            if (addRes != VectorManagerResult.OK)
+            {
+                throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
+            }
+
+            // Helper to complete read/writes during vector set op replay that go async
+            static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref TContext context)
+            {
+                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                var more = completedOutputs.Next();
+                Debug.Assert(more);
+                status = completedOutputs.Current.Status;
+                output = completedOutputs.Current.Output;
+                more = completedOutputs.Next();
+                Debug.Assert(!more);
+                completedOutputs.Dispose();
             }
         }
 
