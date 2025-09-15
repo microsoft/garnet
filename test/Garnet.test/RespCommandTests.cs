@@ -218,7 +218,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands();
+            var customCommandsRegistered = RegisterCustomCommands([ "DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT" ]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
@@ -246,7 +246,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands();
+            var customCommandsRegistered = RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
@@ -329,7 +329,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, commandCount);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands();
+            var customCommandsRegistered = RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
@@ -548,20 +548,32 @@ namespace Garnet.test
             }
         }
 
-        private string[] RegisterCustomCommands()
+        private string[] RegisterCustomCommands(List<string> registerCommandsSubset = null)
         {
-            var registeredCommands = new[] { "DELIFM", "MGETIFPM", "MYDICTGET", "MYDICTSET", "SETIFPM", "SETWPIFPGT" };
+            var commands = new HashSet<string> { "DELIFM", "MGETIFPM", "MYDICTGET", "MYDICTSET", "READWRITETX", "SETIFPM", "SETWPIFPGT" };
+            if (registerCommandsSubset != null)
+            {
+                commands.IntersectWith(registerCommandsSubset);
+                CollectionAssert.IsNotEmpty(commands);
+            }
 
             var factory = new MyDictFactory();
-            server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand(), respCustomCommandsInfo["DELIFM"], respCustomCommandsDocs["DELIFM"]);
-            server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"], respCustomCommandsDocs["MGETIFPM"]);
-            server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), respCustomCommandsInfo["MYDICTGET"], respCustomCommandsDocs["MYDICTGET"]);
-            server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"], respCustomCommandsDocs["MYDICTSET"]);
-            server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), respCustomCommandsInfo["READWRITETX"], respCustomCommandsDocs["READWRITETX"]);
-            server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"], respCustomCommandsDocs["SETIFPM"]);
-            server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"], respCustomCommandsDocs["SETWPIFPGT"]);
+            if (commands.Contains("DELIFM"))
+                server.Register.NewCommand("DELIFM", CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand(), respCustomCommandsInfo["DELIFM"], respCustomCommandsDocs["DELIFM"]);
+            if (commands.Contains("MGETIFPM"))
+                server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"], respCustomCommandsDocs["MGETIFPM"]);
+            if (commands.Contains("MYDICTGET"))
+                server.Register.NewCommand("MYDICTGET", CommandType.Read, factory, new MyDictGet(), respCustomCommandsInfo["MYDICTGET"], respCustomCommandsDocs["MYDICTGET"]);
+            if (commands.Contains("MYDICTSET"))
+                server.Register.NewCommand("MYDICTSET", CommandType.ReadModifyWrite, factory, new MyDictSet(), respCustomCommandsInfo["MYDICTSET"], respCustomCommandsDocs["MYDICTSET"]);
+            if (commands.Contains("READWRITETX"))
+                server.Register.NewTransactionProc("READWRITETX", () => new ReadWriteTxn(), respCustomCommandsInfo["READWRITETX"], respCustomCommandsDocs["READWRITETX"]);
+            if (commands.Contains("SETIFPM"))
+                server.Register.NewCommand("SETIFPM", CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"], respCustomCommandsDocs["SETIFPM"]);
+            if (commands.Contains("SETWPIFPGT"))
+                server.Register.NewCommand("SETWPIFPGT", CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"], respCustomCommandsDocs["SETWPIFPGT"]);
 
-            return registeredCommands;
+            return commands.ToArray();
         }
 
         private (string, string, string) CreateTestLibrary()
