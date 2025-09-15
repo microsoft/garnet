@@ -277,13 +277,17 @@ namespace Tsavorite.core
         public unsafe byte* PinnedKeyPointer => CurrentIter.PinnedKeyPointer;
 
         /// <inheritdoc/>
+        public OverflowByteArray KeyOverflow
+        {
+            get => CurrentIter.KeyOverflow;
+            set => CurrentIter.KeyOverflow = value;
+        }
+
+        /// <inheritdoc/>
         public unsafe Span<byte> ValueSpan => CurrentIter.ValueSpan;
 
         /// <inheritdoc/>
         public IHeapObject ValueObject => CurrentIter.ValueObject;
-
-        /// <inheritdoc/>
-        public ReadOnlySpan<byte> RecordSpan => CurrentIter.RecordSpan;
 
         /// <inheritdoc/>
         public bool IsPinnedValue => CurrentIter.IsPinnedValue;
@@ -292,19 +296,29 @@ namespace Tsavorite.core
         public unsafe byte* PinnedValuePointer => CurrentIter.PinnedValuePointer;
 
         /// <inheritdoc/>
+        public OverflowByteArray ValueOverflow
+        {
+            get => CurrentIter.ValueOverflow;
+            set => CurrentIter.ValueOverflow = value;
+        }
+
+        /// <inheritdoc/>
         public long ETag => CurrentIter.ETag;
 
         /// <inheritdoc/>
         public long Expiration => CurrentIter.Expiration;
 
         /// <inheritdoc/>
-        public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
+        public bool IsMemoryLogRecord => CurrentIter.IsMemoryLogRecord;
 
         /// <inheritdoc/>
-        public bool AsLogRecord(out LogRecord logRecord) => CurrentIter.AsLogRecord(out logRecord);
+        public unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a TsavoriteKVIterator to a memory LogRecord.");
 
         /// <inheritdoc/>
-        public bool AsDiskLogRecord(out DiskLogRecord diskLogRecord) => CurrentIter.AsDiskLogRecord(out diskLogRecord);
+        public bool IsDiskLogRecord => CurrentIter.IsDiskLogRecord;
+
+        /// <inheritdoc/>
+        public unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref CurrentIter.AsDiskLogRecordRef();
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -90,7 +90,7 @@ namespace Tsavorite.core
         /// <summary>Serialized length of the record</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetSerializedLength()
-            => Info.IsNull ? RecordInfo.GetLength() : RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
+            => Info.IsNull ? RecordInfo.Size : RoundUp(GetOptionalStartAddress() + OptionalLength - physicalAddress, Constants.kRecordAlignment);
 
         /// <summary>Called by IO to determine whether the record is complete (full serialized length has been read)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -102,7 +102,7 @@ namespace Tsavorite.core
             hasFullKey = false;
 
             // Check for RecordInfo and either indicator byte or key length; InlineLengthPrefixSize is the larger.
-            if (availableBytes < RecordInfo.GetLength() + LogField.InlineLengthPrefixSize)
+            if (availableBytes < RecordInfo.Size + LogField.InlineLengthPrefixSize)
             {
                 requiredBytes = InitialIOSize;
                 return false;
@@ -112,7 +112,7 @@ namespace Tsavorite.core
             var address = physicalAddress;
             if ((*(RecordInfo*)address).RecordIsInline)
             {
-                address += RecordInfo.GetLength();
+                address += RecordInfo.Size;
                 address += sizeof(int) + *(int*)address;                            // Inline key length is after RecordInfo; position address after the Key (but don't dereference it yet!)
                 requiredBytes = (int)(address + sizeof(int) - physicalAddress);     // Include value length int in the calculation
                 if (availableBytes < requiredBytes)
@@ -129,11 +129,11 @@ namespace Tsavorite.core
             else
             {
                 // We are in varbyte format. We need to check the indicator byte for the key and value length.
-                address += RecordInfo.GetLength();      // Point to indicator byte
+                address += RecordInfo.Size;      // Point to indicator byte
                 var keyLengthBytes = (int)((*(byte*)address & kKeyLengthBitMask) >> 3);
                 var valueLengthBytes = (int)(*(byte*)address & kValueLengthBitMask);
 
-                requiredBytes = RecordInfo.GetLength() + 1 + keyLengthBytes + valueLengthBytes; // Include the indicator byte in the calculation
+                requiredBytes = RecordInfo.Size + 1 + keyLengthBytes + valueLengthBytes; // Include the indicator byte in the calculation
                 if (availableBytes < requiredBytes)
                     return false;
 
@@ -168,7 +168,7 @@ namespace Tsavorite.core
         const long CurrentVersion = 0 << 5;         // Initial version is 0; shift will always be 5
 
         /// <summary>This contains the leading byte which are the indicators, plus the up-to-int length for the key, and then some or all of the length for the value.</summary>
-        internal readonly long IndicatorAddress => physicalAddress + RecordInfo.GetLength();
+        internal readonly long IndicatorAddress => physicalAddress + RecordInfo.Size;
 
         /// <summary>Version of the variable-length byte encoding for key and value lengths. There is no version info for <see cref="RecordInfo.RecordIsInline"/>
         /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>
@@ -419,7 +419,7 @@ namespace Tsavorite.core
             byte* ptr;
 
             // Value is a span so we can use RecordIsInline format, so both key and value are int length.
-            recordSize = RecordInfo.GetLength() + key.TotalSize() + LogField.InlineLengthPrefixSize;
+            recordSize = RecordInfo.Size + key.TotalSize() + LogField.InlineLengthPrefixSize;
 
             if (allocatedRecord is not null)
                 allocatedRecord.pool.EnsureSize(ref allocatedRecord, (int)recordSize);
@@ -430,7 +430,7 @@ namespace Tsavorite.core
             ptr = (byte*)physicalAddress;
 
             *(RecordInfo*)ptr = default;
-            ptr += RecordInfo.GetLength();
+            ptr += RecordInfo.Size;
 
             InfoRef.SetKeyIsInline();
             *(int*)ptr = key.Length;
@@ -478,11 +478,11 @@ namespace Tsavorite.core
             // Value length prefix on the disk is a long, as it may be an object.
             var valueLength = !logRecord.Info.ValueIsObject
                 ? logRecord.ValueSpan.Length
-                : (valueSerializer is not null ? logRecord.ValueObject.DiskSize : 0);
+                : (valueSerializer is not null ? logRecord.ValueObject.SerializedSize : 0);
 
             var indicatorByte = CreateIndicatorByte(logRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
 
-            var recordSize = RecordInfo.GetLength()
+            var recordSize = RecordInfo.Size
                 + 1 // indicator byte
                 + keyLengthByteCount + logRecord.Key.Length
                 + valueLengthByteCount + valueLength
@@ -498,7 +498,7 @@ namespace Tsavorite.core
             {
                 if (valueSerializer is not null)
                 {
-                    var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.DiskSize, logRecord.ValueObject.DiskSize, FileAccess.ReadWrite);
+                    var stream = new UnmanagedMemoryStream(ptr, logRecord.ValueObject.SerializedSize, logRecord.ValueObject.SerializedSize, FileAccess.ReadWrite);
                     valueSerializer.BeginSerialize(stream);
                     valueSerializer.Serialize(logRecord.ValueObject);
                     valueSerializer.EndSerialize();
@@ -532,7 +532,7 @@ namespace Tsavorite.core
             recordInfo.SetKeyIsInline();
             recordInfo.ClearValueIsInline();
             *(RecordInfo*)ptr = recordInfo;
-            ptr += RecordInfo.GetLength();
+            ptr += RecordInfo.Size;
 
             // Set the indicator and lengths
             *ptr++ = indicatorByte;
@@ -614,11 +614,11 @@ namespace Tsavorite.core
             // Value length prefix on the disk is a long, as it may be an object.
             var valueLength = !srcLogRecord.Info.ValueIsObject
                 ? srcLogRecord.ValueSpan.Length
-                : srcLogRecord.ValueObject.DiskSize;
+                : srcLogRecord.ValueObject.SerializedSize;
 
             var indicatorByte = CreateIndicatorByte(srcLogRecord.Key.Length, valueLength, out var keyLengthByteCount, out var valueLengthByteCount);
 
-            var recordSize = RecordInfo.GetLength()
+            var recordSize = RecordInfo.Size
                 + 1 // indicator byte
                 + keyLengthByteCount + srcLogRecord.Key.Length
                 + valueLengthByteCount + valueLength
@@ -664,7 +664,7 @@ namespace Tsavorite.core
                 srcLogRecord.ValueSpan.CopyTo(new Span<byte>(ptr, (int)valueLength));
             else
             {
-                var stream = new UnmanagedMemoryStream(ptr, srcLogRecord.ValueObject.DiskSize, srcLogRecord.ValueObject.DiskSize, FileAccess.ReadWrite);
+                var stream = new UnmanagedMemoryStream(ptr, srcLogRecord.ValueObject.SerializedSize, srcLogRecord.ValueObject.SerializedSize, FileAccess.ReadWrite);
                 valueSerializer.BeginSerialize(stream);
                 valueSerializer.Serialize(srcLogRecord.ValueObject);
                 valueSerializer.EndSerialize();
@@ -766,7 +766,7 @@ namespace Tsavorite.core
             Buffer.MemoryCopy((void*)inputDiskLogRecord.physicalAddress, (void*)physicalAddress, partialRecordSize, partialRecordSize);
 
             // Clear the value length in the indicator byte, as we did not copy any serialized data.
-            var ptr = (byte*)physicalAddress + RecordInfo.GetLength();
+            var ptr = (byte*)physicalAddress + RecordInfo.Size;
             *ptr = (byte)(*ptr & ~kValueLengthBitMask);
 
             // Set the Value

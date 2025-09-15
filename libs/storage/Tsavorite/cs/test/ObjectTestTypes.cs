@@ -27,8 +27,8 @@ namespace Tsavorite.test
     {
         public int value;
 
-        public long MemorySize { get => sizeof(int); set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
-        public long DiskSize { get => MemorySize; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
+        public long HeapMemorySize { get => sizeof(int); set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
+        public long SerializedSize { get => HeapMemorySize; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
 
         public void Dispose() { }
 
@@ -178,8 +178,8 @@ namespace Tsavorite.test
     {
         public byte[] value;
 
-        public long MemorySize { get => DiskSize + 24 /* TODO: ByteArrayOverhead */; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
-        public long DiskSize { get => sizeof(int) + value.Length; set => throw new NotImplementedException("TestValueObject.DiskSize.set"); }
+        public long HeapMemorySize { get => SerializedSize + 24 /* TODO: ByteArrayOverhead */; set => throw new NotImplementedException("TestValueObject.MemorySize.set"); }
+        public long SerializedSize { get => sizeof(int) + value.Length; set => throw new NotImplementedException("TestValueObject.DiskSize.set"); }
 
         public void Dispose() { }
 

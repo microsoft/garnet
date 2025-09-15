@@ -34,7 +34,8 @@ namespace Tsavorite.core
         /// <summary>Constructor</summary>
         internal unsafe TsavoriteLogIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeClosedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering,
+                  includeClosedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
             allocator = hlog;
@@ -632,7 +633,8 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
@@ -702,7 +704,7 @@ namespace Tsavorite.core
 
             if (info.CommitNum == commitNum)
                 return true;
-            // User wants any commie
+            // User wants any commit
             if (commitNum == -1)
                 return foundCommit;
             // requested commit not found
@@ -710,16 +712,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Retrieve physical address of next iterator value
-        /// (under epoch protection if it is from main page buffer)
+        /// Retrieve physical address of next iterator value (under epoch protection if it is from main page buffer)
         /// </summary>
-        /// <param name="physicalAddress"></param>
-        /// <param name="entryLength"></param>
-        /// <param name="currentAddress"></param>
-        /// <param name="outNextAddress"></param>
-        /// <param name="commitRecord"></param>
-        /// <param name="onFrame"></param>
-        /// <returns></returns>
         private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord, out bool onFrame)
         {
             while (true)
@@ -787,7 +781,7 @@ namespace Tsavorite.core
                 if (entryLength == 0)
                 {
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
-                    var nextStart = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
+                    var nextStart = allocator.GetStartAbsoluteLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
                         var pageOffset = allocator.GetOffsetOnPage(currentAddress);
@@ -828,7 +822,7 @@ namespace Tsavorite.core
                 }
 
                 if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
-                    currentAddress = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
+                    currentAddress = allocator.GetStartAbsoluteLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 
@@ -933,7 +927,7 @@ namespace Tsavorite.core
                 }
 
                 if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
-                    currentAddress = allocator.GetStartLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
+                    currentAddress = allocator.GetStartAbsoluteLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 

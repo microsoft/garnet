@@ -24,10 +24,8 @@ namespace Tsavorite.core
         /// </summary>
         public PinnedSpanByte request_key;
 
-        /// <summary>
-        /// Deserialized ValueObject if RecordInfo.ValueIsObject, else null
-        /// </summary>
-        public IHeapObject ValueObject;
+        /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
+        public LogRecord logRecord;
 
         /// <summary>
         /// Logical address
@@ -70,9 +68,15 @@ namespace Tsavorite.core
         public void Dispose()
         {
             // Do not dispose request_key as it is a shallow copy of the key in pendingContext
+            logRecord.Dispose(recordDisposeAction); // TODO add recordDisposeAction along with LogRecord; make a SetLogRecord(lr, action)
+            logRecord = default;
             record?.Return();
             record = null;
         }
+
+        /// <inheritdoc/>
+        public override readonly string ToString()
+            => $"id {id}, key {request_key}, LogAddr {AbsoluteAddress(logicalAddress)}, MinAddr {minAddress}, LogRec [{logRecord}]";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.

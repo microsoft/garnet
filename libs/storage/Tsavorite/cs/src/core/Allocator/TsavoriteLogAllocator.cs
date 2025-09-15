@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     // This is unused; just allows things to build. TsavoriteLog does not do key comparisons or value operations; it is just a memory allocator
+#pragma warning disable IDE0065 // Misplaced using directive
     using TsavoriteLogStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
@@ -29,26 +30,12 @@ namespace Tsavorite.core
             => (AllocatorBase<TsavoriteLogStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
-        public readonly bool IsFixedLength => true;
-
-        /// <inheritdoc/>
         public readonly bool HasObjectLog => false;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddressOfPage(page);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetFirstValidLogicalAddress(long page) => _this.GetFirstValidLogicalAddressOnPage(page);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetPhysicalAddress(long logicalAddress) => _this.GetPhysicalAddress(logicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, in RecordSizeInfo _) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo _, ref LogRecord newLogRecord)
+            => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -125,10 +112,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ReadOnlySpan<byte> key, long physicalAddress, ref LogRecord logRecord) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

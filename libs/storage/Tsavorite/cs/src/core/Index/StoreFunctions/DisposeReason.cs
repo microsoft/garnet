@@ -54,6 +54,11 @@ namespace Tsavorite.core
         RevivificationFreeList,
 
         /// <summary>
+        /// A new record was created for Upsert or RMW but the InitialWriter or InitialUpdater operation returned false
+        /// </summary>
+        InsertAbandoned,
+
+        /// <summary>
         /// Deleted but remains in hash chain so Key is unchanged
         /// </summary>
         Deleted,

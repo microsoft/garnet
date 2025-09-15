@@ -75,7 +75,7 @@ namespace Tsavorite.benchmark
                         [
                             new RevivificationBin()
                             {
-                                RecordSize = RecordInfo.GetLength() + KeySpanByte.TotalSize + kValueDataSize + 8,    // extra to ensure rounding up of value
+                                RecordSize = RecordInfo.Size + KeySpanByte.TotalSize + kValueDataSize + 8,    // extra to ensure rounding up of value
                                 NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                                 BestFitScanLimit = RevivificationBin.UseFirstFit
                             }

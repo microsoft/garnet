@@ -12,15 +12,6 @@ namespace Tsavorite.core
     public interface IAllocatorCallbacks<TStoreFunctions>
         where TStoreFunctions : IStoreFunctions
     {
-        /// <summary>Get start logical address on <paramref name="page"/></summary>
-        long GetStartLogicalAddress(long page);
-
-        /// <summary>Get first valid logical address on <paramref name="page"/></summary>
-        long GetFirstValidLogicalAddress(long page);
-
-        /// <summary>Get physical address from <paramref name="logicalAddress"/></summary>
-        long GetPhysicalAddress(long logicalAddress);
-
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);
 

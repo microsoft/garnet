@@ -197,6 +197,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Thread resumes its epoch entry if it has not already been acquired
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ResumeIfNotProtected()
+        {
+            if (ThisInstanceProtected())
+                return false;
+            Resume();
+            return true;
+        }
+
+        /// <summary>
         /// Increment global current epoch
         /// </summary>
         /// <returns></returns>
@@ -408,9 +420,7 @@ namespace Tsavorite.core
                 // Try to acquire entry
                 if (0 == (threadIndexAligned + Metadata.startOffset1)->threadId)
                 {
-                    if (0 == Interlocked.CompareExchange(
-                        ref (threadIndexAligned + Metadata.startOffset1)->threadId,
-                        Metadata.threadId, 0))
+                    if (0 == Interlocked.CompareExchange(ref (threadIndexAligned + Metadata.startOffset1)->threadId, Metadata.threadId, 0))
                         return Metadata.startOffset1;
                 }
 
@@ -424,7 +434,7 @@ namespace Tsavorite.core
                 if (Metadata.startOffset1 > kTableSize)
                 {
                     Metadata.startOffset1 -= kTableSize;
-                    Thread.Yield();
+                    _ = Thread.Yield();
                 }
             }
         }

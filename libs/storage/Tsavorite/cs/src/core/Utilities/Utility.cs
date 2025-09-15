@@ -132,13 +132,38 @@ namespace Tsavorite.core
         /// <param name="alignment">Align to this</param>
         /// <returns>Aligned value</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int RoundUp(int value, int alignment) => (value + (alignment - 1)) & ~(alignment - 1);
+        public static int RoundUp(int value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(int) alignment must be a power of two");
+            return (value + (alignment - 1)) & ~(alignment - 1);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long RoundUp(long value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp alignment must be a power of two");
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(long) alignment must be a power of two");
             return (value + (alignment - 1)) & ~(alignment - 1);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int RoundDown(int value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(int) alignment must be a power of two");
+            return value & ~(alignment - 1);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long RoundDown(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(long) alignment must be a power of two");
+            return value & ~(alignment - 1);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAligned(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(long) alignment must be a power of two");
+            return (value & (alignment - 1)) == 0;
         }
 
         /// <summary>
@@ -283,7 +308,8 @@ namespace Tsavorite.core
             do
             {
                 oldValue = variable;
-                if (oldValue >= newValue) return false;
+                if (oldValue >= newValue)
+                    return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }
@@ -301,7 +327,8 @@ namespace Tsavorite.core
             do
             {
                 oldValue = variable;
-                if (oldValue >= newValue) return false;
+                if (oldValue >= newValue)
+                    return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }

@@ -40,7 +40,7 @@ namespace Tsavorite.core
                 // LatestLogicalAddress is the "leading" pointer and will end up as the highest logical address in the main log for this tag chain.
                 // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+                stackCtx.recSrc.LowestReadCachePhysicalAddress = readCacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
                 // Use a non-ref local, because we don't need to update.
                 var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
@@ -137,7 +137,7 @@ namespace Tsavorite.core
 
                 // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
                 stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                stackCtx.recSrc.LowestReadCachePhysicalAddress = readcache.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
+                stackCtx.recSrc.LowestReadCachePhysicalAddress = readCacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
                 var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
                 if (!IsReadCache(recordInfo.PreviousAddress))
@@ -163,7 +163,7 @@ namespace Tsavorite.core
 
                 if (!entry->IsReadCache) continue;
                 var logicalAddress = entry->Address;
-                var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                var physicalAddress = readCacheBase.GetPhysicalAddress(logicalAddress);
 
                 while (true)
                 {
@@ -171,7 +171,7 @@ namespace Tsavorite.core
                     entry->Address = logicalAddress;
                     if (!entry->IsReadCache)
                         break;
-                    physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
+                    physicalAddress = readCacheBase.GetPhysicalAddress(logicalAddress);
                 }
             }
         }
@@ -251,7 +251,7 @@ namespace Tsavorite.core
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)
             {
-                var logRecord = new LogRecord(readcache.GetPhysicalAddress(rcLogicalAddress));
+                var logRecord = new LogRecord(readCacheBase.GetPhysicalAddress(rcLogicalAddress));
                 var (_, rcAllocatedSize) = logRecord.GetInlineRecordSizes();
                 var rcRecordInfo = logRecord.Info;
 
@@ -282,7 +282,7 @@ namespace Tsavorite.core
             NextRecord:
                 if (readCacheBase.GetOffsetOnPage(rcLogicalAddress) + rcAllocatedSize > readCacheBase.PageSize)
                 {
-                    rcLogicalAddress = readCacheBase.GetStartLogicalAddressOfPage(1 + readCacheBase.GetPage(rcLogicalAddress));
+                    rcLogicalAddress = readCacheBase.GetStartAbsoluteLogicalAddressOfPage(1 + readCacheBase.GetPage(rcLogicalAddress));
                     continue;
                 }
                 rcLogicalAddress += rcAllocatedSize;
@@ -298,7 +298,7 @@ namespace Tsavorite.core
             HashBucketEntry entry = new() { word = hei.entry.word };
             while (entry.IsReadCache)
             {
-                var logRecord = new LogRecord(readcache.GetPhysicalAddress(entry.Address));
+                var logRecord = new LogRecord(readCacheBase.GetPhysicalAddress(entry.Address));
                 ref var recordInfo = ref logRecord.InfoRef;
 
 #if DEBUG

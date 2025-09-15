@@ -73,7 +73,7 @@ namespace Tsavorite.test.LogRecordTests
             valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
 
             // Record
-            sizeInfo.ActualInlineRecordSize = RecordInfo.GetLength() + keySize + valueSize + sizeInfo.OptionalSize;
+            sizeInfo.ActualInlineRecordSize = RecordInfo.Size + keySize + valueSize + sizeInfo.OptionalSize;
             sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
         }
 
@@ -268,7 +268,7 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That(logRecord.TrySetValueObject(valueObject, in sizeInfo), Is.True);
 
                 expectedValueLengthBytes = 1;  // Non-serialized object so only a 1-byte "0" length
-                var expectedKeyDataOffset = RecordInfo.GetLength() + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
+                var expectedKeyDataOffset = RecordInfo.Size + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
                 var expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
 
                 /////////////////////////////
@@ -304,7 +304,7 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That(diskLogRecord.Version, Is.EqualTo(0));
 
                 expectedValueLengthBytes = ii + 1;  // Serialized object so the value length is used
-                expectedKeyDataOffset = RecordInfo.GetLength() + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
+                expectedKeyDataOffset = RecordInfo.Size + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
                 expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
 
                 keyInfo = diskLogRecord.KeyInfo;
@@ -312,14 +312,14 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That(keyInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress));
 
                 valueInfo = diskLogRecord.ValueInfo;
-                Assert.That(valueInfo.length, Is.EqualTo(valueObject.DiskSize));
+                Assert.That(valueInfo.length, Is.EqualTo(valueObject.SerializedSize));
                 Assert.That(valueInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress + keyInfo.length));
 
                 Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
                 Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
 
                 Assert.That(diskLogRecord.Info.ValueIsObject);
-                expectedSerializedValueLength = (int)valueObject.DiskSize;
+                expectedSerializedValueLength = (int)valueObject.SerializedSize;
                 expectedRecordSize = RoundUp(expectedKeyDataOffset + key.Length + expectedSerializedValueLength + optionalLength, Constants.kRecordAlignment);
                 Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(expectedRecordSize));
 

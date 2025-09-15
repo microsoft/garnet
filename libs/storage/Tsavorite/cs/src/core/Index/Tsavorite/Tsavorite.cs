@@ -148,7 +148,7 @@ namespace Tsavorite.core
                 allocatorSettings.LogSettings = new()
                 {
                     LogDevice = new NullDevice(),
-                    ObjectLogDevice = null, // TODO remove hlog.HasObjectLog ? new NullDevice() : null,
+                    ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
                     PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                     MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
                     SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
@@ -292,19 +292,9 @@ namespace Tsavorite.core
             else
             {
                 token = _lastSnapshotCheckpoint.info.guid;
-                var incremental = tryIncremental
-                    && checkpointType == CheckpointType.Snapshot
-                    && token != default
-                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
-                    ; // TODO remove && !hlog.HasObjectLog;
-                if (incremental)
-                {
-                    stateMachine = Checkpoint.IncrementalHybridLogOnly(this, token);
-                }
-                else
-                {
-                    stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, out token);
-                }
+                stateMachine = tryIncremental && InternalCanTakeIncrementalCheckpoint(checkpointType, ref token)
+                    ? Checkpoint.IncrementalHybridLogOnly(this, token)
+                    : stateMachine = Checkpoint.HybridLogOnly(this, checkpointType, out token);
             }
             return stateMachineDriver.Register(stateMachine);
         }
@@ -312,16 +302,21 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether we can take an incremental snapshot checkpoint given current state of the store
         /// </summary>
-        /// <param name="checkpointType"></param>
-        /// <returns></returns>
-        public bool CanTakeIncrementalCheckpoint(CheckpointType checkpointType, out Guid guid)
+        public bool CanTakeIncrementalCheckpoint(CheckpointType checkpointType, out Guid token)
         {
-            guid = _lastSnapshotCheckpoint.info.guid;
-            return
-                checkpointType == CheckpointType.Snapshot
-                && guid != default
-                && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
-                ; // TODO remove: && !hlog.HasObjectLog;
+            token = _lastSnapshotCheckpoint.info.guid;
+            return InternalCanTakeIncrementalCheckpoint(checkpointType, ref token);
+        }
+
+        /// <summary>
+        /// Whether we can take an incremental snapshot checkpoint given current state of the store
+        /// </summary>
+        private bool InternalCanTakeIncrementalCheckpoint(CheckpointType checkpointType, ref Guid token)
+        {
+            return checkpointType == CheckpointType.Snapshot
+                    && token != default
+                    && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress
+                    && !hlog.HasObjectLog;
         }
 
         /// <summary>

@@ -65,7 +65,7 @@ namespace Tsavorite.test.Revivification
             [
                 new RevivificationBin()
                 {
-                    RecordSize = RoundUp(RecordInfo.GetLength() + 2 * (sizeof(int) + sizeof(long)), Constants.kRecordAlignment), // We have "fixed length" for these integer bins, with long Key and Value
+                    RecordSize = RoundUp(RecordInfo.Size + 2 * (sizeof(int) + sizeof(long)), Constants.kRecordAlignment), // We have "fixed length" for these integer bins, with long Key and Value
                     BestFitScanLimit = RevivificationBin.UseFirstFit
                 }
             ]
@@ -222,7 +222,7 @@ namespace Tsavorite.test.Revivification
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
             ClassicAssert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key.ToShortString()}");
-            var recordInfo = LogRecord.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
+            var recordInfo = LogRecord.GetInfo(store.hlogBase.GetPhysicalAddress(stackCtx.hei.Address));
             ClassicAssert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }
 
@@ -386,7 +386,7 @@ namespace Tsavorite.test.Revivification
             // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
             // for revivification. For In-Chain, we will revivify records that were unelided after the bin overflowed. But we have some records
             // ineligible for revivification due to revivifiableFraction.
-            var recordSize = RoundUp(RecordInfo.GetLength() + (sizeof(int) + sizeof(long)) * 2, Constants.kRecordAlignment);
+            var recordSize = RoundUp(RecordInfo.Size + (sizeof(int) + sizeof(long)) * 2, Constants.kRecordAlignment);
             var numIneligibleRecords = NumRecords - RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
             var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
 
@@ -1271,7 +1271,7 @@ namespace Tsavorite.test.Revivification
             Span<byte> key = stackalloc byte[KeyLength];
 
             // "sizeof(int) +" because SpanByte has an int length prefix
-            var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
+            var recordSize = RecordInfo.Size + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
 
             // Delete
             for (var ii = 0; ii < NumRecords; ++ii)
@@ -1419,7 +1419,7 @@ namespace Tsavorite.test.Revivification
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
 
             // "sizeof(int) +" because SpanByte has an int length prefix.
-            var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
+            var recordSize = RecordInfo.Size + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
             ClassicAssert.IsTrue(pool.GetBinIndex(recordSize, out int binIndex));
             ClassicAssert.AreEqual(3, binIndex);
 

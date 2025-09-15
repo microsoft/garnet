@@ -12,18 +12,18 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed unsafe class RecordScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
+    public sealed unsafe class SpanByteScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
-        private readonly BlittableFrame frame;  // TODO remove GenericFrame
+        private readonly BlittableFrame frame;
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
 
-        private DiskLogRecord diskLogRecord;
+        private LogRecord logRecord;
 
         /// <summary>
         /// Constructor
@@ -38,7 +38,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal SpanByteScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch,
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
@@ -54,9 +54,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal RecordScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal SpanByteScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(), DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(),
+                DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
@@ -90,12 +91,13 @@ namespace Tsavorite.core
 
         private bool InitializeGetNextAndAcquireEpoch(out long stopAddress)
         {
-            if (diskLogRecord.IsSet)
+            if (logRecord.IsSet)
             {
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-                diskLogRecord = default;
+                hlogBase._wrapper.DisposeRecord(ref logRecord, DisposeReason.DeserializedFromDisk);
+                logRecord.Dispose(rec => { });  // We have no objects or overflow in SpanByteAllocator
+                logRecord = default;
             }
-            diskLogRecord = default;
+            logRecord = default;
             currentAddress = nextAddress;
             stopAddress = endAddress < hlogBase.GetTailAddress() ? endAddress : hlogBase.GetTailAddress();
             if (currentAddress >= stopAddress)
@@ -146,28 +148,13 @@ namespace Tsavorite.core
                 totalSizes = (int)hlogBase.BeginAddress;
             }
 
-            // We don't have to worry about going past the end of the page because we're using offset to bound the scan.
-            if (logicalAddress >= headAddress)
+            while (totalSizes <= offset)
             {
-                while (totalSizes <= offset)
-                {
-                    var allocatedSize = new LogRecord(physicalAddress).GetInlineRecordSizes().allocatedSize;
-                    if (totalSizes + allocatedSize > offset)
-                        break;
-                    totalSizes += allocatedSize;
-                    physicalAddress += allocatedSize;
-                }
-            }
-            else
-            {
-                while (totalSizes <= offset)
-                {
-                    var allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();
-                    if (totalSizes + allocatedSize > offset)
-                        break;
-                    totalSizes += allocatedSize;
-                    physicalAddress += allocatedSize;
-                }
+                var allocatedSize = new LogRecord(physicalAddress).GetInlineRecordSizes().allocatedSize;
+                if (totalSizes + allocatedSize > offset)
+                    break;
+                totalSizes += allocatedSize;
+                physicalAddress += allocatedSize;
             }
 
             return logicalAddress += totalSizes - offset;
@@ -190,47 +177,43 @@ namespace Tsavorite.core
                         return false;
 
                     var offset = hlogBase.GetOffsetOnPage(currentAddress);
-
-                    // TODO: This can process past end of page if it is a too-small record at end of page and its recordInfo is not null
-                    var physicalAddress = GetPhysicalAddressAndAllocatedSize(currentAddress, headAddress, currentPage, offset, out long allocatedSize);
-
-                    // It's safe to use LogRecord here even for on-disk because both start with the RecordInfo.
+                    var physicalAddress = GetPhysicalAddressAndAllocatedSize(currentAddress, headAddress, currentPage, offset, out var allocatedSize);
                     var recordInfo = LogRecord.GetInfo(physicalAddress);
-                    if (recordInfo.IsNull)  // We are probably past end of allocated records on page.
-                    {
-                        nextAddress = currentAddress + RecordInfo.GetLength();
-                        continue;
-                    }
 
                     // If record does not fit on page, skip to the next page.
                     if (offset + allocatedSize > hlogBase.PageSize)
                     {
-                        nextAddress = hlogBase.GetStartLogicalAddressOfPage(1 + hlogBase.GetPage(currentAddress));
+                        nextAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(1 + hlogBase.GetPage(currentAddress));
+                        epoch.Suspend();
                         continue;
                     }
 
                     nextAddress = currentAddress + allocatedSize;
 
-                    var skipOnScan = includeClosedRecords ? false : recordInfo.SkipOnScan;
+                    var skipOnScan = !includeClosedRecords && recordInfo.SkipOnScan;
                     if (skipOnScan || recordInfo.IsNull)
                         continue;
 
                     if (currentAddress >= headAddress || assumeInMemory)
                     {
                         // TODO: for this PR we always buffer the in-memory records; pull iterators require it, and currently push iterators are implemented on top of pull.
-                        // So create a disk log record from the in-memory record.
-                        var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
-                        nextAddress = currentAddress + logRecord.GetInlineRecordSizes().allocatedSize;
-
-                        // We will return control to the caller, which means releasing epoch protection, and we don't want the caller to lock.
-                        // Copy the entire record into bufferPool memory, so we do not have a ref to log data outside epoch protection.
-                        // Lock to ensure no value tearing while copying to temp storage.
+                        // Copy the entire record into bufferPool memory so we don't have a ref to log data outside epoch protection.
                         OperationStackContext<TStoreFunctions, TAllocator> stackCtx = default;
                         try
                         {
+                            // Lock to ensure no value tearing while copying to temp storage.
                             if (currentAddress >= headAddress && store is not null)
                                 store.LockForScan(ref stackCtx, logRecord.Key);
-                            diskLogRecord.Serialize(in logRecord, hlogBase.bufferPool, valueSerializer: default, ref recordBuffer);
+
+                            if (recordBuffer == null)
+                                recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                            else if (recordBuffer.AlignedTotalCapacity < (int)allocatedSize)
+                            {
+                                recordBuffer.Return();
+                                recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
+                            }
+
+                            logRecord = new((long)recordBuffer.GetValidPointer());
                         }
                         finally
                         {
@@ -241,10 +224,7 @@ namespace Tsavorite.core
                     else
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        diskLogRecord = new(physicalAddress);
-                        if (diskLogRecord.Info.ValueIsObject)
-                            _ = diskLogRecord.DeserializeValueObject(hlogBase.storeFunctions.CreateValueObjectSerializer());
-                        nextAddress = currentAddress + diskLogRecord.GetSerializedLength();
+                        logRecord = new(physicalAddress);
                     }
                 }
                 finally
@@ -279,7 +259,7 @@ namespace Tsavorite.core
 
                 logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
                 nextAddress = logRecord.Info.PreviousAddress;
-                bool skipOnScan = includeClosedRecords ? false : logRecord.Info.SkipOnScan;
+                bool skipOnScan = !includeClosedRecords && logRecord.Info.SkipOnScan;
                 if (skipOnScan || logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
                 {
                     epoch?.Suspend();
@@ -296,65 +276,56 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddress(long currentAddress, long headAddress, long currentPage, long offset)
-        {
-            if (currentAddress >= headAddress || assumeInMemory)
-                return hlogBase._wrapper.CreateLogRecord(currentAddress).physicalAddress;
-            return frame.GetPhysicalAddress(currentPage, offset);
-        }
+            => currentAddress >= headAddress || assumeInMemory
+                ? hlogBase.GetPhysicalAddress(currentAddress)
+                : frame.GetPhysicalAddress(currentPage, offset);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddressAndAllocatedSize(long currentAddress, long headAddress, long currentPage, long offset, out long allocatedSize)
         {
-            if (currentAddress >= headAddress || assumeInMemory)
-            {
-                var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
-                (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
-                return logRecord.physicalAddress;
-            }
+            var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
 
-            long physicalAddress = frame.GetPhysicalAddress(currentPage, offset);
-            allocatedSize = new DiskLogRecord(physicalAddress).GetSerializedLength();
-            return physicalAddress;
+            // We are just getting sizes so no need for ObjectIdMap
+            var logRecord = new LogRecord(physicalAddress);
+            (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
+            return logRecord.physicalAddress;
         }
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
+        public ref RecordInfo InfoRef => ref logRecord.InfoRef;
         /// <inheritdoc/>
-        public RecordInfo Info => diskLogRecord.Info;
+        public RecordInfo Info => logRecord.Info;
 
         /// <inheritdoc/>
-        public bool IsSet => diskLogRecord.IsSet;
+        public bool IsSet => logRecord.IsSet;
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> Key => diskLogRecord.Key;
+        public ReadOnlySpan<byte> Key => logRecord.Key;
 
         /// <inheritdoc/>
-        public bool IsPinnedKey => diskLogRecord.IsPinnedKey;
+        public bool IsPinnedKey => logRecord.IsPinnedKey;
 
         /// <inheritdoc/>
-        public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
+        public byte* PinnedKeyPointer => logRecord.PinnedKeyPointer;
 
         /// <inheritdoc/>
-        public Span<byte> ValueSpan => diskLogRecord.ValueSpan;
+        public Span<byte> ValueSpan => logRecord.ValueSpan;
 
         /// <inheritdoc/>
-        public IHeapObject ValueObject => diskLogRecord.ValueObject;
+        public IHeapObject ValueObject => logRecord.ValueObject;
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> RecordSpan => diskLogRecord.RecordSpan;
+        public bool IsPinnedValue => logRecord.IsPinnedValue;
 
         /// <inheritdoc/>
-        public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
+        public byte* PinnedValuePointer => logRecord.PinnedValuePointer;
 
         /// <inheritdoc/>
-        public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+        public long ETag => logRecord.ETag;
 
         /// <inheritdoc/>
-        public long ETag => diskLogRecord.ETag;
-
-        /// <inheritdoc/>
-        public long Expiration => diskLogRecord.Expiration;
+        public long Expiration => logRecord.Expiration;
 
         /// <inheritdoc/>
         public void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for iterators
@@ -369,7 +340,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
         {
-            diskLogRecord = this.diskLogRecord;
+            diskLogRecord = this.logRecord;
             return true;
         }
 
@@ -377,8 +348,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRecordFieldInfo() => new()
         {
-            KeyDataSize = Key.Length,
-            ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+            KeySize = Key.Length,
+            ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
             ValueIsObject = Info.ValueIsObject,
             HasETag = Info.HasETag,
             HasExpiration = Info.HasExpiration
@@ -391,8 +362,8 @@ namespace Tsavorite.core
         public override void Dispose()
         {
             base.Dispose();
-            if (diskLogRecord.IsSet)
-                hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
+            if (logRecord.IsSet)
+                hlogBase._wrapper.DisposeRecord(ref logRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
             frame?.Dispose();

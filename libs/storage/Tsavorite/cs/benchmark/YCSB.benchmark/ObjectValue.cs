@@ -13,8 +13,8 @@ namespace Tsavorite.benchmark
     {
         public long value;
 
-        public long MemorySize { get => sizeof(int); set => throw new System.NotImplementedException("TestValueObject.MemorySize.set"); }
-        public long DiskSize { get => MemorySize; set => throw new System.NotImplementedException("TestValueObject.DiskSize.set"); }
+        public long HeapMemorySize { get => sizeof(int); set => throw new System.NotImplementedException("TestValueObject.MemorySize.set"); }
+        public long SerializedSize { get => HeapMemorySize; set => throw new System.NotImplementedException("TestValueObject.DiskSize.set"); }
 
         public void Dispose() { }
 

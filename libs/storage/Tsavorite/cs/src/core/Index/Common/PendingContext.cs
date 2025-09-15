@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -31,7 +32,7 @@ namespace Tsavorite.core
             ///     </item>
             /// </list>
             /// </summary>
-            internal DiskLogRecord diskLogRecord;
+            internal LogRecord logRecord;
 
             internal IHeapContainer<TInput> input;
             internal TOutput output;
@@ -45,9 +46,11 @@ namespace Tsavorite.core
 
             // operationFlags values
             internal ushort operationFlags;
+#pragma warning disable IDE1006 // Naming Styles
             internal const ushort kNoOpFlags = 0;
             internal const ushort kIsNoKey = 0x0001;
             internal const ushort kIsReadAtAddress = 0x0002;
+#pragma warning restore IDE1006 // Naming Styles
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
 
@@ -94,8 +97,8 @@ namespace Tsavorite.core
 
             public void Dispose()
             {
-                diskLogRecord.Dispose();
-                diskLogRecord = default;
+                logRecord.Dispose();
+                logRecord = default;
                 input?.Dispose();
                 input = default;
             }
@@ -115,9 +118,9 @@ namespace Tsavorite.core
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                if (diskLogRecord.IsSet)
+                if (logRecord.IsSet)
                     return;
-                diskLogRecord.SerializeForPendingReadOrRMW(key, bufferPool);
+                logRecord.SerializeForPendingReadOrRMW(key, bufferPool);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
@@ -150,19 +153,19 @@ namespace Tsavorite.core
             internal void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
+                Debug.Assert(!this.logRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
                 if (srcLogRecord.AsLogRecord(out var logRecord))
                 {
-                    diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+                    this.logRecord.Serialize(in logRecord, bufferPool, valueSerializer);
                     return;
                 }
 
                 // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
                 _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
                 if (inputDiskLogRecord.OwnsMemory)
-                    diskLogRecord.TransferFrom(ref inputDiskLogRecord);
+                    this.logRecord.TransferFrom(ref inputDiskLogRecord);
                 else
-                    diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
+                    this.logRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
             }
 
             private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions)
@@ -184,42 +187,42 @@ namespace Tsavorite.core
 
             #region ISourceLogRecord
             /// <inheritdoc/>
-            public readonly ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
+            public readonly ref RecordInfo InfoRef => ref logRecord.InfoRef;
             /// <inheritdoc/>
-            public readonly RecordInfo Info => diskLogRecord.Info;
+            public readonly RecordInfo Info => logRecord.Info;
 
             /// <inheritdoc/>
-            public readonly bool IsSet => diskLogRecord.IsSet;
+            public readonly bool IsSet => logRecord.IsSet;
 
             /// <inheritdoc/>
-            public readonly ReadOnlySpan<byte> Key => diskLogRecord.Key;
+            public readonly ReadOnlySpan<byte> Key => logRecord.Key;
 
             /// <inheritdoc/>
-            public readonly bool IsPinnedKey => diskLogRecord.IsPinnedKey;
+            public readonly bool IsPinnedKey => logRecord.IsPinnedKey;
 
             /// <inheritdoc/>
-            public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
+            public byte* PinnedKeyPointer => logRecord.PinnedKeyPointer;
 
             /// <inheritdoc/>
-            public readonly unsafe Span<byte> ValueSpan => diskLogRecord.ValueSpan;
+            public readonly unsafe Span<byte> ValueSpan => logRecord.ValueSpan;
 
             /// <inheritdoc/>
-            public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
+            public readonly IHeapObject ValueObject => logRecord.ValueObject;
 
             /// <inheritdoc/>
-            public ReadOnlySpan<byte> RecordSpan => diskLogRecord.RecordSpan;
+            public ReadOnlySpan<byte> RecordSpan => logRecord.RecordSpan;
 
             /// <inheritdoc/>
-            public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
+            public bool IsPinnedValue => logRecord.IsPinnedValue;
 
             /// <inheritdoc/>
-            public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+            public byte* PinnedValuePointer => logRecord.PinnedValuePointer;
 
             /// <inheritdoc/>
-            public readonly long ETag => diskLogRecord.ETag;
+            public readonly long ETag => logRecord.ETag;
 
             /// <inheritdoc/>
-            public readonly long Expiration => diskLogRecord.Expiration;
+            public readonly long Expiration => logRecord.Expiration;
 
             /// <inheritdoc/>
             public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for PendingContext
@@ -234,7 +237,7 @@ namespace Tsavorite.core
             /// <inheritdoc/>
             public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
             {
-                diskLogRecord = this.diskLogRecord;
+                diskLogRecord = this.logRecord;
                 return true;
             }
 

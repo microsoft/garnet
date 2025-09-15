@@ -381,8 +381,8 @@ namespace Tsavorite.core
                             srcLogRecord.InfoRef.SetTombstone();
                             srcLogRecord.InfoRef.SetDirtyAndModified();
 
-                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer.
-                            _ = srcLogRecord.AsLogRecord(out var inMemoryLogRecord);
+                            // Elide from hei, and try to either do in-chain tombstoning or free list transfer. srcLogRecord is elidable so must be a memory LogRecord.
+                            ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
                             // no new record created and hash entry is empty now
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.Expired);
@@ -416,18 +416,15 @@ namespace Tsavorite.core
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
 
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, in sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.elideSourceRecord)
                 newLogRecord.InfoRef.PreviousAddress = srcLogRecord.Info.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
             rmwInfo.Address = newLogicalAddress;
-
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo);
-            newLogRecord.SetFillerLength(allocatedSize);
 
             if (!doingCU)
             {
@@ -492,10 +489,9 @@ namespace Tsavorite.core
                             return status;
 
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
-                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
-                            stackCtx.ClearNewRecord();
-                        else
-                            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                        stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                        if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
+                            DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
                         goto RetryNow;
                     }
                     addTombstone = newLogRecord.Info.Tombstone;
@@ -534,14 +530,30 @@ namespace Tsavorite.core
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
                     if (!addTombstone && !sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                     {
-                        if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                        // If we are not currently taking a checkpoint, we can just clear the old Object (or Overflow) because the new version of the object is
+                        // already created in the new record, which has just been successfully CAS'd. Delay actually doing the clearing so PostCopyUpdater can modify
+                        // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
+                        // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
+                        var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
+                        if (newLogRecord.Info.IsInNewVersion && srcLogRecord.Info.ValueIsObject && isMemoryLogRecord)
+                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref srcLogRecord.AsMemoryLogRecordRef(), ref newLogRecord);
+                        else
+                            rmwInfo.ClearSourceValueObject = true;
+                        var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+                        if (pcuSuccess)
                         {
-                            newLogRecord.InfoRef.SetTombstone();
-                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                            if (!newLogRecord.Info.IsInNewVersion && isMemoryLogRecord)
+                                _ = srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
                         }
                         else
                         {
-                            Debug.Fail("Can only handle RMWAction.ExpireAndStop on a false return from PostCopyUpdater");
+                            if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                            {
+                                newLogRecord.InfoRef.SetTombstone();
+                                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                            }
+                            else
+                                Debug.Fail("Can only handle RMWAction.ExpireAndStop on a false return from PostCopyUpdater");
                         }
                     }
 
@@ -553,9 +565,9 @@ namespace Tsavorite.core
                         srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
 
                         // If we're here we have MainLogSrc so AsLogRecord is a simple reassignment guaranteed to succeed.
-                        _ = srcLogRecord.AsLogRecord(out var inMemoryLogRecord);
+                        ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
-                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
+                            _ = TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, stackCtx.recSrc.LogicalAddress, ref inMemoryLogRecord);
                         else
                             DisposeRecord(ref inMemoryLogRecord, DisposeReason.Elided);
                     }
@@ -598,7 +610,6 @@ namespace Tsavorite.core
             }
 
             // Try to reinitialize in place
-            var currentSize = logRecord.ActualRecordSize;
             var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
 
             logRecord.ClearOptionals();

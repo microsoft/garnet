@@ -45,40 +45,46 @@ namespace Tsavorite.core
         {
             if (objectId != InvalidObjectId)
             {
-                Set(objectId, default);
+                objectArray.Set(objectId, default);
                 freeSlots.Push(objectId);
             }
         }
 
-        /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
+        /// <summary>Clear a specific slot of the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Free(ref int objectIdRef)
+        public void Free(int objectId, Action<IHeapObject> disposer)
         {
-            var objectId = objectIdRef;
-            objectIdRef = InvalidObjectId;
-            Free(objectId);
+            if (objectId != InvalidObjectId)
+            {
+                if (disposer is not null)
+                {
+                    var element = objectArray.Get(objectId);
+                    disposer(Unsafe.As<object, IHeapObject>(ref element));
+                }
+                objectArray.Set(objectId, default);
+                freeSlots.Push(objectId);
+            }
         }
 
-        /// <summary>Returns the slot's object.</summary>
+        /// <summary>Returns the slot's object as an IHeapObject.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal object Get(int objectId) => objectArray.Get(objectId);
+        internal IHeapObject GetHeapObject(int objectId) => Unsafe.As<IHeapObject>(objectArray.Get(objectId));
 
-        /// <summary>Returns the slot's object.</summary>
+        /// <summary>Returns the slot's object as an <see cref="OverflowByteArray"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(int objectId, object element) => objectArray.Set(objectId, element);
+        internal OverflowByteArray GetOverflowByteArray(int objectId) => new(Unsafe.As<byte[]>(objectArray.Get(objectId)));
+
+        /// <summary>Sets the slot's object.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Set(int objectId, IHeapObject element) => objectArray.Set(objectId, element);
+
+        /// <summary>Sets the slot's object.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void Set(int objectId, OverflowByteArray element) => objectArray.Set(objectId, element.Data);
 
         /// <summary>Clear the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear() => objectArray?.Clear();    // TODO reduce allocated chapter count also?
-
-        /// <summary>Clear a specific slot of the array.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearAt(int objectId, Action<IHeapObject> disposer)
-        {
-            var element = Get(objectId);
-            disposer(Unsafe.As<object, IHeapObject>(ref element));
-            Set(objectId, default);
-        }
 
         /// <inheritdoc/>
         public override string ToString() => $"tail: {(objectArray is not null ? objectArray.tail.ToString() : "<null>")}";
