@@ -632,11 +632,12 @@ namespace Garnet.server
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
         /// </summary>
-        internal void HandleVectorSetAddReplication<TContext>(StorageSession storageSession, SpanByte keyWithNamespace, ref RawStringInput input, ref TContext context)
+        internal void HandleVectorSetAddReplication<TContext>(StorageSession storageSession, ref SpanByte keyWithNamespace, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             // Undo mangling that got replication going
-            input.arg1 = default;
+            var inputCopy = input;
+            inputCopy.arg1 = default;
             Span<byte> keyBytes = stackalloc byte[keyWithNamespace.Length - 1];
 
             var key = SpanByte.FromPinnedSpan(keyBytes);
@@ -648,7 +649,7 @@ namespace Garnet.server
             // Equivalent to VectorStoreOps.VectorSetAdd, except with no locking or formatting
             while (true)
             {
-                var readStatus = context.Read(ref key, ref input, ref indexConfig);
+                var readStatus = context.Read(ref key, ref inputCopy, ref indexConfig);
                 if (readStatus.IsPending)
                 {
                     CompletePending(ref readStatus, ref indexConfig, ref context);
@@ -657,7 +658,7 @@ namespace Garnet.server
                 if (!readStatus.Found)
                 {
                     // Create the vector set index
-                    var writeStatus = context.RMW(ref key, ref input);
+                    var writeStatus = context.RMW(ref key, ref inputCopy);
                     if (writeStatus.IsPending)
                     {
                         CompletePending(ref writeStatus, ref indexConfig, ref context);

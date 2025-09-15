@@ -433,7 +433,7 @@ namespace Garnet.server
             // VADD requires special handling, shove it over to the VectorManager
             if (storeInput.header.cmd == RespCommand.VADD)
             {
-                vectorManager.HandleVectorSetAddReplication(storageSession, key, ref storeInput, ref basicContext);
+                vectorManager.HandleVectorSetAddReplication(storageSession, ref key, ref storeInput, ref basicContext);
                 return;
             }
 
