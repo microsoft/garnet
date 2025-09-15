@@ -218,7 +218,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(externalRespCommandsInfo.Count, results.Length);
 
             // Register custom commands
-            var customCommandsRegistered = RegisterCustomCommands([ "DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT" ]);
+            var customCommandsRegistered = RegisterCustomCommands(["DELIFM", "MGETIFPM", "MYDICTSET", "SETIFPM", "SETWPIFPGT"]);
 
             // Dynamically register custom commands
             var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
