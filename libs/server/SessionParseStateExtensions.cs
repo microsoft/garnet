@@ -854,12 +854,12 @@ namespace Garnet.server
         /// <returns>The extracted keys</returns>
         internal static ArgSlice[] ExtractCommandKeys(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
-            var keysIndexes = new List<(ArgSlice, int)>();
+            var keysIndexes = new List<(ArgSlice Key, int Index)>();
 
             foreach (var spec in commandInfo.KeySpecs)
                 TryAppendKeysFromSpec(ref state, spec, commandInfo.IsSubCommand, keysIndexes);
 
-            return keysIndexes.OrderBy(k => k.Item2).Select(k => k.Item1).ToArray();
+            return keysIndexes.OrderBy(k => k.Index).Select(k => k.Key).ToArray();
         }
 
         /// <summary>
@@ -870,12 +870,12 @@ namespace Garnet.server
         /// <returns>The extracted keys and flags</returns>
         internal static (ArgSlice, KeySpecificationFlags)[] ExtractCommandKeysAndFlags(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
-            var keysFlagsIndexes = new List<(ArgSlice, KeySpecificationFlags, int)>();
+            var keysFlagsIndexes = new List<(ArgSlice Key, KeySpecificationFlags Flags, int Index)>();
 
             foreach (var spec in commandInfo.KeySpecs)
                 TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysFlagsIndexes);
 
-            return keysFlagsIndexes.OrderBy(k => k.Item3).Select(k => (k.Item1, k.Item2)).ToArray();
+            return keysFlagsIndexes.OrderBy(k => k.Index).Select(k => (k.Key, k.Flags)).ToArray();
         }
 
         /// <summary>
@@ -885,7 +885,7 @@ namespace Garnet.server
         /// <param name="keySpec">The key specification to use for extraction.</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
         /// <param name="keysToIndexes">The list to store extracted keys and their matching indexes</param>
-        private static bool TryAppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, int)> keysToIndexes)
+        private static bool TryAppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice Key, int Index)> keysToIndexes)
         {
             if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
                 return false;
@@ -909,7 +909,7 @@ namespace Garnet.server
         /// <param name="keySpec">The key specification to use for extraction.</param>
         /// <param name="isSubCommand">True if command is a sub-command</param>
         /// <param name="keysAndFlags">The list to store extracted keys and flags and their indexes</param>
-        private static bool TryAppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice, KeySpecificationFlags, int)> keysAndFlags)
+        private static bool TryAppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice Key, KeySpecificationFlags Flags, int Index)> keysAndFlags)
         {
             if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
                 return false;
