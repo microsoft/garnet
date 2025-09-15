@@ -70,7 +70,7 @@ namespace Garnet.server
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
-        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result)
+        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             int dims;
             if (valueType == VectorValueType.F32)
@@ -140,6 +140,7 @@ namespace Garnet.server
                     else if (readRes != GarnetStatus.OK)
                     {
                         result = VectorManagerResult.Invalid;
+                        errorMsg = default;
                         return readRes;
                     }
 
@@ -147,7 +148,7 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks);
+                    result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, out errorMsg);
 
                     if (result == VectorManagerResult.OK)
                     {

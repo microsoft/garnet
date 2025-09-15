@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
@@ -312,9 +313,12 @@ namespace Garnet.server
             uint providedReduceDims,
             VectorQuantType providedQuantType,
             uint providedBuildExplorationFactor,
-            uint providedNumLinks
+            uint providedNumLinks,
+            out ReadOnlySpan<byte> errorMsg
         )
         {
+            errorMsg = default;
+
             ActiveThreadSession = currentStorageSession;
             try
             {
@@ -324,10 +328,18 @@ namespace Garnet.server
 
                 if (dimensions != valueDims)
                 {
+                    // Matching Redis behavior
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Input dimension mismatch for projection - got {valueDims} but projection expects {dimensions}");
                     return VectorManagerResult.BadParams;
                 }
 
-                if (providedReduceDims != 0 && providedReduceDims != reduceDims)
+                if (providedReduceDims == 0 && reduceDims != 0)
+                {
+                    // Matching Redis behavior, which is definitely a bit weird here
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {reduceDims}");
+                    return VectorManagerResult.BadParams;
+                }
+                else if (providedReduceDims != 0 && providedReduceDims != reduceDims)
                 {
                     return VectorManagerResult.BadParams;
                 }
@@ -337,13 +349,10 @@ namespace Garnet.server
                     return VectorManagerResult.BadParams;
                 }
 
-                if (providedBuildExplorationFactor != 0 && providedBuildExplorationFactor != buildExplorationFactor)
+                if (providedNumLinks != numLinks)
                 {
-                    return VectorManagerResult.BadParams;
-                }
-
-                if (providedNumLinks != 0 && providedNumLinks != numLinks)
-                {
+                    // Matching Redis behavior
+                    errorMsg = "ERR asked M value mismatch with existing vector set"u8;
                     return VectorManagerResult.BadParams;
                 }
 
@@ -685,7 +694,7 @@ namespace Garnet.server
             var attributes = input.parseState.GetArgSliceByRef(7).Span;
             var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
 
-            var addRes = TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks);
+            var addRes = TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
             if (addRes != VectorManagerResult.OK)
             {
                 throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");

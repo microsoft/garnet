@@ -295,14 +295,16 @@ namespace Garnet.server
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
                 VectorManagerResult result;
+                ReadOnlySpan<byte> customErrMsg;
                 if (quantType == VectorQuantType.XPreQ8 && reduceDim != 0)
                 {
                     result = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
+                    customErrMsg = default;
                 }
                 else
                 {
-                    res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out result);
+                    res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out result, out customErrMsg);
                 }
 
                 if (res == GarnetStatus.OK)
@@ -335,7 +337,12 @@ namespace Garnet.server
                     }
                     else if (result == VectorManagerResult.BadParams)
                     {
-                        return AbortWithErrorMessage("ERR asked quantization mismatch with existing vector set"u8);
+                        if (customErrMsg.IsEmpty)
+                        {
+                            return AbortWithErrorMessage("ERR asked quantization mismatch with existing vector set"u8);
+                        }
+
+                        return AbortWithErrorMessage(customErrMsg);
                     }
                 }
                 else
