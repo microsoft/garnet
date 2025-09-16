@@ -213,9 +213,8 @@ namespace Garnet.server
                     else
                     {
                         // Adjust the size to account for the new value replacing the old one.
-                        this.MemorySize += Utility.RoundUp(value.Length, IntPtr.Size) -
-                                           Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
-                        this.DiskSize += value.Length - hashValueRef.Length;
+                        this.HeapMemorySize += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                        this.SerializedSize += value.Length - hashValueRef.Length;
 
                         hashValueRef = value.ToArray();
                     }
@@ -228,7 +227,7 @@ namespace Garnet.server
                         expirationTimes.Remove(key))
 #endif
                     {
-                        this.MemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        this.HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                         CleanupExpirationStructuresIfEmpty();
                     }
                 }
@@ -332,9 +331,8 @@ namespace Garnet.server
                 else
                 {
                     // Adjust the size to account for the new value replacing the old one.
-                    this.MemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
-                                       Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
-                    this.DiskSize += formattedValue.Length - hashValueRef.Length;
+                    this.HeapMemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                    this.SerializedSize += formattedValue.Length - hashValueRef.Length;
 
                     hashValueRef = formattedValue.ToArray();
                 }
@@ -416,9 +414,8 @@ namespace Garnet.server
                 else
                 {
                     // Adjust the size to account for the new value replacing the old one.
-                    this.MemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
-                                       Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
-                    this.DiskSize += formattedValue.Length - hashValueRef.Length;
+                    this.HeapMemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+                    this.SerializedSize += formattedValue.Length - hashValueRef.Length;
 
                     hashValueRef = formattedValue.ToArray();
                 }
