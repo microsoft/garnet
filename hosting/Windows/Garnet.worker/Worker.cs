@@ -63,7 +63,7 @@ namespace Garnet
                     {
                         // CommitAOFAsync returns false if AOF is disabled
                         var commitSuccess = await server.Store.CommitAOFAsync(cancellationToken);
-                        
+
                         if (commitSuccess)
                         {
                             // Wait only if commit was successful
@@ -128,7 +128,7 @@ namespace Garnet
                 {
                     // Use Metrics API to get SERVER info metrics
                     var serverMetrics = server.Metrics.GetInfoMetrics(Garnet.common.InfoMetricsType.SERVER);
-                    
+
                     // Find connected_clients metric without LINQ
                     var activeConnections = 0;
                     for (int i = 0; i < serverMetrics.Length; i++)
@@ -154,14 +154,14 @@ namespace Garnet
                 {
                     consecutiveErrors++;
                     Console.WriteLine($"Error checking active connections: {ex.Message}");
-                    
+
                     // Break only after multiple consecutive errors
                     if (consecutiveErrors >= maxConsecutiveErrors)
                     {
                         Console.WriteLine($"Too many consecutive errors ({consecutiveErrors}). Stopping connection check.");
                         break;
                     }
-                    
+
                     // Continue with longer delay after error
                     await Task.Delay(500, cancellationToken);
                 }
