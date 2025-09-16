@@ -298,7 +298,7 @@ namespace Garnet.cluster
                 errorMessage = [];
                 UpdateLastPrimarySyncTime();
 
-                logger?.LogInformation("Replica Recover MainStore: {storeVersion}>[{sIndexToken} {sHlogToken}]" +
+                logger?.LogInformation("Replica Recover Store: {storeVersion}>[{sIndexToken} {sHlogToken}]" +
                     "\nObjectStore: {objectStoreVersion}>[{oIndexToken} {oHlogToken}]",
                     remoteCheckpoint.metadata.storeVersion,
                     remoteCheckpoint.metadata.storeIndexToken,

@@ -21,8 +21,7 @@ namespace Garnet.server
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
 
         // Iterators for expired key deletion
-        private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan mainStoreExpiredKeyDeletionScanFuncs;
-        private ArrayKeyIterationFunctions.ObjectStoreExpiredKeyDeletionScan objectStoreExpiredKeyDeletionScanFuncs;
+        private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan expiredKeyDeletionScanFuncs;
 
         // Iterators for KEYS command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
@@ -117,25 +116,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Iterates over main store memory collecting expired records.
+        /// Iterates over store memory collecting expired records.
         /// </summary>
-        internal (long, long) MainStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
+        internal (long, long) ExpiredKeyDeletionScan(long fromAddress, long untilAddress)
         {
-            mainStoreExpiredKeyDeletionScanFuncs ??= new();
-            mainStoreExpiredKeyDeletionScanFuncs.Initialize(this);
-            _ = basicContext.Session.ScanCursor(ref fromAddress, untilAddress, mainStoreExpiredKeyDeletionScanFuncs);
-            return (mainStoreExpiredKeyDeletionScanFuncs.deletedCount, mainStoreExpiredKeyDeletionScanFuncs.totalCount);
-        }
-
-        /// <summary>
-        /// Iterates over object store memory collecting expired records.
-        /// </summary>
-        internal (long, long) ObjectStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
-        {
-            objectStoreExpiredKeyDeletionScanFuncs ??= new();
-            objectStoreExpiredKeyDeletionScanFuncs.Initialize(this);
-            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, objectStoreExpiredKeyDeletionScanFuncs);
-            return (objectStoreExpiredKeyDeletionScanFuncs.deletedCount, objectStoreExpiredKeyDeletionScanFuncs.totalCount);
+            expiredKeyDeletionScanFuncs ??= new();
+            expiredKeyDeletionScanFuncs.Initialize(this);
+            _ = basicContext.Session.ScanCursor(ref fromAddress, untilAddress, expiredKeyDeletionScanFuncs);
+            return (expiredKeyDeletionScanFuncs.deletedCount, expiredKeyDeletionScanFuncs.totalCount);
         }
 
         /// <summary>

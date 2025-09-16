@@ -103,9 +103,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
+        public static StoreFunctions<TKeyComparer, SpanByteRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator, new DefaultRecordDisposer());
+            => new(keyComparer, valueSerializerCreator, new SpanByteRecordDisposer());
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.
@@ -118,9 +118,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Store functions that take only the <paramref name="keyComparer"/>
         /// </summary>
-        public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer)
+        public static StoreFunctions<TKeyComparer, SpanByteRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator: null, DefaultRecordDisposer.Instance);
+            => new(keyComparer, valueSerializerCreator: null, SpanByteRecordDisposer.Instance);
 
         /// <summary>
         /// Store functions for <see cref="Span{_byte_}"/> Key and Value

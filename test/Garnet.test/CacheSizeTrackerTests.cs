@@ -11,14 +11,14 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     public class CacheSizeTrackerTests
     {
         GarnetServer server;
-        TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objStore;
+        TsavoriteKV<StoreFunctions, StoreAllocator> store;
         CacheSizeTracker cacheSizeTracker;
 
         [SetUp]
@@ -27,7 +27,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "3k");
             server.Start();
-            objStore = server.Provider.StoreWrapper.objectStore;
+            store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
         }
 
@@ -84,7 +84,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(NumRecords * MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
 
             // Wait for up to 3x resize task delay for the resizing to happen
-            if (!epcEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
+            if (!epcEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker<StoreFunctions, StoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
                 Assert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
         }
 
@@ -94,7 +94,7 @@ namespace Garnet.test
             server?.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "1k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
             server.Start();
-            objStore = server.Provider.StoreWrapper.objectStore;
+            store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
 
             var readCacheEmptyPageCountIncrements = 0;
@@ -129,7 +129,7 @@ namespace Garnet.test
             var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.EndPoint), includeReadCache: true, isObjectStore: true);
             ClassicAssert.AreEqual(64 + 32 * NumRecords, info.ReadCacheTailAddress);
 
-            if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
+            if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<StoreFunctions, StoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
                 ClassicAssert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
 
             ClassicAssert.AreEqual(1, readCacheEmptyPageCountIncrements);

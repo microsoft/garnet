@@ -38,16 +38,10 @@ namespace Garnet.server
                 value = InfoMetricsType.STATS;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("STORE"u8))
                 value = InfoMetricsType.STORE;
-            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("OBJECTSTORE"u8))
-                value = InfoMetricsType.OBJECTSTORE;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("STOREHASHTABLE"u8))
                 value = InfoMetricsType.STOREHASHTABLE;
-            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREHASHTABLE"u8))
-                value = InfoMetricsType.OBJECTSTOREHASHTABLE;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("STOREREVIV"u8))
                 value = InfoMetricsType.STOREREVIV;
-            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("OBJECTSTOREREVIV"u8))
-                value = InfoMetricsType.OBJECTSTOREREVIV;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("PERSISTENCE"u8))
                 value = InfoMetricsType.PERSISTENCE;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("CLIENTS"u8))
