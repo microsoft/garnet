@@ -115,26 +115,16 @@ namespace Garnet
             if (server?.Metrics == null) return;
 
             var stopwatch = Stopwatch.StartNew();
-            var consecutiveErrors = 0;
-            const int maxConsecutiveErrors = 3;
+
+            // Simple polling intervals: 50ms -> 300ms -> 1000ms
+            var delays = new[] { 50, 300, 1000 };
+            var delayIndex = 0;
 
             while (stopwatch.Elapsed < timeout && !cancellationToken.IsCancellationRequested)
             {
                 try
                 {
-                    // Use Metrics API to get SERVER info metrics
-                    var serverMetrics = server.Metrics.GetInfoMetrics(Garnet.common.InfoMetricsType.SERVER);
-
-                    // Find connected_clients metric without LINQ
-                    var activeConnections = 0;
-                    for (int i = 0; i < serverMetrics.Length; i++)
-                    {
-                        if (serverMetrics[i].Name == "connected_clients")
-                        {
-                            if (int.TryParse(serverMetrics[i].Value, out activeConnections))
-                                break;
-                        }
-                    }
+                    var activeConnections = GetActiveConnectionCount();
 
                     if (activeConnections == 0)
                     {
@@ -143,22 +133,18 @@ namespace Garnet
                     }
 
                     Console.WriteLine($"Waiting for {activeConnections} active connections to complete...");
-                    consecutiveErrors = 0; // Reset error counter on success
-                    await Task.Delay(100, cancellationToken);
+
+                    // Use current delay and progress to next one (up to max)
+                    var currentDelay = delays[delayIndex];
+                    if (delayIndex < delays.Length - 1) delayIndex++;
+
+                    await Task.Delay(currentDelay, cancellationToken);
                 }
                 catch (Exception ex)
                 {
-                    consecutiveErrors++;
                     Console.WriteLine($"Error checking active connections: {ex.Message}");
-
-                    // Break only after multiple consecutive errors
-                    if (consecutiveErrors >= maxConsecutiveErrors)
-                    {
-                        Console.WriteLine($"Too many consecutive errors ({consecutiveErrors}). Stopping connection check.");
-                        break;
-                    }
-
-                    // Continue with longer delay after error
+                    // Reset to fastest polling on error and wait a bit longer
+                    delayIndex = 0;
                     await Task.Delay(500, cancellationToken);
                 }
             }
@@ -167,6 +153,25 @@ namespace Garnet
             {
                 Console.WriteLine($"Timeout reached after {timeout.TotalSeconds} seconds. Some connections may still be active.");
             }
+        }
+
+        /// <summary>
+        /// Gets the current number of active connections from server metrics.
+        /// </summary>
+        /// <returns>Number of active connections, or 0 if not found</returns>
+        private int GetActiveConnectionCount()
+        {
+            var serverMetrics = server.Metrics.GetInfoMetrics(Garnet.common.InfoMetricsType.SERVER);
+
+            for (int i = 0; i < serverMetrics.Length; i++)
+            {
+                if (serverMetrics[i].Name == "connected_clients")
+                {
+                    return int.TryParse(serverMetrics[i].Value, out var count) ? count : 0;
+                }
+            }
+
+            return 0;
         }
     }
 }
