@@ -47,12 +47,8 @@ namespace Garnet
             try
             {
                 // Wait for existing connections to complete (with timeout)
-                /* I consider Configurable via args, but args directly inject into garnet server's creation 
-                 If we want to make it configurable, We need to make a consent
-                 Garnet.Worker.exe can have config file or env var or specific args for timeout
-                 but I have scare about args, cause exsiting args are directly injected into garnet server's creation
-                 So I decide to make it fixed value for now. 30 seconds should be enough for most scenarios.
-                */
+                // Consider making timeout configurable via configuration file or environment variable.
+                // Currently using fixed 30-second timeout to avoid conflicts with existing server arguments.
                 var timeout = TimeSpan.FromSeconds(30);
                 await WaitForActiveConnectionsToComplete(timeout, cancellationToken);
 
