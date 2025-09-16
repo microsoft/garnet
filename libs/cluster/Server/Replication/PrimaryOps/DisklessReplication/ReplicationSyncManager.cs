@@ -242,7 +242,6 @@ namespace Garnet.cluster
 
                         // Set store version to operate on
                         Sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
-                        Sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
 
                         // If checkpoint is not needed mark this sync session as complete
                         // to avoid waiting for other replicas which may need to receive the latest checkpoint
@@ -280,21 +279,11 @@ namespace Garnet.cluster
 
                 // Iterate through main store
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
-                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
+                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
 
                 var result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
                 if (!result.success)
                     throw new InvalidOperationException("Main store checkpoint stream failed!");
-
-                if (!ClusterProvider.serverOptions.DisableObjects)
-                {
-                    // Iterate through object store
-                    var objectStoreCheckpointTask = ClusterProvider.storeWrapper.objectStore.
-                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
-                    result = await WaitOrDie(checkpointTask: objectStoreCheckpointTask, iteratorManager: manager);
-                    if (!result.success)
-                        throw new InvalidOperationException("Object store checkpoint stream failed!");
-                }
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
 

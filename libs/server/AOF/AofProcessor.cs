@@ -292,7 +292,7 @@ namespace Garnet.server
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                        storeWrapper.objectStore.SetVersion(header.storeVersion);
+                        storeWrapper.store.SetVersion(header.storeVersion);
                     break;
                 case AofEntryType.FlushAll:
                     storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
@@ -510,42 +510,9 @@ namespace Garnet.server
         }
 
         bool IsOldVersionRecord(AofHeader header)
-        {
-            var storeType = ToAofStoreType(header.opType);
-
-            return storeType switch
-            {
-                AofStoreType.MainStoreType => header.storeVersion < storeWrapper.store.CurrentVersion,
-                AofStoreType.ObjectStoreType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
-                AofStoreType.TxnType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
-                _ => throw new GarnetException($"Unexpected AOF header store type {storeType}"),
-            };
-        }
+            => header.storeVersion < storeWrapper.store.CurrentVersion;
 
         bool IsNewVersionRecord(AofHeader header)
-        {
-            var storeType = ToAofStoreType(header.opType);
-            return storeType switch
-            {
-                AofStoreType.MainStoreType => header.storeVersion > storeWrapper.store.CurrentVersion,
-                AofStoreType.ObjectStoreType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
-                AofStoreType.TxnType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
-                _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
-            };
-        }
-
-        static AofStoreType ToAofStoreType(AofEntryType type)
-        {
-            return type switch
-            {
-                AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
-                AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
-                AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
-                AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit or AofEntryType.MainStoreStreamingCheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
-                AofEntryType.CheckpointEndCommit or AofEntryType.ObjectStoreCheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
-                AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
-                _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
-            };
-        }
+            => header.storeVersion > storeWrapper.store.CurrentVersion;
     }
 }

@@ -13,12 +13,10 @@ namespace Garnet.cluster
     internal sealed unsafe class SnapshotIteratorManager
     {
         public readonly ReplicationSyncManager replicationSyncManager;
-        public readonly TimeSpan timeout;
         public readonly CancellationToken cancellationToken;
         public readonly ILogger logger;
 
-        public MainStoreSnapshotIterator mainStoreSnapshotIterator;
-        public ObjectStoreSnapshotIterator objectStoreSnapshotIterator;
+        public StoreSnapshotIterator StoreSnapshotIterator;
 
         // For serialization from LogRecord to DiskLogRecord
         SpanByteAndMemory serializationOutput;
@@ -50,9 +48,7 @@ namespace Garnet.cluster
                 sessions[i].checkpointCoveredAofAddress = CheckpointCoveredAddress;
             }
 
-            mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
-            if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
-                objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
+            StoreSnapshotIterator = new StoreSnapshotIterator(this);
 
             memoryPool = MemoryPool<byte>.Shared;
             valueObjectSerializer = new(customCommandManager: default);
@@ -76,7 +72,7 @@ namespace Garnet.cluster
             }
         }
 
-        public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion, bool isMainStore)
+        public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -92,14 +88,11 @@ namespace Garnet.cluster
                 if (!replicationSyncManager.IsActive(i))
                     continue;
                 sessions[i].InitializeIterationBuffer();
-                if (isMainStore)
-                    sessions[i].currentStoreVersion = targetVersion;
-                else
-                    sessions[i].currentObjectStoreVersion = targetVersion;
+                sessions[i].currentStoreVersion = targetVersion;
             }
 
-            logger?.LogTrace("{OnStart} {store} {token} {currentVersion} {targetVersion}",
-                nameof(OnStart), isMainStore ? "MAIN STORE" : "OBJECT STORE", checkpointToken, currentVersion, targetVersion);
+            logger?.LogTrace("{OnStart} {token} {currentVersion} {targetVersion}",
+                nameof(OnStart), checkpointToken, currentVersion, targetVersion);
 
             return true;
         }
@@ -229,16 +222,15 @@ namespace Garnet.cluster
         }
     }
 
-    internal sealed unsafe class MainStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
+    internal sealed unsafe class StoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
         IStreamingSnapshotIteratorFunctions
     {
-        readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
         long targetVersion;
 
         public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
         {
             this.targetVersion = targetVersion;
-            return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: true);
+            return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion);
         }
 
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
@@ -246,32 +238,9 @@ namespace Garnet.cluster
             => snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
 
         public void OnException(Exception exception, long numberOfRecords)
-            => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(MainStoreSnapshotIterator)}");
+            => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(StoreSnapshotIterator)}");
 
         public void OnStop(bool completed, long numberOfRecords)
             => snapshotIteratorManager.OnStop(completed, numberOfRecords, isMainStore: true, targetVersion);
-    }
-
-    internal sealed unsafe class ObjectStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions
-    {
-        readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
-        long targetVersion;
-
-        public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
-        {
-            this.targetVersion = targetVersion;
-            return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: false);
-        }
-
-        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
-            where TSourceLogRecord : ISourceLogRecord
-            => snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords);
-
-        public void OnException(Exception exception, long numberOfRecords)
-            => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(ObjectStoreSnapshotIterator)}");
-
-        public void OnStop(bool completed, long numberOfRecords)
-            => snapshotIteratorManager.OnStop(completed, numberOfRecords, isMainStore: false, targetVersion);
     }
 }

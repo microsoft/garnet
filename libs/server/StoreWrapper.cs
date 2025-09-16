@@ -53,12 +53,11 @@ namespace Garnet.server
         public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;
 
         /// <summary>
-        /// Object store size tracker (of DB 0)
+        /// Store size tracker (of DB 0)
         /// </summary>
-        public CacheSizeTracker objectStoreSizeTracker => databaseManager.SizeTracker;
+        public CacheSizeTracker sizeTracker => databaseManager.SizeTracker;
 
-        public IStoreFunctions mainStoreFunctions => store.StoreFunctions;
-        public IStoreFunctions objectStoreFunctions => objectStore?.StoreFunctions;
+        public IStoreFunctions storeFunctions => store.StoreFunctions;
 
         /// <summary>
         /// Server options

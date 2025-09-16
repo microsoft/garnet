@@ -257,19 +257,18 @@ namespace Garnet.client
         /// Signal replica to recover
         /// </summary>
         /// <param name="sendStoreCheckpoint"></param>
-        /// <param name="sendObjectStoreCheckpoint"></param>
         /// <param name="replayAOF"></param>
         /// <param name="primary_replid"></param>
         /// <param name="checkpointEntryData"></param>
         /// <param name="beginAddress"></param>
         /// <param name="tailAddress"></param>
         /// <returns></returns>
-        public Task<string> ExecuteBeginReplicaRecover(bool sendStoreCheckpoint, bool sendObjectStoreCheckpoint, bool replayAOF, string primary_replid, byte[] checkpointEntryData, long beginAddress, long tailAddress)
+        public Task<string> ExecuteBeginReplicaRecover(bool sendStoreCheckpoint, bool replayAOF, string primary_replid, byte[] checkpointEntryData, long beginAddress, long tailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
-            int arraySize = 9;
+            int arraySize = 8;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -303,14 +302,6 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.TryWriteBulkString(sendObjectStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //5
             while (!RespWriteUtils.TryWriteBulkString(replayAOF ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
@@ -318,7 +309,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //6
+            //5
             while (!RespWriteUtils.TryWriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
@@ -326,7 +317,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //7
+            //6
             while (!RespWriteUtils.TryWriteBulkString(checkpointEntryData, ref curr, end))
             {
                 Flush();
@@ -334,7 +325,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //8
+            //7
             while (!RespWriteUtils.TryWriteArrayItem(beginAddress, ref curr, end))
             {
                 Flush();
@@ -342,7 +333,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //9
+            //8
             while (!RespWriteUtils.TryWriteArrayItem(tailAddress, ref curr, end))
             {
                 Flush();

@@ -28,7 +28,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "3k");
             server.Start();
             store = server.Provider.StoreWrapper.store;
-            cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
+            cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;
         }
 
         [TearDown]
@@ -95,7 +95,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "1k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
             server.Start();
             store = server.Provider.StoreWrapper.store;
-            cacheSizeTracker = server.Provider.StoreWrapper.objectStoreSizeTracker;
+            cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;
 
             var readCacheEmptyPageCountIncrements = 0;
             var readCacheEpcEvent = new ManualResetEventSlim(false);

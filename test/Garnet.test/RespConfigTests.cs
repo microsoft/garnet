@@ -61,27 +61,26 @@ namespace Garnet.test
         /// This test verifies that dynamically changing the memory size configuration using CONFIG SET memory / obj-log-memory
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
         /// </summary>
-        /// <param name="storeType">Store type (Main / Object)</param>
         /// <param name="smallerSize">Memory size smaller than the initial size</param>
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         /// <param name="largerThanBufferSize">Memory size larger than the buffer size</param>
         /// <param name="malformedSize">Malformed memory size string</param>
         [Test]
-        [TestCase(StoreType.Main, "16g", "32g", "64g", "g4")]
-        [TestCase(StoreType.Main, "9gB", "28GB", "33G", "2gBB")]
-        [TestCase(StoreType.Object, "16m", "32m", "64m", "3bm")]
+        [TestCase("16g", "32g", "64g", "g4")]
+        [TestCase("9gB", "28GB", "33G", "2gBB")]
+        [TestCase("16m", "32m", "64m", "3bm")]
         [TestCase(StoreType.Object, "5MB", "30M", "128mb", "44d")]
-        public void ConfigSetMemorySizeTest(StoreType storeType, string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
+        public void ConfigSetMemorySizeTest(string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var option = storeType == StoreType.Main ? "memory" : "obj-log-memory";
-            var metricType = storeType == StoreType.Main ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
-            var initMemorySize = storeType == StoreType.Main ? memorySize : objectStoreLogMemorySize;
+            var option = "memory";
+            var metricType = InfoMetricsType.STORE;
+            var initMemorySize = memorySize;
 
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var bufferSize = ServerOptions.NextPowerOf2(currMemorySize);
-            var pageSize = storeType == StoreType.Main ? 32L * 1024 * 1024 : 4 * 1024; // default page size
+            var pageSize = 32L * 1024 * 1024; // default page size
 
             // Check initial MinEPC before any changes
             var metrics = server.Metrics.GetInfoMetrics(metricType);
@@ -148,23 +147,22 @@ namespace Garnet.test
         /// This test verifies that dynamically changing the index size configuration using CONFIG SET index / obj-index
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
         /// </summary>
-        /// <param name="storeType">Store type (Main / Object)</param>
         /// <param name="smallerSize">Index size smaller than the initial size</param>
         /// <param name="largerSize">Index size larger than the initial size</param>
         /// <param name="illegalSize">Illegal index size (not a power of 2)</param>
         /// <param name="malformedSize">Malformed index size string</param>
         [Test]
-        [TestCase(StoreType.Main, "32m", "128m", "63m", "8d")]
-        [TestCase(StoreType.Main, "16mB", "256MB", "23m", "g8")]
-        [TestCase(StoreType.Object, "2m", "32m", "28m", "m9")]
-        [TestCase(StoreType.Object, "4Mb", "16mB", "129MB", "0.3gb")]
-        public void ConfigSetIndexSizeTest(StoreType storeType, string smallerSize, string largerSize, string illegalSize, string malformedSize)
+        [TestCase("32m", "128m", "63m", "8d")]
+        [TestCase("16mB", "256MB", "23m", "g8")]
+        [TestCase("2m", "32m", "28m", "m9")]
+        [TestCase("4Mb", "16mB", "129MB", "0.3gb")]
+        public void ConfigSetIndexSizeTest(string smallerSize, string largerSize, string illegalSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var metricType = storeType == StoreType.Main ? InfoMetricsType.STORE : InfoMetricsType.OBJECTSTORE;
-            var option = storeType == StoreType.Main ? "index" : "obj-index";
-            var initIndexSize = storeType == StoreType.Main ? indexSize : objectStoreIndexSize;
+            var metricType = InfoMetricsType.STORE;
+            var option = "index";
+            var initIndexSize = indexSize;
 
             // Check initial index size before any changes
             var currIndexSize = ServerOptions.ParseSize(initIndexSize, out _);
@@ -605,22 +603,18 @@ namespace Garnet.test
         /// This test verifies that dynamically changing the index size configuration using CONFIG SET
         /// incurs the expected shifts in the overflow buckets of the store, and that no data is lost in the process.
         /// </summary>
-        /// <param name="storeType">Store type (Main / Object)</param>
         /// <param name="largerSize1">Larger index size than configured</param>
         /// <param name="largerSize2">Larger index size than previous</param>
         [Test]
-        [TestCase(StoreType.Main, "1024", "4096")]
-        [TestCase(StoreType.Object, "1024", "4096")]
-        public void ConfigSetIndexSizeUtilizationTest(StoreType storeType, string largerSize1, string largerSize2)
+        [TestCase("1024", "4096")]
+        public void ConfigSetIndexSizeUtilizationTest(string largerSize1, string largerSize2)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var option = storeType == StoreType.Main ? "index" : "obj-index";
+            var option = "index";
             var parsedIndexSize = ServerOptions.ParseSize(indexSize, out _);
 
-            var currIndexSize = storeType == StoreType.Main
-                ? server.Provider.StoreWrapper.store.IndexSize
-                : server.Provider.StoreWrapper.objectStore.IndexSize;
+            var currIndexSize = server.Provider.StoreWrapper.store.IndexSize;
 
             // Verify initial index size and overflow bucket allocations are zero
             ClassicAssert.AreEqual(parsedIndexSize / 64, currIndexSize);
@@ -635,10 +629,7 @@ namespace Garnet.test
             // Insert first batch of data
             for (var i = 0; i < 250; i++)
             {
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(keys[i], val);
-                else
-                    _ = db.ListRightPush(keys[i], [val]);
+                _ = db.StringSet(keys[i], val);
             }
 
             // Verify that overflow bucket allocations are non-zero after initial insertions
@@ -657,10 +648,7 @@ namespace Garnet.test
             // Insert second batch of data
             for (var i = 250; i < 500; i++)
             {
-                if (storeType == StoreType.Main)
-                    _ = db.StringSet(keys[i], val);
-                else
-                    _ = db.ListRightPush(keys[i], [val]);
+                _ = db.StringSet(keys[i], val);
             }
 
             prevOverflowBucketAllocations = GetOverflowBucketAllocations();
@@ -680,9 +668,7 @@ namespace Garnet.test
             }
 
             long GetOverflowBucketAllocations() =>
-                storeType == StoreType.Main
-                    ? server.Provider.StoreWrapper.store.OverflowBucketAllocations
-                    : server.Provider.StoreWrapper.objectStore.OverflowBucketAllocations;
+                server.Provider.StoreWrapper.store.OverflowBucketAllocations;
         }
     }
 
@@ -743,8 +729,8 @@ namespace Garnet.test
             var option = "obj-heap-memory";
 
             // Verify that initial empty page count is zero
-            var objectStore = server.Provider.StoreWrapper.objectStore;
-            ClassicAssert.AreEqual(0, objectStore.Log.EmptyPageCount);
+            var store = server.Provider.StoreWrapper.store;
+            ClassicAssert.AreEqual(0, store.Log.EmptyPageCount);
 
             // Add objects to store to fill up heap
             var values = new RedisValue[16];
@@ -762,8 +748,8 @@ namespace Garnet.test
             Thread.Sleep(sizeTrackerDelay);
 
             // Verify that empty page count has increased
-            ClassicAssert.Greater(objectStore.Log.EmptyPageCount, 0);
-            var prevEpc = objectStore.Log.EmptyPageCount;
+            ClassicAssert.Greater(store.Log.EmptyPageCount, 0);
+            var prevEpc = store.Log.EmptyPageCount;
 
             // Try to set heap size to a larger value than current
             var result = db.Execute("CONFIG", "SET", option, largerSize);
@@ -773,7 +759,7 @@ namespace Garnet.test
             Thread.Sleep(sizeTrackerDelay);
 
             // Verify that empty page count has decreased
-            ClassicAssert.Less(objectStore.Log.EmptyPageCount, prevEpc);
+            ClassicAssert.Less(store.Log.EmptyPageCount, prevEpc);
         }
     }
 }

@@ -30,8 +30,6 @@ namespace Garnet.cluster
 
         public long currentStoreVersion;
 
-        public long currentObjectStoreVersion;
-
         /// <summary>
         /// Pessimistic checkpoint covered AOF address
         /// </summary>
@@ -192,7 +190,6 @@ namespace Garnet.cluster
             var localPrimaryReplId = clusterProvider.replicationManager.PrimaryReplId;
             var sameHistory = localPrimaryReplId.Equals(replicaSyncMetadata.currentPrimaryReplId, StringComparison.Ordinal);
             var sendMainStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
-            var sendObjectStore = !sameHistory || replicaSyncMetadata.currentObjectStoreVersion != currentObjectStoreVersion;
 
             var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
             var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
@@ -202,11 +199,10 @@ namespace Garnet.cluster
 
             // We need to stream checkpoint if any of the following conditions are met:
             // 1. Replica has different history than primary
-            // 2. Replica has different main store version than primary
-            // 3. Replica has different object store version than primary
-            // 4. Replica has truncated AOF
-            // 5. The AOF to be replayed in case of a partial sync is larger than the specified threshold
-            fullSync = sendMainStore || sendObjectStore || outOfRangeAof || aofTooLarge;
+            // 2. Replica has different store version than primary
+            // 3. Replica has truncated AOF
+            // 4. The AOF to be replayed in case of a partial sync is larger than the specified threshold
+            fullSync = sendMainStore || outOfRangeAof || aofTooLarge;
             return fullSync;
         }
 
@@ -227,7 +223,6 @@ namespace Garnet.cluster
                     originNodeId: clusterProvider.clusterManager.CurrentConfig.LocalNodeId,
                     currentPrimaryReplId: clusterProvider.replicationManager.PrimaryReplId,
                     currentStoreVersion: currentStoreVersion,
-                    currentObjectStoreVersion: currentObjectStoreVersion,
                     currentAofBeginAddress: currentAofBeginAddress,
                     currentAofTailAddress: currentAofTailAddress,
                     currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,

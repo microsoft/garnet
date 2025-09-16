@@ -73,7 +73,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "64", objectStoreIndexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
             server.Start();
 
-            var objectStore = server.Provider.StoreWrapper.objectStore;
+            var store = server.Provider.StoreWrapper.store;
 
             RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
             RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
@@ -81,8 +81,8 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                ClassicAssert.AreEqual(0, objectStore.OverflowBucketAllocations);
-                ClassicAssert.AreEqual(1, objectStore.IndexSize);
+                ClassicAssert.AreEqual(0, store.OverflowBucketAllocations);
+                ClassicAssert.AreEqual(1, store.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
                 {
@@ -90,16 +90,16 @@ namespace Garnet.test
                 }
 
                 VerifyObjectStoreSetMembers(db, keys, values);
-                ClassicAssert.AreEqual(1, objectStore.OverflowBucketAllocations);
+                ClassicAssert.AreEqual(1, store.OverflowBucketAllocations);
 
                 // Wait for the resizing to happen
                 for (int waitCycles = 0; waitCycles < indexResizeWaitCycles; waitCycles++)
                 {
                     Thread.Sleep(TimeSpan.FromSeconds(indexResizeTaskDelaySeconds));
-                    if (objectStore.IndexSize > 1) break;
+                    if (store.IndexSize > 1) break;
                 }
 
-                ClassicAssert.AreEqual(2, objectStore.IndexSize);
+                ClassicAssert.AreEqual(2, store.IndexSize);
                 VerifyObjectStoreSetMembers(db, keys, values);
             }
         }
@@ -184,7 +184,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
             server.Start();
 
-            var objectStore = server.Provider.StoreWrapper.objectStore;
+            var store = server.Provider.StoreWrapper.store;
 
             RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
             RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
@@ -193,7 +193,7 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                ClassicAssert.AreEqual(8, objectStore.IndexSize);
+                ClassicAssert.AreEqual(8, store.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
                 {
@@ -216,10 +216,10 @@ namespace Garnet.test
                 for (int waitCycles = 0; waitCycles < indexResizeWaitCycles; waitCycles++)
                 {
                     Thread.Sleep(TimeSpan.FromSeconds(indexResizeTaskDelaySeconds));
-                    if (objectStore.IndexSize > 8) break;
+                    if (store.IndexSize > 8) break;
                 }
 
-                ClassicAssert.AreEqual(16, objectStore.IndexSize);
+                ClassicAssert.AreEqual(16, store.IndexSize);
 
                 // Check if entry created before resizing is still accessible.
                 VerifyObjectStoreSetMembers(db, keys, values);

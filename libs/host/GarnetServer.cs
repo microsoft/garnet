@@ -260,13 +260,10 @@ namespace Garnet
                 var configMemoryLimit = (storeWrapper.store.IndexSize * 64) +
                                         storeWrapper.store.Log.MaxMemorySizeBytes +
                                         (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (storeWrapper.appendOnlyFile?.MaxMemorySizeBytes ?? 0);
-                if (storeWrapper.objectStore != null)
-                    configMemoryLimit += (storeWrapper.objectStore.IndexSize * 64) +
-                                         storeWrapper.objectStore.Log.MaxMemorySizeBytes +
-                                         (storeWrapper.objectStore.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                         (storeWrapper.objectStoreSizeTracker?.TargetSize ?? 0) +
-                                         (storeWrapper.objectStoreSizeTracker?.ReadCacheTargetSize ?? 0);
+                                        (storeWrapper.appendOnlyFile?.MaxMemorySizeBytes ?? 0) +
+                                        (storeWrapper.sizeTracker?.TargetSize ?? 0) +
+                                        (storeWrapper.sizeTracker?.ReadCacheTargetSize ?? 0);
+
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
             }
 
