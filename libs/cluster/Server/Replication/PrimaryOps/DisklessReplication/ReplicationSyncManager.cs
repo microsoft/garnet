@@ -155,8 +155,6 @@ namespace Garnet.cluster
         async Task MainStreamingSnapshotDriver()
         {
             // Parameters for sync operation
-            var disableObjects = ClusterProvider.serverOptions.DisableObjects;
-
             try
             {
                 // Lock to avoid the addition of new replica sync sessions while sync is in progress

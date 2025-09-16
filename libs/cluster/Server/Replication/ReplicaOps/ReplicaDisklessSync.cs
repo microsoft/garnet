@@ -56,7 +56,6 @@ namespace Garnet.cluster
             async Task<string> TryBeginReplicaSync(bool downgradeLock)
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
-                var disableObjects = clusterProvider.serverOptions.DisableObjects;
                 GarnetClientSession gcs = null;
                 try
                 {

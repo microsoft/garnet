@@ -1908,7 +1908,7 @@ namespace Garnet.test.cluster
             var sourceNodeIndex = 0;
             var targetNodeIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: true);
+            context.CreateInstances(nodes_count);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(sourceNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -1977,7 +1977,7 @@ namespace Garnet.test.cluster
             var sourceNodeIndex = 0;
             var targetNodeIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: true);
+            context.CreateInstances(nodes_count);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(sourceNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -2050,7 +2050,7 @@ namespace Garnet.test.cluster
             var sourceNodeIndex = 0;
             var targetNodeIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, disableObjects: true);
+            context.CreateInstances(nodes_count);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(sourceNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);

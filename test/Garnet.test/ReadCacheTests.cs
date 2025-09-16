@@ -16,7 +16,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, lowMemory: true);
             server.Start();
         }
 
@@ -99,7 +99,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var server = redis.GetServer(TestUtils.EndPoint);
-            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
 
             // Start at tail address of 24
             ClassicAssert.AreEqual(24, info.ReadCacheBeginAddress);
@@ -113,7 +113,7 @@ namespace Garnet.test
                 _ = db.ListRightPush(key, value);
             }
 
-            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
@@ -124,13 +124,13 @@ namespace Garnet.test
             var key0 = $"objKey00000";
             var value0 = db.ListGetByIndex(key0, 0);
             ClassicAssert.AreEqual("objVal00000", (string)value0);
-            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.AreEqual(24 + 24, info.ReadCacheTailAddress); // 24 bytes for one record
 
             // Issue read again to ensure read cache is not updated
             value0 = db.ListGetByIndex(key0, 0);
             ClassicAssert.AreEqual("objVal00000", (string)value0);
-            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.AreEqual(24 + 24, info.ReadCacheTailAddress);
 
             // Read more keys to update read cache
@@ -140,7 +140,7 @@ namespace Garnet.test
                 var value = db.ListGetByIndex(key, 0);
                 ClassicAssert.AreEqual($"objVal{j:00000}", (string)value);
             }
-            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.AreEqual(24 + 24 * 40 + 8, info.ReadCacheTailAddress); // 24 bytes for 20 records + 8 bytes for page boundary alignment
             ClassicAssert.AreEqual(24, info.ReadCacheBeginAddress); // Read cache should not have been evicted yet
 
@@ -151,7 +151,7 @@ namespace Garnet.test
                 var value = db.ListGetByIndex(key, 0);
                 ClassicAssert.AreEqual($"objVal{j:00000}", (string)value);
             }
-            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             ClassicAssert.Greater(info.ReadCacheBeginAddress, 24); // Read cache entries should have been evicted
         }
     }

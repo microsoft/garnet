@@ -25,7 +25,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreHeapMemorySize: "3k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, indexSize: "1k", heapMemorySize: "3k");
             server.Start();
             store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;
@@ -92,7 +92,7 @@ namespace Garnet.test
         public void ReadCacheIncreaseEmptyPageCountTest()
         {
             server?.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "1k", pageSize: "512", lowMemory: true, objectStoreIndexSize: "1k", objectStoreReadCacheHeapMemorySize: "1k", enableObjectStoreReadCache: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "1k", pageSize: "512", lowMemory: true, indexSize: "1k", readCacheHeapMemorySize: "1k", enableReadCache: true);
             server.Start();
             store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;
@@ -126,7 +126,7 @@ namespace Garnet.test
             // K/V lengths fit into a single byte each, so the record size is: RecordInfo, MinLengthMetadataSize, keyLength, valueLength; the total rounded up to record alignment.
             // ValueLength is 4 for the ObjectId, so this becomes 8 + 3 + (10 or 11) + 4 totalling 25 or 26, both rounding up to 32 which is a even divisor for the page size.
             // First valid address is 64, and there are 25 total records.
-            var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.EndPoint), includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.EndPoint), includeReadCache: true);
             ClassicAssert.AreEqual(64 + 32 * NumRecords, info.ReadCacheTailAddress);
 
             if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<StoreFunctions, StoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))

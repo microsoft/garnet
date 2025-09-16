@@ -78,7 +78,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, enableAOF: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -2180,7 +2180,7 @@ namespace Garnet.test
                 ]);
             }
 
-            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 

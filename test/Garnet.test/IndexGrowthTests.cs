@@ -70,7 +70,7 @@ namespace Garnet.test
         [Test]
         public void ObjectStoreIndexGrowthTest()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "64", objectStoreIndexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, indexSize: "64", indexMaxSize: "128", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
             server.Start();
 
             var store = server.Provider.StoreWrapper.store;
@@ -181,7 +181,7 @@ namespace Garnet.test
         [Test]
         public void ObjectStoreIndexGrowthTestWithDiskReadAndCheckpoint()
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, indexSize: "512", indexMaxSize: "1k", indexResizeFrequencySecs: indexResizeTaskDelaySeconds);
             server.Start();
 
             var store = server.Provider.StoreWrapper.store;
@@ -231,7 +231,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, objectStoreIndexSize: "512", objectStoreIndexMaxSize: "1k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, indexSize: "512", indexMaxSize: "1k");
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))

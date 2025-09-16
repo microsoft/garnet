@@ -90,18 +90,10 @@ namespace Garnet.cluster
             => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
 
         public long GetRecoveredSafeAofAddress()
-        {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager().RecoveredSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager().RecoveredSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
-        }
+            => clusterProvider.replicationManager.GetCkptManager().RecoveredSafeAofAddress;
 
         public long GetCurrentSafeAofAddress()
-        {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager().CurrentSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager().CurrentSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
-        }
+            => clusterProvider.replicationManager.GetCkptManager().CurrentSafeAofAddress;
 
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {

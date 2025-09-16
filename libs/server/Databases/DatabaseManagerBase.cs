@@ -389,8 +389,7 @@ namespace Garnet.server
                 // If periodic compaction is enabled and this is called from checkpointing, skip compaction
                 if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
-                DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments,
-                    StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
+                DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments, 1,
                     StoreWrapper.serverOptions.CompactionType, StoreWrapper.serverOptions.CompactionForceDelete);
             }
             catch (Exception ex)
@@ -435,7 +434,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void DoCompaction(GarnetDatabase db, int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
+        private void DoCompaction(GarnetDatabase db, int mainStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
         {
             if (compactionType == LogCompactionType.None) return;
 

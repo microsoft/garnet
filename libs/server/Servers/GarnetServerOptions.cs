@@ -17,45 +17,9 @@ namespace Garnet.server
     public class GarnetServerOptions : ServerOptions
     {
         /// <summary>
-        /// Support data structure objects.
-        /// </summary>
-        public bool DisableObjects = false;
-
-        /// <summary>
         /// Heap memory size limit of object store.
         /// </summary>
-        public string ObjectStoreHeapMemorySize = "";
-
-        /// <summary>
-        /// Object store log memory used in bytes excluding heap memory.
-        /// </summary>
-        public string ObjectStoreLogMemorySize = "32m";
-
-        /// <summary>
-        /// Size of each object store page in bytes (rounds down to power of 2).
-        /// </summary>
-        public string ObjectStorePageSize = "4k";
-
-        /// <summary>
-        /// Size of each object store log segment in bytes on disk (rounds down to power of 2).
-        /// </summary>
-        public string ObjectStoreSegmentSize = "32m";
-
-        /// <summary>
-        /// Size of object store hash index in bytes (rounds down to power of 2).
-        /// </summary>
-        public string ObjectStoreIndexSize = "16m";
-
-        /// <summary>
-        /// Max size of object store hash index in bytes (rounds down to power of 2). 
-        /// If unspecified, index size doesn't grow (default behavior).
-        /// </summary>
-        public string ObjectStoreIndexMaxSize = string.Empty;
-
-        /// <summary>
-        /// Percentage of object store log memory that is kept mutable.
-        /// </summary>
-        public int ObjectStoreMutablePercent = 90;
+        public string HeapMemorySize = "";
 
         /// <summary>
         /// Enable cluster.
@@ -175,11 +139,6 @@ namespace Garnet.server
         /// Number of log segments created on disk before compaction triggers.
         /// </summary>
         public int CompactionMaxSegments = 32;
-
-        /// <summary>
-        /// Number of object store log segments created on disk before compaction triggers.
-        /// </summary>
-        public int ObjectStoreCompactionMaxSegments = 32;
 
         /// <summary>
         /// Percent of cluster nodes to gossip with at each gossip iteration.
@@ -426,11 +385,6 @@ namespace Garnet.server
         /// </summary>
         public bool RevivInChainOnly;
 
-        /// <summary>
-        /// Number of records in the single free record bin for the object store.
-        /// </summary>
-        public int RevivObjBinRecordCount;
-
         /// <summary>Max size of hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
         public int AdjustedIndexMaxCacheLines;
 
@@ -466,13 +420,7 @@ namespace Garnet.server
 
         public string ReadCachePageSize = "32m";
 
-        public string ObjectStoreReadCachePageSize = "1m";
-
-        public string ObjectStoreReadCacheLogMemorySize = "32m";
-
-        public string ObjectStoreReadCacheHeapMemorySize = "";
-
-        public bool EnableObjectStoreReadCache = false;
+        public string ReadCacheHeapMemorySize = "";
 
         public LuaOptions LuaOptions;
 
@@ -643,7 +591,7 @@ namespace Garnet.server
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
 
-            heapMemorySize = ParseSize(ObjectStoreHeapMemorySize, out _);
+            heapMemorySize = ParseSize(HeapMemorySize, out _);
             logger?.LogInformation("[Store] Heap memory size is {heapMemorySize}", heapMemorySize > 0 ? PrettySize(heapMemorySize) : "unlimited");
 
             // Read cache related settings
@@ -660,7 +608,7 @@ namespace Garnet.server
                 logger?.LogInformation("[Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
                     PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
 
-                readCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize, out _);
+                readCacheHeapMemorySize = ParseSize(ReadCacheHeapMemorySize, out _);
                 logger?.LogInformation("[Store] Read cache heap memory size is {readCacheHeapMemorySize}", readCacheHeapMemorySize > 0 ? PrettySize(readCacheHeapMemorySize) : "unlimited");
             }
 
@@ -832,37 +780,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get object store page size
-        /// </summary>
-        /// <returns></returns>
-        public int ObjectStorePageSizeBits()
-        {
-            long size = ParseSize(ObjectStorePageSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower object store page size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
-        }
-
-        /// <summary>
         /// Get integer value of ReplicaDisklessSyncFullSyncAofThreshold
         /// </summary>
         /// <returns></returns>
         public long ReplicaDisklessSyncFullSyncAofThresholdValue()
             => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold, out _);
-
-        /// <summary>
-        /// Get object store segment size
-        /// </summary>
-        /// <returns></returns>
-        public int ObjectStoreSegmentSizeBits()
-        {
-            long size = ParseSize(ObjectStoreSegmentSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower object store disk segment size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
-        }
 
         /// <summary>
         /// Get device for AOF
