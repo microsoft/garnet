@@ -98,11 +98,11 @@ namespace Garnet.test
 
             // Element name too short
             var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc2.Message);
+            ClassicAssert.AreEqual("ERR Input dimension mismatch for projection - got 4 but projection expects 1", exc2.Message);
 
             // Element name too long
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 1, 2, 3, 4, }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc3.Message);
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "1", "1.0", new byte[] { 0, 1, 2, 3, 4, }, "XPREQ8"]));
+            ClassicAssert.AreEqual("ERR XPREQ8 requires 4-byte element ids", exc3.Message);
         }
 
         [Test]
@@ -178,7 +178,7 @@ namespace Garnet.test
 
             // TODO: Redis returns the same error for all these mismatches which also seems... wrong, confirm with them
             var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz"]));
-            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc16.Message);
+            ClassicAssert.AreEqual("ERR Input dimension mismatch for projection - got 2 but projection expects 1", exc16.Message);
             var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "Q8"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc17.Message);
             var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "EF", "12"]));

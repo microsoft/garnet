@@ -276,7 +276,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.VADD:
                     {
-                        if(input.arg1 == VectorManager.VADDAppendLogArg)
+                        if (input.arg1 == VectorManager.VADDAppendLogArg)
                         {
                             // Synthetic op, do nothing
                             break;
@@ -1351,6 +1351,13 @@ namespace Garnet.server
                     appendValue.ReadOnlySpan.CopyTo(newValue.AsSpan().Slice(oldValue.LengthWithoutMetadata));
 
                     CopyValueLengthToOutput(ref newValue, ref output, functionsState.etagState.etagSkippedStart);
+                    break;
+
+                case RespCommand.VADD:
+                    if (input.arg1 != VectorManager.VADDAppendLogArg)
+                    {
+                        throw new GarnetException("Unexpected CopyUpdater call on VADD key");
+                    }
                     break;
 
                 default:
