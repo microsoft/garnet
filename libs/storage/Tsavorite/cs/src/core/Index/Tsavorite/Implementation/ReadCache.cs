@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
     // Partial file for readcache functions
@@ -20,7 +21,7 @@ namespace Tsavorite.core
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
             // minAddress, if present, comes from the pre-pendingIO entry.Address; there may have been no readcache entries then.
-            minAddress = IsReadCache(minAddress) ? minAddress : readCacheBase.HeadAddress;
+            minAddress = IsReadCache(minAddress) ? AbsoluteAddress(minAddress) : readCacheBase.HeadAddress;
 
         RestartChain:
 
@@ -50,7 +51,7 @@ namespace Tsavorite.core
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
                     ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
-                        ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)
+                        ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)    // Most keys are inline and this is faster
                         : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
                     if (storeFunctions.KeysEqual(key, keySpan))
                     {

@@ -76,7 +76,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override readonly string ToString()
-            => $"id {id}, key {request_key}, LogAddr {AbsoluteAddress(logicalAddress)}, MinAddr {minAddress}, LogRec [{logRecord}]";
+            => $"id {id}, key {request_key}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{logRecord}]";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.

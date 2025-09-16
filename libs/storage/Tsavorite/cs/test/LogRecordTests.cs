@@ -5,11 +5,13 @@ using System;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
 using Tsavorite.core;
-using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LogRecordTests
 {
+    using static Utility;
+    using static VarbyteLengthUtility;
+
     /// <summary>
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
     /// which in turn tests <see cref="MultiLevelPageArray{_int_}"/>.
@@ -19,12 +21,30 @@ namespace Tsavorite.test.LogRecordTests
     {
         long nativePointer;
         ObjectIdMap objectIdMap;
-        SectorAlignedBufferPool bufferPool;
-        SectorAlignedMemory recordBuffer;
+        SpanByteAndMemory sbamOutput;
+
+#pragma warning disable IDE1006 // Naming Styles
+        const int initialKeyLen = 10;
+        const int initialValueLen = 40;
+        const int initialVarbyteSize = 3;  // indicator byte, and 1 byte each for key and value len
+        const int initialOptionalSize = sizeof(long) * 2;
+
+        const int maxInlineKeySize = 64;
+        const int maxInlineValueSize = 128;
+
+        const long initialETag = 1000;
+        const long initialExpiration = 2000;
+#pragma warning restore IDE1006 // Naming Styles
+
+        int expectedInitialActualInlineRecordSize;
+        int expectedInitialAllocatedInlineRecordSize;
 
         [SetUp]
         public void Setup()
         {
+            expectedInitialActualInlineRecordSize = RecordInfo.GetLength() + initialVarbyteSize + initialKeyLen + initialValueLen + initialOptionalSize;
+            expectedInitialAllocatedInlineRecordSize = RoundUp(expectedInitialActualInlineRecordSize, Constants.kRecordAlignment);
+
             DeleteDirectory(MethodTestDir);
             objectIdMap = new();
         }
@@ -38,43 +58,124 @@ namespace Tsavorite.test.LogRecordTests
                 NativeMemory.AlignedFree((void*)nativePointer);
                 nativePointer = IntPtr.Zero;
             }
-            recordBuffer?.Return();
-            recordBuffer = null;
-            bufferPool = null;
+            sbamOutput.Dispose();
             DeleteDirectory(MethodTestDir);
         }
 
-        const int initialKeyLen = 10;
-        const int initialValueLen = 40;
-
-        const int expectedInitialActualInlineRecordSize = 82;   // based on the initial values
-        const int expectedInitialAllocatedInlineRecordSize = 88;
-
-        const int maxInlineKeySize = 64;
-        const int maxInlineValueSize = 128;
-
-        const long initialETag = 1000;
-        const long InitialExpiration = 2000;
-
-        void UpdateRecordSizeInfo(ref RecordSizeInfo sizeInfo, int keySize = -1, int valueSize = -1)
+        static void UpdateRecordSizeInfo(ref RecordSizeInfo sizeInfo, int keySize = -1, int valueSize = -1)
         {
             if (keySize > 0)
-                sizeInfo.FieldInfo.KeyDataSize = keySize;
+                sizeInfo.FieldInfo.KeySize = keySize;
             if (valueSize > 0)
-                sizeInfo.FieldInfo.ValueDataSize = valueSize;
+                sizeInfo.FieldInfo.ValueSize = valueSize;
 
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeySize <= maxInlineKeySize;
+            keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
-            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= maxInlineValueSize;
-            valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.MaxInlineValueSize = maxInlineValueSize;
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= maxInlineValueSize;
+            valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record
-            sizeInfo.ActualInlineRecordSize = RecordInfo.Size + keySize + valueSize + sizeInfo.OptionalSize;
-            sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
+            sizeInfo.CalculateSizes(keySize, valueSize);
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        //[Repeat(900)]
+        public unsafe void VarbyteWordTests()
+        {
+            long value;
+            byte* ptr = (byte*)&value;
+            long indicatorAddress = (long)ptr;
+
+            Assert.That(GetByteCount(0), Is.EqualTo(1));
+
+            int inputKeyLength = 16;
+            var inputValueLength = 1 << 8 - 1;
+            byte* keyPtr, valuePtr;
+
+            // Test 1- and 2-byte valueLengthByte boundary with 1-keyLengthByte key
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(1));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out int keyLengthBytes, out int valueLengthBytes);
+            Assert.That(keyLengthBytes, Is.EqualTo(1));
+            Assert.That(valueLengthBytes, Is.EqualTo(1));
+            VerifyKeyAndValue();
+
+            inputValueLength = 1 << 8;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(2));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            Assert.That(valueLengthBytes, Is.EqualTo(2));
+            VerifyKeyAndValue();
+
+            // Test 2- and 3-byte valueLengthByte boundary with 2-keyLengthByte key
+            inputKeyLength = inputValueLength = (1 << 16) - 1;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(2));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
+            Assert.That(keyLengthBytes, Is.EqualTo(2));
+            Assert.That(valueLengthBytes, Is.EqualTo(2));
+            VerifyKeyAndValue();
+
+            inputValueLength = 1 << 16;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            Assert.That(valueLengthBytes, Is.EqualTo(3));
+            VerifyKeyAndValue();
+
+            // Test 3- and 4-byte valueLengthByte boundary with 3-keyLengthByte key
+            inputKeyLength = inputValueLength = (1 << 24) - 1;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
+            Assert.That(keyLengthBytes, Is.EqualTo(3));
+            Assert.That(valueLengthBytes, Is.EqualTo(3));
+            VerifyKeyAndValue();
+
+            inputValueLength = 1 << 24;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            Assert.That(valueLengthBytes, Is.EqualTo(4));
+            VerifyKeyAndValue();
+
+            // Test max ValueLength
+            inputValueLength = int.MaxValue;
+            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            Assert.That(valueLengthBytes, Is.EqualTo(4));
+            VerifyKeyAndValue();
+
+            void VerifyKeyAndValue()
+            {
+                keyPtr = GetFieldPtr(indicatorAddress, isKey: true, out var keyLengthPtr, out var outputKeyLengthBytes, out var outputKeyLength);
+                valuePtr = GetFieldPtr(indicatorAddress, isKey: false, out var valueLengthPtr, out var outputValueLengthBytes, out var outputValueLength);
+                Assert.That(outputKeyLengthBytes, Is.EqualTo(keyLengthBytes));
+                Assert.That(outputKeyLength, Is.EqualTo(inputKeyLength));
+                Assert.That(outputValueLength, Is.EqualTo(inputValueLength));
+                Assert.That((long)keyPtr, Is.EqualTo((long)(ptr + 1 + outputKeyLengthBytes + outputValueLengthBytes)));
+                Assert.That((long)keyLengthPtr, Is.EqualTo((long)(ptr + 1)));
+                Assert.That((long)valuePtr, Is.EqualTo((long)(keyPtr + outputKeyLength)));
+                Assert.That((long)valueLengthPtr, Is.EqualTo((long)(keyLengthPtr + keyLengthBytes)));
+
+                // Now test the word-based forms for in-memory use only
+                if (inputValueLength <= int.MaxValue)
+                {
+                    // First verify reading from the pointer-update version.
+                    long word = *(long*)indicatorAddress;
+                    var keyLength2 = ReadVarbyteLengthInWord(word, precedingNumBytes: 0, keyLengthBytes);
+                    var valueLength2 = ReadVarbyteLengthInWord(word, keyLengthBytes, valueLengthBytes);
+                    Assert.That(keyLength2, Is.EqualTo(inputKeyLength));
+                    Assert.That(valueLength2, Is.EqualTo(inputValueLength));
+
+                    word = 0x7171717171717171;  // Initialize with a bit pattern to mask off
+                    WriteVarbyteLengthInWord(ref word, inputKeyLength, precedingNumBytes: 0, keyLengthBytes);                   // Write key
+                    WriteVarbyteLengthInWord(ref word, inputValueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);  // Write value
+                    keyLength2 = ReadVarbyteLengthInWord(word, precedingNumBytes: 0, keyLengthBytes);
+                    valueLength2 = ReadVarbyteLengthInWord(word, precedingNumBytes: keyLengthBytes, valueLengthBytes);
+                    Assert.That(keyLength2, Is.EqualTo(inputKeyLength));
+                    Assert.That(valueLength2, Is.EqualTo(inputValueLength));
+                }
+            }
         }
 
         [Test]
@@ -93,7 +194,7 @@ namespace Tsavorite.test.LogRecordTests
 
             // Shrink
             var offset = 12;
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
@@ -104,7 +205,7 @@ namespace Tsavorite.test.LogRecordTests
 
             // Grow within range
             offset = 6;
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress - offset));
@@ -115,11 +216,11 @@ namespace Tsavorite.test.LogRecordTests
 
             // Grow beyond range
             offset = -10;
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen - offset;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.False);
 
             // Restore to original
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen;
             Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
 
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
@@ -195,146 +296,24 @@ namespace Tsavorite.test.LogRecordTests
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
-        //[Repeat(900)]
-        public unsafe void SerializationTest()
+        public void CopyDiskLogRecordToLogRecord()
         {
-            Span<byte> key = stackalloc byte[initialKeyLen];
-            Span<byte> value = stackalloc byte[initialValueLen];
-            Span<byte> overflowValue = stackalloc byte[maxInlineValueSize + 12];
+            Assert.Ignore("TODO CopyDiskLogRecordToLogRecord");
+        }
 
-            key.Fill(0x42);
-            value.Fill(0x43);
-            overflowValue.Fill(0x53);
-
-            // Local diskLogRecord. We keep recordBuffer outside DiskLogRecord for the reuse scenario.
-            DiskLogRecord diskLogRecord;
-            var valueSerializer = new TestObjectValue.Serializer();
-            bufferPool = new(recordSize: 1, sectorSize: 512);
-
-            var sizeInfo = new RecordSizeInfo();
-            InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLengthAddress, out var expectedFillerLength, out long eTag, out long expiration);
-            diskLogRecord = new();
-            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
-            Assert.That(diskLogRecord.Info.RecordIsInline);
-            // verify inline copy by checking SerializedSize
-            Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(RoundUp(logRecord.ActualRecordSize, Constants.kRecordAlignment)));
-            // verify getting the key and value - length and data; eTag; expiration
-            Assert.That(diskLogRecord.Key.SequenceEqual(logRecord.Key));
-            Assert.That(diskLogRecord.ValueSpan.SequenceEqual(logRecord.ValueSpan));
-            Assert.That(!diskLogRecord.Info.ValueIsObject);
-            Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
-            Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
-
-            // From here down in this test we want diskLogRecord to be serialized in IndicatorByte format (varbyte).
-            var optionalLength = 2 * sizeof(long);
-            var expectedValueLengthBytes = 1;
-
-            // Convert to overflow. Because objectIdSize is the same as InlineLengthPrefixSize, our value space will shrink by the original value data size.
-            var offset = value.Length;
-            ConvertToOverflow(overflowValue, ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration, offset);
-            diskLogRecord = new();
-            diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer, ref recordBuffer);
-            Assert.That(!diskLogRecord.Info.RecordIsInline);
-            // verify out-of-line copy by checking SerializedSize
-            Assert.That(diskLogRecord.GetSerializedLength(), Is.GreaterThan(RoundUp(logRecord.ActualRecordSize, Constants.kRecordAlignment)));
-            // verify indicator byte
-            Assert.That(diskLogRecord.Version, Is.EqualTo(0));
-            // verify getting the key and value - length and data; eTag; expiration
-            Assert.That(diskLogRecord.Key.Length, Is.EqualTo(key.Length));
-            Assert.That(diskLogRecord.Key.SequenceEqual(logRecord.Key));
-            Assert.That(diskLogRecord.ValueSpan.Length, Is.EqualTo(overflowValue.Length));
-            Assert.That(diskLogRecord.ValueSpan.SequenceEqual(logRecord.ValueSpan));
-            Assert.That(!diskLogRecord.Info.ValueIsObject);
-            Assert.That(!diskLogRecord.Info.ValueIsInline, "To avoid issues with Info.RecordIsInline, varbyte-format DiskLogRecords do not set Info.ValueIsInline; see discussion in SerializeCommonVarByteFields");
-            Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
-            Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
-
-            // Convert to Object. Because objectIdSize is the same as InlineLengthPrefixSize, we can reuse the same offset as above.
-            ConvertToObject(ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration, offset);
-
-            // Now test different value sizes, using TestLargeObjectValue to test large objects.
-            var largeValueSerializer = new TestLargeObjectValue.Serializer();
-            for (var ii = 0; ii < sizeof(int); ++ii)
-            {
-                /////////////////////////////
-                // Set up the LogRecord with the object.
-                /////////////////////////////
-                var valueDataSize = (1 << (ii * 8)) + 42;         // TODO: test long values
-                var valueObject = new TestLargeObjectValue(valueDataSize);
-                Array.Fill(valueObject.value, (byte)ii);
-                sizeInfo.FieldInfo.ValueDataSize = ObjectIdMap.ObjectIdSize;
-                sizeInfo.FieldInfo.ValueIsObject = true;
-                UpdateRecordSizeInfo(ref sizeInfo);
-                Assert.That(logRecord.TrySetValueObject(valueObject, in sizeInfo), Is.True);
-
-                expectedValueLengthBytes = 1;  // Non-serialized object so only a 1-byte "0" length
-                var expectedKeyDataOffset = RecordInfo.Size + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
-                var expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
-
-                /////////////////////////////
-                // Serialize with a null object serializer to copy the object instance rather than serializing it into space in the record buffer.
-                /////////////////////////////
-                diskLogRecord = new();
-                diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer: null, ref recordBuffer);
-                Assert.That(diskLogRecord.Version, Is.EqualTo(0));
-                expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
-
-                var keyInfo = diskLogRecord.KeyInfo;
-                Assert.That(keyInfo.length, Is.EqualTo(initialKeyLen));
-                Assert.That(keyInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress));
-
-                var expectedSerializedValueLength = 0;      // The object instance was copied; no serialization was done so the length is zero.
-                var valueInfo = diskLogRecord.ValueInfo;
-                Assert.That(valueInfo.length, Is.EqualTo(expectedSerializedValueLength));
-                Assert.That(valueInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress + keyInfo.length));
-
-                Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
-                Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
-
-                Assert.That(diskLogRecord.ValueObject, Is.Not.Null);
-                Assert.That(new Span<byte>(((TestLargeObjectValue)diskLogRecord.ValueObject).value).SequenceEqual(new Span<byte>(((TestLargeObjectValue)logRecord.ValueObject).value)));
-                var expectedRecordSize = RoundUp(expectedKeyDataOffset + key.Length + expectedSerializedValueLength + optionalLength, Constants.kRecordAlignment);
-                Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(expectedRecordSize));
-
-                /////////////////////////////
-                // Serialize with an object serializer to allocate space in the record buffer and serialize the object into it.
-                /////////////////////////////
-                diskLogRecord = new();
-                diskLogRecord.Serialize(in logRecord, bufferPool, largeValueSerializer, ref recordBuffer);
-                Assert.That(diskLogRecord.Version, Is.EqualTo(0));
-
-                expectedValueLengthBytes = ii + 1;  // Serialized object so the value length is used
-                expectedKeyDataOffset = RecordInfo.Size + 1 + 1 + expectedValueLengthBytes;    // IndicatorByte + key length byte
-                expectedKeyDataAddress = diskLogRecord.physicalAddress + expectedKeyDataOffset;
-
-                keyInfo = diskLogRecord.KeyInfo;
-                Assert.That(keyInfo.length, Is.EqualTo(initialKeyLen));
-                Assert.That(keyInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress));
-
-                valueInfo = diskLogRecord.ValueInfo;
-                Assert.That(valueInfo.length, Is.EqualTo(valueObject.SerializedSize));
-                Assert.That(valueInfo.dataAddress, Is.EqualTo(expectedKeyDataAddress + keyInfo.length));
-
-                Assert.That(diskLogRecord.ETag, Is.EqualTo(eTag));
-                Assert.That(diskLogRecord.Expiration, Is.EqualTo(expiration));
-
-                Assert.That(diskLogRecord.Info.ValueIsObject);
-                expectedSerializedValueLength = (int)valueObject.SerializedSize;
-                expectedRecordSize = RoundUp(expectedKeyDataOffset + key.Length + expectedSerializedValueLength + optionalLength, Constants.kRecordAlignment);
-                Assert.That(diskLogRecord.GetSerializedLength(), Is.EqualTo(expectedRecordSize));
-
-                Assert.That(diskLogRecord.DeserializeValueObject(largeValueSerializer), Is.Not.Null);
-                Assert.That(diskLogRecord.ValueObject, Is.Not.Null);
-                Assert.That(new Span<byte>(((TestLargeObjectValue)diskLogRecord.ValueObject).value).SequenceEqual(new Span<byte>(((TestLargeObjectValue)logRecord.ValueObject).value)));
-            }
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public void SerializeToMemoryPool()
+        {
+            Assert.Ignore("TODO SerializeToMemoryPool");
         }
 
         private void InitializeRecord(Span<byte> key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLengthAddress, out long expectedFillerLength, out long eTag, out long expiration)
         {
             sizeInfo.FieldInfo = new()
             {
-                KeyDataSize = initialKeyLen,
-                ValueDataSize = initialValueLen,
+                KeySize = initialKeyLen,
+                ValueSize = initialValueLen,
                 HasETag = true,
                 HasExpiration = true
             };
@@ -349,22 +328,12 @@ namespace Tsavorite.test.LogRecordTests
             long recordEndAddress = nativePointer + sizeInfo.AllocatedInlineRecordSize;
 
             logRecord = new LogRecord(nativePointer, objectIdMap) { InfoRef = default };
-            logRecord.InfoRef.SetKeyIsInline();
-            logRecord.InfoRef.SetValueIsInline();
-
-            // SerializeKey
-            var keySpan = LogField.SetInlineDataLength(logRecord.KeyAddress, key.Length);
-            key.CopyTo(keySpan);
-            _ = LogField.SetInlineDataLength(logRecord.ValueAddress, value.Length);
+            logRecord.InitializeRecord(key, in sizeInfo);
 
             // InitializeValue
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(initialValueLen));
 
-            // FillerLength is set after initialization of Value field, and must be done before actually setting the ValueSpan
-            // (it ignores optionals as it's called before they're set up).
-            logRecord.SetFillerLength(sizeInfo.AllocatedInlineRecordSize);
-
-            expectedFillerLengthAddress = logRecord.ValueAddress + value.Length + LogField.InlineLengthPrefixSize;
+            expectedFillerLengthAddress = logRecord.physicalAddress + RecordInfo.GetLength() + initialVarbyteSize + key.Length + value.Length;  // no OptionalsLength
             expectedFillerLength = recordEndAddress - expectedFillerLengthAddress;
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
@@ -389,7 +358,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
 
-            expiration = InitialExpiration;
+            expiration = initialExpiration;
             Assert.That(logRecord.TrySetExpiration(expiration), Is.True);
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
 
@@ -401,7 +370,7 @@ namespace Tsavorite.test.LogRecordTests
 
         private void ConvertToOverflow(Span<byte> overflowValue, ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLengthAddress, long expectedFillerLength, long eTag, long expiration, int offset)
         {
-            sizeInfo.FieldInfo.ValueDataSize = overflowValue.Length;
+            sizeInfo.FieldInfo.ValueSize = overflowValue.Length;
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 
@@ -421,7 +390,7 @@ namespace Tsavorite.test.LogRecordTests
 
         private void ConvertToObject(ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLengthAddress, long expectedFillerLength, long eTag, long expiration, int offset)
         {
-            sizeInfo.FieldInfo.ValueDataSize = ObjectIdMap.ObjectIdSize;
+            sizeInfo.FieldInfo.ValueSize = ObjectIdMap.ObjectIdSize;
             sizeInfo.FieldInfo.ValueIsObject = true;
             UpdateRecordSizeInfo(ref sizeInfo);
 
@@ -442,7 +411,7 @@ namespace Tsavorite.test.LogRecordTests
 
         private void RestoreToOriginal(Span<byte> value, ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLengthAddress, long expectedFillerLength, long eTag, long expiration)
         {
-            sizeInfo.FieldInfo.ValueDataSize = initialValueLen;
+            sizeInfo.FieldInfo.ValueSize = initialValueLen;
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 

@@ -31,9 +31,6 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsReadCache(long address) => (address & RecordInfo.kIsReadCacheBitMask) == RecordInfo.kIsReadCacheBitMask;
-        // Unused in favor of allocatorBase.SetAddressType
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
-        //internal static long SetIsReadCache(long address) => (address & kAbsoluteAddressBitMask) | kIsReadCacheBitMask;
 
         /// <summary>Get the absolute address (no readcache bit)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -41,7 +38,7 @@ namespace Tsavorite.core
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetPage(long logicalAddress, int logPageSizeBits) => AbsoluteAddress(logicalAddress) >> logPageSizeBits;
+        internal static long GetPage(long logicalAddress, int logPageSizeBits) => logicalAddress >> logPageSizeBits;    // Does not need AbsoluteAddress because we don't do it for ReadCache
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

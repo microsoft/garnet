@@ -30,11 +30,7 @@ namespace Garnet.server
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.MemorySize);
-
-            // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-            functionsState.objectStoreFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-            logRecord.ClearValueObject(obj => { });
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
             return true;
         }
     }

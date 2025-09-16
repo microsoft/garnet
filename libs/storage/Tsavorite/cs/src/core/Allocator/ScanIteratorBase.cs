@@ -167,11 +167,6 @@ namespace Tsavorite.core
             {
                 var nextPage = currentPage + i;
 
-                // Convert to absolute addresses as we are going to disk. The LogAddress methods (GetPage, etc.) work with both absolute and AddressType-prefixed addresses.
-                currentAddress = AbsoluteAddress(currentAddress);
-                headAddress = AbsoluteAddress(headAddress);
-                endAddress = AbsoluteAddress(endAddress);
-
                 // Cannot load page if it is entirely in memory or beyond the end address
                 var pageStartAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage, logPageSizeBits);
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)

@@ -360,11 +360,11 @@ namespace Tsavorite.core
         /// <summary>Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddress(long toAddress)
         {
-            _ = Task.Run(() => device.TruncateUntilAddress(AbsoluteAddress(toAddress)));
+            _ = Task.Run(() => device.TruncateUntilAddress(toAddress));
         }
 
         /// <summary>Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices</summary>
-        protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(AbsoluteAddress(toAddress));
+        protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
 
         /// <summary>Remove disk segment</summary>
         protected virtual void RemoveSegment(int segment) => device.RemoveSegment(segment);
@@ -867,7 +867,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPageIndexForAddress(long address) => GetPageIndexForPage(GetPage(address));
+        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(LogAddress.GetPage(logicalAddress, LogPageSizeBits));
 
         /// <summary>Get capacity (number of pages)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -895,7 +895,7 @@ namespace Tsavorite.core
 
         /// <summary>Get log segment index from <paramref name="logicalAddress"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetSegment(long logicalAddress) => AbsoluteAddress(logicalAddress) >> LogSegmentSizeBits;
+        public long GetSegment(long logicalAddress) => logicalAddress >> LogSegmentSizeBits;
 
         /// <summary>Get offset in page</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1844,9 +1844,6 @@ namespace Tsavorite.core
                     epoch.ProtectAndDrain();
                 }
             }
-
-            // Convert to absolute address as we're going to disk
-            fromLogicalAddress = AbsoluteAddress(fromLogicalAddress);
 
             if (result == null)
                 AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);

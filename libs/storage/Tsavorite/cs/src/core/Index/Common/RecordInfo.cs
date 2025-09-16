@@ -45,7 +45,7 @@ namespace Tsavorite.core
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kUnused1BitOffset = kModifiedBitOffset + 1;
 
-        const long kIsReadCacheBitMask = 1L << kIsReadCacheBitOffset;
+        internal const long kIsReadCacheBitMask = 1L << kIsReadCacheBitOffset;
         const long kUnused5BitMask = 1L << kUnused5BitOffset;
         const long kUnused4BitMask = 1L << kUnused4BitOffset;
         const long kKeyIsInlineBitMask = 1L << kKeyIsInlineBitOffset;

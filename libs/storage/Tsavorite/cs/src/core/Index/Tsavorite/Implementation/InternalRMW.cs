@@ -528,7 +528,7 @@ namespace Tsavorite.core
                 else
                 {
                     // Else it was a CopyUpdater so call PCU if tombstoning has not been requested by NCU or CU
-                    if (!addTombstone && !sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
+                    if (!addTombstone)
                     {
                         // If we are not currently taking a checkpoint, we can just clear the old Object (or Overflow) because the new version of the object is
                         // already created in the new record, which has just been successfully CAS'd. Delay actually doing the clearing so PostCopyUpdater can modify

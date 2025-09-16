@@ -327,7 +327,7 @@ namespace Garnet.server
                         try
                         {
                             functions.InitialUpdater(logRecord.Key, ref input, logRecord.ValueSpan, ref writer, ref rmwInfo);
-                            Debug.Assert(sizeInfo.FieldInfo.ValueDataSize == logRecord.ValueSpan.Length, $"Inconsistency in initial updater value length: expected {sizeInfo.FieldInfo.ValueDataSize}, actual {logRecord.ValueSpan.Length}");
+                            Debug.Assert(sizeInfo.FieldInfo.ValueSize == logRecord.ValueSpan.Length, $"Inconsistency in initial updater value length: expected {sizeInfo.FieldInfo.ValueSize}, actual {logRecord.ValueSpan.Length}");
                         }
                         finally
                         {
@@ -494,8 +494,8 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
+                    // If shouldUpdateEtag != inputHeaderHasEtag, then either there is one that nextUpdate will remove, or there isn't one and nextUpdate will add it.
+                    shouldUpdateEtag = inputHeaderHasEtag;
                     if (inputHeaderHasEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;
