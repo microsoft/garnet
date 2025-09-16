@@ -88,8 +88,8 @@ namespace Garnet
             finally
             {
                 // Resource cleanup
-                Dispose();
                 await base.StopAsync(cancellationToken);
+                Dispose();
             }
         }
 
@@ -161,6 +161,8 @@ namespace Garnet
         /// <returns>Number of active connections, or 0 if not found</returns>
         private int GetActiveConnectionCount()
         {
+            if (server == null || server.Metrics == null)
+                return 0;
             var serverMetrics = server.Metrics.GetInfoMetrics(Garnet.common.InfoMetricsType.SERVER);
 
             for (int i = 0; i < serverMetrics.Length; i++)
