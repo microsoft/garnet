@@ -79,6 +79,19 @@ namespace Garnet.server
         /// </summary>
         FlushDb = 0x61,
 
+        /// <summary>
+        /// Unified store upsert
+        /// </summary>
+        UnifiedStoreUpsert = 0x70,
+        /// <summary>
+        /// Unified store RMW
+        /// </summary>
+        UnifiedStoreRMW = 0x71,
+        /// <summary>
+        /// Unified store delete
+        /// </summary>
+        UnifiedStoreDelete = 0x72,
+
         #region Deprecated markers
         /// <summary>
         /// Deprecated with unified checkpointing: Checkpoint for object store start

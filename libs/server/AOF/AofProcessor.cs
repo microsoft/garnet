@@ -46,6 +46,11 @@ namespace Garnet.server
         /// </summary>
         BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
 
+        /// <summary>
+        /// Session for unified store
+        /// </summary>
+        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+
         readonly Dictionary<int, List<byte[]>> inflightTxns;
         readonly byte[] buffer;
         readonly GCHandle handle;
@@ -96,6 +101,7 @@ namespace Garnet.server
             {
                 dbSession.StorageSession.basicContext.Session?.Dispose();
                 dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
+                dbSession.StorageSession.unifiedStoreBasicContext.Session?.Dispose();
             }
 
             handle.Free();
@@ -385,11 +391,9 @@ namespace Garnet.server
             // Switch the storage context to match the session, if necessary
             if (this.activeDbId != db.Id || initialSetup)
             {
-                var session = respServerSession.storageSession.basicContext.Session;
-                basicContext = session.BasicContext;
-                var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
-                if (objectStoreSession is not null)
-                    objectStoreBasicContext = objectStoreSession.BasicContext;
+                basicContext = respServerSession.storageSession.basicContext.Session.BasicContext;
+                objectStoreBasicContext = respServerSession.storageSession.objectStoreBasicContext.Session.BasicContext;
+                unifiedStoreBasicContext = respServerSession.storageSession.unifiedStoreBasicContext.Session.BasicContext;
                 this.activeDbId = db.Id;
             }
         }
