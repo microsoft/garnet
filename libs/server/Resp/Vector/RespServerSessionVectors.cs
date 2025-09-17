@@ -727,7 +727,18 @@ namespace Garnet.server
 
                                 for (var resultIndex = 0; resultIndex < distancesSpan.Length; resultIndex++)
                                 {
+                                    if (remainingIds.Length < sizeof(int))
+                                    {
+                                        throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                    }
+
                                     var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+
+                                    if (remainingIds.Length < sizeof(int) + elementLen)
+                                    {
+                                        throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                    }
+
                                     var elementData = remainingIds.Slice(sizeof(int), elementLen);
                                     remainingIds = remainingIds[(sizeof(int) + elementLen)..];
 
