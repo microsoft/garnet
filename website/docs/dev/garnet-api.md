@@ -6,7 +6,7 @@ title: Garnet API
 
 The **IGarnetApi** interface contains the operators exposed to the public API, which ultimately perform operations over the keys stored in Garnet. It inherits from **IGarnetReadApi** (read-only commands interface) and **IGarnetAdvancedApi** (advanced API calls). 
 
-For adding an new operator or command to the API, add a new method signature to the **IGarnetReadApi** interface in case the command performs read-only operations, or **IGarnetApi** otherwise.
+For adding a new operator or command to the API, add a new method signature to the **IGarnetReadApi** interface in case the command performs read-only operations, or **IGarnetApi** otherwise.
 
 ### Adding a new command to Garnet
 
@@ -39,10 +39,16 @@ Before you start implementing your command logic, add a basic test that calls th
 Each supported RESP command in Garnet should have an entry in ```Garnet.server/Resp/RespCommandsInfo.json```, specifying the command's info.\
 A command's info can be added manually, but we recommend using the ```CommandInfoUpdater``` tool to update the JSON file (can be found under ```playground/```).
 
-The ```CommandInfoUpdater``` tool calculates the difference between existing commands in ```Garnet.server/Resp/RespCommandsInfo.json``` and commands specified in ```CommandInfoUpdater/SupportedCommands.cs```. It then attempts to add / remove commands' info as necessary.\
-Info for Garnet-only commands is retrieved from ```CommandInfoUpdater/GarnetCommandsInfo.json```, and info for other RESP commands is retrieved from an external RESP server (which you will need to run locally / have access to in order to run this tool).
+The ```CommandInfoUpdater``` tool calculates the difference between existing commands in ```Garnet.server/Resp/RespCommandsInfo.json``` and commands specified in ```CommandInfoUpdater/SupportedCommands.cs```. It then attempts to add/remove commands' info as necessary.  
+Info for Garnet-only commands is retrieved from ```CommandInfoUpdater/GarnetCommandsInfo.json```, and info for other RESP commands is retrieved from an external RESP server (which you will need to run locally or have access to in order to run this tool).
 
 To add command info to Garnet, follow these steps:
 1. Add the supported command and its supported sub-commands (if applicable) to ```CommandInfoUpdater/SupportedCommands.cs```.
 2. If you are adding a Garnet-specific command, add its info to ```CommandInfoUpdater/GarnetCommandsInfo.json```.
-3. Build & run the tool (for syntax help run the tool with `-h` or `--help`).
+3. Start some RESP server locally.
+4. Build & run the tool (for syntax help run the tool with `-h` or `--help`).
+
+```bash
+cd playground/CommandInfoUpdater
+dotnet run -- --output ../../libs/resources
+```

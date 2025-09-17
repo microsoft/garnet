@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#nullable disable
+
 using System.Net;
 using System.Net.Security;
 using Garnet.common;
@@ -14,6 +16,28 @@ namespace Embedded.server
     {
         public GarnetServerEmbedded() : base(new IPEndPoint(IPAddress.Loopback, 0), 1 << 10)
         {
+        }
+
+        /// <inheritdoc/>
+        public override IEnumerable<IMessageConsumer> ActiveConsumers()
+        {
+            foreach (var kvp in activeHandlers)
+            {
+                var consumer = kvp.Key.Session;
+                if (consumer != null)
+                    yield return consumer;
+            }
+        }
+
+        /// <inheritdoc/>
+        public override IEnumerable<IClusterSession> ActiveClusterSessions()
+        {
+            foreach (var kvp in activeHandlers)
+            {
+                var consumer = kvp.Key.Session;
+                if (consumer != null)
+                    yield return ((RespServerSession)consumer).clusterSession;
+            }
         }
 
         public EmbeddedNetworkHandler CreateNetworkHandler(SslClientAuthenticationOptions tlsOptions = null, string remoteEndpointName = null)

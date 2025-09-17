@@ -34,7 +34,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of each object store page in bytes (rounds down to power of 2).
         /// </summary>
-        public string ObjectStorePageSize = "1m";
+        public string ObjectStorePageSize = "4k";
 
         /// <summary>
         /// Size of each object store log segment in bytes on disk (rounds down to power of 2).
@@ -66,6 +66,16 @@ namespace Garnet.server
         /// Start with clean cluster config
         /// </summary>
         public bool CleanClusterConfig = false;
+
+        /// <summary>
+        /// Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.
+        /// </summary>
+        public int ParallelMigrateTaskCount = 1;
+
+        /// <summary>
+        /// When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.
+        /// </summary>
+        public bool FastMigrate = false;
 
         /// <summary>
         /// Authentication settings
@@ -109,6 +119,11 @@ namespace Garnet.server
         /// -1 = manually issue commits using COMMITAOF command (no auto-commit)
         /// </summary>
         public int CommitFrequencyMs = 0;
+
+        /// <summary>
+        /// Frequency of background scan for expired key deletion, in seconds.
+        /// </summary>
+        public int ExpiredKeyDeletionScanFrequencySecs = -1;
 
         /// <summary>
         /// Index resize check frequency in seconds.
@@ -180,6 +195,11 @@ namespace Garnet.server
         /// Cluster node timeout is the amount of seconds a node must be unreachable. 
         /// </summary>
         public int ClusterTimeout = 60;
+
+        /// <summary>
+        /// How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms
+        /// </summary>
+        public int ClusterConfigFlushFrequencyMs = 0;
 
         /// <summary>
         /// TLS options
@@ -327,7 +347,7 @@ namespace Garnet.server
         /// <summary>
         /// Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching
         /// </summary>
-        public bool OnDemandCheckpoint = false;
+        public bool OnDemandCheckpoint = true;
 
         /// <summary>
         /// Whether diskless replication is enabled or not.
@@ -338,6 +358,21 @@ namespace Garnet.server
         /// Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.
         /// </summary>
         public int ReplicaDisklessSyncDelay = 5;
+
+        /// <summary>
+        /// Timeout in seconds for replication sync operations
+        /// </summary>
+        public TimeSpan ReplicaSyncTimeout = TimeSpan.FromSeconds(5);
+
+        /// <summary>
+        /// Timeout in seconds for replication attach operation
+        /// </summary>
+        public TimeSpan ReplicaAttachTimeout = TimeSpan.FromSeconds(60);
+
+        /// <summary>
+        /// AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.
+        /// </summary>
+        public string ReplicaDisklessSyncFullSyncAofThreshold = string.Empty;
 
         /// <summary>
         /// With main-memory replication, whether we use null device for AOF. Ensures no disk IO, but can cause data loss during replication.
@@ -408,6 +443,11 @@ namespace Garnet.server
         public ConnectionProtectionOption EnableDebugCommand;
 
         /// <summary>
+        /// Enables the MODULE command
+        /// </summary>
+        public ConnectionProtectionOption EnableModuleCommand;
+
+        /// <summary>
         /// Directories on server from which custom command binaries can be loaded by admin users
         /// </summary>
         public string[] ExtensionBinPaths;
@@ -470,6 +510,22 @@ namespace Garnet.server
         /// Gets the base directory for storing object-store checkpoints
         /// </summary>
         public string ObjectStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "ObjectStore");
+
+        /// <summary>
+        /// Seconds between attempts to re-establish replication between a Primary and Replica if the replication connection
+        /// has faulted.
+        /// 
+        /// 0 disables.
+        /// 
+        /// Attempts will only be made if Primary and Replica are exchanging GOSSIP messages.
+        /// </summary>
+        public int ClusterReplicationReestablishmentTimeout = 0;
+
+        /// <summary>
+        /// If true, a Cluster Replica will load any AOF/Checkpoint data from disk when it starts
+        /// and NOT dump it's data until a Primary connects.
+        /// </summary>
+        public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
         /// Get the directory name for database checkpoints
@@ -564,7 +620,7 @@ namespace Garnet.server
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
             kvSettings.MinEmptyPageCount = storeEmptyPageCount;
 
-            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.MemorySize;
+            long effectiveSize = kvSettings.MemorySize - storeEmptyPageCount * kvSettings.PageSize;
             if (storeEmptyPageCount == 0)
                 logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
             else
@@ -604,8 +660,8 @@ namespace Garnet.server
             if (EnableReadCache)
             {
                 kvSettings.ReadCacheEnabled = true;
-                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize);
-                kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize);
+                kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize, out _);
+                kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize, out _);
                 logger?.LogInformation("[Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
                     PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
             }
@@ -683,12 +739,12 @@ namespace Garnet.server
         public static int MemorySizeBits(string memorySize, string storePageSize, out int emptyPageCount)
         {
             emptyPageCount = 0;
-            long size = ParseSize(memorySize);
+            long size = ParseSize(memorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
             {
                 adjustedSize *= 2;
-                long pageSize = ParseSize(storePageSize);
+                long pageSize = ParseSize(storePageSize, out _);
                 pageSize = PreviousPowerOf2(pageSize);
                 emptyPageCount = (int)((adjustedSize - size) / pageSize);
             }
@@ -752,7 +808,7 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
 
-            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize);
+            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize, out _);
             logger?.LogInformation("[Object Store] Heap memory size is {objHeapMemorySize}", objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited");
 
             // Read cache related settings
@@ -764,12 +820,12 @@ namespace Garnet.server
             if (EnableObjectStoreReadCache)
             {
                 kvSettings.ReadCacheEnabled = true;
-                kvSettings.ReadCachePageSize = ParseSize(ObjectStoreReadCachePageSize);
-                kvSettings.ReadCacheMemorySize = ParseSize(ObjectStoreReadCacheLogMemorySize);
+                kvSettings.ReadCachePageSize = ParseSize(ObjectStoreReadCachePageSize, out _);
+                kvSettings.ReadCacheMemorySize = ParseSize(ObjectStoreReadCacheLogMemorySize, out _);
                 logger?.LogInformation("[Object Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
                     PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
 
-                objReadCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize);
+                objReadCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize, out _);
                 logger?.LogInformation("[Object Store] Read cache heap memory size is {objReadCacheHeapMemorySize}", objReadCacheHeapMemorySize > 0 ? PrettySize(objReadCacheHeapMemorySize) : "unlimited");
             }
 
@@ -836,6 +892,7 @@ namespace Garnet.server
             }
 
             var aofDir = GetAppendOnlyFileDirectory(dbId);
+            // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
             tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
                 FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
                     new DefaultCheckpointNamingScheme(aofDir),
@@ -859,7 +916,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int AofMemorySizeBits()
         {
-            long size = ParseSize(AofMemorySize);
+            long size = ParseSize(AofMemorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
@@ -872,7 +929,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int AofPageSizeBits()
         {
-            long size = ParseSize(AofPageSize);
+            long size = ParseSize(AofPageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF page size than specified (power of 2)");
@@ -885,7 +942,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int AofSizeLimitSizeBits()
         {
-            long size = ParseSize(AofSizeLimit);
+            long size = ParseSize(AofSizeLimit, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower AOF memory size than specified (power of 2)");
@@ -898,7 +955,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int ObjectStorePageSizeBits()
         {
-            long size = ParseSize(ObjectStorePageSize);
+            long size = ParseSize(ObjectStorePageSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower object store page size than specified (power of 2)");
@@ -906,12 +963,19 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get integer value of ReplicaDisklessSyncFullSyncAofThreshold
+        /// </summary>
+        /// <returns></returns>
+        public long ReplicaDisklessSyncFullSyncAofThresholdValue()
+            => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold, out _);
+
+        /// <summary>
         /// Get object store segment size
         /// </summary>
         /// <returns></returns>
         public int ObjectStoreSegmentSizeBits()
         {
-            long size = ParseSize(ObjectStoreSegmentSize);
+            long size = ParseSize(ObjectStoreSegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower object store disk segment size than specified (power of 2)");

@@ -85,9 +85,9 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
             var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref outputFooter);
+            var status = storageApi.GeoAdd(sbKey.ToByteArray(), ref input, ref output);
 
             switch (status)
             {
@@ -96,7 +96,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -166,21 +166,20 @@ namespace Garnet.server
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 
-            var status = storageApi.GeoCommands(keyBytes, ref input, ref outputFooter);
+            var status = storageApi.GeoCommands(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     switch (op)
                     {
                         case SortedSetOperation.GEODIST:
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                            WriteNull();
                             break;
                         default:
                             var inputCount = parseState.Count - 1;
@@ -188,8 +187,7 @@ namespace Garnet.server
                                 SendAndReset();
                             for (var i = 0; i < inputCount; i++)
                             {
-                                while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                                    SendAndReset();
+                                WriteNullArray();
                             }
                             break;
                     }
@@ -264,9 +262,7 @@ namespace Garnet.server
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(errorMessage);
             }
 
             GarnetStatus status;
@@ -292,7 +288,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    ProcessOutputWithHeader(output);
+                    ProcessOutput(output);
                     return true;
                 }
             }

@@ -80,7 +80,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Minimum possible number of empty pages in Allocator
         /// </summary>
-        public int MinEmptyPageCount => allocatorBase.MinEmptyPageCount;
+        public int MinEmptyPageCount
+        {
+            get => allocatorBase.MinEmptyPageCount;
+            set { allocatorBase.MinEmptyPageCount = value; }
+        }
 
         /// <summary>
         /// Set empty page count in allocator
@@ -285,8 +289,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false)
-            => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeSealedRecords);
+        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false)
+            => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeClosedRecords);
 
         /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress

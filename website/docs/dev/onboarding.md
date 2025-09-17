@@ -35,7 +35,9 @@ For an introduction to Garnet and its capabilities, you can start with [Welcome 
 
 1. Clone the repository
 
+```bash
 git clone https://github.com/microsoft/garnet.git
+```
 
 After cloning the repository you can either run the unit tests or run the server and use one of the RESP client suggested in Windows or Linux.
 
@@ -47,11 +49,12 @@ After cloning the repository you can either run the unit tests or run the server
 
 3. Run the server
 
-    Using a size memory of 4 GB and index size of 64 MB:
+Using a size memory of 4 GB and index size of 64 MB:
 
-    > cd `<root>`/main/GarnetServer/
-
-    > dotnet run -c Debug -f net8.0 -- --logger-level Trace -m 4g -i 64m
+```bash
+cd <root>/main/GarnetServer/
+dotnet run -c Debug -f net8.0 -- --logger-level Trace -m 4g -i 64m
+```
 
 4. Use the Memurai client in Windows to send commands to Garnet. A guide about how to install Memurai on Windows can be found [here](https://docs.memurai.com/en/installation.html).
 
@@ -61,13 +64,15 @@ After cloning the repository you can either run the unit tests or run the server
 
 ## Troubleshooting
 
-1. If you need to use tls in linux follow the guide at:
+1. If you need to use TLS in Linux, follow the guide at:
 
-    `<root>`/Garnet/test/testcerts/README.md
+   `<root>/Garnet/test/testcerts/README.md`
 
-2. If you need to run the local device library make sure to have these dependencies:
+2. If you need to run the local device library, make sure to have these dependencies:
 
-    > sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
+   ```bash
+   sudo apt install -y g++ libaio-dev uuid-dev libtbb-dev
+   ```
 
 ## Garnet API development
 
@@ -113,7 +118,7 @@ RESP representation:
 
 Any new feature, change to existing functionality or bug fixing needs to be done using the following process:
 
-1. Create a Issue Item on the [Garnet Project](https://github.com/microsoft/Garnet), use the following criteria: Enhancement for new features, Bug for fixes, Task for small improvements or changes.
+1. Create an Issue Item on the [Garnet Project](https://github.com/microsoft/Garnet), use the following criteria: Enhancement for new features, Bug for fixes, Task for small improvements or changes.
 
 2. Is a good practice to create your own local branch with the following naming convention: 
 
@@ -146,7 +151,7 @@ Any new feature, change to existing functionality or bug fixing needs to be done
 /// Iterates the set of keys in the main store.
 /// </summary>
 /// <param name="patternB">The pattern to apply for filtering</param>
-/// <param name="allKeys">When true the filter is ommited</param>
+/// <param name="allKeys">When true the filter is omitted</param>
 /// <param name="cursor">The value of the cursor in the command request</param>
 /// <param name="storeCursor">Value of the cursor returned</param>
 /// <param name="Keys">The list of keys from the stores</param>
@@ -172,7 +177,7 @@ public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeC
 
 ## Test
 
-As a sanity check, you can run the Garnet test suite. The command to run tests in Release mode, for .NET 8, in shown below (make sure you are in the root folder of the repo).
+As a sanity check, you can run the Garnet test suite. The command to run tests in Release mode for .NET 8 is shown below (make sure you are in the root folder of the repo).
 
 ``` bash
     dotnet test -c Release -f net8.0 -l "console;verbosity=detailed"

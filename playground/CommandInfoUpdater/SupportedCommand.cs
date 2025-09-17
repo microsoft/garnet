@@ -16,6 +16,7 @@ namespace CommandInfoUpdater
             [
                 new("ACL|CAT", RespCommand.ACL_CAT),
                 new("ACL|DELUSER", RespCommand.ACL_DELUSER),
+                new("ACL|GENPASS", RespCommand.ACL_GENPASS),
                 new("ACL|GETUSER", RespCommand.ACL_GETUSER),
                 new("ACL|LIST", RespCommand.ACL_LIST),
                 new("ACL|LOAD", RespCommand.ACL_LOAD),
@@ -24,6 +25,7 @@ namespace CommandInfoUpdater
                 new("ACL|USERS", RespCommand.ACL_USERS),
                 new("ACL|WHOAMI", RespCommand.ACL_WHOAMI),
             ]),
+            new("EXPDELSCAN", RespCommand.EXPDELSCAN),
             new("APPEND", RespCommand.APPEND),
             new("ASKING", RespCommand.ASKING),
             new("ASYNC", RespCommand.ASYNC),
@@ -126,6 +128,7 @@ namespace CommandInfoUpdater
             new("DECR", RespCommand.DECR),
             new("DECRBY", RespCommand.DECRBY),
             new("DEL", RespCommand.DEL),
+            new("DELIFEXPIM", RespCommand.DELIFEXPIM),
             new("DELIFGREATER", RespCommand.DELIFGREATER),
             new("DISCARD", RespCommand.DISCARD),
             new("DUMP", RespCommand.DUMP),

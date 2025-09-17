@@ -13,6 +13,7 @@ using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using HdrHistogram;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -62,7 +63,8 @@ namespace Garnet.server
         public void ResetAllLatencyMetrics() => LatencyMetrics?.ResetAll();
 
         readonly StoreWrapper storeWrapper;
-        internal readonly ScratchBufferManager scratchBufferManager;
+        internal readonly ScratchBufferBuilder scratchBufferBuilder;
+        internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
@@ -76,7 +78,7 @@ namespace Garnet.server
         byte* recvBufferPtr;
 
         /// <summary>
-        /// Current readHead. On successful parsing, this is left at the start of 
+        /// Current readHead. On successful parsing, this is left at the start of
         /// the command payload for use by legacy operators.
         /// </summary>
         int readHead;
@@ -117,6 +119,8 @@ namespace Garnet.server
 
         readonly ILogger logger = null;
 
+        IGarnetServer server;
+
         /// <summary>
         /// Clients must enable asking to make node respond to requests on slots that are being imported.
         /// </summary>
@@ -124,10 +128,22 @@ namespace Garnet.server
 
         /// <summary>
         /// If set, commands can use this to enumerate details about the server or other sessions.
-        /// 
+        ///
         /// It is not guaranteed to be set.
         /// </summary>
-        public IGarnetServer Server { get; set; }
+        public IGarnetServer Server
+        {
+            get => server;
+            set
+            {
+                server = value;
+                if (clusterSession is not null)
+                {
+                    clusterSession.Server = value;
+                }
+            }
+        }
+
 
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
@@ -162,7 +178,7 @@ namespace Garnet.server
         /// <summary>
         /// RESP protocol version (RESP2 is the default)
         /// </summary>
-        internal byte respProtocolVersion = 2;
+        public byte respProtocolVersion { get; private set; } = ServerOptions.DEFAULT_RESP_VERSION;
 
         /// <summary>
         /// Client name for the session
@@ -173,6 +189,7 @@ namespace Garnet.server
         /// Name of the client library.
         /// </summary>
         string clientLibName = null;
+
         /// <summary>
         /// Version of the client library.
         /// </summary>
@@ -204,13 +221,25 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        /// <summary>
+        /// Create a new RESP server session
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="networkSender"></param>
+        /// <param name="storeWrapper"></param>
+        /// <param name="subscribeBroker"></param>
+        /// <param name="authenticator"></param>
+        /// <param name="enableScripts"></param>
+        /// <param name="clusterProvider"></param>
+        /// <exception cref="GarnetException"></exception>
         public RespServerSession(
             long id,
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker subscribeBroker,
             IGarnetAuthenticator authenticator,
-            bool enableScripts)
+            bool enableScripts,
+            IClusterProvider clusterProvider = null)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -224,7 +253,10 @@ namespace Garnet.server
             logger?.LogDebug("Starting RespServerSession Id={0}", this.Id);
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferManager = new ScratchBufferManager();
+            this.scratchBufferBuilder = new ScratchBufferBuilder();
+
+            // Initialize session-local scratch allocation of size 64 bytes, used for constructing arguments in GarnetApi
+            this.scratchBufferAllocator = new ScratchBufferAllocator();
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
@@ -250,7 +282,8 @@ namespace Garnet.server
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
-            clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
+            var cp = clusterProvider ?? storeWrapper.clusterProvider;
+            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
@@ -282,8 +315,8 @@ namespace Garnet.server
                 [],
                 cmdManager,
                 new(),
-                null,
-                createDatabaseDelegate: delegate { return null; }
+                subscribeBroker: null,
+                createDatabaseDelegate: delegate { return new(); }
             );
         }
 
@@ -315,6 +348,16 @@ namespace Garnet.server
         {
             this._userHandle = userHandle;
             clusterSession?.SetUserHandle(userHandle);
+        }
+
+        /// <summary>
+        /// Update RESP protocol version used by session
+        /// </summary>
+        /// <param name="_respProtocolVersion"></param>
+        public void UpdateRespProtocolVersion(byte _respProtocolVersion)
+        {
+            this.respProtocolVersion = _respProtocolVersion;
+            this.storageSession.UpdateRespProtocolVersion(respProtocolVersion);
         }
 
         public override void Dispose()
@@ -375,6 +418,26 @@ namespace Garnet.server
             }
 
             return _authenticator.CanAuthenticate ? success : false;
+        }
+
+        internal bool CanRunDebug()
+        {
+            var enableDebugCommand = storeWrapper.serverOptions.EnableDebugCommand;
+
+            return
+                (enableDebugCommand == ConnectionProtectionOption.Yes) ||
+                ((enableDebugCommand == ConnectionProtectionOption.Local) &&
+                    networkSender.IsLocalConnection());
+        }
+
+        internal bool CanRunModule()
+        {
+            var enableModuleCommand = storeWrapper.serverOptions.EnableModuleCommand;
+
+            return
+                (enableModuleCommand == ConnectionProtectionOption.Yes) ||
+                ((enableModuleCommand == ConnectionProtectionOption.Local) &&
+                    networkSender.IsLocalConnection());
         }
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
@@ -450,7 +513,8 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-                scratchBufferManager.Reset();
+                scratchBufferBuilder.Reset();
+                scratchBufferAllocator.Reset();
             }
 
             if (txnManager.IsSkippingOperations())
@@ -593,7 +657,7 @@ namespace Garnet.server
         }
 
         // Make first command in string as uppercase
-        private bool MakeUpperCase(byte* ptr)
+        private bool MakeUpperCase(byte* ptr, int len)
         {
             // Assume most commands are already upper case.
             // Assume most commands are 2-8 bytes long.
@@ -604,18 +668,17 @@ namespace Garnet.server
             //  *.\r\n$8\r\n........\r\n  = 18 bytes
             //
             // Where . is <= 95
-            // 
+            //
             // Note that _all_ of these bytes are <= 95 in the common case
             // and there's no need to scan the whole string in those cases.
 
-            var len = bytesRead - readHead;
             if (len >= 12)
             {
                 var cmdLen = (uint)(*(ptr + 5) - '2');
                 if (cmdLen <= 6 && (ptr + 4 + cmdLen + sizeof(ulong)) <= (ptr + len))
                 {
                     var firstUlong = *(ulong*)(ptr + 4);
-                    var secondUlong = *((ulong*)ptr + 4 + cmdLen);
+                    var secondUlong = *(ulong*)(ptr + 4 + cmdLen);
 
                     // Ye olde bit twiddling to check if any sub-byte is > 95
                     // See: https://graphics.stanford.edu/~seander/bithacks.html#HasMoreInWord
@@ -640,7 +703,7 @@ namespace Garnet.server
                 if (*tmp > 64) // found string
                 {
                     var ret = false;
-                    while (*tmp > 64 && *tmp < 123 && tmp < (ptr + len))
+                    while (*tmp > 32 && *tmp < 123 && tmp < (ptr + len))
                     {
                         if (*tmp > 96) { ret = true; *tmp -= 32; }
                         tmp++;
@@ -708,8 +771,8 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.EXPIREAT => NetworkEXPIREAT(RespCommand.EXPIREAT, ref storageApi),
-                RespCommand.PEXPIREAT => NetworkEXPIREAT(RespCommand.PEXPIREAT, ref storageApi),
+                RespCommand.EXPIREAT => NetworkEXPIRE(RespCommand.EXPIREAT, ref storageApi),
+                RespCommand.PEXPIREAT => NetworkEXPIRE(RespCommand.PEXPIREAT, ref storageApi),
                 RespCommand.DUMP => NetworkDUMP(ref storageApi),
                 RespCommand.RESTORE => NetworkRESTORE(ref storageApi),
 
@@ -976,7 +1039,7 @@ namespace Garnet.server
                 TryTransactionProc(currentCustomTransaction.id,
                     customCommandManagerSession
                         .GetCustomTransactionProcedure(currentCustomTransaction.id, this, txnManager,
-                            scratchBufferManager, out _));
+                            scratchBufferAllocator, out _));
                 currentCustomTransaction = null;
                 return true;
             }
@@ -1124,48 +1187,11 @@ namespace Garnet.server
             return result;
         }
 
-        public ArgSlice GetCommandAsArgSlice(out bool success)
-        {
-            if (bytesRead - readHead < 6)
-            {
-                success = false;
-                return default;
-            }
-
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
-            {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
-            {
-                success = false;
-                return default;
-            }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
-
-            var result = new ArgSlice(recvBufferPtr + readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
-
-            readHead += 2 + psize + 2;
-            success = true;
-            return result;
-        }
-
         /// <summary>
         /// Attempt to kill this session.
-        /// 
+        ///
         /// Returns true if this call actually kills the underlying network connection.
-        /// 
+        ///
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
@@ -1263,18 +1289,6 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteDirectLargeRespString(ReadOnlySpan<byte> message)
-        {
-            while (!RespWriteUtils.TryWriteBulkStringLength(message, ref dcurr, dend))
-                SendAndReset();
-
-            WriteDirectLarge(message);
-
-            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
-                SendAndReset();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteDirectLarge(ReadOnlySpan<byte> src)
         {
             // Repeat while we have bytes left to write
@@ -1283,7 +1297,7 @@ namespace Garnet.server
                 // Compute space left on output buffer
                 int destSpace = (int)(dend - dcurr);
 
-                // Fast path if there is enough space 
+                // Fast path if there is enough space
                 if (src.Length <= destSpace)
                 {
                     src.CopyTo(new Span<byte>(dcurr, src.Length));
@@ -1301,21 +1315,6 @@ namespace Garnet.server
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void WriteNull()
-        {
-            if (respProtocolVersion == 3)
-            {
-                while (!RespWriteUtils.TryWriteResp3Null(ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteNull(ref dcurr, dend))
-                    SendAndReset();
             }
         }
 
@@ -1378,36 +1377,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets the output object from the SpanByteAndMemory object
-        /// </summary>
-        /// <param name="output"></param>
-        /// <returns></returns>
-        private unsafe ObjectOutputHeader ProcessOutputWithHeader(SpanByteAndMemory output)
-        {
-            ReadOnlySpan<byte> outputSpan;
-            ObjectOutputHeader header;
-
-            if (output.IsSpanByte)
-            {
-                header = *(ObjectOutputHeader*)(output.SpanByte.ToPointer() + output.Length - sizeof(ObjectOutputHeader));
-
-                // Only increment dcurr if the operation was completed
-                dcurr += output.Length - sizeof(ObjectOutputHeader);
-            }
-            else
-            {
-                outputSpan = output.Memory.Memory.Span;
-                fixed (byte* p = outputSpan)
-                {
-                    header = *(ObjectOutputHeader*)(p + output.Length - sizeof(ObjectOutputHeader));
-                }
-                SendAndReset(output.Memory, output.Length - sizeof(ObjectOutputHeader));
-            }
-
-            return header;
-        }
-
-        /// <summary>
         /// Set the current database session
         /// </summary>
         /// <param name="dbId">Database ID of the current session</param>
@@ -1441,7 +1410,7 @@ namespace Garnet.server
                 return true;
 
             // Try to get or set the database sessions
-            // Note that the dbIdForSessionCreation is set to the other DB ID - 
+            // Note that the dbIdForSessionCreation is set to the other DB ID -
             // That is because the databases have been swapped prior to the session swap
             var dbSession1 = TryGetOrSetDatabaseSession(dbId1, out var success, dbId2);
             if (!success)
@@ -1526,12 +1495,12 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger, dbId);
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
             var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferManager, storeWrapper.serverOptions.EnableCluster, logger, dbId);
+                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
             dbStorageSession.txnManager = transactionManager;
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
@@ -1548,6 +1517,8 @@ namespace Garnet.server
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.lockableGarnetApi = dbSession.LockableGarnetApi;
+
+            this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }
     }
 }

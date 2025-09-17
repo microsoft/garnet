@@ -208,7 +208,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                ref RecordInfo srcRecordInfo, ref TKey key, ref TValue recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
+                ref RecordInfo srcRecordInfo, ref TKey key, ref TValue recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths, long physicalAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (RevivificationManager.IsFixedLength || recordLengths.allocatedSize < requiredSize)
@@ -219,13 +219,21 @@ namespace Tsavorite.core
             var requiredValueLength = requiredSize - valueOffset;
             var minValueLength = requiredValueLength < recordLengths.usedValueLength ? requiredValueLength : recordLengths.usedValueLength;
 
+            // clears out the minimum space possible. So let's say we are shrinking our usage from 8 bytes to 3 bytes. This will clear only the bytes 4-8.
+            // if we are expanding this will not clear anything.
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, minValueLength, recordLengths.fullValueLength);
-            storeFunctions.DisposeRecord(ref key, ref recordValue, DisposeReason.RevivificationFreeList);
 
             srcRecordInfo.ClearTombstone();
 
-            SetExtraValueLength(ref recordValue, ref srcRecordInfo, recordLengths.usedValueLength, recordLengths.fullValueLength);
-            return (true, hlog.GetValueLength(ref recordValue));
+            // for SpanByte, this will set the new length (payload + metadata).
+            hlog.GetAndInitializeValue(physicalAddress, physicalAddress + requiredSize);
+            // since the above sets the Length, we can use the below to get TotalSize which represents the UsedLength of a record
+            var newUsedValueLength = hlog.GetValueLength(ref recordValue);
+
+            // potentially sets filler, if the used value length is going to be under the full length by more than 4 bytes.
+            SetExtraValueLength(ref recordValue, ref srcRecordInfo, usedValueLength: newUsedValueLength, recordLengths.fullValueLength);
+
+            return (true, newUsedValueLength);
         }
 
         #endregion TombstonedRecords

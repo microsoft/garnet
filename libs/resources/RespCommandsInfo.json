@@ -79,8 +79,25 @@
         "Arity": 3,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Admin, Dangerous, Slow"
+      },
+      {
+        "Command": "ACL_GENPASS",
+        "Name": "ACL|GENPASS",
+        "Arity": -2,
+        "Flags": "Loading, NoScript, Stale",
+        "AclCategories": "Slow"
       }
     ]
+  },
+  {
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
+    "Arity": -1,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Garnet"
   },
   {
     "Command": "APPEND",

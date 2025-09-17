@@ -78,6 +78,14 @@ namespace Garnet.common
         /// Shared buffer pool stats
         /// </summary>
         BPSTATS,
+        /// <summary>
+        /// Checkpoint information used for cluster
+        /// </summary>
+        CINFO,
+        /// <summary>
+        /// Scan and return distribution of in-memory portion of hybrid logs for main store and object store
+        /// </summary>
+        HLOGSCAN,
     }
 
     /// <summary>

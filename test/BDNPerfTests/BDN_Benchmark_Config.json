@@ -358,6 +358,29 @@
     "WARN-ON-FAIL_ModuleJsonGetCommand_None": 430000,
     "WARN-ON-FAIL_ModuleJsonSetCommand_None": 223200
   },
+  "BDN.benchmark.Operations.JsonOperations.*": {
+    "expected_ModuleJsonGetCommand_ACL": 360000,
+    "expected_ModuleJsonSetCommand_ACL": 450000,
+    "expected_ModuleJsonGetDeepPath_ACL": 600000,
+    "expected_ModuleJsonGetArrayPath_ACL": 370000,
+    "expected_ModuleJsonGetArrayElementsPath_ACL": 800,
+    "expected_ModuleJsonGetFilterPath_ACL": 770000,
+    "expected_ModuleJsonGetRecursive_ACL": 20000000,
+    "expected_ModuleJsonGetCommand_AOF": 360000,
+    "expected_ModuleJsonSetCommand_AOF": 450000,
+    "expected_ModuleJsonGetDeepPath_AOF": 600000,
+    "expected_ModuleJsonGetArrayPath_AOF": 370000,
+    "expected_ModuleJsonGetArrayElementsPath_AOF": 800,
+    "expected_ModuleJsonGetFilterPath_AOF": 770000,
+    "expected_ModuleJsonGetRecursive_AOF": 20000000,
+    "expected_ModuleJsonGetCommand_None": 360000,
+    "expected_ModuleJsonSetCommand_None": 450000,
+    "expected_ModuleJsonGetDeepPath_None": 600000,
+    "expected_ModuleJsonGetArrayPath_None": 370000,
+    "expected_ModuleJsonGetArrayElementsPath_None": 800,
+    "expected_ModuleJsonGetFilterPath_None": 770000,
+    "expected_ModuleJsonGetRecursive_None": 20000000
+  },
   "BDN.benchmark.Network.RawStringOperations.*": {
     "expected_Set_None": 0,
     "expected_SetEx_None": 0,
@@ -419,7 +442,7 @@
     "expected_SIsMember_None": 6400,
     "expected_SMIsMember_None": 9600,
     "WARN-ON-FAIL_SRandMemberSingle_None": 7200,
-    "expected_SScan_None": 12000,
+    "expected_SScan_None": 72000,
     "WARN-ON-FAIL_SUnion_None": 68800,
     "WARN-ON-FAIL_SUnionStore_None": 111200,
     "WARN-ON-FAIL_SInter_None": 41600,
@@ -427,5 +450,10 @@
     "WARN-ON-FAIL_SInterCard_None": 36800,
     "WARN-ON-FAIL_SDiff_None": 45600,
     "WARN-ON-FAIL_SDiffStore_None": 75200
+  },
+  "BDN.benchmark.Operations.TxnOperations.*": {
+    "expected_MultiExec_ACL": 4,
+    "expected_MultiExec_AOF": 5,
+    "expected_MultiExec_None": 5
   }
 }

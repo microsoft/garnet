@@ -298,7 +298,7 @@ namespace Garnet.common
         /// and, if successful, moves the given ptr to the end of the length header.
         /// <para />
         /// NOTE:
-        ///     It will throw an <see cref="RespParsingException"/> if length header is negative. 
+        ///     It will throw an <see cref="RespParsingException"/> if length header is negative.
         ///     It is primarily used for parsing header length from packets received from server side.
         /// </summary>
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
@@ -316,16 +316,13 @@ namespace Garnet.common
             if (ptr + 3 > end)
                 return false;
 
-            var readHead = ptr + 1;
-            var negative = *readHead == '-';
+            if (!TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil))
+                return false;
 
-            if (negative)
+            if (length < 0)
             {
                 RespParsingException.ThrowInvalidStringLength(length);
             }
-
-            if (!TryReadSignedLengthHeader(out length, ref ptr, end, expectedSigil))
-                return false;
 
             return true;
         }
@@ -355,6 +352,18 @@ namespace Garnet.common
 
             var readHead = ptr + 1;
             var negative = *readHead == '-';
+
+            // Special case '_\r\n' (RESP3 NULL value)
+            if (*ptr == '_')
+            {
+                // The initial condition ensures at least two more bytes so no need for extra check.
+                if (*(ushort*)readHead == MemoryMarshal.Read<ushort>("\r\n"u8))
+                {
+                    length = -1;
+                    ptr = readHead + 2;
+                    return true;
+                }
+            }
 
             // String length headers must start with a '$', array headers with '*'
             if (*ptr != expectedSigil)
@@ -719,8 +728,8 @@ namespace Garnet.common
         /// Try slice a byte array with length header.
         /// </summary>
         /// <remarks>
-        /// SAFETY: Because this hands out a span over the underlying buffer to the caller, 
-        /// it must be aware that any changes in the memory where <paramref name="ptr"/> pointed to 
+        /// SAFETY: Because this hands out a span over the underlying buffer to the caller,
+        /// it must be aware that any changes in the memory where <paramref name="ptr"/> pointed to
         /// will be reflected in the <paramref name="result"/> span. i.e.
         /// <code>
         /// byte[] buffer = "$2\r\nAB\r\n"u8.ToArray();
@@ -728,7 +737,7 @@ namespace Garnet.common
         /// {
         ///     TrySliceWithLengthHeader(out var result, ref ptr, ptr + buffer.Length);
         ///     Debug.Assert(result.SequenceEquals("AB"u8)); // True
-        ///     
+        ///
         ///     *(ptr - 4) = (byte)'C';
         ///     *(ptr - 3) = (byte)'D';
         ///     Debug.Assert(result.SequenceEquals("CD"u8)); // True
@@ -912,7 +921,7 @@ namespace Garnet.common
         /// <exception cref="RespParsingException">Thrown if unexpected token is read.</exception>
         /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
+        public static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
             if (!TryReadSignedLengthHeader(out length, ref ptr, end))
@@ -1217,7 +1226,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Read serialized data for migration
-        /// </summary>        
+        /// </summary>
         public static bool TryReadSerializedSpanByte(ref byte* keyPtr, ref byte keyMetaDataSize, ref byte* valPtr, ref byte valMetaDataSize, ref byte* ptr, byte* end)
         {
             //1. safe read ksize
@@ -1251,7 +1260,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Read serialized data for migration
-        /// </summary>  
+        /// </summary>
         public static bool TryReadSerializedData(out byte[] key, out byte[] value, out long expiration, ref byte* ptr, byte* end)
         {
             expiration = -1;
@@ -1296,6 +1305,41 @@ namespace Garnet.common
                 Buffer.MemoryCopy(valPtr, vPtr, valLen, valLen);
 
             return true;
+        }
+
+        /// <summary>
+        /// Parses "[+/-]inf" string and returns double.PositiveInfinity/double.NegativeInfinity respectively.
+        /// If string is not an infinity, parsing fails.
+        /// </summary>
+        /// <param name="value">input data</param>
+        /// <param name="number">If parsing was successful,contains positive or negative infinity</param>
+        /// <returns>True is infinity was read, false otherwise</returns>
+        public static bool TryReadInfinity(ReadOnlySpan<byte> value, out double number)
+        {
+            if (value.Length == 3)
+            {
+                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY))
+                {
+                    number = double.PositiveInfinity;
+                    return true;
+                }
+            }
+            else if (value.Length == 4)
+            {
+                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.POS_INFINITY, true))
+                {
+                    number = double.PositiveInfinity;
+                    return true;
+                }
+                else if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.NEG_INFINITY, true))
+                {
+                    number = double.NegativeInfinity;
+                    return true;
+                }
+            }
+
+            number = default;
+            return false;
         }
     }
 }

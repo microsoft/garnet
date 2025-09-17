@@ -41,17 +41,18 @@ jobs:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net9.0' ]
+        include:
+          - framework: net9.0
+            gh-pages-branch: continuousbenchmark
+          - framework: net8.0
+            gh-pages-branch: continuousbenchmark_net80
         configuration: [ 'Release' ]
-        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Operations.TxnOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: | 
-            8.0.x
-            9.0.x
       - name: Install dependencies
         run: dotnet restore
 
@@ -59,7 +60,14 @@ jobs:
         run: ./test/BDNPerfTests/run_bdnperftest.ps1 ${{ matrix.test }} ${{ matrix.framework }}
         shell: pwsh
         continue-on-error: false
-   
+  
+      - name: Random pause between tasks so multiple inserts don't run at the same time
+        run: |
+          $delay = Get-Random -Minimum 1 -Maximum 600
+          Write-Host "Sleeping for $delay seconds..."
+          Start-Sleep -Seconds $delay
+        shell: pwsh
+
       - name: Upload test results to artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -87,7 +95,7 @@ jobs:
           auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           save-data-file: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           summary-always: true
-          gh-pages-branch: 'continuousbenchmark'
+          gh-pages-branch: ${{ matrix.gh-pages-branch }}
           benchmark-data-dir-path: 'website/static/charts'
           max-items-in-chart: 50
           alert-threshold: '110%'

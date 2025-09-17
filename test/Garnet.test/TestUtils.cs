@@ -12,6 +12,7 @@ using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -66,6 +67,12 @@ namespace Garnet.test
         }
     }
 
+    public enum RevivificationMode
+    {
+        NoReviv = 0,
+        UseReviv = 1,
+    }
+
     internal static class TestUtils
     {
         public static readonly int TestPort = 33278;
@@ -80,7 +87,6 @@ namespace Garnet.test
         /// </summary>
         static readonly bool useTestLogger = false;
 
-        private static int procId = Process.GetCurrentProcess().Id;
         internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
         internal static string CustomRespCommandDocsJsonPath = "CustomRespCommandsDocs.json";
 
@@ -219,8 +225,9 @@ namespace Garnet.test
             bool disablePubSub = false,
             bool tryRecover = false,
             bool lowMemory = false,
-            string MemorySize = default,
-            string PageSize = default,
+            string memorySize = default,
+            string objectStoreLogMemorySize = default,
+            string pageSize = default,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -232,6 +239,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
+            string objectStorePageSize = default,
             string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
@@ -243,6 +251,8 @@ namespace Garnet.test
             bool getSG = false,
             int indexResizeFrequencySecs = 60,
             IAuthenticationSettings authenticationSettings = null,
+            ConnectionProtectionOption enableDebugCommand = ConnectionProtectionOption.Yes,
+            ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
             bool enableReadCache = false,
             bool enableObjectStoreReadCache = false,
@@ -259,15 +269,20 @@ namespace Garnet.test
             UnixFileMode unixSocketPermission = default,
             int slowLogThreshold = 0,
             TextWriter logTo = null,
-            bool enableCluster = false)
+            bool enableCluster = false,
+            int expiredKeyDeletionScanFrequencySecs = -1,
+            bool useReviv = false,
+            bool useInChainRevivOnly = false,
+            bool useLogNullDevice = false
+            )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            var logDir = logCheckpointDir;
-            if (useAzureStorage)
+            var logDir = useLogNullDevice ? null : logCheckpointDir;
+            if (useAzureStorage && !useLogNullDevice)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
             if (useAzureStorage)
@@ -301,7 +316,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                EnableStorageTier = logCheckpointDir != null,
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 EndPoints = endpoints ?? ([EndPoint]),
@@ -336,7 +351,8 @@ namespace Garnet.test
                 ThreadPoolMinThreads = threadPoolMinThreads,
                 LoadModuleCS = loadModulePaths,
                 EnableCluster = enableCluster,
-                EnableDebugCommand = ConnectionProtectionOption.Yes,
+                EnableDebugCommand = enableDebugCommand,
+                EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
                 EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
@@ -344,10 +360,23 @@ namespace Garnet.test
                 UnixSocketPath = unixSocketPath,
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
+                ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
             };
+
+            if (!string.IsNullOrEmpty(memorySize))
+                opts.MemorySize = memorySize;
+
+            if (!string.IsNullOrEmpty(objectStoreLogMemorySize))
+                opts.ObjectStoreLogMemorySize = objectStoreLogMemorySize;
+
+            if (!string.IsNullOrEmpty(pageSize))
+                opts.PageSize = pageSize;
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
+
+            if (!string.IsNullOrEmpty(objectStorePageSize))
+                opts.ObjectStorePageSize = objectStorePageSize;
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
@@ -360,8 +389,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
-                opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
+                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
                 if (enableReadCache)
                 {
                     opts.ReadCacheMemorySize = opts.MemorySize;
@@ -394,6 +423,23 @@ namespace Garnet.test
                 });
             }
 
+            if (useReviv)
+            {
+                opts.UseRevivBinsPowerOf2 = true;
+                opts.RevivBinBestFitScanLimit = 0;
+                opts.RevivNumberOfBinsToSearch = int.MaxValue;
+                opts.RevivifiableFraction = 1;
+                opts.RevivInChainOnly = false;
+                opts.RevivBinRecordCounts = [];
+                opts.RevivBinRecordSizes = [];
+                opts.RevivObjBinRecordCount = 256;
+            }
+
+            if (useInChainRevivOnly)
+            {
+                opts.RevivInChainOnly = true;
+            }
+
             return new GarnetServer(opts, loggerFactory);
         }
 
@@ -417,9 +463,10 @@ namespace Garnet.test
             });
         }
 
-        public static GarnetServer[] CreateGarnetCluster(
+        public static (GarnetServer[] Nodes, GarnetServerOptions[] Options) CreateGarnetCluster(
             string checkpointDir,
             EndPointCollection endpoints,
+            bool enableCluster = true,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -437,6 +484,7 @@ namespace Garnet.test
             string AofMemorySize = "64m",
             bool OnDemandCheckpoint = false,
             int CommitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
             bool FastCommit = true,
@@ -452,21 +500,36 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false,
+            bool useNativeDeviceLinux = false,
+            int clusterReplicationReestablishmentTimeout = 0,
+            string aofSizeLimit = "",
+            int compactionFrequencySecs = 0,
+            LogCompactionType compactionType = LogCompactionType.Scan,
+            bool latencyMonitory = false,
+            int metricSamplingFrequencySecs = 0,
+            int loggingFrequencySecs = 5,
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false,
+            int replicaSyncTimeout = 60)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
             var nodes = new GarnetServer[endpoints.Count];
+            var opts = new GarnetServerOptions[nodes.Length];
             for (var i = 0; i < nodes.Length; i++)
             {
                 var endpoint = (IPEndPoint)endpoints[i];
 
-                var opts = GetGarnetServerOptions(
+                opts[i] = GetGarnetServerOptions(
                     checkpointDir,
                     checkpointDir,
                     endpoint,
+                    enableCluster: enableCluster,
                     disablePubSub,
                     disableObjects,
                     tryRecover,
@@ -484,6 +547,7 @@ namespace Garnet.test
                     aofMemorySize: AofMemorySize,
                     onDemandCheckpoint: OnDemandCheckpoint,
                     commitFrequencyMs: CommitFrequencyMs,
+                    useAofNullDevice: useAofNullDevice,
                     disableStorageTier: DisableStorageTier,
                     enableIncrementalSnapshots: EnableIncrementalSnapshots,
                     fastCommit: FastCommit,
@@ -499,13 +563,25 @@ namespace Garnet.test
                     asyncReplay: asyncReplay,
                     enableDisklessSync: enableDisklessSync,
                     replicaDisklessSyncDelay: replicaDisklessSyncDelay,
+                    replicaDisklessSyncFullSyncAofThreshold: replicaDisklessSyncFullSyncAofThreshold,
                     luaMemoryMode: luaMemoryMode,
                     luaMemoryLimit: luaMemoryLimit,
-                    clusterAnnounceEndpoint: clusterAnnounceEndpoint);
+                    clusterAnnounceEndpoint: clusterAnnounceEndpoint,
+                    luaTransactionMode: luaTransactionMode,
+                    useNativeDeviceLinux: useNativeDeviceLinux,
+                    clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout,
+                    aofSizeLimit: aofSizeLimit,
+                    compactionFrequencySecs: compactionFrequencySecs,
+                    compactionType: compactionType,
+                    latencyMonitory: latencyMonitory,
+                    loggingFrequencySecs: loggingFrequencySecs,
+                    checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
+                    clusterReplicaResumeWithData: clusterReplicaResumeWithData,
+                    replicaSyncTimeout: replicaSyncTimeout);
 
                 ClassicAssert.IsNotNull(opts);
 
-                if (opts.EndPoints[0] is IPEndPoint ipEndpoint)
+                if (opts[i].EndPoints[0] is IPEndPoint ipEndpoint)
                 {
                     var iter = 0;
                     while (!IsPortAvailable(ipEndpoint.Port))
@@ -516,15 +592,16 @@ namespace Garnet.test
                     }
                 }
 
-                nodes[i] = new GarnetServer(opts, loggerFactory);
+                nodes[i] = new GarnetServer(opts[i], loggerFactory);
             }
-            return nodes;
+            return (nodes, opts);
         }
 
         public static GarnetServerOptions GetGarnetServerOptions(
             string checkpointDir,
             string logDir,
             EndPoint endpoint,
+            bool enableCluster = true,
             bool disablePubSub = false,
             bool disableObjects = false,
             bool tryRecover = false,
@@ -542,6 +619,7 @@ namespace Garnet.test
             string aofMemorySize = "64m",
             bool onDemandCheckpoint = false,
             int commitFrequencyMs = 0,
+            bool useAofNullDevice = false,
             bool disableStorageTier = false,
             bool enableIncrementalSnapshots = false,
             bool fastCommit = true,
@@ -556,6 +634,7 @@ namespace Garnet.test
             bool asyncReplay = false,
             bool enableDisklessSync = false,
             int replicaDisklessSyncDelay = 1,
+            string replicaDisklessSyncFullSyncAofThreshold = null,
             ILogger logger = null,
             LuaMemoryManagementMode luaMemoryMode = LuaMemoryManagementMode.Native,
             string luaMemoryLimit = "",
@@ -563,7 +642,18 @@ namespace Garnet.test
             LuaLoggingMode luaLoggingMode = LuaLoggingMode.Enable,
             IEnumerable<string> luaAllowedFunctions = null,
             string unixSocketPath = null,
-            EndPoint clusterAnnounceEndpoint = null)
+            EndPoint clusterAnnounceEndpoint = null,
+            bool luaTransactionMode = false,
+            bool useNativeDeviceLinux = false,
+            int clusterReplicationReestablishmentTimeout = 0,
+            string aofSizeLimit = "",
+            int compactionFrequencySecs = 0,
+            LogCompactionType compactionType = LogCompactionType.Scan,
+            bool latencyMonitory = false,
+            int loggingFrequencySecs = 5,
+            int checkpointThrottleFlushDelayMs = 0,
+            bool clusterReplicaResumeWithData = false,
+            int replicaSyncTimeout = 60)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -620,10 +710,11 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 DisableObjects = disableObjects,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
+                EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
                 IndexSize = "1m",
                 ObjectStoreIndexSize = "16k",
-                EnableCluster = true,
+                EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
                 QuietMode = true,
@@ -658,19 +749,32 @@ namespace Garnet.test
                     : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
                 FastAofTruncate = fastAofTruncate,
                 AofMemorySize = aofMemorySize,
+                AofSizeLimit = aofSizeLimit,
                 OnDemandCheckpoint = onDemandCheckpoint,
                 CommitFrequencyMs = commitFrequencyMs,
+                UseAofNullDevice = useAofNullDevice,
                 EnableIncrementalSnapshots = enableIncrementalSnapshots,
                 AuthSettings = useAcl ? authenticationSettings : (authPassword != null ? authenticationSettings : null),
                 ClusterUsername = authUsername,
                 ClusterPassword = authPassword,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
                 ReplicaDisklessSync = enableDisklessSync,
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
+                ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
+                UseNativeDeviceLinux = useNativeDeviceLinux,
+                ClusterReplicationReestablishmentTimeout = clusterReplicationReestablishmentTimeout,
+                CompactionFrequencySecs = compactionFrequencySecs,
+                CompactionType = compactionType,
+                LatencyMonitor = latencyMonitory,
+                LoggingFrequency = loggingFrequencySecs,
+                CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
+                ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
+                ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
             };
 
             if (lowMemory)
@@ -783,7 +887,7 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool recordLatency = false, EndPoint endPoint = null)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -796,7 +900,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions, rawResult: raw);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)
@@ -1025,6 +1129,31 @@ using System.Threading.Tasks;
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Get effective memory size based on configured memory size and page size.
+        /// </summary>
+        /// <param name="memorySize">Memory size string</param>
+        /// <param name="pageSize">Page size string</param>
+        /// <param name="parsedPageSize">Parsed page size</param>
+        /// <returns>Effective memory size</returns>
+        public static long GetEffectiveMemorySize(string memorySize, string pageSize, out long parsedPageSize)
+        {
+            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
+            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memorySize, pageSize, out var epc);
+            return parsedMemorySize - (epc * parsedPageSize);
+        }
+
+        /// <summary>
+        /// Get a random alphanumeric string of specified length
+        /// </summary>
+        /// <param name="len">Length of string</param>
+        /// <returns>Random alphanumeric string</returns>
+        public static string GetRandomString(int len)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            return RandomNumberGenerator.GetString(chars, len);
         }
     }
 }

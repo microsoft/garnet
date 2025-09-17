@@ -27,8 +27,14 @@ COPY main/ main/
 COPY metrics/ metrics/
 COPY test/testcerts test/testcerts
 
+# Set protected mode to no for Docker images
+RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/defaults.conf
+
 WORKDIR /src/main/GarnetServer
 RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
+
+# Delete xmldoc files
+RUN find /app -name '*.xml' -delete
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-cbl-mariner2.0 AS runtime

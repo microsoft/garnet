@@ -75,10 +75,22 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public bool AllowDataLoss
+            => serverOptions.UseAofNullDevice || (serverOptions.FastAofTruncate && !serverOptions.OnDemandCheckpoint);
+
+        /// <inheritdoc />
         public void Recover()
         {
             replicationManager.Recover();
         }
+
+        /// <inheritdoc />
+        public bool PreventRoleChange()
+        => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
+
+        /// <inheritdoc />
+        public void AllowRoleChange()
+        => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
 
         /// <inheritdoc />
         public void Start()
@@ -149,31 +161,25 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(StoreType storeType, bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
+        public void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
         {
             var entry = new CheckpointEntry();
 
-            if (storeType is StoreType.Main or StoreType.All)
-            {
-                entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
-                entry.metadata.storeHlogToken = storeCheckpointToken;
-                entry.metadata.storeIndexToken = storeCheckpointToken;
-                entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
-            }
+            entry.metadata.storeVersion = storeWrapper.store.CurrentVersion;
+            entry.metadata.storeHlogToken = storeCheckpointToken;
+            entry.metadata.storeIndexToken = storeCheckpointToken;
+            entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+            entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
 
-            if (storeType is StoreType.Object or StoreType.All)
-            {
-                entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
-                entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-                entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-                entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
-            }
+            entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
+            entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+            entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
+            entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
+            entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
 
             // Keep track of checkpoints for replica
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
-            replicationManager.AddCheckpointEntry(entry, storeType, full);
+            replicationManager.AddCheckpointEntry(entry, full);
 
             // Truncate AOF
             SafeTruncateAOF(CheckpointCoveredAofAddress);
@@ -270,6 +276,10 @@ namespace Garnet.cluster
             }
             return [.. replicationInfo];
         }
+
+        public MetricsItem[] GetCheckpointInfo()
+            => [new("memory_checkpoint_entry", replicationManager.GetLatestCheckpointFromMemoryInfo()),
+                new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo())];
 
         /// <inheritdoc />
         public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
@@ -417,13 +427,13 @@ namespace Garnet.cluster
         public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
             => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
 
-        internal ReplicationLogCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
+        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
         {
             Debug.Assert(serverOptions.EnableCluster);
             return storeType switch
             {
-                StoreType.Main => (ReplicationLogCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (ReplicationLogCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
+                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
+                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
                 _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
             };
         }
@@ -440,14 +450,14 @@ namespace Garnet.cluster
         internal bool BumpAndWaitForEpochTransition()
         {
             BumpCurrentEpoch();
+            // Acquire latest bumped epoch
+            var currentEpoch = GarnetCurrentEpoch;
             foreach (var server in storeWrapper.Servers)
             {
                 while (true)
                 {
                 retry:
                     Thread.Yield();
-                    // Acquire latest bumped epoch
-                    var currentEpoch = GarnetCurrentEpoch;
                     var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
                     foreach (var s in sessions)
                     {
@@ -461,5 +471,8 @@ namespace Garnet.cluster
             }
             return true;
         }
+
+        /// <inheritdoc />
+        public string GetRunId() => replicationManager.PrimaryReplId;
     }
 }

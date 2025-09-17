@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -22,8 +20,8 @@ namespace Garnet.server
             switch (type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
                 case GarnetObjectType.Persist:
+                case GarnetObjectType.DelIfExpIm:
                     return false;
                 default:
                     if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
@@ -31,11 +29,17 @@ namespace Garnet.server
                     else
                     {
                         var customObjectCommand = GetCustomObjectCommand(ref input, type);
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref outp);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return ret;
+
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
+                            return ret;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
         }
@@ -47,21 +51,26 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                value.Operate(ref input, ref output, out _);
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                 return true;
             }
             else
             {
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.PExpire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
 
                 var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
 
-                (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
-                var result = customObjectCommand.InitialUpdater(key, ref input, value, ref outp, ref rmwInfo);
-                output.SpanByteAndMemory.Memory = outp.Memory;
-                output.SpanByteAndMemory.Length = outp.Length;
-                return result;
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                try
+                {
+                    var result = customObjectCommand.InitialUpdater(key, ref input, value, ref writer, ref rmwInfo);
+                    return result;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
             }
         }
 
@@ -99,36 +108,20 @@ namespace Garnet.server
             // Expired data
             if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
+                value = null;
+                rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return false;
             }
 
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(0);
-
-                    var optionType = (ExpireOption)input.arg1;
-                    var expireAt = input.arg2 == 1;
-
-                    long expiryTicks;
-                    if (expireAt)
-                    {
-                        expiryTicks = input.header.type == GarnetObjectType.PExpire
-                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
-                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
-                    }
-                    else
-                    {
-                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
-                            ? TimeSpan.FromMilliseconds(expiryValue)
-                            : TimeSpan.FromSeconds(expiryValue);
-                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    }
-
                     var expiryExists = value.Expiration > 0;
-                    return EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
+
+                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
+
+                    return EvaluateObjectExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output);
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
                     {
@@ -138,15 +131,19 @@ namespace Garnet.server
                     else
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     return true;
+                case GarnetObjectType.DelIfExpIm:
+                    return true;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        var operateSuccessful = value.Operate(ref input, ref output, out sizeChange);
+                        var operateSuccessful = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
                         if (output.HasWrongType)
                             return true;
 
                         if (output.HasRemoveKey)
                         {
+                            functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
+                            value = null;
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
@@ -161,20 +158,33 @@ namespace Garnet.server
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return result;
-                        //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Updater(key, ref input, value, ref writer, ref rmwInfo);
+                            return result;
+                            //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
         }
 
         /// <inheritdoc />
         public bool NeedCopyUpdate(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
-            => true;
+        {
+            if (input.header.type == GarnetObjectType.DelIfExpIm && oldValue.Expiration > 0 && input.header.CheckExpiry(oldValue.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
+            return true;
+        }
 
         /// <inheritdoc />
         public bool CopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
@@ -191,7 +201,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool PostCopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
+            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
             // the record was CASed into the hash chain before it gets modified
             var oldValueSize = oldValue.Size;
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
@@ -201,30 +211,11 @@ namespace Garnet.server
             switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    var expiryValue = input.parseState.GetLong(0);
-
-                    var optionType = (ExpireOption)input.arg1;
-                    var expireAt = input.arg2 == 1;
-
-                    long expiryTicks;
-                    if (expireAt)
-                    {
-                        expiryTicks = input.header.type == GarnetObjectType.PExpire
-                            ? ConvertUtils.UnixTimestampInMillisecondsToTicks(expiryValue)
-                            : ConvertUtils.UnixTimestampInSecondsToTicks(expiryValue);
-                    }
-                    else
-                    {
-                        var tsExpiry = input.header.type == GarnetObjectType.PExpire
-                            ? TimeSpan.FromMilliseconds(expiryValue)
-                            : TimeSpan.FromSeconds(expiryValue);
-                        expiryTicks = DateTimeOffset.UtcNow.Ticks + tsExpiry.Ticks;
-                    }
-
                     var expiryExists = value.Expiration > 0;
 
-                    EvaluateObjectExpireInPlace(optionType, expiryExists, expiryTicks, ref value, ref output);
+                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
+
+                    EvaluateObjectExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -235,10 +226,12 @@ namespace Garnet.server
                     else
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     break;
+                case GarnetObjectType.DelIfExpIm:
+                    break;
                 default:
                     if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                     {
-                        value.Operate(ref input, ref output, out _);
+                        value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                         if (output.HasWrongType)
                             return true;
 
@@ -259,12 +252,17 @@ namespace Garnet.server
                             return true;
                         }
 
-                        (IMemoryOwner<byte> Memory, int Length) outp = (output.SpanByteAndMemory.Memory, 0);
                         var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var result = customObjectCommand.Updater(key, ref input, value, ref outp, ref rmwInfo);
-                        output.SpanByteAndMemory.Memory = outp.Memory;
-                        output.SpanByteAndMemory.Length = outp.Length;
-                        return result;
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                        try
+                        {
+                            var result = customObjectCommand.Updater(key, ref input, value, ref writer, ref rmwInfo);
+                            return result;
+                        }
+                        finally
+                        {
+                            writer.Dispose();
+                        }
                     }
             }
 

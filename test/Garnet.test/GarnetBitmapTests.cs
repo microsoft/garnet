@@ -22,7 +22,18 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+
+            var useReviv = false;
+            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
+            {
+                if (arg is RevivificationMode revivMode)
+                {
+                    useReviv = revivMode == RevivificationMode.UseReviv;
+                    continue;
+                }
+            }
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useReviv: useReviv);
             server.Start();
             r = new Random(674386);
         }
@@ -482,8 +493,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 2).ToString(),
-                PageSize: (bitmapBytes << 1).ToString());
+                memorySize: (bitmapBytes << 2).ToString(),
+                pageSize: (bitmapBytes << 1).ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -694,8 +705,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 2).ToString(),
-                PageSize: (bitmapBytes << 1).ToString());
+                memorySize: (bitmapBytes << 2).ToString(),
+                pageSize: (bitmapBytes << 1).ToString());
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1126,8 +1137,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 2).ToString(),
-                PageSize: (bitmapBytes << 1).ToString());
+                memorySize: (bitmapBytes << 2).ToString(),
+                pageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
             server.Start();
@@ -1327,8 +1338,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 2).ToString(),
-                PageSize: (bitmapBytes << 1).ToString());
+                memorySize: (bitmapBytes << 2).ToString(),
+                pageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
             server.Start();
@@ -1793,8 +1804,8 @@ namespace Garnet.test
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 lowMemory: true,
-                MemorySize: (bitmapBytes << 2).ToString(),
-                PageSize: (bitmapBytes << 1).ToString());
+                memorySize: (bitmapBytes << 2).ToString(),
+                pageSize: (bitmapBytes << 1).ToString());
             //MemorySize: "16g",
             //PageSize: "32m");
             server.Start();
@@ -1930,7 +1941,7 @@ namespace Garnet.test
 
         [Test, Order(31)]
         [Category("BITFIELD")]
-        public void BitmapBitfieldGrowingTest()
+        public void BitmapBitfieldGrowingTest([Values] RevivificationMode revivificationModeUsedBySetupOnly)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

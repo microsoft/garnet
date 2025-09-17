@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -77,6 +78,12 @@ namespace Garnet.server
         public abstract bool GrowIndexesIfNeeded(CancellationToken token = default);
 
         /// <inheritdoc/>
+        public abstract void ExecuteObjectCollection();
+
+        /// <inheritdoc/>
+        public abstract void ExpiredKeyDeletionScan();
+
+        /// <inheritdoc/>
         public abstract void StartObjectSizeTrackers(CancellationToken token = default);
 
         /// <inheritdoc/>
@@ -104,7 +111,7 @@ namespace Garnet.server
         public abstract bool TrySwapDatabases(int dbId1, int dbId2, CancellationToken token = default);
 
         /// <inheritdoc/>
-        public abstract FunctionsState CreateFunctionsState(int dbId = 0);
+        public abstract FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION);
 
         /// <inheritdoc/>
         public abstract void Dispose();
@@ -214,7 +221,7 @@ namespace Garnet.server
         {
             try
             {
-                DoCompaction(db);
+                DoCompaction(db, isFromCheckpoint: true, logger);
                 var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
                 var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
@@ -397,16 +404,49 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Executes a store-wide object collect operation for the specified database
+        /// </summary>
+        /// <param name="db">Database for object collection</param>
+        /// <param name="logger">Logger</param>
+        protected void ExecuteObjectCollection(GarnetDatabase db, ILogger logger = null)
+        {
+            if (db.ObjectStoreCollectionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.ObjectStoreCollectionDbStorageSession =
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            ExecuteHashCollect(db.ObjectStoreCollectionDbStorageSession);
+            ExecuteSortedSetCollect(db.ObjectStoreCollectionDbStorageSession);
+        }
+
+        /// <summary>
+        /// Execute a store-wide expired key deletion scan operation for the specified database
+        /// </summary>
+        /// <param name="db">Database</param>
+        protected void ExpiredKeyDeletionScan(GarnetDatabase db)
+        {
+            _ = MainStoreExpiredKeyDeletionScan(db);
+
+            if (StoreWrapper.serverOptions.DisableObjects)
+                return;
+
+            _ = ObjectStoreExpiredKeyDeletionScan(db);
+        }
+
+        /// <summary>
         /// Run compaction on specified database
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
         /// <param name="logger">Logger</param>
-        protected void DoCompaction(GarnetDatabase db, ILogger logger = null)
+        /// <param name="isFromCheckpoint">True if called from checkpointing, false if called from background task</param>
+        protected void DoCompaction(GarnetDatabase db, bool isFromCheckpoint = false, ILogger logger = null)
         {
             try
             {
-                // Periodic compaction -> no need to compact before checkpointing
-                if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
+                // If periodic compaction is enabled and this is called from checkpointing, skip compaction
+                if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
                 DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments,
                     StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
@@ -590,7 +630,10 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.EnableCluster)
                     StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
                 else
+                {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
+                    StoreWrapper.StoreCheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
+                }
 
                 if (checkpointCoveredAofAddress > 0)
                     logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
@@ -630,7 +673,7 @@ namespace Garnet.server
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
-                StoreWrapper.clusterProvider.SafeTruncateAOF(StoreType.All, full, checkpointCoveredAofAddress,
+                StoreWrapper.clusterProvider.SafeTruncateAOF(full, checkpointCoveredAofAddress,
                     checkpointResult.token, checkpointResult.token);
             }
             else
@@ -644,7 +687,7 @@ namespace Garnet.server
                 // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
                 // We can now safely remove these serialized versions as they are no longer needed.
                 using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
-                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true);
+                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
                 while (iter1.GetNext(out _, out _, out var value))
                 {
                     if (value != null)
@@ -653,6 +696,129 @@ namespace Garnet.server
             }
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);
+        }
+
+        private static void ExecuteHashCollect(StorageSession storageSession)
+        {
+            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+            var input = new ObjectInput(header);
+
+            ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
+            storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+            storageSession.scratchBufferBuilder.Reset();
+        }
+
+        private static void ExecuteSortedSetCollect(StorageSession storageSession)
+        {
+            storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
+            storageSession.scratchBufferBuilder.Reset();
+        }
+
+        /// <inheritdoc/>
+        public abstract (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) MainStoreExpiredKeyDeletionScan(GarnetDatabase db)
+        {
+            if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
+            var scanUntil = StoreWrapper.store.Log.TailAddress;
+            (var deletedCount, var totalCount) = db.MainStoreExpiredKeyDeletionDbStorageSession.MainStoreExpiredKeyDeletionScan(scanFrom, scanUntil);
+            Logger?.LogDebug("Main Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
+
+            return (deletedCount, totalCount);
+        }
+
+        protected (long numExpiredKeysFound, long totalRecordsScanned) ObjectStoreExpiredKeyDeletionScan(GarnetDatabase db)
+        {
+            if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
+            var scanUntil = StoreWrapper.objectStore.Log.TailAddress;
+            (var deletedCount, var totalCount) = db.ObjectStoreExpiredKeyDeletionDbStorageSession.ObjectStoreExpiredKeyDeletionScan(scanFrom, scanUntil);
+            Logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
+
+            return (deletedCount, totalCount);
+        }
+
+        /// <inheritdoc/>
+        public abstract (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
+
+        protected (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore) CollectHybridLogStatsForDb(GarnetDatabase db)
+        {
+            FunctionsState functionsState = CreateFunctionsState();
+            MainSessionFunctions mainStoreSessionFuncs = new MainSessionFunctions(functionsState);
+            var mainStoreStats = CollectHybridLogStats(db, db.MainStore, mainStoreSessionFuncs);
+
+            HybridLogScanMetrics objectStoreStats = null;
+            if (ObjectStore != null)
+            {
+                ObjectSessionFunctions objectSessionFunctions = new ObjectSessionFunctions(functionsState);
+                objectStoreStats = CollectHybridLogStats(db, db.ObjectStore, objectSessionFunctions);
+            }
+
+            return (mainStoreStats, objectStoreStats);
+        }
+
+        private HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
+            GarnetDatabase db,
+            TsavoriteKV<TKey, TValue, TFuncs, TAllocator> store,
+            ISessionFunctions<TKey, TValue, TInput, TOutput, long> sessionFunctions)
+            where TFuncs : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TFuncs>
+        {
+            if (db.HybridLogStatScanStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TKey, TValue, TInput, TOutput, long>>(sessionFunctions);
+            var basicContext = session.BasicContext;
+            // region: Immutable || Mutable
+            // state: RCUdSealed || RCUdUnsealed || Tombstoned || ElidedFromHashIndex || Live
+            var scanMetrics = new HybridLogScanMetrics();
+            var fromAddr = store.Log.HeadAddress;
+            var toAddr = store.Log.TailAddress;
+            using var iter = store.Log.Scan(fromAddr, toAddr, includeClosedRecords: true);
+            // Records can be in readonly region, or mutable region
+            while (iter.GetNext(out RecordInfo recordInfo))
+            {
+                TKey key = iter.GetKey();
+                TValue value = iter.GetValue();
+                string region = iter.CurrentAddress >= db.MainStore.Log.ReadOnlyAddress ? "Mutable" : "Immutable";
+                string state = "Live";
+                if (recordInfo.IsSealed)
+                {
+                    // while the server is live, this is true for RCUd records, when we recover from checkpoints, we unseal the records, so some RCUd records may not be sealed
+                    state = "RCUdSealed";
+                }
+                else if (recordInfo.Invalid)
+                {
+                    // Setting invalid is done when a record has been elided from the hash index
+                    state = "ElidedFromHashIndex";
+                }
+                else if (recordInfo.Tombstone)
+                {
+                    state = "Tombstoned";
+                }
+                else if (!basicContext.ContainsKeyInMemory(ref key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
+                {
+                    // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
+                    state = "RCUdUnsealed";
+                }
+                long size = iter.NextAddress - iter.CurrentAddress;
+                scanMetrics.AddScanMetric(region, state, size);
+            }
+            return scanMetrics;
         }
     }
 }

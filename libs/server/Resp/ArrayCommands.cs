@@ -44,8 +44,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                         break;
                 }
             }
@@ -111,8 +110,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                            WriteNull();
                             o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                         }
                         else
@@ -143,8 +141,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
+                        WriteNull();
                     }
                 }
             }
@@ -226,24 +223,18 @@ namespace Garnet.server
             // Validate index
             if (!parseState.TryGetInt(0, out var index))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             if (index != 0 && storeWrapper.serverOptions.EnableCluster)
             {
                 // Cluster mode does not allow non-zero DBID to be selected
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE);
             }
 
             if (index < 0 || index >= storeWrapper.serverOptions.MaxDatabases)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
             }
 
             if (index == this.activeDbId || this.TrySwitchActiveDatabaseSession(index))
@@ -276,23 +267,18 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 // Cluster mode does not allow SWAPDB
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE, ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SWAPDB_CLUSTER_MODE);
             }
 
             // Validate index
             if (!parseState.TryGetInt(0, out var index1))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_FIRST_DB_INDEX, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_FIRST_DB_INDEX);
             }
 
             if (!parseState.TryGetInt(1, out var index2))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SECOND_DB_INDEX, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_SECOND_DB_INDEX);
             }
 
             if (index1 < 0 ||
@@ -300,9 +286,7 @@ namespace Garnet.server
                 index1 >= storeWrapper.serverOptions.MaxDatabases ||
                 index2 >= storeWrapper.serverOptions.MaxDatabases)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
             }
 
             if (storeWrapper.TrySwapDatabases(index1, index2))
@@ -375,11 +359,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SCAN");
 
             // Validate scan cursor
-            if (!parseState.TryGetLong(0, out var cursorFromInput))
+            if (!parseState.TryGetLong(0, out var cursorFromInput) || (cursorFromInput < 0))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
             var pattern = "*"u8;

@@ -8,6 +8,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.cluster.Server.Replication;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -23,41 +24,35 @@ namespace Garnet.cluster
         /// Try initiate replicate attach
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
-        /// <param name="nodeId">Node-id to replicate.</param>
-        /// <param name="background">If replication sync will run in the background.</param>
-        /// <param name="force">Force adding this node as replica.</param>
-        /// <param name="tryAddReplica">Execute try add replica.</param>
+        /// <param name="options">Options for the sync.</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns>A boolean indicating whether replication initiation was successful.</returns>
         public bool TryReplicateDiskbasedSync(
             ClusterSession session,
-            string nodeId,
-            bool background,
-            bool force,
-            bool tryAddReplica,
+            ReplicateSyncOptions options,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
             try
             {
-                logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
+                logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out errorMessage, logger: logger))
                     return false;
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
 
                 // Initiate remote checkpoint retrieval
-                if (background)
+                if (options.Background)
                 {
                     logger?.LogInformation("Initiating background checkpoint retrieval");
-                    _ = Task.Run(ReplicaSyncAttachTask);
+                    _ = Task.Run(() => ReplicaSyncAttachTask(options.UpgradeLock));
                 }
                 else
                 {
                     logger?.LogInformation("Initiating foreground checkpoint retrieval");
-                    var resp = ReplicaSyncAttachTask().GetAwaiter().GetResult();
+                    var resp = ReplicaSyncAttachTask(options.UpgradeLock).GetAwaiter().GetResult();
                     if (resp != null)
                     {
                         errorMessage = Encoding.ASCII.GetBytes(resp);
@@ -73,12 +68,32 @@ namespace Garnet.cluster
                 return false;
             }
 
-            async Task<string> ReplicaSyncAttachTask()
+            async Task<string> ReplicaSyncAttachTask(bool downgradeLock)
             {
                 Debug.Assert(IsRecovering);
                 GarnetClientSession gcs = null;
                 try
                 {
+                    // Immediately try to connect to a primary, so we FAIL
+                    // before resetting our local data
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    var (address, port) = current.GetLocalNodePrimaryAddress();
+
+                    if (address == null || port == -1)
+                    {
+                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
+                        logger?.LogError("{msg}", errorMsg);
+                        return errorMsg;
+                    }
+                    gcs = new(
+                        new IPEndPoint(IPAddress.Parse(address), port),
+                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: clusterProvider.ClusterUsername,
+                        authPassword: clusterProvider.ClusterPassword);
+                    gcs.Connect();
+
                     // Resetting here to decide later when to sync from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
 
@@ -109,27 +124,11 @@ namespace Garnet.cluster
                     //
                     // Replica waits for retrieval to complete before moving forward to recovery
                     //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
-                    var current = clusterProvider.clusterManager.CurrentConfig;
-                    var (address, port) = current.GetLocalNodePrimaryAddress();
-
-                    if (address == null || port == -1)
-                    {
-                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
-                        logger?.LogError("{msg}", errorMsg);
-                        return errorMsg;
-                    }
-                    gcs = new(
-                        new IPEndPoint(IPAddress.Parse(address), port),
-                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
-                        clusterProvider.replicationManager.GetNetworkPool,
-                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                        authUsername: clusterProvider.ClusterUsername,
-                        authPassword: clusterProvider.ClusterPassword);
                     recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                    gcs.Connect();
 
                     var nodeId = current.LocalNodeId;
                     cEntry = GetLatestCheckpointEntryFromDisk();
+                    logger?.LogCheckpointEntry(LogLevel.Information, nameof(ReplicaSyncAttachTask), cEntry);
 
                     storeWrapper.RecoverAOF();
                     logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
@@ -145,17 +144,27 @@ namespace Garnet.cluster
                         PrimaryReplId,
                         cEntry.ToByteArray(),
                         storeWrapper.appendOnlyFile.BeginAddress,
-                        storeWrapper.appendOnlyFile.TailAddress).ConfigureAwait(false);
+                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, ctsRepManager.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
-                    clusterProvider.clusterManager.TryResetReplica();
+                    if (options.AllowReplicaResetOnFailure)
+                    {
+                        clusterProvider.clusterManager.TryResetReplica();
+                    }
                     return ex.Message;
                 }
                 finally
                 {
-                    EndRecovery(RecoveryStatus.NoRecovery);
+                    if (downgradeLock)
+                    {
+                        EndRecovery(RecoveryStatus.ReadRole, downgradeLock: true);
+                    }
+                    else
+                    {
+                        EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                    }
                     recvCheckpointHandler?.Dispose();
                     gcs?.Dispose();
                 }
@@ -186,7 +195,7 @@ namespace Garnet.cluster
             {
                 case CheckpointFileType.STORE_SNAPSHOT:
                 case CheckpointFileType.OBJ_STORE_SNAPSHOT:
-                    ckptManager.CommiLogCheckpointWithCookie(fileToken, checkpointMetadata);
+                    ckptManager.CommitLogCheckpointSendFromPrimary(fileToken, checkpointMetadata);
                     break;
                 case CheckpointFileType.STORE_INDEX:
                 case CheckpointFileType.OBJ_STORE_INDEX:
@@ -334,11 +343,16 @@ namespace Garnet.cluster
 
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 logger?.LogInformation("Initializing CheckpointStore");
-                InitializeCheckpointStore();
+                if (!InitializeCheckpointStore())
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(BeginReplicaRecover));
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primaryReplicationId);
+
+                // Mark this txn run as a read-write session if we are replaying as a replica
+                // This is necessary to ensure that the stored procedure can perform write operations if needed
+                clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
 
                 return ReplicationOffset;
             }
@@ -351,7 +365,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
+                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica, downgradeLock: false);
             }
         }
     }

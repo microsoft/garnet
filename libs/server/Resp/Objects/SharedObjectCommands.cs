@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -39,15 +38,13 @@ namespace Garnet.server
             var keyBytes = sbKey.ToByteArray();
 
             // Get cursor value
-            if (!parseState.TryGetInt(1, out var cursorValue) || cursorValue < 0)
+            if (!parseState.TryGetLong(1, out var cursorValue) || cursorValue < 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
             var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: cursorValue,
+            var input = new ObjectInput(header, ref parseState, startIdx: 1,
                 arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)
@@ -67,20 +64,22 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { SpanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-            var status = storageApi.ObjectScan(keyBytes, ref input, ref outputFooter);
+            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var status = storageApi.ObjectScan(keyBytes, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.SpanByteAndMemory);
+                    ProcessOutput(output.SpanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (objOutputHeader.result1 == int.MinValue)
+                    if (output.Header.result1 == int.MinValue)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteScanOutputHeader(0, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.TryWriteInt32AsBulkString(0, ref dcurr, dend))
                         SendAndReset();
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                         SendAndReset();

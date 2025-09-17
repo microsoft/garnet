@@ -158,9 +158,9 @@ namespace Garnet.server
                         first = false;
                     }
 
+                    resultSb.Append("\n");
                     var result = resultSb.ToString();
-                    while (!RespWriteUtils.TryWriteUtf8BulkString(result, ref dcurr, dend))
-                        SendAndReset();
+                    WriteVerbatimString(Encoding.ASCII.GetBytes(result));
 
                     return true;
                 }
@@ -192,9 +192,9 @@ namespace Garnet.server
             var resultSb = new StringBuilder();
             WriteClientInfo(storeWrapper.clusterProvider, resultSb, this, Environment.TickCount64);
 
+            resultSb.Append("\n");
             var result = resultSb.ToString();
-            while (!RespWriteUtils.TryWriteSimpleString(result, ref dcurr, dend))
-                SendAndReset();
+            WriteVerbatimString(Encoding.ASCII.GetBytes(result));
 
             return true;
         }
@@ -505,7 +505,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteUtf8BulkString(this.clientName, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteAsciiBulkString(this.clientName, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -522,10 +522,9 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("CLIENT|SETNAME");
             }
 
-            var name = parseState.GetString(0);
-            if (string.IsNullOrEmpty(name) || name.Contains(' '))   // it is not possible to use spaces in the connection name as this would violate the format of the CLIENT LIST reply
+            if (!parseState.TryGetClientName(0, out var name))
             {
-                return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_CLIENT_NAME);
             }
 
             this.clientName = name;

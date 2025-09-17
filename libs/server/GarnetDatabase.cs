@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
 using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
@@ -97,6 +100,24 @@ namespace Garnet.server
         /// </summary>
         public SingleWriterMultiReaderLock CheckpointingLock;
 
+        /// <summary>
+        /// Storage session intended for store-wide object collection operations
+        /// </summary>
+        internal StorageSession ObjectStoreCollectionDbStorageSession;
+
+        /// <summary>
+        /// Storage session intended for main-store expired key deletion operations
+        /// </summary>
+        internal StorageSession MainStoreExpiredKeyDeletionDbStorageSession;
+
+        /// <summary>
+        /// Storage session intended for object-store expired key deletion operations
+        /// </summary>
+        internal StorageSession ObjectStoreExpiredKeyDeletionDbStorageSession;
+
+
+        internal StorageSession HybridLogStatScanStorageSession;
+
         bool disposed = false;
 
         public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
@@ -160,6 +181,9 @@ namespace Garnet.server
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
+            ObjectStoreCollectionDbStorageSession?.Dispose();
+            MainStoreExpiredKeyDeletionDbStorageSession?.Dispose();
+            ObjectStoreExpiredKeyDeletionDbStorageSession?.Dispose();
 
             if (ObjectStoreSizeTracker != null)
             {

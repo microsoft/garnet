@@ -1,7 +1,7 @@
 name: Garnet Nightly Tests
 on:
   schedule:
-    - cron:  '0 7 * * *' # Runs at 07:00 UTC, which is 11:00 PM PST
+    - cron:  '0 9 * * *' # Runs at 09:00 UTC, which is 1:00 AM PST
   workflow_dispatch:
   
 env:
@@ -18,21 +18,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2019 ]
+        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
         test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-      - name: Setup .NET 9.0
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore
       - name: Check style format
@@ -56,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2019 ]
+        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
@@ -72,14 +66,8 @@ jobs:
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-      - name: Setup .NET 9.0
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:

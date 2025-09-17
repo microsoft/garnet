@@ -29,7 +29,6 @@ namespace Tsavorite.core
             var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
 
-
             var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
             if (RevivificationManager.IsEnabled)
             {
@@ -40,6 +39,27 @@ namespace Tsavorite.core
                     _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             }
             return session;
+        }
+
+        /// <summary>
+        /// Dispose session with Tsavorite
+        /// </summary>
+        /// <param name="sessionID"></param>
+        /// <returns></returns>
+        internal void DisposeClientSession(int sessionID)
+        {
+            if (_activeSessions != null)
+            {
+                lock (_activeSessions)
+                {
+                    if (_activeSessions.TryGetValue(sessionID, out SessionInfo sessionInfo))
+                    {
+                        var session = sessionInfo.session;
+                        session.MergeRevivificationStatsTo(ref RevivificationManager.stats, reset: true);
+                        _ = _activeSessions.Remove(sessionID);
+                    }
+                }
+            }
         }
 
         /// <summary>

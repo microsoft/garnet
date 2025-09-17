@@ -29,6 +29,12 @@ namespace Garnet.server
         /// </summary>
         IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null);
 
+
+        /// <summary>
+        /// Are we allowed to incur AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
+        /// </summary>
+        bool AllowDataLoss { get; }
+
         /// <summary>
         /// Flush config
         /// </summary>
@@ -120,7 +126,7 @@ namespace Garnet.server
         /// <summary>
         /// Safe truncate AOF
         /// </summary>
-        void SafeTruncateAOF(StoreType storeType, bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
+        void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
 
         /// <summary>
         /// Safe truncate AOF until address
@@ -137,5 +143,30 @@ namespace Garnet.server
         /// Update cluster auth (atomically)
         /// </summary>
         void UpdateClusterAuth(string clusterUsername, string clusterPassword);
+
+        /// <summary>
+        /// Get checkpoint info
+        /// </summary>
+        MetricsItem[] GetCheckpointInfo();
+
+        /// <summary>
+        /// RunID to identify checkpoint history
+        /// </summary>
+        /// <returns></returns>
+        string GetRunId();
+
+        /// <summary>
+        /// Call to prevent this node from changing its current role.
+        /// 
+        /// If this returns true, must be followed by a single call to 
+        /// <see cref="AllowRoleChange"/>
+        /// </summary>
+        bool PreventRoleChange();
+
+        /// <summary>
+        /// After a successful call to <see cref="PreventRoleChange"/>, 
+        /// allows the node to change roles again.
+        /// </summary>
+        void AllowRoleChange();
     }
 }

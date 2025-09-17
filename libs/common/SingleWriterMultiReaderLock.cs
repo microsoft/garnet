@@ -18,6 +18,11 @@ namespace Garnet.common
         int _lock;
 
         /// <summary>
+        /// Basic Constructor
+        /// </summary>
+        public SingleWriterMultiReaderLock() => _lock = 0;
+
+        /// <summary>
         /// Check if write locked
         /// </summary>
         public bool IsWriteLocked => _lock < 0;
@@ -85,6 +90,32 @@ namespace Garnet.common
         {
             Debug.Assert(_lock > 0);
             Interlocked.Decrement(ref _lock);
+        }
+
+        /// <summary>
+        /// Attempt to update a held read lock to a write lock.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryUpgradeReadLock()
+        {
+            Debug.Assert(_lock > 0, "Illegal to call when not holding a read lock");
+
+            // If caller is the only reader (_lock == 1), this will succeed in becoming a write lock (_lock == int.MinValue)
+            return Interlocked.CompareExchange(ref _lock, int.MinValue, 1) == 1;
+        }
+
+        /// <summary>
+        /// Downgrade a held write lock to a read lock.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void DowngradeWriteLock()
+        {
+            Debug.Assert(_lock < 0, "Illegal to call when not holding write lock");
+
+            while (Interlocked.CompareExchange(ref _lock, 1, int.MinValue) != int.MinValue)
+            {
+                _ = Thread.Yield();
+            }
         }
 
         /// <summary>

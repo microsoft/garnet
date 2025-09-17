@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Buffers;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -40,13 +39,19 @@ namespace Garnet.server
                 }
 
                 var valueLength = value.LengthWithoutMetadata;
-                (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
-                var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                    .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
-                Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                dst.Memory = output.Memory;
-                dst.Length = output.Length;
-                return ret;
+
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref dst);
+                try
+                {
+                    var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
+                        .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref writer, ref readInfo);
+                    Debug.Assert(valueLength <= value.LengthWithoutMetadata);
+                    return ret;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
             }
 
             if (readInfo.RecordInfo.ETag)
@@ -54,7 +59,7 @@ namespace Garnet.server
                 EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
             }
 
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
@@ -104,13 +109,19 @@ namespace Garnet.server
                 }
 
                 var valueLength = value.LengthWithoutMetadata;
-                (IMemoryOwner<byte> Memory, int Length) output = (dst.Memory, 0);
-                var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
-                    .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref output, ref readInfo);
-                Debug.Assert(valueLength <= value.LengthWithoutMetadata);
-                dst.Memory = output.Memory;
-                dst.Length = output.Length;
-                return ret;
+
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref dst);
+                try
+                {
+                    var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
+                        .Reader(key.AsReadOnlySpan(), ref input, value.AsReadOnlySpan(), ref writer, ref readInfo);
+                    Debug.Assert(valueLength <= value.LengthWithoutMetadata);
+                    return ret;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
             }
 
             if (readInfo.RecordInfo.ETag)
@@ -118,7 +129,7 @@ namespace Garnet.server
                 EtagState.SetValsForRecordWithEtag(ref functionsState.etagState, ref value);
             }
 
-            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag 
+            // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
             if (cmd is (RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH))
             {
                 CopyRespWithEtagData(ref value, ref dst, readInfo.RecordInfo.ETag, functionsState.etagState.etagSkippedStart, functionsState.memoryPool);
@@ -152,7 +163,7 @@ namespace Garnet.server
             if (existingEtag == etagToMatchAgainst)
             {
                 // write back array of the format [etag, nil]
-                var nilResp = CmdStrings.RESP_ERRNOTFOUND;
+                var nilResp = functionsState.nilResp;
                 // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                 var numDigitsInEtag = NumUtils.CountDigits(existingEtag);
                 WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, ref nilResp, existingEtag, ref dst, functionsState.memoryPool, writeDirect: true);

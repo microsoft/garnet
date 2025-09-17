@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 namespace Garnet.server
 {
     internal enum ExpirationOption : byte
@@ -16,7 +19,7 @@ namespace Garnet.server
         WithETag,
     }
 
-    internal enum ExistOptions : byte
+    public enum ExistOptions : byte
     {
         None,
         NX,

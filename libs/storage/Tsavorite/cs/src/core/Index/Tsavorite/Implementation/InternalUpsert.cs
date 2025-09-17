@@ -233,8 +233,10 @@ namespace Tsavorite.core
                         // Input is not included in record-length calculations for Upsert
                         var (requiredSize, _, _) = hlog.GetRecordSize(ref key, ref value);
                         (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions,
-                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
+                                ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths, stackCtx.recSrc.PhysicalAddress);
                     }
+
+                    ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
 
                     if (ok && sessionFunctions.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref srcRecordInfo))
                     {
@@ -242,12 +244,15 @@ namespace Tsavorite.core
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
+                        stats.inChainSuccesses++;
                         return true;
                     }
 
                     // Did not revivify; restore the tombstone and leave the deleted record there.
                     srcRecordInfo.SetTombstone();
+                    stats.inChainFailures++;
                 }
             }
             finally

@@ -24,7 +24,7 @@ namespace Garnet.server
         readonly ILogger logger = null;
         readonly StoreWrapper storeWrapper;
         readonly StorageSession storageSession;
-        readonly ScratchBufferManager scratchBufferManager;
+        readonly ScratchBufferBuilder scratchBufferBuilder;
 
         /// <summary>
         /// Basic Garnet API
@@ -45,10 +45,10 @@ namespace Garnet.server
             logger?.LogDebug("Starting LocalServerSession");
 
             // Initialize session-local scratch buffer of size 64 bytes, used for constructing arguments in GarnetApi
-            this.scratchBufferManager = new ScratchBufferManager();
+            this.scratchBufferBuilder = new ScratchBufferBuilder();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId: 0, logger);
 
             this.BasicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
         }

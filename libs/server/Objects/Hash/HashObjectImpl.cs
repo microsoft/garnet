@@ -2,192 +2,116 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
-using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
+
+#if NET9_0_OR_GREATER
+using ByteSpan = System.ReadOnlySpan<byte>;
+#else
+using ByteSpan = byte[];
+#endif
+
 namespace Garnet.server
 {
-
     /// <summary>
     ///  Hash - RESP specific operations
     /// </summary>
-    public unsafe partial class HashObject : IGarnetObject
+    public partial class HashObject : IGarnetObject
     {
-        private void HashGet(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashGet(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
+            var key = GetByteSpanFromInput(ref input, 0);
+            if (TryGetValue(key, out var hashValue))
             {
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-
-                if (TryGetValue(key, out var hashValue))
-                {
-                    while (!RespWriteUtils.TryWriteBulkString(hashValue, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-
-                _output.result1++;
+                writer.WriteBulkString(hashValue);
             }
-            finally
+            else
             {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+                writer.WriteNull();
             }
+
+            output.Header.result1++;
         }
 
-        private void HashMultipleGet(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashMultipleGet(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
-            {
-                while (!RespWriteUtils.TryWriteArrayLength(input.parseState.Count, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                for (var i = 0; i < input.parseState.Count; i++)
-                {
-                    var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-
-                    if (TryGetValue(key, out var hashValue))
-                    {
-                        while (!RespWriteUtils.TryWriteBulkString(hashValue, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-
-                    _output.result1++;
-                }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
-        }
-
-        private void HashGetAll(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            var respProtocolVersion = input.arg1;
-
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
-            {
-                if (respProtocolVersion < 3)
-                {
-                    while (!RespWriteUtils.TryWriteArrayLength(Count() * 2, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteMapLength(Count(), ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-
-                var isExpirable = HasExpirableItems();
-
-                foreach (var item in hash)
-                {
-                    if (isExpirable && IsExpired(item.Key))
-                    {
-                        continue;
-                    }
-
-                    while (!RespWriteUtils.TryWriteBulkString(item.Key, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    while (!RespWriteUtils.TryWriteBulkString(item.Value, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
-        }
-
-        private void HashDelete(ref ObjectInput input, byte* output)
-        {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
+            writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
+                var key = GetByteSpanFromInput(ref input, i);
+                if (TryGetValue(key, out var hashValue))
+                {
+                    writer.WriteBulkString(hashValue);
+                }
+                else
+                {
+                    writer.WriteNull();
+                }
 
+                output.Header.result1++;
+            }
+        }
+
+        private void HashGetAll(ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            writer.WriteMapLength(Count());
+
+            var isExpirable = HasExpirableItems;
+
+            foreach (var item in hash)
+            {
+                if (isExpirable && IsExpired(item.Key))
+                {
+                    continue;
+                }
+
+                writer.WriteBulkString(item.Key);
+                writer.WriteBulkString(item.Value);
+            }
+        }
+
+        private void HashDelete(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        {
+            for (var i = 0; i < input.parseState.Count; i++)
+            {
+                var key = GetByteSpanFromInput(ref input, i);
                 if (Remove(key, out var hashValue))
                 {
-                    _output->result1++;
+                    output.Header.result1++;
                 }
             }
         }
 
-        private void HashLength(byte* output)
+        private void HashLength(ref GarnetObjectStoreOutput output)
         {
-            ((ObjectOutputHeader*)output)->result1 = Count();
+            output.Header.result1 = Count();
         }
 
-        private void HashStrLength(ref ObjectInput input, byte* output)
+        private void HashStrLength(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
-            var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-            _output->result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+            var key = GetByteSpanFromInput(ref input, 0);
+            output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
         }
 
-        private void HashExists(ref ObjectInput input, byte* output)
+        private void HashExists(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
-            var field = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-            _output->result1 = ContainsKey(field) ? 1 : 0;
+            var field = GetByteSpanFromInput(ref input, 0);
+            output.Header.result1 = ContainsKey(field) ? 1 : 0;
         }
 
-        private void HashRandomField(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashRandomField(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             // HRANDFIELD key [count [WITHVALUES]]
             var countParameter = input.arg1 >> 2;
@@ -197,415 +121,415 @@ namespace Garnet.server
 
             var countDone = 0;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-            try
+            if (includedCount)
             {
-                if (includedCount)
+                var count = Count();
+
+                if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
                 {
-                    var count = Count();
-
-                    if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
-                    {
-                        while (!RespWriteUtils.TryWriteEmptyArray(ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        _output.result1 = 0;
-                        return;
-                    }
-
-                    if (countParameter > 0 && countParameter > count)
-                        countParameter = count;
-
-                    var absCount = Math.Abs(countParameter);
-                    var indexes = RandomUtils.PickKRandomIndexes(count, absCount, seed, countParameter > 0);
-
-                    // Write the size of the array reply
-                    while (!RespWriteUtils.TryWriteArrayLength(withValues ? absCount * 2 : absCount, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    foreach (var index in indexes)
-                    {
-                        var pair = ElementAt(index);
-                        while (!RespWriteUtils.TryWriteBulkString(pair.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        if (withValues)
-                        {
-                            while (!RespWriteUtils.TryWriteBulkString(pair.Value, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-
-                        countDone++;
-                    }
+                    writer.WriteEmptyArray();
+                    output.Header.result1 = 0;
+                    return;
                 }
-                else // No count parameter is present, we just return a random field
-                {
-                    // Write a bulk string value of a random field from the hash value stored at key.
-                    var count = Count();
-                    if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
-                    {
-                        while (!RespWriteUtils.TryWriteNull(ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        _output.result1 = 0;
-                        return;
-                    }
 
-                    var index = RandomUtils.PickRandomIndex(count, seed);
+                if (countParameter > 0 && countParameter > count)
+                    countParameter = count;
+
+                var indexCount = Math.Abs(countParameter);
+
+                var indexes = indexCount <= RandomUtils.IndexStackallocThreshold ?
+                    stackalloc int[RandomUtils.IndexStackallocThreshold].Slice(0, indexCount) : new int[indexCount];
+
+                RandomUtils.PickKRandomIndexes(count, indexes, seed, countParameter > 0);
+
+                // Write the size of the array reply
+                writer.WriteArrayLength(withValues && (respProtocolVersion == 2) ? indexCount * 2 : indexCount);
+
+                foreach (var index in indexes)
+                {
                     var pair = ElementAt(index);
-                    while (!RespWriteUtils.TryWriteBulkString(pair.Key, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    countDone = 1;
+
+                    if ((respProtocolVersion >= 3) && withValues)
+                        writer.WriteArrayLength(2);
+
+                    writer.WriteBulkString(pair.Key);
+
+                    if (withValues)
+                    {
+                        writer.WriteBulkString(pair.Value);
+                    }
+
+                    countDone++;
+                }
+            }
+            else // No count parameter is present, we just return a random field
+            {
+                // Write a bulk string value of a random field from the hash value stored at key.
+                var count = Count();
+                if (count == 0) // This can happen because of expiration but RMW operation haven't applied yet
+                {
+                    writer.WriteNull();
+                    output.Header.result1 = 0;
+                    return;
                 }
 
-                _output.result1 = countDone;
+                var index = RandomUtils.PickRandomIndex(count, seed);
+                var pair = ElementAt(index);
+                writer.WriteBulkString(pair.Key);
+                countDone = 1;
             }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+            output.Header.result1 = countDone;
         }
 
-        private void HashSet(ref ObjectInput input, byte* output)
+        private void HashSet(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
-            var hop = input.header.HashOp;
-            for (var i = 0; i < input.parseState.Count; i += 2)
-            {
-                var key = input.parseState.GetArgSliceByRef(i).SpanByte.ToByteArray();
-                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.ToByteArray();
-
-                if (!TryGetValue(key, out var hashValue))
-                {
-                    Add(key, value);
-                    _output->result1++;
-                }
-                else if ((hop == HashOperation.HSET || hop == HashOperation.HMSET) && hashValue != default)
-                {
-                    Set(key, value);
-                }
-            }
-        }
-
-        private void HashCollect(ref ObjectInput input, byte* output)
-        {
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
-
             DeleteExpiredItems();
 
-            _output->result1 = 1;
+            var hashOp = input.header.HashOp;
+            for (var i = 0; i < input.parseState.Count; i += 2)
+            {
+                var key = GetByteSpanFromInput(ref input, i);
+                var value = input.parseState.GetArgSliceByRef(i + 1).SpanByte.AsReadOnlySpan();
+
+                // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+                // The ref is unsafe to read/write to if the hash dictionary is mutated.
+                ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                    ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+                if (!exists || IsExpired(key))
+                {
+                    hashValueRef = value.ToArray();
+                    UpdateSize(key, value);
+
+                    output.Header.result1++;
+                }
+                else if (exists && (hashOp is HashOperation.HSET or HashOperation.HMSET))
+                {
+                    if (hashValueRef.Length == value.Length)
+                    {
+                        value.CopyTo(hashValueRef);
+                    }
+                    else
+                    {
+                        // Adjust the size to account for the new value replacing the old one.
+                        this.Size += Utility.RoundUp(value.Length, IntPtr.Size) -
+                                     Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+
+                        hashValueRef = value.ToArray();
+                    }
+
+                    // To persist the key, if it has an expiration
+                    if (HasExpirableItems &&
+#if NET9_0_OR_GREATER
+                        expirationTimeSpanLookup.Remove(key))
+#else
+                        expirationTimes.Remove(key))
+#endif
+                    {
+                        this.Size -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        CleanupExpirationStructures();
+                    }
+                }
+            }
         }
 
-        private void HashGetKeysOrValues(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashCollect(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        {
+            DeleteExpiredItems();
+
+            output.Header.result1 = 1;
+        }
+
+        private void HashGetKeysOrValues(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
             var count = Count();
             var op = input.header.HashOp;
 
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            writer.WriteArrayLength(count);
 
-            ObjectOutputHeader _output = default;
-            try
+            var isExpirable = HasExpirableItems;
+
+            foreach (var item in hash)
             {
-                while (!RespWriteUtils.TryWriteArrayLength(count, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                var isExpirable = HasExpirableItems();
-
-                foreach (var item in hash)
+                if (isExpirable && IsExpired(item.Key))
                 {
-                    if (isExpirable && IsExpired(item.Key))
-                    {
-                        continue;
-                    }
-
-                    if (HashOperation.HKEYS == op)
-                    {
-                        while (!RespWriteUtils.TryWriteBulkString(item.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.TryWriteBulkString(item.Value, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    _output.result1++;
+                    continue;
                 }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
-        }
-
-        private void HashIncrement(ref ObjectInput input, ref SpanByteAndMemory output)
-        {
-            var op = input.header.HashOp;
-
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
-
-            var curr = ptr;
-            var end = curr + output.Length;
-
-            ObjectOutputHeader _output = default;
-
-            // This value is used to indicate partial command execution
-            _output.result1 = int.MinValue;
-
-            try
-            {
-                var key = input.parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
-                var incrSlice = input.parseState.GetArgSliceByRef(1);
-
-                var valueExists = TryGetValue(key, out var value);
-                if (op == HashOperation.HINCRBY)
+                if (HashOperation.HKEYS == op)
                 {
-                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        return;
-                    }
-
-                    byte[] resultBytes;
-
-                    if (valueExists)
-                    {
-                        if (!NumUtils.TryParse(value, out long result))
-                        {
-                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER, ref curr,
-                                       end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                                    ref end);
-                            return;
-                        }
-
-                        result += incr;
-
-                        var resultSpan = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
-                        var success = Utf8Formatter.TryFormat(result, resultSpan, out int bytesWritten,
-                            format: default);
-                        Debug.Assert(success);
-
-                        resultSpan = resultSpan.Slice(0, bytesWritten);
-
-                        resultBytes = resultSpan.ToArray();
-                        SetWithoutPersist(key, resultBytes);
-                    }
-                    else
-                    {
-                        resultBytes = incrSlice.SpanByte.ToByteArray();
-                        Add(key, resultBytes);
-                    }
-
-                    while (!RespWriteUtils.TryWriteIntegerFromBytes(resultBytes, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                            ref end);
+                    writer.WriteBulkString(item.Key);
                 }
                 else
                 {
-                    if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out double incr))
-                    {
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                                ref end);
-                        return;
-                    }
-
-                    byte[] resultBytes;
-
-                    if (valueExists)
-                    {
-                        if (!NumUtils.TryParse(value, out double result))
-                        {
-                            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT, ref curr,
-                                       end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                                    ref end);
-                            return;
-                        }
-
-                        result += incr;
-
-                        resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
-                        SetWithoutPersist(key, resultBytes);
-                    }
-                    else
-                    {
-                        resultBytes = incrSlice.SpanByte.ToByteArray();
-                        Add(key, resultBytes);
-                    }
-
-                    while (!RespWriteUtils.TryWriteBulkString(resultBytes, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr,
-                            ref end);
+                    writer.WriteBulkString(item.Value);
                 }
 
-                _output.result1 = 1;
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+                output.Header.result1++;
             }
         }
 
-        private void HashExpire(ref ObjectInput input, ref SpanByteAndMemory output)
+        [SkipLocalsInit] // avoid zeroing the stackalloc buffer
+        private void HashIncrement(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            var op = input.header.HashOp;
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
-            ObjectOutputHeader _output = default;
-            try
+            // This value is used to indicate partial command execution
+            output.Header.result1 = int.MinValue;
+
+            var key = GetByteSpanFromInput(ref input, 0);
+            var incrSlice = input.parseState.GetArgSliceByRef(1);
+
+            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
             {
-                DeleteExpiredItems();
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                return;
+            }
 
-                var expireOption = (ExpireOption)input.arg1;
-                var expiration = input.parseState.GetLong(0);
-                var numFields = input.parseState.Count - 1;
-                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+            DeleteExpiredItems();
 
-                foreach (var item in input.parseState.Parameters.Slice(1))
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the hash dictionary is mutated.
+            ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+            if (!exists || IsExpired(key))
+            {
+                hashValueRef = incrSlice.ToArray();
+                UpdateSize(key, hashValueRef);
+            }
+            else
+            {
+                if (!NumUtils.TryParse(hashValueRef, out long result))
                 {
-                    var result = SetExpiration(item.ToArray(), expiration, expireOption);
-                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _output.result1++;
+                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
+                    return;
+                }
+
+                result += incr;
+
+                var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
+                var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
+                Debug.Assert(success);
+
+                formattedValue = formattedValue.Slice(0, bytesWritten);
+
+                if (formattedValue.Length == hashValueRef.Length)
+                {
+                    // instead of allocating a new byte array of the same size, we can reuse the existing one
+                    formattedValue.CopyTo(hashValueRef);
+                }
+                else
+                {
+                    // Adjust the size to account for the new value replacing the old one.
+                    this.Size += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
+                                 Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+
+                    hashValueRef = formattedValue.ToArray();
                 }
             }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+            writer.WriteIntegerFromBytes(hashValueRef);
+
+            output.Header.result1 = 1;
+        }
+
+        [SkipLocalsInit] // avoid zeroing the stackalloc buffer
+        private void HashIncrementFloat(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        {
+            var op = input.header.HashOp;
+
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            // This value is used to indicate partial command execution
+            output.Header.result1 = int.MinValue;
+
+            var key = GetByteSpanFromInput(ref input, 0);
+            var incrSlice = input.parseState.GetArgSliceByRef(1);
+
+            if (!input.parseState.TryGetDouble(1, out var incr))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                return;
+            }
+
+            if (double.IsInfinity(incr))
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
+                return;
+            }
+
+            DeleteExpiredItems();
+
+            // Avoid multiple hash calculations by acquiring ref to the dictionary value.
+            // The ref is unsafe to read/write to if the hash dictionary is mutated.
+            ref var hashValueRef =
+#if NET9_0_OR_GREATER
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
+#else
+                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
+#endif
+
+            if (!exists || IsExpired(key))
+            {
+                hashValueRef = incrSlice.ToArray();
+                UpdateSize(key, hashValueRef);
+            }
+            else
+            {
+                if (!NumUtils.TryParseWithInfinity(hashValueRef, out var result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
+                    return;
+                }
+
+                if (double.IsInfinity(result))
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    return;
+                }
+
+                result += incr;
+
+                var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
+                var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
+                Debug.Assert(success);
+
+                formattedValue = formattedValue.Slice(0, bytesWritten);
+
+                if (formattedValue.Length == hashValueRef.Length)
+                {
+                    // instead of allocating a new byte array of the same size, we can reuse the existing one
+                    formattedValue.CopyTo(hashValueRef);
+                }
+                else
+                {
+                    // Adjust the size to account for the new value replacing the old one.
+                    this.Size += Utility.RoundUp(formattedValue.Length, IntPtr.Size) -
+                                 Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
+
+                    hashValueRef = formattedValue.ToArray();
+                }
+            }
+
+            writer.WriteBulkString(hashValueRef);
+
+            output.Header.result1 = 1;
+        }
+
+        private void HashExpire(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        {
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            DeleteExpiredItems();
+
+            var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
+
+            writer.WriteArrayLength(input.parseState.Count);
+
+            foreach (var item in input.parseState.Parameters)
+            {
+#if NET9_0_OR_GREATER
+                var result = SetExpiration(item.ReadOnlySpan, expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
+#else
+                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
+#endif
+                writer.WriteInt32((int)result);
+                output.Header.result1++;
             }
         }
 
-        private void HashTimeToLive(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashTimeToLive(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            DeleteExpiredItems();
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            var isMilliseconds = input.arg1 == 1;
+            var isTimestamp = input.arg2 == 1;
+            var numFields = input.parseState.Count;
 
-            ObjectOutputHeader _output = default;
-            try
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            writer.WriteArrayLength(numFields);
+
+            foreach (var item in input.parseState.Parameters)
             {
-                DeleteExpiredItems();
+#if NET9_0_OR_GREATER
+                var result = GetExpiration(item.ReadOnlySpan);
+#else
+                var result = GetExpiration(item.ToArray());
+#endif
 
-                var isMilliseconds = input.arg1 == 1;
-                var isTimestamp = input.arg2 == 1;
-                var numFields = input.parseState.Count;
-                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                foreach (var item in input.parseState.Parameters)
+                if (result >= 0)
                 {
-                    var result = GetExpiration(item.ToArray());
-
-                    if (result >= 0)
+                    if (isTimestamp && isMilliseconds)
                     {
-                        if (isTimestamp && isMilliseconds)
-                        {
-                            result = ConvertUtils.UnixTimeInMillisecondsFromTicks(result);
-                        }
-                        else if (isTimestamp && !isMilliseconds)
-                        {
-                            result = ConvertUtils.UnixTimeInSecondsFromTicks(result);
-                        }
-                        else if (!isTimestamp && isMilliseconds)
-                        {
-                            result = ConvertUtils.MillisecondsFromDiffUtcNowTicks(result);
-                        }
-                        else if (!isTimestamp && !isMilliseconds)
-                        {
-                            result = ConvertUtils.SecondsFromDiffUtcNowTicks(result);
-                        }
+                        result = ConvertUtils.UnixTimeInMillisecondsFromTicks(result);
                     }
-
-                    while (!RespWriteUtils.TryWriteInt64(result, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _output.result1++;
+                    else if (isTimestamp && !isMilliseconds)
+                    {
+                        result = ConvertUtils.UnixTimeInSecondsFromTicks(result);
+                    }
+                    else if (!isTimestamp && isMilliseconds)
+                    {
+                        result = ConvertUtils.MillisecondsFromDiffUtcNowTicks(result);
+                    }
+                    else if (!isTimestamp && !isMilliseconds)
+                    {
+                        result = ConvertUtils.SecondsFromDiffUtcNowTicks(result);
+                    }
                 }
-            }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
+                writer.WriteInt64(result);
+                output.Header.result1++;
             }
         }
 
-        private void HashPersist(ref ObjectInput input, ref SpanByteAndMemory output)
+        private void HashPersist(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
         {
-            var isMemory = false;
-            MemoryHandle ptrHandle = default;
-            var ptr = output.SpanByte.ToPointer();
+            DeleteExpiredItems();
 
-            var curr = ptr;
-            var end = curr + output.Length;
+            var numFields = input.parseState.Count;
 
-            ObjectOutputHeader _output = default;
-            try
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            writer.WriteArrayLength(numFields);
+
+            foreach (var item in input.parseState.Parameters)
             {
-                DeleteExpiredItems();
-
-                var numFields = input.parseState.Count;
-                while (!RespWriteUtils.TryWriteArrayLength(numFields, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                foreach (var item in input.parseState.Parameters)
-                {
-                    var result = Persist(item.ToArray());
-                    while (!RespWriteUtils.TryWriteInt32(result, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _output.result1++;
-                }
+#if NET9_0_OR_GREATER
+                var result = Persist(item.ReadOnlySpan);
+#else
+                var result = Persist(item.ToArray());
+#endif
+                writer.WriteInt32(result);
+                output.Header.result1++;
             }
-            finally
-            {
-                while (!RespWriteUtils.TryWriteDirect(ref _output, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+        }
 
-                if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(curr - ptr);
-            }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static ByteSpan GetByteSpanFromInput(ref ObjectInput input, int index)
+        {
+            return input.parseState.GetArgSliceByRef(index)
+#if NET9_0_OR_GREATER
+                .ReadOnlySpan;
+#else
+                .ToArray();
+#endif
         }
     }
 }

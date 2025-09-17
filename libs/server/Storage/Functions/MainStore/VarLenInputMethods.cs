@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -76,7 +77,6 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     return sizeof(int) + BitmapManager.Length(bOffset);
                 case RespCommand.BITFIELD:
-                case RespCommand.BITFIELD_RO:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
                 case RespCommand.PFADD:
@@ -109,9 +109,7 @@ namespace Garnet.server
 
                     return sizeof(int) + ndigits + (isNegative ? 1 : 0);
                 case RespCommand.INCRBYFLOAT:
-                    if (!input.parseState.TryGetDouble(0, out var incrByFloat))
-                        return sizeof(int);
-
+                    var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     ndigits = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
 
                     return sizeof(int) + ndigits;
@@ -166,8 +164,7 @@ namespace Garnet.server
 
                         return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.INCRBYFLOAT:
-                        // We don't need to TryGetDouble here because InPlaceUpdater will raise an error before we reach this point
-                        var incrByFloat = input.parseState.GetDouble(0);
+                        var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
 
                         NumUtils.TryReadDouble(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var currVal);
                         var nextVal = currVal + incrByFloat;
@@ -179,7 +176,6 @@ namespace Garnet.server
                         var bOffset = input.arg1;
                         return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
                     case RespCommand.BITFIELD:
-                    case RespCommand.BITFIELD_RO:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
                         return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
                     case RespCommand.PFADD:

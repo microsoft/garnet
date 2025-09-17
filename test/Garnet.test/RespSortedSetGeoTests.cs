@@ -367,6 +367,16 @@ namespace Garnet.test
             res = db.GeoSearch(key, new RedisValue("Washington"), new GeoSearchCircle(530, GeoUnit.Kilometers),
                                options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
             ClassicAssert.AreEqual(4, res.Length);
+
+            // Test infinity value
+            res = db.GeoSearch(key, new RedisValue("Columbus"), new GeoSearchBox(2, double.PositiveInfinity, GeoUnit.Kilometers),
+                               order: Order.Descending,
+                               options: GeoRadiusOptions.WithDistance | GeoRadiusOptions.WithCoordinates);
+            ClassicAssert.AreEqual(2, res.Length);
+            ClassicAssert.AreEqual("Philadelphia", (string)res[0].Member);
+            Assert.That(res[0].Distance, Is.EqualTo(667.66131901076665).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Longitude, Is.EqualTo(-75.1652196).Within(1.0 / Math.Pow(10, 6)));
+            Assert.That(res[0].Position.Value.Latitude, Is.EqualTo(39.95258287).Within(1.0 / Math.Pow(10, 6)));
         }
 
         [Test]

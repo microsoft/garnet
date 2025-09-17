@@ -14,6 +14,7 @@
     <Compile Include="..\..\test\Garnet.test\CredentialManager.cs" Link="CredentialManager.cs" />
     <Compile Include="..\..\test\Garnet.test\ServerCredential.cs" Link="ServerCredential.cs" />
     <Compile Include="..\..\test\Garnet.test\NUnitLoggerProvider.cs" Link="NUnitLoggerProvider.cs" />
+    <Compile Include="..\..\test\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,7 +35,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 
   <ItemGroup>

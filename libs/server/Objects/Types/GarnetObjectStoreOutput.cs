@@ -46,6 +46,11 @@ namespace Garnet.server
         public IGarnetObject GarnetObject;
 
         /// <summary>
+        /// Object header
+        /// </summary>
+        public ObjectOutputHeader Header;
+
+        /// <summary>
         /// Output flags
         /// </summary>
         public ObjectStoreOutputFlags OutputFlags;
@@ -59,6 +64,16 @@ namespace Garnet.server
         /// True if output flag RemoveKey is set
         /// </summary>
         public bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
+
+        public GarnetObjectStoreOutput()
+        {
+            SpanByteAndMemory = new(null);
+        }
+
+        public GarnetObjectStoreOutput(SpanByteAndMemory spam)
+        {
+            SpanByteAndMemory = spam;
+        }
 
         public void ConvertToHeap()
         {

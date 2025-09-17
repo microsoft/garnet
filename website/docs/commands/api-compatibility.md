@@ -42,7 +42,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="acl">**ACL**</span> | [CAT](acl.md#acl-cat) | ➕ |  |
 |  | [DELUSER](acl.md#acl-deluser) | ➕ |  |
 |  | DRYRUN | ➖ |  |
-|  | GENPASS | ➖ |  |
+|  | [GENPASS](acl.md#acl-genpass) | ➕ |  |
 |  | [GETUSER](acl.md#acl-getuser) | ➕ |  |
 |  | [LIST](acl.md#acl-list) | ➕ |  |
 |  | [LOAD](acl.md#acl-load) | ➕ |  |
@@ -403,3 +403,4 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [MULTI](transactions.md#multi) | ➕ |  |
 |  | [UNWATCH](transactions.md#unwatch) | ➕ |  |
 |  | [WATCH](transactions.md#watch) | ➕ |  |
+| <span id="json">**JSON Module**</span> | [JSON Module](json.md) | ➕ | Partially Implemented |

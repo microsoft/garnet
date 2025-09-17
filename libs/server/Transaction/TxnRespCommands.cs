@@ -79,8 +79,7 @@ namespace Garnet.server
                 else
                 {
                     endReadHead = _origReadHead;
-                    while (!RespWriteUtils.TryWriteNullArray(ref dcurr, dend))
-                        SendAndReset();
+                    WriteNullArray();
                 }
 
                 return true;
@@ -100,7 +99,7 @@ namespace Garnet.server
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
             // Normalize will turn internal "not-real commands" such as SETEXNX, and SETEXXX to the command info parent
             cmd = cmd.NormalizeForACLs();
-            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var commandInfo, logger: logger) || !commandInfo.AllowedInTxn)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
@@ -110,17 +109,18 @@ namespace Garnet.server
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
-            int count = parseState.Count;
+            var count = parseState.Count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
-            bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
+            if (commandInfo.IsSubCommand)
+                arity = arity > 0 ? arity - 1 : arity + 1;
+            var invalidNumArgs = arity > 0 ? count != arity : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS;
+            var isWatch = cmd == RespCommand.WATCH || cmd == RespCommand.WATCHMS || cmd == RespCommand.WATCHOS;
 
             // todo: Remove once this is supported by enabling transactions across databases
             // SELECT / SWAPDB currently not allowed during TXN
-            var isMultiDbCommand =
-                commandInfo.Command == RespCommand.SELECT || commandInfo.Command == RespCommand.SWAPDB;
+            var isMultiDbCommand = cmd == RespCommand.SELECT || cmd == RespCommand.SWAPDB;
 
             if (invalidNumArgs || isWatch || isMultiDbCommand)
             {
@@ -133,7 +133,7 @@ namespace Garnet.server
 
                 if (invalidNumArgs)
                 {
-                    var err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.Name);
+                    var err = string.Format(CmdStrings.GenericErrWrongNumArgs, RespCommandsInfo.GetRespCommandName(cmd));
                     while (!RespWriteUtils.TryWriteError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();
@@ -142,7 +142,7 @@ namespace Garnet.server
 
                 var errMsg = ReadOnlySpan<byte>.Empty;
                 var abort = false;
-                switch (commandInfo.Command)
+                switch (cmd)
                 {
                     case RespCommand.SWAPDB:
                         errMsg = CmdStrings.RESP_ERR_SWAPDB_IN_TXN_UNSUPPORTED;
@@ -197,9 +197,7 @@ namespace Garnet.server
         {
             if (txnManager.state == TxnState.None)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -218,10 +216,7 @@ namespace Garnet.server
             // Have to provide at least one key
             if (count == 0)
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
+                return AbortWithErrorMessage(CmdStrings.GenericErrWrongNumArgs);
             }
 
             List<ArgSlice> keys = [];
@@ -289,9 +284,7 @@ namespace Garnet.server
 
             if (!parseState.TryGetInt(0, out var txId))
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             CustomTransactionProcedure proc;
@@ -299,7 +292,8 @@ namespace Garnet.server
 
             try
             {
-                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager, scratchBufferManager, out arity);
+                proc = customCommandManagerSession.GetCustomTransactionProcedure(txId, this, txnManager,
+                    scratchBufferAllocator, out arity);
             }
             catch (Exception e)
             {

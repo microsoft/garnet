@@ -6,9 +6,40 @@ using System.IO;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
+    static class CheckpointEntryExtensions
+    {
+        public static void LogCheckpointEntry(this ILogger logger, LogLevel logLevel, string msg, CheckpointEntry entry)
+        {
+            logger?.Log(logLevel, "\n" +
+                "[{msg}]\n" +
+                "readers:{readers}\n" +
+                "storeVersion: {storeVersion}\n" +
+                "storeHlogToken: {storeHlogToken}\n" +
+                "storeIndexToken: {storeIndexToken}\n" +
+                "storeCheckpointCoveredAofAddress: {storeCheckpointCoveredAofAddress}\n" +
+                "------------------------------------------------------------------------\n" +
+                "objectStoreVersion:{objectStoreVersion}\n" +
+                "objectStoreHlogToken:{objectStoreHlogToken}\n" +
+                "objectStoreIndexToken:{objectStoreIndexToken}\n" +
+                "objectCheckpointCoveredAofAddress:{objectCheckpointCoveredAofAddress}\n" +
+                "------------------------------------------------------------------------\n",
+                msg,
+                entry._lock,
+                entry.metadata.storeVersion,
+                entry.metadata.storeHlogToken,
+                entry.metadata.storeIndexToken,
+                entry.metadata.storeCheckpointCoveredAofAddress,
+                entry.metadata.objectStoreVersion,
+                entry.metadata.objectStoreHlogToken,
+                entry.metadata.objectStoreIndexToken,
+                entry.metadata.objectCheckpointCoveredAofAddress);
+        }
+    }
+
     sealed class CheckpointEntry
     {
         public CheckpointMetadata metadata;
@@ -19,6 +50,7 @@ namespace Garnet.cluster
         {
             metadata = new();
             next = null;
+            _lock = new();
         }
 
         public long GetMinAofCoveredAddress()
@@ -63,30 +95,17 @@ namespace Garnet.cluster
             };
         }
 
-        public string GetCheckpointEntryDump()
-        {
-            string dump = $"\n" +
-                $"storeVersion: {metadata.storeVersion}\n" +
-                $"storeHlogToken: {metadata.storeHlogToken}\n" +
-                $"storeIndexToken: {metadata.storeIndexToken}\n" +
-                $"storeCheckpointCoveredAofAddress: {metadata.storeCheckpointCoveredAofAddress}\n" +
-                $"------------------------------------------------------------------------\n" +
-                $"objectStoreVersion:{metadata.objectStoreVersion}\n" +
-                $"objectStoreHlogToken:{metadata.objectStoreHlogToken}\n" +
-                $"objectStoreIndexToken:{metadata.objectStoreIndexToken}\n" +
-                $"objectCheckpointCoveredAofAddress:{metadata.objectCheckpointCoveredAofAddress}\n" +
-                $"------------------------------------------------------------------------\n" +
-                $"activeReaders:{_lock}";
-            return dump;
-        }
-
+        /// <summary>
+        /// Serialize CheckpointEntry
+        /// </summary>
+        /// <returns></returns>
         public byte[] ToByteArray()
         {
             var ms = new MemoryStream();
             var writer = new BinaryWriter(ms, Encoding.ASCII);
-            byte[] byteBuffer = default;
+            byte[] byteBuffer;
 
-            //Write checkpoint entry data for main store
+            // Write checkpoint entry data for main store
             writer.Write(metadata.storeVersion);
             byteBuffer = metadata.storeHlogToken.ToByteArray();
             writer.Write(byteBuffer.Length);
@@ -98,7 +117,7 @@ namespace Garnet.cluster
             writer.Write(metadata.storePrimaryReplId == null ? 0 : 1);
             if (metadata.storePrimaryReplId != null) writer.Write(metadata.storePrimaryReplId);
 
-            //Write checkpoint entry data for object store
+            // Write checkpoint entry data for object store
             writer.Write(metadata.objectStoreVersion);
             byteBuffer = metadata.objectStoreHlogToken.ToByteArray();
             writer.Write(byteBuffer.Length);
@@ -110,12 +129,17 @@ namespace Garnet.cluster
             writer.Write(metadata.objectStorePrimaryReplId == null ? 0 : 1);
             if (metadata.objectStorePrimaryReplId != null) writer.Write(metadata.objectStorePrimaryReplId);
 
-            byte[] byteArray = ms.ToArray();
+            var byteArray = ms.ToArray();
             writer.Dispose();
             ms.Dispose();
             return byteArray;
         }
 
+        /// <summary>
+        /// Deserialize CheckpointEntry
+        /// </summary>
+        /// <param name="serialized"></param>
+        /// <returns></returns>
         public static CheckpointEntry FromByteArray(byte[] serialized)
         {
             if (serialized.Length == 0) return null;
@@ -143,5 +167,11 @@ namespace Garnet.cluster
             ms.Dispose();
             return cEntry;
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        public override string ToString() => $"{metadata},readers={_lock}";
     }
 }

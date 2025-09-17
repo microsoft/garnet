@@ -17,6 +17,10 @@ namespace Garnet.server
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
 
+        // Iterators for expired key deletion
+        private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan mainStoreExpiredKeyDeletionScanFuncs;
+        private ArrayKeyIterationFunctions.ObjectStoreExpiredKeyDeletionScan objectStoreExpiredKeyDeletionScanFuncs;
+
         // Iterators for KEYS command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
         private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbKeysFuncs;
@@ -110,15 +114,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Iterates over main store memory collecting expired records.
+        /// </summary>
+        internal (long, long) MainStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
+        {
+            mainStoreExpiredKeyDeletionScanFuncs ??= new();
+            mainStoreExpiredKeyDeletionScanFuncs.Initialize(this);
+            _ = basicContext.Session.ScanCursor(ref fromAddress, untilAddress, mainStoreExpiredKeyDeletionScanFuncs);
+            return (mainStoreExpiredKeyDeletionScanFuncs.deletedCount, mainStoreExpiredKeyDeletionScanFuncs.totalCount);
+        }
+
+        /// <summary>
+        /// Iterates over object store memory collecting expired records.
+        /// </summary>
+        internal (long, long) ObjectStoreExpiredKeyDeletionScan(long fromAddress, long untilAddress)
+        {
+            objectStoreExpiredKeyDeletionScanFuncs ??= new();
+            objectStoreExpiredKeyDeletionScanFuncs.Initialize(this);
+            _ = objectStoreBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, objectStoreExpiredKeyDeletionScanFuncs);
+            return (objectStoreExpiredKeyDeletionScanFuncs.deletedCount, objectStoreExpiredKeyDeletionScanFuncs.totalCount);
+        }
+
+        /// <summary>
         /// Iterate the contents of the main store (push-based)
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="validateCursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => basicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+            => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -132,10 +162,14 @@ namespace Garnet.server
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="validateCursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
-            where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, untilAddress);
+        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
+           where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
+            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the main store (pull based)
@@ -185,7 +219,7 @@ namespace Garnet.server
                 objectStoreDbSizeFuncs ??= new();
                 objectStoreDbSizeFuncs.Initialize();
                 cursor = 0;
-                objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
+                _ = objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
                 count += objectStoreDbSizeFuncs.Count;
             }
 
@@ -209,6 +243,70 @@ namespace Garnet.server
                     this.patternLength = length;
                     this.matchType = matchType;
                 }
+            }
+
+            internal sealed class ObjectStoreExpiredKeyDeletionScan : ExpiredKeysBase<byte[], IGarnetObject>
+            {
+                protected override bool IsExpired(ref IGarnetObject value) => value.Expiration > 0 && ObjectSessionFunctions.CheckExpiry(value);
+                protected override bool DeleteIfExpiredInMemory(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata)
+                {
+                    var input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
+                    var output = new GarnetObjectStoreOutput();
+                    return GarnetStatus.OK == storageSession.RMW_ObjectStore(ref key, ref input, ref output, ref storageSession.objectStoreBasicContext);
+                }
+            }
+
+            internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase<SpanByte, SpanByte>
+            {
+                protected override bool IsExpired(ref SpanByte value) => value.MetadataSize > 0 && MainSessionFunctions.CheckExpiry(ref value);
+                protected override bool DeleteIfExpiredInMemory(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata)
+                {
+                    var input = new RawStringInput(RespCommand.DELIFEXPIM);
+                    return GarnetStatus.OK == storageSession.DEL_Conditional(ref key, ref input, ref storageSession.basicContext);
+                }
+            }
+
+            internal abstract class ExpiredKeysBase<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
+            {
+                public long totalCount;
+                public long deletedCount;
+                protected StorageSession storageSession;
+
+                public void Initialize(StorageSession storageSession)
+                    => this.storageSession = storageSession;
+
+                protected abstract bool IsExpired(ref TValue value);
+
+                protected abstract bool DeleteIfExpiredInMemory(ref TKey key, ref TValue value, RecordMetadata recordMetadata);
+
+                public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                        => ConcurrentReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+                public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                {
+                    totalCount++;
+                    if (IsExpired(ref value))
+                    {
+                        cursorRecordResult = CursorRecordResult.Accept;
+                        if (DeleteIfExpiredInMemory(ref key, ref value, recordMetadata))
+                            deletedCount++;
+                    }
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Skip;
+                    }
+
+                    return true;
+                }
+
+                public bool OnStart(long beginAddress, long endAddress)
+                {
+                    totalCount = deletedCount = 0;
+                    return true;
+                }
+
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
             }
 
             internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions<SpanByte, SpanByte>

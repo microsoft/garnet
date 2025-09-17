@@ -38,6 +38,9 @@ namespace Tsavorite.core
         /// <summary>Get record size required for the given <paramref name="key"/> and <paramref name="value"/></summary>
         (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref TKey key, ref TValue value);
 
+        /// <summary>Get the record size for a tombstoned record</summary>
+        (int actualSize, int allocatedSize, int keySize) GetTombstoneRecordSize(ref TKey key);
+
         /// <summary>Get the size of the given <paramref name="value"/></summary>
         int GetValueLength(ref TValue value);
 

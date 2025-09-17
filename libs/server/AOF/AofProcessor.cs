@@ -36,6 +36,11 @@ namespace Garnet.server
         int activeDbId;
 
         /// <summary>
+        /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
+        /// </summary>
+        public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
+
+        /// <summary>
         /// Session for main store
         /// </summary>
         BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
@@ -59,6 +64,7 @@ namespace Garnet.server
         /// </summary>
         public AofProcessor(
             StoreWrapper storeWrapper,
+            IClusterProvider clusterProvider = null,
             bool recordToAof = false,
             ILogger logger = null)
         {
@@ -67,7 +73,7 @@ namespace Garnet.server
             var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.activeDbId = 0;
-            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false);
+            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -322,12 +328,12 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool ReplayOp(byte* entryPtr, int length, bool asReplica)
+        private unsafe bool ReplayOp(byte* entryPtr, int length, bool replayAsReplica)
         {
             AofHeader header = *(AofHeader*)entryPtr;
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(entryPtr, length, asReplica)) return false;
+            if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
             switch (header.opType)
             {
@@ -356,6 +362,19 @@ namespace Garnet.server
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
             return true;
+
+            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
+            {
+                var curr = ptr + sizeof(AofHeader);
+
+                // Reconstructing CustomProcedureInput
+
+                // input
+                customProcInput.DeserializeFrom(curr);
+
+                // Run the stored procedure with the reconstructed input
+                respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
+            }
         }
 
         private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
@@ -377,18 +396,6 @@ namespace Garnet.server
                     objectStoreBasicContext = objectStoreSession.BasicContext;
                 this.activeDbId = db.Id;
             }
-        }
-
-        void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
-        {
-            var curr = ptr + sizeof(AofHeader);
-
-            // Reconstructing CustomProcedureInput
-
-            // input
-            customProcInput.DeserializeFrom(curr);
-
-            respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
         }
 
         static void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
@@ -447,7 +454,7 @@ namespace Garnet.server
             ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(outputPtr, outputLength) };
+            var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
             basicContext.Upsert(ref keyB, ref valB);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
@@ -467,7 +474,7 @@ namespace Garnet.server
             objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
-            var output = new GarnetObjectStoreOutput { SpanByteAndMemory = new(outputPtr, outputLength) };
+            var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
             if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
                 basicContext.CompletePending(true);
 

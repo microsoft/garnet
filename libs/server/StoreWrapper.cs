@@ -13,6 +13,7 @@ using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Garnet.server.Lua;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -42,12 +43,12 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
+        public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> store => this.databaseManager.MainStore;
 
         /// <summary>
         /// Object store (of DB 0)
         /// </summary>
-        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
+        public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore => this.databaseManager.ObjectStore;
 
         /// <summary>
         /// AOF (of DB 0)
@@ -102,7 +103,7 @@ namespace Garnet.server
         /// <summary>
         /// Lua script cache
         /// </summary>
-        public readonly ConcurrentDictionary<ScriptHashKey, byte[]> storeScriptCache;
+        public readonly ConcurrentDictionary<ScriptHashKey, LuaScriptHandle> storeScriptCache;
 
         /// <summary>
         /// Logging frequency
@@ -143,10 +144,25 @@ namespace Garnet.server
         // Standalone instance node_id
         internal readonly string runId;
 
+        /// <summary>
+        /// Run ID identifies instance history when taking a checkpoint.
+        /// </summary>
+        public string RunId => serverOptions.EnableCluster ? clusterProvider.GetRunId() : runId;
+
         internal readonly CancellationTokenSource ctsCommit;
 
         // True if StoreWrapper instance is disposed
         bool disposed;
+
+        /// <summary>
+        /// Garnet checkpoint manager for main store
+        /// </summary>
+        public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
+
+        /// <summary>
+        /// Garnet checkpoint manager for object store
+        /// </summary>
+        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
         /// <summary>
         /// Constructor
@@ -171,17 +187,19 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
+            this.loggerFactory = loggerFactory;
             this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
             this.monitor = serverOptions.MetricsSamplingFrequency > 0
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
                 : null;
-            this.loggerFactory = loggerFactory;
             this.logger = loggerFactory?.CreateLogger("StoreWrapper");
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
+
+            logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
 
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
@@ -239,7 +257,20 @@ namespace Garnet.server
             if (clusterFactory != null)
                 clusterProvider = clusterFactory.CreateClusterProvider(this);
             ctsCommit = new();
-            runId = Generator.CreateHexId();
+
+            if (!serverOptions.EnableCluster)
+            {
+                runId = Generator.CreateHexId();
+                if (StoreCheckpointManager != null)
+                {
+                    StoreCheckpointManager.CurrentHistoryId = runId;
+                }
+
+                if (!serverOptions.DisableObjects && ObjectStoreCheckpointManager != null)
+                {
+                    ObjectStoreCheckpointManager.CurrentHistoryId = runId;
+                }
+            }
         }
 
         /// <summary>
@@ -434,32 +465,40 @@ namespace Garnet.server
         /// Commit AOF for all active databases
         /// </summary>
         /// <param name="spinWait">True if should wait until all commits complete</param>
-        internal void CommitAOF(bool spinWait)
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool CommitAOF(bool spinWait)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF)
+            {
+                return false;
+            }
 
             var task = databaseManager.CommitToAofAsync();
-            if (!spinWait) return;
+            if (!spinWait) return true;
 
             task.GetAwaiter().GetResult();
+
+            return true;
         }
 
         /// <summary>
         /// Wait for commits from all active databases
         /// </summary>
-        internal void WaitForCommit() =>
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool WaitForCommit() =>
             WaitForCommitAsync().GetAwaiter().GetResult();
 
         /// <summary>
         /// Asynchronously wait for commits from all active databases
         /// </summary>
         /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
+        /// <returns>false if commit is skipped for config reasons</returns>
+        internal async ValueTask<bool> WaitForCommitAsync(CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF) return false;
 
             await databaseManager.WaitForCommitToAofAsync(token);
+            return true;
         }
 
         /// <summary>
@@ -468,21 +507,22 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
+        /// <returns>false if commit is skipped for config reasons</returns>
+        internal async ValueTask<bool> CommitAOFAsync(int dbId = -1, CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF) return false;
 
             if (dbId == -1)
             {
                 await databaseManager.CommitToAofAsync(token, logger);
-                return;
+                return true;
             }
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
 
             await databaseManager.CommitToAofAsync(dbId, token);
+            return true;
         }
 
         /// <summary>
@@ -491,12 +531,12 @@ namespace Garnet.server
         /// <param name="dbId">Database ID</param>
         /// <returns>Functions state</returns>
         /// <exception cref="GarnetException"></exception>
-        internal FunctionsState CreateFunctionsState(int dbId = 0)
+        internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.CreateFunctionsState)} with DB ID: {dbId}");
 
-            return databaseManager.CreateFunctionsState(dbId);
+            return databaseManager.CreateFunctionsState(dbId, respProtocolVersion);
         }
 
         /// <summary>
@@ -671,9 +711,6 @@ namespace Garnet.server
             Debug.Assert(objectCollectFrequencySecs > 0);
             try
             {
-                var scratchBufferManager = new ScratchBufferManager();
-                using var storageSession = new StorageSession(this, scratchBufferManager, null, null, logger);
-
                 if (serverOptions.DisableObjects)
                 {
                     logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
@@ -684,8 +721,7 @@ namespace Garnet.server
                 {
                     if (token.IsCancellationRequested) return;
 
-                    ExecuteHashCollect(scratchBufferManager, storageSession);
-                    ExecuteSortedSetCollect(scratchBufferManager, storageSession);
+                    databaseManager.ExecuteObjectCollection();
 
                     await Task.Delay(TimeSpan.FromSeconds(objectCollectFrequencySecs), token);
                 }
@@ -698,23 +734,39 @@ namespace Garnet.server
             {
                 logger?.LogCritical(ex, "Unknown exception received for background hash collect task. Object collect task won't be resumed.");
             }
+        }
 
-            static void ExecuteHashCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
+        async Task ExpiredKeyDeletionScanTask(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
+        {
+            Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
+            try
             {
-                var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
-                var input = new ObjectInput(header);
+                while (true)
+                {
+                    if (token.IsCancellationRequested) return;
 
-                ReadOnlySpan<ArgSlice> key = [ArgSlice.FromPinnedSpan("*"u8)];
-                storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
-                scratchBufferManager.Reset();
+                    databaseManager.ExpiredKeyDeletionScan();
+
+                    await Task.Delay(TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), token);
+                }
             }
-
-            static void ExecuteSortedSetCollect(ScratchBufferManager scratchBufferManager, StorageSession storageSession)
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
             {
-                storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
-                scratchBufferManager.Reset();
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
+            catch (Exception ex)
+            {
+                logger?.LogCritical(ex, "Unknown exception received for background expired key deletion scan task. The task won't be resumed.");
             }
         }
+
+        /// <summary>
+        /// Expired key deletion scan for a specific database ID.
+        /// </summary>
+        /// <param name="dbId"></param>
+        /// <returns></returns>
+        public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
+            => databaseManager.ExpiredKeyDeletionScan(dbId);
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
         /// <param name="token"></param>
@@ -738,6 +790,8 @@ namespace Garnet.server
                 logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
         }
+
+        public (HybridLogScanMetrics, HybridLogScanMetrics)[] HybridLogDistributionScan() => databaseManager.CollectHybridLogStats();
 
         internal void Start()
         {
@@ -764,6 +818,11 @@ namespace Garnet.server
             if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
             {
                 Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
+            }
+
+            if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
+            {
+                Task.Run(async () => await ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, ctsCommit.Token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)

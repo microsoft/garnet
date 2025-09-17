@@ -47,7 +47,8 @@ namespace Garnet.test
             RespCommand.BITOP_OR,
             RespCommand.BITOP_XOR,
             RespCommand.BITOP_NOT,
-            RespCommand.INVALID
+            RespCommand.INVALID,
+            RespCommand.DELIFEXPIM
         ];
 
         [SetUp]
@@ -76,6 +77,7 @@ namespace Garnet.test
             ];
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
                 extensionBinPaths: [extTestDir]);
             server.Start();
         }
@@ -139,6 +141,65 @@ namespace Garnet.test
             var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).Except(internalOnlyCommands);
             Assert.That(commandsWithDocs, Is.SupersetOf(allCommands),
                 "Some commands have missing docs. Please see https://microsoft.github.io/garnet/docs/dev/garnet-api#adding-command-info for more details.");
+        }
+
+        /// <summary>
+        /// Verify info in SimpleRespCommandInfo matches information in full RespCommandsInfo
+        /// </summary>
+        [Test]
+        public void SimpleCommandsInfoTest()
+        {
+            var actualSimpleCommandInfo = new Dictionary<RespCommand, SimpleRespCommandInfo>();
+            var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).ToHashSet();
+
+            // Get actual SimpleRespCommandInfo for all commands
+            foreach (var cmd in allCommands)
+            {
+                if (RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdSimpleInfo))
+                    actualSimpleCommandInfo[cmd] = cmdSimpleInfo;
+            }
+
+            // Verify that all commands have SimpleRespCommandInfo
+            CollectionAssert.AreEquivalent(allCommands, actualSimpleCommandInfo.Keys);
+
+            // Get full RespCommandsInfo for all commands
+            var fullCommandInfo = new Dictionary<RespCommand, RespCommandsInfo>();
+            foreach (var commandInfo in respCommandsInfo.Values)
+            {
+                fullCommandInfo.TryAdd(commandInfo.Command, commandInfo);
+
+                if (commandInfo.SubCommands != null)
+                {
+                    foreach (var subCommandInfo in commandInfo.SubCommands)
+                    {
+                        fullCommandInfo.Add(subCommandInfo.Command, subCommandInfo);
+                    }
+                }
+            }
+
+            // Verify that all commands have both SimpleRespCommandInfo and RespCommandsInfo
+            CollectionAssert.AreEquivalent(fullCommandInfo.Keys, actualSimpleCommandInfo.Keys);
+
+            // Populate set of commands with mismatched info
+            var offendingCommands = new HashSet<RespCommand>();
+            foreach (var cmd in allCommands)
+            {
+                var actualCmdInfo = actualSimpleCommandInfo[cmd];
+                var cmdInfo = fullCommandInfo[cmd];
+                var expArity = cmdInfo.Arity;
+                var expIsParent = (cmdInfo.SubCommands?.Length ?? 0) > 0;
+                var expIsSubCommand = cmdInfo.Parent != null;
+                var expAllowedInTxn = (cmdInfo.Flags & RespCommandFlags.NoMulti) == 0;
+
+                if (actualCmdInfo.Arity != expArity ||
+                    actualCmdInfo.IsParent != expIsParent ||
+                    actualCmdInfo.IsSubCommand != expIsSubCommand ||
+                    actualCmdInfo.AllowedInTxn != expAllowedInTxn)
+                    offendingCommands.Add(cmd);
+            }
+
+            // Verify that there are no commands with mismatched info
+            CollectionAssert.IsEmpty(offendingCommands);
         }
 
         /// <summary>
@@ -438,6 +499,7 @@ namespace Garnet.test
                 // ACL
                 RespCommand.ACL_CAT,
                 RespCommand.ACL_DELUSER,
+                RespCommand.ACL_GENPASS,
                 RespCommand.ACL_GETUSER,
                 RespCommand.ACL_LIST,
                 RespCommand.ACL_LOAD,
