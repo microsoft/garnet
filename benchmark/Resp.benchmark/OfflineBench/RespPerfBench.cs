@@ -93,6 +93,13 @@ namespace Resp.benchmark
             int valueLen = default,
             bool numericValue = false)
         {
+            if (opts.Client == ClientType.InProc && loadDbThreads > sessions.Length)
+            {
+                foreach (var session in sessions)
+                    session.Dispose();
+                sessions = server.GetRespSessions(loadDbThreads);
+            }
+
             if (load_rg != null)
                 opts.DbSize = load_rg.DbSize;
 
