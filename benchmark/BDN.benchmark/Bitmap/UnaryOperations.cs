@@ -27,7 +27,7 @@ namespace BDN.benchmark.Bitmap
         private byte* dstPtr;
 
         [GlobalSetup]
-        public void GlobalSetup_Binary()
+        public void GlobalSetup_Unary()
         {
             srcPtrs = (byte**)NativeMemory.AllocZeroed(Keys, (nuint)sizeof(byte*));
             srcEndPtrs = (byte**)NativeMemory.AllocZeroed(Keys, (nuint)sizeof(byte*));

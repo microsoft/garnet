@@ -24,8 +24,10 @@ namespace Garnet.server
         /// <param name="shortestSrcLength">The length of shortest source buffer.</param>
         public static void InvokeBitOperationUnsafe(BitmapOperation op, int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
         {
-            Debug.Assert(srcCount > 0);
             Debug.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR);
+            Debug.Assert(srcCount > 0);
+            Debug.Assert(dstLength >= 0 && shortestSrcLength >= 0);
+            Debug.Assert(dstLength >= shortestSrcLength);
 
             if (srcCount == 1)
             {
@@ -102,7 +104,16 @@ namespace Garnet.server
             }
             srcPtrs = tmpSrcPtrs;
 
-            if (Vector256.IsHardwareAccelerated && Vector256<byte>.IsSupported)
+            if (Vector512.IsHardwareAccelerated && Vector512<byte>.IsSupported)
+            {
+                // Vectorized: 64 bytes x 8
+                batchRemainder = remainingLength & ((Vector512<byte>.Count * 8) - 1);
+                dstBatchEndPtr = dstPtr + (remainingLength - batchRemainder);
+                remainingLength = batchRemainder;
+
+                Vectorized512(ref firstSrcPtr, srcCount, srcPtrs, ref dstPtr, dstBatchEndPtr);
+            }
+            else if (Vector256.IsHardwareAccelerated && Vector256<byte>.IsSupported)
             {
                 // Vectorized: 32 bytes x 8
                 batchRemainder = remainingLength & ((Vector256<byte>.Count * 8) - 1);
@@ -180,6 +191,59 @@ namespace Garnet.server
                 }
 
                 *dstPtr++ = d00;
+            }
+
+            static void Vectorized512(ref byte* firstPtr, int srcCount, byte** srcStartPtrs, ref byte* dstPtr, byte* dstBatchEndPtr)
+            {
+                while (dstPtr < dstBatchEndPtr)
+                {
+                    var d00 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 0));
+                    var d01 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 1));
+                    var d02 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 2));
+                    var d03 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 3));
+                    var d04 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 4));
+                    var d05 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 5));
+                    var d06 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 6));
+                    var d07 = Vector512.Load(firstPtr + (Vector512<byte>.Count * 7));
+
+                    firstPtr += Vector512<byte>.Count * 8;
+
+                    for (var i = 1; i < srcCount; i++)
+                    {
+                        ref var startPtr = ref srcStartPtrs[i];
+
+                        var s00 = Vector512.Load(startPtr + (Vector512<byte>.Count * 0));
+                        var s01 = Vector512.Load(startPtr + (Vector512<byte>.Count * 1));
+                        var s02 = Vector512.Load(startPtr + (Vector512<byte>.Count * 2));
+                        var s03 = Vector512.Load(startPtr + (Vector512<byte>.Count * 3));
+                        var s04 = Vector512.Load(startPtr + (Vector512<byte>.Count * 4));
+                        var s05 = Vector512.Load(startPtr + (Vector512<byte>.Count * 5));
+                        var s06 = Vector512.Load(startPtr + (Vector512<byte>.Count * 6));
+                        var s07 = Vector512.Load(startPtr + (Vector512<byte>.Count * 7));
+
+                        d00 = TBinaryOperator.Invoke(d00, s00);
+                        d01 = TBinaryOperator.Invoke(d01, s01);
+                        d02 = TBinaryOperator.Invoke(d02, s02);
+                        d03 = TBinaryOperator.Invoke(d03, s03);
+                        d04 = TBinaryOperator.Invoke(d04, s04);
+                        d05 = TBinaryOperator.Invoke(d05, s05);
+                        d06 = TBinaryOperator.Invoke(d06, s06);
+                        d07 = TBinaryOperator.Invoke(d07, s07);
+
+                        startPtr += Vector512<byte>.Count * 8;
+                    }
+
+                    Vector512.Store(d00, dstPtr + (Vector512<byte>.Count * 0));
+                    Vector512.Store(d01, dstPtr + (Vector512<byte>.Count * 1));
+                    Vector512.Store(d02, dstPtr + (Vector512<byte>.Count * 2));
+                    Vector512.Store(d03, dstPtr + (Vector512<byte>.Count * 3));
+                    Vector512.Store(d04, dstPtr + (Vector512<byte>.Count * 4));
+                    Vector512.Store(d05, dstPtr + (Vector512<byte>.Count * 5));
+                    Vector512.Store(d06, dstPtr + (Vector512<byte>.Count * 6));
+                    Vector512.Store(d07, dstPtr + (Vector512<byte>.Count * 7));
+
+                    dstPtr += Vector512<byte>.Count * 8;
+                }
             }
 
             static void Vectorized256(ref byte* firstPtr, int srcCount, byte** srcStartPtrs, ref byte* dstPtr, byte* dstBatchEndPtr)
