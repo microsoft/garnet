@@ -47,10 +47,11 @@ namespace Garnet.test
 
         private GarnetServerTestProcess CreateServerWithEnvironmentVariables(string environment)
         {
-            if (environment.Split('=', StringSplitOptions.RemoveEmptyEntries) is [string key, string value])
+            var parts = environment.Split('=', 2);
+            if (parts.Length == 2)
             {
                 Dictionary<string, string> envVars = [];
-                envVars.Add(key, value);
+                envVars.Add(parts[0], parts[1]);
 
                 return new GarnetServerTestProcess(envVars);
             }
