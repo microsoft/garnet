@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -161,6 +162,69 @@ namespace Garnet.test.cluster
             var searchesWithNonZeroResults = await readTask;
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults > 0);
+        }
+
+        [Test]
+        public void RepeatedCreateDelete()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+
+            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            for (var i = 0; i < 1_000; i++)
+            {
+                var delRes = (int)context.clusterTestUtils.Execute(primary, "DEL", ["foo"]);
+
+                if (i != 0)
+                {
+                    ClassicAssert.AreEqual(1, delRes);
+                }
+                else
+                {
+                    ClassicAssert.AreEqual(0, delRes);
+                }
+
+                var addRes1 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", new byte[] { 1, 2, 3, 4 }, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+                ClassicAssert.AreEqual(1, addRes1);
+
+                var addRes2 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", new byte[] { 5, 6, 7, 8 }, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+                ClassicAssert.AreEqual(1, addRes2);
+
+                var readPrimaryExc = (string)context.clusterTestUtils.Execute(primary, "GET", ["foo"]);
+                ClassicAssert.IsTrue(readPrimaryExc.StartsWith("WRONGTYPE "));
+
+                var queryPrimary = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+                ClassicAssert.AreEqual(2, queryPrimary.Length);
+
+                _ = context.clusterTestUtils.Execute(secondary, "READONLY", []);
+
+                // The vector set has either replicated, or not
+                // If so - we get WRONGTYPE
+                // If not - we get a null
+                var readSecondary = (string)context.clusterTestUtils.Execute(secondary, "GET", ["foo"]);
+                ClassicAssert.IsTrue(readSecondary is null || readSecondary.StartsWith("WRONGTYPE "));
+
+                var start = Stopwatch.GetTimestamp();
+                while (true)
+                {
+                    var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+                    if (querySecondary.Length == 2)
+                    {
+                        break;
+                    }
+
+                    ClassicAssert.IsTrue(Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5), "Too long has passed without a vector set catching up on the secondary");
+                }
+            }
         }
     }
 }

@@ -361,6 +361,39 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, res5);
         }
 
+        [Test]
+        public void RepeatedVectorSetDeletes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < 1_000; i++)
+            {
+                var delRes = (int)db.Execute("DEL", ["foo"]);
+
+                if (i != 0)
+                {
+                    ClassicAssert.AreEqual(1, delRes);
+                }
+                else
+                {
+                    ClassicAssert.AreEqual(0, delRes);
+                }
+
+                var addRes1 = (int)db.Execute("VADD", ["foo", "XB8", new byte[] { 1, 2, 3, 4 }, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+                ClassicAssert.AreEqual(1, addRes1);
+
+                var addRes2 = (int)db.Execute("VADD", ["foo", "XB8", new byte[] { 5, 6, 7, 8 }, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+                ClassicAssert.AreEqual(1, addRes2);
+
+                var readExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GET", ["foo"]));
+                ClassicAssert.IsTrue(readExc.Message.StartsWith("WRONGTYPE "));
+
+                var query = (byte[][])db.Execute("VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+                ClassicAssert.AreEqual(2, query.Length);
+            }
+        }
+
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
         private static extern ref VectorManager GetVectorManager(GarnetServer server);
     }
