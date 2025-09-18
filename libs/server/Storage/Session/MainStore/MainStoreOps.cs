@@ -259,59 +259,6 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
-        /// <summary>
-        /// Get the absolute Unix timestamp at which the given key will expire.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to get the Unix timestamp.</param>
-        /// <param name="storeType">The store to operate on</param>
-        /// <param name="output">Span to allocate the output of the operation</param>
-        /// <param name="context">Basic Context of the store</param>
-        /// <param name="objectContext">Object Context of the store</param>
-        /// <param name="milliseconds">when true the command to execute is PEXPIRETIME.</param>
-        /// <returns>Returns the absolute Unix timestamp (since January 1, 1970) in seconds or milliseconds at which the given key will expire.</returns>
-        public unsafe GarnetStatus EXPIRETIME<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var cmd = milliseconds ? RespCommand.PEXPIRETIME : RespCommand.EXPIRETIME;
-                var input = new RawStringInput(cmd);
-                var status = context.Read(key.ReadOnlySpan, ref input, ref output);
-
-                if (status.IsPending)
-                {
-                    StartPendingMetrics();
-                    CompletePendingForSession(ref status, ref output, ref context);
-                    StopPendingMetrics();
-                }
-
-                if (status.Found) return GarnetStatus.OK;
-            }
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                var type = milliseconds ? GarnetObjectType.PExpireTime : GarnetObjectType.ExpireTime;
-                var header = new RespInputHeader(type);
-                var input = new ObjectInput(header);
-
-                var objO = new GarnetObjectStoreOutput(output);
-                var status = objectContext.Read(key.ReadOnlySpan, ref input, ref objO);
-
-                if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
-
-                if (status.Found)
-                {
-                    output = objO.SpanByteAndMemory;
-                    return GarnetStatus.OK;
-                }
-            }
-            return GarnetStatus.NOTFOUND;
-        }
-
         public GarnetStatus SET<TContext>(PinnedSpanByte key, PinnedSpanByte value, ref TContext context)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -1111,46 +1058,6 @@ namespace Garnet.server
         public void WATCH(PinnedSpanByte key, StoreType type) => txnManager.Watch(key, type);
 
         public unsafe GarnetStatus SCAN<TContext>(long cursor, PinnedSpanByte match, long count, ref TContext context) => GarnetStatus.OK;
-
-        public GarnetStatus TYPE<TContext, TObjectContext>(PinnedSpanByte key, out string keyType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            keyType = "string";
-            // Check if key exists in Main store
-            var status = EXISTS(key, StoreType.Main, ref context, ref objectContext);
-
-            // If key was not found in the main store then it is an object
-            if (status != GarnetStatus.OK && !objectStoreBasicContext.IsNull)
-            {
-                status = GET(key, out GarnetObjectStoreOutput output, ref objectContext);
-                if (status == GarnetStatus.OK)
-                {
-                    if ((output.GarnetObject as SortedSetObject) != null)
-                    {
-                        keyType = "zset";
-                    }
-                    else if ((output.GarnetObject as ListObject) != null)
-                    {
-                        keyType = "list";
-                    }
-                    else if ((output.GarnetObject as SetObject) != null)
-                    {
-                        keyType = "set";
-                    }
-                    else if ((output.GarnetObject as HashObject) != null)
-                    {
-                        keyType = "hash";
-                    }
-                }
-                else
-                {
-                    keyType = "none";
-                    status = GarnetStatus.NOTFOUND;
-                }
-            }
-            return status;
-        }
 
         /// <summary>
         /// Computes the Longest Common Subsequence (LCS) of two keys.

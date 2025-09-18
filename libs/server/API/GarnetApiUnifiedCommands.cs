@@ -31,5 +31,33 @@ namespace Garnet.server
             => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         #endregion
+
+        #region TTL
+
+        /// <inheritdoc />
+        public GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        #endregion
+
+        #region EXPIRETIME
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        #endregion
+
+        #region EXISTS
+
+        /// <inheritdoc />
+        public GarnetStatus EXISTS(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus EXISTS(PinnedSpanByte key)
+            => storageSession.EXISTS(key, ref unifiedContext);
+
+        #endregion
     }
 }

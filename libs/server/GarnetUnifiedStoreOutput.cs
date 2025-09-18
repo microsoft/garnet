@@ -18,20 +18,9 @@ namespace Garnet.server
         public SpanByteAndMemory SpanByteAndMemory;
 
         /// <summary>
-        /// Output header
-        /// </summary>
-        public UnifiedOutputHeader Header;
-
-        /// <summary>
         /// Output flags
         /// </summary>
         public OutputFlags OutputFlags;
-
-        /// <summary>
-        /// True if output flag WrongType is set
-        /// </summary>
-        public readonly bool HasWrongType =>
-            (OutputFlags & OutputFlags.WrongType) == OutputFlags.WrongType;
 
         /// <summary>
         /// True if output flag RemoveKey is set

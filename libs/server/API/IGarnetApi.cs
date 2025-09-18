@@ -149,13 +149,23 @@ namespace Garnet.server
         #endregion
 
         #region EXISTS
+
         /// <summary>
         /// EXISTS
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="storeType"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus EXISTS(PinnedSpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus EXISTS(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
+
+        /// <summary>
+        /// EXISTS
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <returns></returns>
+        GarnetStatus EXISTS(PinnedSpanByte key);
+
         #endregion
 
         #region EXPIRE
@@ -1242,19 +1252,10 @@ namespace Garnet.server
         /// Returns the remaining time to live in seconds of a key that has a timeout.
         /// </summary>
         /// <param name="key">The key to return the remaining time to live in the store</param>
-        /// <param name="storeType">The store type to operate on.</param>
+        /// <param name="input"></param>
         /// <param name="output">The span to allocate the output of the operation.</param>
         /// <returns></returns>
-        GarnetStatus TTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
-
-        /// <summary>
-        /// Returns the remaining time to live in milliseconds of a key that has a timeout.
-        /// </summary>
-        /// <param name="key">The key to return the remaining time to live in the store.</param>
-        /// <param name="storeType">The store type to operate on.</param>
-        /// <param name="output">The span to allocate the output of the operation.</param>
-        /// <returns></returns>
-        GarnetStatus PTTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+        GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
@@ -1264,19 +1265,10 @@ namespace Garnet.server
         /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key will expire.
         /// </summary>
         /// <param name="key">The key to get the expiration time for.</param>
-        /// <param name="storeType">The type of store to retrieve the key from.</param>
+        /// <param name="input"></param>
         /// <param name="output">The output containing the expiration time.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus EXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
-
-        /// <summary>
-        /// Returns the absolute Unix timestamp (since January 1, 1970) in milliseconds at which the given key will expire.
-        /// </summary>
-        /// <param name="key">The key to get the expiration time for.</param>
-        /// <param name="storeType">The type of store to retrieve the key from.</param>
-        /// <param name="output">The output containing the expiration time.</param>
-        /// <returns>The status of the operation.</returns>
-        GarnetStatus PEXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+        GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 

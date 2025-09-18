@@ -87,30 +87,6 @@ namespace Garnet.server
             => storageSession.GETRANGE(key, ref input, ref output, ref context);
         #endregion
 
-        #region TTL
-
-        /// <inheritdoc />
-        public GarnetStatus TTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.TTL(key, storeType, ref output, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus PTTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.TTL(key, storeType, ref output, ref context, ref objectContext, milliseconds: true);
-
-        #endregion
-
-        #region EXPIRETIME
-
-        /// <inheritdoc />
-        public GarnetStatus EXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.EXPIRETIME(key, storeType, ref output, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus PEXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.EXPIRETIME(key, storeType, ref output, ref context, ref objectContext, milliseconds: true);
-
-        #endregion
-
         #region SET
         /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value)
@@ -191,12 +167,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All)
             => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
-        #endregion
-
-        #region EXISTS
-        /// <inheritdoc />
-        public GarnetStatus EXISTS(PinnedSpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.EXISTS(key, storeType, ref context, ref objectContext);
         #endregion
 
         #region EXPIRE

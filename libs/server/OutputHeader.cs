@@ -45,22 +45,4 @@ namespace Garnet.server
         [FieldOffset(0)]
         public int result1;
     }
-
-    /// <summary>
-    /// Unified output header (sometimes used as footer)
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public struct UnifiedOutputHeader
-    {
-        /// <summary>
-        /// Expected size of this struct
-        /// </summary>
-        public const int Size = 8;
-
-        /// <summary>
-        /// Some result of operation (e.g., number of items added successfully)
-        /// </summary>
-        [FieldOffset(0)]
-        public long result1;
-    }
 }

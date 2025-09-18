@@ -70,17 +70,10 @@ namespace Garnet.server
 
         #region TTL
         /// <inheritdoc />
-        public GarnetStatus TTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        public GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
         {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.TTL(key, storeType, ref output);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus PTTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-        {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.PTTL(key, storeType, ref output);
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.TTL(key, ref input, ref output);
         }
 
         #endregion
@@ -88,17 +81,10 @@ namespace Garnet.server
         #region EXPIRETIME
 
         /// <inheritdoc />
-        public GarnetStatus EXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        public GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
         {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.EXPIRETIME(key, storeType, ref output);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus PEXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-        {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.PEXPIRETIME(key, storeType, ref output);
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.EXPIRETIME(key, ref input, ref output);
         }
 
         #endregion

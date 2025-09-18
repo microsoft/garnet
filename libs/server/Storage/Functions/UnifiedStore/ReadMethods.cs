@@ -27,8 +27,13 @@ namespace Garnet.server
             var cmd = input.header.cmd;
             return cmd switch
             {
+                RespCommand.EXISTS => true,
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref input, ref output, ref readInfo),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref input, ref output, ref readInfo),
+                RespCommand.TTL or 
+                RespCommand.PTTL => HandleTtl(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PTTL),
+                RespCommand.EXPIRETIME or 
+                RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PEXPIRETIME),
                 _ => throw new NotImplementedException(),
             };
         }
@@ -50,7 +55,9 @@ namespace Garnet.server
                               Utility.RoundUp(srcLogRecord.ValueSpan.TotalSize(), RecordInfo.GetLength());
             }
 
-            output.Header.result1 = memoryUsage;
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt64(memoryUsage);
+
             return true;
         }
 
@@ -82,6 +89,34 @@ namespace Garnet.server
                 writer.WriteSimpleString(CmdStrings.stringt);
             }
 
+            return true;
+        }
+
+        private bool HandleTtl<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
+            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+        {
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            var expiration = srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1;
+            var ttlValue = milliseconds
+                ? ConvertUtils.MillisecondsFromDiffUtcNowTicks(expiration)
+                : ConvertUtils.SecondsFromDiffUtcNowTicks(expiration);
+            
+            writer.WriteInt64(ttlValue);
+            return true;
+        }
+
+        private bool HandleExpireTime<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
+            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+        {
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            var expiration = srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1;
+            var expireTime = milliseconds
+                ? ConvertUtils.UnixTimeInMillisecondsFromTicks(expiration)
+                : ConvertUtils.UnixTimeInSecondsFromTicks(expiration);
+
+            writer.WriteInt64(expireTime);
             return true;
         }
     }
