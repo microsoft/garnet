@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -428,7 +429,28 @@ namespace Garnet.server
                     // We shouldn't read a non-Vector Set value if we read anything, so this is unconditional
                     vectorManager.DropIndex(this, indexConfig.AsSpan());
 
-                    // TODO: actually delete!
+                    // Update the index to be delete-able
+                    var updateToDropableVectorSet = new RawStringInput();
+                    updateToDropableVectorSet.arg1 = VectorManager.DeleteAfterDropArg;
+                    updateToDropableVectorSet.header.cmd = RespCommand.VADD;
+
+                    var update = basicContext.RMW(ref key, ref updateToDropableVectorSet);
+                    if (!update.IsCompletedSuccessfully)
+                    {
+                        throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
+                    }
+
+                    // Actually delte the value
+                    var del = basicContext.Delete(ref key);
+                    if (!del.IsCompletedSuccessfully)
+                    {
+                        throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
+                    }
+
+                    // Cleanup incidental additional state
+                    vectorManager.DropVectorSetReplicationKey(key, ref basicContext);
+
+                    // TODO: This doesn't clean up element data, we should do that...  or DiskANN should do that, we'll figure it out later
 
                     return Status.CreateFound();
                 }

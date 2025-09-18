@@ -808,7 +808,15 @@ namespace Garnet.server
                     // Adding to an existing VectorSet is modeled as a read operations
                     //
                     // However, we do synthesize some (pointless) writes to implement replication
-                    // so just ignore them when they do arrive here.
+                    // and a "make me delete=able"-update during drop.
+
+                    // Handle "make me delete-able"
+                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    {
+                        value.AsSpan().Clear();
+                    }
+
+                    // Ignore everything else
                     return true;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)

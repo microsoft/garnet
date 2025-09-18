@@ -33,6 +33,7 @@ namespace Garnet.server
     {
         internal const int IndexSizeBytes = Index.Size;
         internal const long VADDAppendLogArg = long.MinValue;
+        internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
 
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
@@ -623,7 +624,7 @@ namespace Garnet.server
                 throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
             }
 
-            // Helper to complete read/writes during vector set synthetic op goes asyn
+            // Helper to complete read/writes during vector set synthetic op goes async
             static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref TContext context)
             {
                 _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -631,6 +632,48 @@ namespace Garnet.server
                 Debug.Assert(more);
                 status = completedOutputs.Current.Status;
                 output = completedOutputs.Current.Output;
+                more = completedOutputs.Next();
+                Debug.Assert(!more);
+                completedOutputs.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// After an index is dropped, called to cleanup state injected by <see cref="ReplicateVectorSetAdd"/>
+        /// 
+        /// Amounts to delete a synthetic key in namespace 0.
+        /// </summary>
+        internal void DropVectorSetReplicationKey<TContext>(SpanByte key, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload(0);
+            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
+
+            Span<byte> dummyBytes = stackalloc byte[4];
+            var dummy = SpanByteAndMemory.FromPinnedSpan(dummyBytes);
+
+            var res = context.Delete(ref keyWithNamespace);
+
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref context);
+            }
+
+            if (!res.IsCompletedSuccessfully)
+            {
+                throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
+            }
+
+            // Helper to complete read/writes during vector set synthetic op goes async
+            static void CompletePending(ref Status status, ref TContext context)
+            {
+                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                var more = completedOutputs.Next();
+                Debug.Assert(more);
+                status = completedOutputs.Current.Status;
                 more = completedOutputs.Next();
                 Debug.Assert(!more);
                 completedOutputs.Dispose();
