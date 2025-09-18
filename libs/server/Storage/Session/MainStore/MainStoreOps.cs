@@ -10,8 +10,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
@@ -1162,7 +1162,7 @@ namespace Garnet.server
             var status = GET(key, out PinnedSpanByte keyValue, ref context);
 
             if (status == GarnetStatus.NOTFOUND)
-            {
+            { 
                 status = GET(key, out GarnetObjectStoreOutput objectValue, ref objectContext);
                 if (status != GarnetStatus.NOTFOUND)
                 {
