@@ -477,7 +477,7 @@ namespace Tsavorite.core
         /// <param name="logicalAddress">Logical address of record, if found</param>
         /// <param name="fromAddress">Look until this address; if less than HeadAddress, then HeadAddress is used</param>
         /// <returns>Status</returns>
-        internal Status ContainsKeyInMemory(ref TKey key, out long logicalAddress, long fromAddress = -1)
+        public Status ContainsKeyInMemory(ref TKey key, out long logicalAddress, long fromAddress = -1)
         {
             UnsafeResumeThread();
             try
