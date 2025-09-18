@@ -16,19 +16,22 @@ namespace Garnet.server
     /// <summary>
     /// Garnet API implementation
     /// </summary>
-    public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
+    public partial struct GarnetApi<TContext, TObjectContext, TUnifiedContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
         TObjectContext objectContext;
+        TUnifiedContext unifiedContext;
 
-        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext)
+        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext, TUnifiedContext unifiedContext)
         {
             this.storageSession = storageSession;
             this.context = context;
             this.objectContext = objectContext;
+            this.unifiedContext = unifiedContext;
         }
 
         #region WATCH
@@ -297,22 +300,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus GETDEL(PinnedSpanByte key, ref SpanByteAndMemory output)
             => storageSession.GETDEL(key, ref output, ref context);
-        #endregion
-
-        #region TYPE
-
-        /// <inheritdoc />
-        public GarnetStatus GetKeyType(PinnedSpanByte key, out string typeName)
-            => storageSession.GetKeyType(key, out typeName, ref context, ref objectContext);
-
-        #endregion
-
-        #region MEMORY
-
-        /// <inheritdoc />
-        public GarnetStatus MemoryUsageForKey(PinnedSpanByte key, out long memoryUsage, int samples = 0)
-            => storageSession.MemoryUsageForKey(key, out memoryUsage, ref context, ref objectContext, samples);
-
         #endregion
 
         #region Advanced ops

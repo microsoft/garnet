@@ -615,22 +615,4 @@ namespace Garnet.server
             return len;
         }
     }
-
-    /// <summary>
-    /// Object output header (sometimes used as footer)
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public struct ObjectOutputHeader
-    {
-        /// <summary>
-        /// Expected size of this object
-        /// </summary>
-        public const int Size = 4;
-
-        /// <summary>
-        /// Some result of operation (e.g., number of items added successfully)
-        /// </summary>
-        [FieldOffset(0)]
-        public int result1;
-    }
 }

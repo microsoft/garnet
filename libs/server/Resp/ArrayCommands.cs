@@ -438,16 +438,22 @@ namespace Garnet.server
             // TYPE key
             var keySlice = parseState.GetArgSliceByRef(0);
 
-            var status = storageApi.GetKeyType(keySlice, out var typeName);
+            // Prepare input
+            var input = new UnifiedStoreInput(RespCommand.TYPE);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+
+            var status = storageApi.TYPE(keySlice, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteSimpleString(typeName, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteSimpleString("none"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString(CmdStrings.none, ref dcurr, dend))
                     SendAndReset();
             }
 

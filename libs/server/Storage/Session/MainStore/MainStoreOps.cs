@@ -1112,7 +1112,7 @@ namespace Garnet.server
 
         public unsafe GarnetStatus SCAN<TContext>(long cursor, PinnedSpanByte match, long count, ref TContext context) => GarnetStatus.OK;
 
-        public GarnetStatus GetKeyType<TContext, TObjectContext>(PinnedSpanByte key, out string keyType, ref TContext context, ref TObjectContext objectContext)
+        public GarnetStatus TYPE<TContext, TObjectContext>(PinnedSpanByte key, out string keyType, ref TContext context, ref TObjectContext objectContext)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -1149,33 +1149,6 @@ namespace Garnet.server
                     status = GarnetStatus.NOTFOUND;
                 }
             }
-            return status;
-        }
-
-        public GarnetStatus MemoryUsageForKey<TContext, TObjectContext>(PinnedSpanByte key, out long memoryUsage, ref TContext context, ref TObjectContext objectContext, int samples = 0)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            memoryUsage = -1;
-
-            // Check if key exists in Main store
-            var status = GET(key, out PinnedSpanByte keyValue, ref context);
-
-            if (status == GarnetStatus.NOTFOUND)
-            { 
-                status = GET(key, out GarnetObjectStoreOutput objectValue, ref objectContext);
-                if (status != GarnetStatus.NOTFOUND)
-                {
-                    memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length
-                        Utility.RoundUp(key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                        objectValue.GarnetObject.MemorySize; // Value allocation in heap
-                }
-            }
-            else
-            {
-                memoryUsage = RecordInfo.GetLength() + Utility.RoundUp(key.TotalSize, RecordInfo.GetLength()) + Utility.RoundUp(keyValue.TotalSize, RecordInfo.GetLength());
-            }
-
             return status;
         }
 

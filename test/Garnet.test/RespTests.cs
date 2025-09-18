@@ -1830,7 +1830,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var expireTime = (long)db.Execute("PEXPIRETIME", "keyZ");
-
+            
             ClassicAssert.AreEqual(-2, expireTime);
         }
 

@@ -171,7 +171,7 @@ namespace Garnet.server
                         var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
                         if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
                         {
-                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                            output.OutputFlags |= OutputFlags.WrongType;
                             return true;
                         }
 
@@ -279,7 +279,7 @@ namespace Garnet.server
                         // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
                         if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
                         {
-                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                            output.OutputFlags |= OutputFlags.WrongType;
                             return true;
                         }
 

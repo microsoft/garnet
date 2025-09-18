@@ -6,11 +6,11 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Output type used by Garnet object store.
+    /// Output type used by Garnet unified store.
     /// Any field / property added to this struct must be set in the back-end (IFunctions) and used in the front-end (GarnetApi caller).
     /// That is in order to justify transferring data in this struct through the Tsavorite storage layer.
     /// </summary>
-    public struct GarnetObjectStoreOutput
+    public struct GarnetUnifiedStoreOutput
     {
         /// <summary>
         /// Span byte and memory
@@ -18,14 +18,9 @@ namespace Garnet.server
         public SpanByteAndMemory SpanByteAndMemory;
 
         /// <summary>
-        /// Garnet object
+        /// Output header
         /// </summary>
-        public IGarnetObject GarnetObject;
-
-        /// <summary>
-        /// Object header
-        /// </summary>
-        public ObjectOutputHeader Header;
+        public UnifiedOutputHeader Header;
 
         /// <summary>
         /// Output flags
@@ -44,16 +39,16 @@ namespace Garnet.server
         public readonly bool HasRemoveKey =>
             (OutputFlags & OutputFlags.RemoveKey) == OutputFlags.RemoveKey;
 
-        public GarnetObjectStoreOutput() => SpanByteAndMemory = new(null);
+        public GarnetUnifiedStoreOutput() => SpanByteAndMemory = new(null);
 
-        public GarnetObjectStoreOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
+        public GarnetUnifiedStoreOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
 
-        public static unsafe GarnetObjectStoreOutput FromPinnedPointer(byte* pointer, int length)
+        public static unsafe GarnetUnifiedStoreOutput FromPinnedPointer(byte* pointer, int length)
             => new(new SpanByteAndMemory() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length) });
 
         public void ConvertToHeap()
         {
-            // Does not convert to heap when going pending, because we immediately complete pending operations for object store.
+            // Does not convert to heap when going pending, because we immediately complete pending operations for unified store.
         }
     }
 }

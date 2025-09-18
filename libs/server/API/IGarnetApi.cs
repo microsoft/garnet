@@ -302,9 +302,10 @@ namespace Garnet.server
         /// string, list, set, zset, and hash.
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="typeName"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GetKeyType(PinnedSpanByte key, out string typeName);
+        GarnetStatus TYPE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
@@ -314,10 +315,10 @@ namespace Garnet.server
         ///  Gets the number of bytes that a key and its value require to be stored in RAM.
         /// </summary>
         /// <param name="key">Name of the key or object to get the memory usage</param>
-        /// <param name="memoryUsage">The value in bytes the key or object is using</param>
-        /// <param name="samples">Number of sampled nested values</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns>GarnetStatus</returns>
-        GarnetStatus MemoryUsageForKey(PinnedSpanByte key, out long memoryUsage, int samples = 0);
+        GarnetStatus MEMORYUSAGE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
