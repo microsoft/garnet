@@ -39,6 +39,12 @@ namespace Garnet.server
         public BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
         public TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
 
+        /// <summary>
+        /// Session Contexts for unified store
+        /// </summary>
+        public BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+        public TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
 
@@ -80,10 +86,15 @@ namespace Garnet.server
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
             var objectStoreSession = db.Store.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
+            var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
+            var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
+
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
             objectStoreBasicContext = objectStoreSession.BasicContext;
             objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
+            unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
@@ -102,6 +113,7 @@ namespace Garnet.server
             sectorAlignedMemoryBitmap?.Dispose();
             basicContext.Session.Dispose();
             objectStoreBasicContext.Session?.Dispose();
+            unifiedStoreBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }
