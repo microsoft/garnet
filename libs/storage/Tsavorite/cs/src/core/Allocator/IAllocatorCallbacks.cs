@@ -19,9 +19,6 @@ namespace Tsavorite.core
         /// </summary>
         unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex);
 
-        /// <summary>Free the page at <paramref name="pageIndex"/>, starting at <paramref name="offset"/></summary>
-        void ClearPage(long pageIndex, int offset = 0);
-
         /// <summary>Free the page at <paramref name="pageIndex"/></summary>
         void FreePage(long pageIndex);
 

@@ -1,0 +1,71 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System.Runtime.InteropServices;
+
+namespace Tsavorite.core
+{
+    [StructLayout(LayoutKind.Explicit, Size = Size)]
+    internal struct PageHeader
+    {
+        const int PositionNotSet = -1;
+        const ushort CurrentVersion = 1;
+
+        /// <summary>The size of the struct. Must be a power of 2. Currently set to the size that the 0'th page offset was; 64 bytes</summary>
+        internal const int Size = sizeof(long) * 8;
+
+        /// <summary>Version of this page header.</summary>
+        [FieldOffset(0)]
+        internal ushort version;
+
+        [FieldOffset(sizeof(ushort))]
+        internal ushort unusedUshort1;
+
+        [FieldOffset(sizeof(int))]
+        internal int unusedInt1;
+
+        /// <summary>The lowest object-log position on this main-log page, if ObjectAllocator. Contains both segmentId and offset on segment</summary>
+        [FieldOffset(sizeof(long))]
+        internal long objectLogLowestPosition;
+
+        // Unused; as they become used, start with higher #
+        [FieldOffset(sizeof(long) * 2)]
+        internal long unusedLong6;
+        [FieldOffset(sizeof(long) * 3)]
+        internal long unusedLong5;
+        [FieldOffset(sizeof(long) * 4)]
+        internal long unusedLong4;
+        [FieldOffset(sizeof(long) * 5)]
+        internal long unusedLong3;
+        [FieldOffset(sizeof(long) * 6)]
+        internal long unusedLong2;
+        [FieldOffset(sizeof(long) * 7)]
+        internal long unusedLong1;
+
+        /// <summary>
+        /// Initializes the struct.
+        /// </summary>
+        /// <returns></returns>
+        internal void Initialize()
+        {
+            this = default;
+            version = CurrentVersion;
+            objectLogLowestPosition = PositionNotSet;
+        }
+
+        internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
+
+        /// <summary>
+        /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
+        /// </summary>
+        /// <param name="position">The position in the object log.</param>
+        internal void SetLowestObjectLogPosition(int position)
+        {
+            if (objectLogLowestPosition == PositionNotSet)
+                objectLogLowestPosition = position;
+        }
+
+        public override readonly string ToString()
+            => $"ver {version}, lowObjLogPos {objectLogLowestPosition}, us1 {unusedUshort1}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";
+    }
+}

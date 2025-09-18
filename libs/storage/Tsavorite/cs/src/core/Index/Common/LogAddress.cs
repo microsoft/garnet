@@ -24,7 +24,7 @@ namespace Tsavorite.core
         public const long kTempInvalidAddress = 1L;
 
         /// <summary>First valid address in the log; ensures 0 and 1 are never valid addresses.</summary>
-        public const long FirstValidAddress = 64L;
+        public const long FirstValidAddress = PageHeader.Size;
 
         /// <summary>The max valid address is the in-memory mask (which is greater than the on-disk mask) and the full absolute address range.</summary>
         public const long MaxValidAddress = kAbsoluteAddressBitMask;
@@ -38,11 +38,11 @@ namespace Tsavorite.core
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetPage(long logicalAddress, int logPageSizeBits) => logicalAddress >> logPageSizeBits;    // Does not need AbsoluteAddress because we don't do it for ReadCache
+        internal static long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => AbsoluteAddress(logicalAddress) >> logPageSizeBits;
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetStartAbsoluteLogicalAddressOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
+        internal static long GetAbsoluteLogicalAddressOfStartOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
 
         /// <summary>Pretty-print the address</summary>
         public static string AddressString(long address)

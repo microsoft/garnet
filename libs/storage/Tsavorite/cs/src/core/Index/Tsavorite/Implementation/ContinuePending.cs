@@ -35,11 +35,11 @@ namespace Tsavorite.core
             if (request.logicalAddress < hlogBase.BeginAddress || request.logicalAddress < pendingContext.minAddress)
                 goto NotFound;
 
-            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, request.logRecord.Key))
+            if (pendingContext.IsReadAtAddress && !pendingContext.IsNoKey && !storeFunctions.KeysEqual(pendingContext.Key, request.diskLogRecord.Key))
                 goto NotFound;
 
             SpinWaitUntilClosed(request.logicalAddress);
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(request.logRecord.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(request.diskLogRecord.Key));
 
             while (true)
             {
@@ -59,7 +59,7 @@ namespace Tsavorite.core
                     LogRecord memoryRecord = default;
                     if (!pendingContext.IsReadAtAddress)
                     {
-                        if (TryFindRecordInMemory(request.logRecord.Key, ref stackCtx, ref pendingContext))
+                        if (TryFindRecordInMemory(request.diskLogRecord.Key, ref stackCtx, ref pendingContext))
                         {
                             memoryRecord = stackCtx.recSrc.CreateLogRecord();
                             if (memoryRecord.Info.Tombstone)
@@ -84,7 +84,7 @@ namespace Tsavorite.core
                                 OperationStatus internalStatus;
                                 do
                                 {
-                                    internalStatus = InternalRead(request.logRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
+                                    internalStatus = InternalRead(request.diskLogRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output,
                                         pendingContext.userContext, ref pendingContext, sessionFunctions);
                                 }
                                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
@@ -93,7 +93,7 @@ namespace Tsavorite.core
                         }
                     }
 
-                    if (!memoryRecord.IsSet && request.logRecord.Info.Tombstone)
+                    if (!memoryRecord.IsSet && request.diskLogRecord.Info.Tombstone)
                         goto NotFound;
 
                     ReadInfo readInfo = new()
@@ -116,7 +116,7 @@ namespace Tsavorite.core
                         success = sessionFunctions.Reader(in memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
                     }
                     else
-                        success = sessionFunctions.Reader(in request.logRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                        success = sessionFunctions.Reader(in request.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
 
                     if (!success)
                     {
@@ -131,9 +131,9 @@ namespace Tsavorite.core
                     if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.None && !memoryRecord.IsSet)
                     {
                         if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
-                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in request.logRecord, ref stackCtx);
+                            status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, in request.diskLogRecord, ref stackCtx);
                         else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
-                                && TryCopyToReadCache(in request.logRecord, sessionFunctions, ref pendingContext, ref stackCtx))
+                                && TryCopyToReadCache(in request.diskLogRecord, sessionFunctions, ref pendingContext, ref stackCtx))
                             status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
                     }
                     else
@@ -216,8 +216,8 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-                    status = CreateNewRecordRMW(pendingContext.Key, in request.logRecord, ref pendingContext.input.Get(), ref pendingContext.output,
-                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !request.logRecord.Info.Tombstone);
+                    status = CreateNewRecordRMW(pendingContext.Key, in request.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
+                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !request.diskLogRecord.Info.Tombstone);
                 }
                 finally
                 {
@@ -234,7 +234,7 @@ namespace Tsavorite.core
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare.
             do
-                status = InternalRMW(request.logRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                status = InternalRMW(request.diskLogRecord.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
             while (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext));
             return status;
         }
@@ -279,15 +279,15 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, request.logRecord.Key, ref stackCtx,
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, request.diskLogRecord.Key, ref stackCtx,
                         currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))
                 {
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
-                        ? PrepareIOForConditionalOperation(ref pendingContext, in request.logRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
-                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, in request.logRecord, ref stackCtx);
+                        ? PrepareIOForConditionalOperation(ref pendingContext, in request.diskLogRecord, ref stackCtx, minAddress, pendingContext.maxAddress)
+                        : ConditionalCopyToTail(sessionFunctions, ref pendingContext, in request.diskLogRecord, ref stackCtx);
                 }
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));

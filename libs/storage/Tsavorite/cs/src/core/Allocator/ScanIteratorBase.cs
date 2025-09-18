@@ -168,11 +168,11 @@ namespace Tsavorite.core
                 var nextPage = currentPage + i;
 
                 // Cannot load page if it is entirely in memory or beyond the end address
-                var pageStartAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage, logPageSizeBits);
+                var pageStartAddress = GetAbsoluteLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
                     continue;
 
-                var pageEndAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage + 1, logPageSizeBits);
+                var pageEndAddress = GetAbsoluteLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
                 if (endAddress < pageEndAddress)
                     pageEndAddress = endAddress;
                 if (headAddress < pageEndAddress)
@@ -196,13 +196,13 @@ namespace Tsavorite.core
                         {
                             epoch.BumpCurrentEpoch(() =>
                             {
-                                AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                                AsyncReadPagesFromDeviceToFrame(tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
                                 loadedPages[nextFrame] = pageEndAddress;
                             });
                         }
                         else
                         {
-                            AsyncReadPagesFromDeviceToFrame(tmp_page + GetPage(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                            AsyncReadPagesFromDeviceToFrame(tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
@@ -225,13 +225,13 @@ namespace Tsavorite.core
             {
                 var nextPage = currentPage + i;
 
-                var pageStartAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage, logPageSizeBits);
+                var pageStartAddress = GetAbsoluteLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
 
                 // Cannot load page if it is entirely in memory or beyond the end address
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
                     continue;
 
-                var pageEndAddress = GetStartAbsoluteLogicalAddressOfPage(nextPage + 1, logPageSizeBits);
+                var pageEndAddress = GetAbsoluteLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
                 if (endAddress < pageEndAddress)
                     pageEndAddress = endAddress;
                 if (headAddress < pageEndAddress)
@@ -271,7 +271,7 @@ namespace Tsavorite.core
                 // The exception may have been an OperationCanceledException.
                 loadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
-                Utility.MonotonicUpdate(ref nextAddress, GetStartAbsoluteLogicalAddressOfPage(1 + GetPage(currentAddress, logPageSizeBits), logPageSizeBits), out _);
+                Utility.MonotonicUpdate(ref nextAddress, GetAbsoluteLogicalAddressOfStartOfPage(1 + GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
                 throw new TsavoriteException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
             }
             finally

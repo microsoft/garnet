@@ -649,12 +649,12 @@ namespace Tsavorite.core
                     result.cts?.Cancel();
                 }
 
-                if (result.freeBuffer1 != null)
+                if (result.mainLogPageBuffer != null)
                 {
                     if (errorCode == 0)
-                        allocator._wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
-                    result.freeBuffer1.Return();
-                    result.freeBuffer1 = null;
+                        allocator._wrapper.PopulatePage(result.mainLogPageBuffer.GetValidPointer(), result.mainLogPageBuffer.required_bytes, result.page);
+                    result.mainLogPageBuffer.Return();
+                    result.mainLogPageBuffer = null;
                 }
 
                 if (errorCode == 0)
@@ -781,7 +781,7 @@ namespace Tsavorite.core
                 if (entryLength == 0)
                 {
                     // Zero-ed out bytes could be padding at the end of page, first jump to the start of next page. 
-                    var nextStart = allocator.GetStartAbsoluteLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
+                    var nextStart = allocator.GetAbsoluteLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
                     if (Utility.MonotonicUpdate(ref nextAddress, nextStart, out _))
                     {
                         var pageOffset = allocator.GetOffsetOnPage(currentAddress);
@@ -822,7 +822,7 @@ namespace Tsavorite.core
                 }
 
                 if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
-                    currentAddress = allocator.GetStartAbsoluteLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
+                    currentAddress = allocator.GetAbsoluteLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 
@@ -927,7 +927,7 @@ namespace Tsavorite.core
                 }
 
                 if ((allocator.GetOffsetOnPage(currentAddress) + recordSize) == allocator.PageSize)
-                    currentAddress = allocator.GetStartAbsoluteLogicalAddressOfPage(1 + allocator.GetPage(currentAddress));
+                    currentAddress = allocator.GetAbsoluteLogicalAddressOfStartOfPage(1 + allocator.GetPage(currentAddress));
                 else
                     currentAddress += recordSize;
 

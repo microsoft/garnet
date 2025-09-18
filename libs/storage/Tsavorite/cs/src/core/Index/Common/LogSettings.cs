@@ -15,11 +15,13 @@ namespace Tsavorite.core
         /// <summary>Maximum number of bits for a page size</summary>
         public const int kMaxPageSizeBits = 30;
 
+        /// <summary>Minimum number of bits for a main-log segment (segments consist of one or more pages)</summary>
+        public const int kMinMainLogSegmentSizeBits = kMinPageSizeBits;
         /// <summary>Minimum number of bits for a segment (segments consist of one or more pages). This minimum size is also the size of the <see cref="DiskWriteBuffer"/> buffer,
-        ///     so the segment must be a multiple of this (which is guaranteed as both are powers of 2).</summary>
+        ///     so the segment must be a multiple of this (which is guaranteed as both are powers of 2, as long as this minimum is observed).</summary>
         /// <remarks>During flush we may create multiple buffers, depending on the degree of parallelism allowed by page concurrency and <see cref="NumberOfFlushBuffers"/>.</remarks>
-        public const int kMinSegmentSizeBits = 22;  // 4MB
-        /// <summary>Maximum number of bits for a page size (segments consist of one or more pages)</summary>
+        public const int kMinObjectLogSegmentSizeBits = 22; // 4MB
+        /// <summary>Maximum number of bits for a main-log or object-log segment (segments consist of one or more pages)</summary>
         public const int kMaxSegmentSizeBits = 62;
 
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
@@ -68,9 +70,14 @@ namespace Tsavorite.core
         public int PageSizeBits = 25;
 
         /// <summary>
-        /// Size of a segment (group of pages), in bits
+        /// Size of a segment (group of pages) in the main log, in bits
         /// </summary>
         public int SegmentSizeBits = 30;
+
+        /// <summary>
+        /// Size of a segment (group of pages) in the object log, in bits
+        /// </summary>
+        public int ObjectLogSegmentSizeBits = 30;
 
         /// <summary>
         /// Total size of in-memory part of log, in bits

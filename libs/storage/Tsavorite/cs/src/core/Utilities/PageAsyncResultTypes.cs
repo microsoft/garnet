@@ -3,6 +3,7 @@
 
 #define CALLOC
 
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -13,37 +14,40 @@ namespace Tsavorite.core
     /// <typeparam name="TContext"></typeparam>
     public sealed class PageAsyncReadResult<TContext>
     {
+        /// <summary>Index of the main-log page being read</summary>
         internal long page;
-        internal long offset;
-        internal TContext context;
-        internal CountdownEvent handle;
-        internal SectorAlignedMemory freeBuffer1;
-        internal SectorAlignedMemory freeBuffer2;
-        internal DeviceIOCompletionCallback callback;
-        internal IDevice objlogDevice;
-        internal object frame;
-        internal CancellationTokenSource cts;
 
-        /* Used for iteration */
-        internal long resumePtr;
-        internal long untilPtr;
-        internal long maxPtr;
+        /// <summary>Context state to be passed through the read operation</summary>
+        internal TContext context;
+
+        /// <summary>Event to be signaled when the main-log page read is complete</summary>
+        internal CountdownEvent handle;
+
+        /// <summary>The buffer to receive the main-log page being read</summary>
+        internal SectorAlignedMemory mainLogPageBuffer;
+
+        /// <summary>Callback to be called when the main-log page has completed processing; for <see cref="ObjectAllocator{TStoreFunctions}"/>
+        /// this means after all Overflow or Objects on the page have been read as well.</summary>
+        internal DeviceIOCompletionCallback callback;
+
+        /// <summary>The object-log device to use; may be the recovery device.</summary>
+        internal IDevice objlogDevice;
+
+        /// <summary>If non-null, this Read is being called for an iterator</summary>
+        internal object frame;
+
+        /// <summary>The cancellation token source, if any, for the Read operation</summary>
+        internal CancellationTokenSource cts;
 
         /// <summary>
         /// Free
         /// </summary>
         public void Free()
         {
-            if (freeBuffer1 != null)
+            if (mainLogPageBuffer != null)
             {
-                freeBuffer1.Return();
-                freeBuffer1 = null;
-            }
-
-            if (freeBuffer2 != null)
-            {
-                freeBuffer2.Return();
-                freeBuffer2 = null;
+                mainLogPageBuffer.Return();
+                mainLogPageBuffer = null;
             }
         }
     }
@@ -91,8 +95,7 @@ namespace Tsavorite.core
                 completedSemaphore.Release();
         }
 
-        public void WaitOneFlush()
-            => flushSemaphore?.Wait();
+        public void WaitOneFlush() => flushSemaphore?.Wait();
     }
 
     /// <summary>
@@ -102,24 +105,43 @@ namespace Tsavorite.core
     public sealed class PageAsyncFlushResult<TContext>
     {
         /// <summary>
-        /// Page
+        /// The index of the log Page being written
         /// </summary>
         public long page;
+
         /// <summary>
-        /// Context
+        /// Context object for the callback
         /// </summary>
         public TContext context;
+
         /// <summary>
-        /// Count
+        /// Flush buffers if flushing ObjectAllocator.
+        /// </summary>
+        public CircularDiskWriteBuffer flushBuffers;
+
+        /// <summary>
+        /// Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.
         /// </summary>
         public int count;
 
+        /// <summary>
+        /// If true, this is a flush of a partial page.
+        /// </summary>
         internal bool partial;
+
         internal long fromAddress;
         internal long untilAddress;
+
+        /// <summary>
+        /// This is the record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.
+        /// </summary>
         internal SectorAlignedMemory freeBuffer1;
-        internal SectorAlignedMemory freeBuffer2;
+
+        /// <summary>
+        /// The event that is signaled by the callback so any waiting thread knows the IO has completed.
+        /// </summary>
         internal AutoResetEvent done;
+
         internal FlushCompletionTracker flushCompletionTracker;
 
         /// <summary>
@@ -132,13 +154,61 @@ namespace Tsavorite.core
                 freeBuffer1.Return();
                 freeBuffer1 = null;
             }
-            if (freeBuffer2 != null)
-            {
-                freeBuffer2.Return();
-                freeBuffer2 = null;
-            }
 
             flushCompletionTracker?.CompleteFlush();
+        }
+    }
+
+    /// <summary>
+    /// A class to carry callback and context through operations that may chain callbacks.
+    /// </summary>
+    internal sealed class DiskWriteCallbackContext
+    {
+        /// <summary>The countdown event to signal after the write is complete.</summary>
+        public CountdownEvent countdownEvent;
+
+        /// <summary>If this Write is from a <see cref="OverflowByteArray"/>, this <see cref="GCHandle"/> keeps its byte[] pinned during the Write.
+        /// It is freed (and the array unpinned) after the Write.</summary>
+        public GCHandle gcHandle;
+
+        public DiskWriteCallbackContext(CountdownEvent countdownEvent, GCHandle gcHandle)
+        {
+            this.countdownEvent = countdownEvent;
+            this.gcHandle = gcHandle;
+        }
+
+        public void Dispose()
+        {
+            if (gcHandle.IsAllocated)
+                gcHandle.Free();
+            _ = (countdownEvent?.Signal());
+        }
+    }
+
+    /// <summary>
+    /// A class to carry callback and context through operations that may chain callbacks.
+    /// </summary>
+    internal sealed class DiskReadCallbackContext
+    {
+        /// <summary>An event that can be waited for; the caller's callback will signal it if non-null.</summary>
+        internal CountdownEvent countdownEvent;
+
+        /// <summary>If we had a Read directly into the byte[] of an <see cref="OverflowByteArray"/>, this is the <see cref="GCHandle"/> that keps it pinned during the Read.
+        /// After the Read it is freed (and the object unpinned).</summary>
+        public GCHandle gcHandle;
+
+        /// <summary>Constructor that also adds a reference or count to the parameters</summary>
+        internal DiskReadCallbackContext(CountdownEvent countdownEvent, GCHandle gcHandle)
+        {
+            this.countdownEvent = countdownEvent;
+            this.gcHandle = gcHandle;
+        }
+
+        public void Dispose()
+        {
+            if (gcHandle.IsAllocated)
+                gcHandle.Free();
+            _ = (countdownEvent?.Signal());
         }
     }
 }

@@ -73,14 +73,14 @@ namespace Tsavorite.core
             IncrementAllocatedPageCount();
 
             if (freePagePool.TryGet(out var item))
-            {
                 pagePointers[index] = item.pointer;
-                return;
+            else
+            {
+                // No free pages are available so allocate new
+                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+                NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
             }
-
-            // No free pages are available so allocate new
-            pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
+            PageHeader.Initialize(pagePointers[index]);
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -108,9 +108,6 @@ namespace Tsavorite.core
                         device);
         }
 
-        internal void ClearPage(long page, int offset)
-            => NativeMemory.Clear((byte*)pagePointers[page % BufferSize] + offset, (nuint)(PageSize - offset));
-
         internal void FreePage(long page)
         {
             ClearPage(page, 0);
@@ -118,13 +115,16 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 
         /// <inheritdoc/>
         protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
             => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for TsavoriteLogAllocator");
+
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+            => throw new TsavoriteException("TsavoriteLogAllocator does not support VerifyRecordFromDiskCallback");
 
         internal static void PopulatePage(byte* src, int required_bytes, long destinationPage)
             => throw new TsavoriteException("TsavoriteLogAllocator memory pages are sector aligned - use direct copy");

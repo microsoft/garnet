@@ -13,7 +13,9 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
+    using static VarbyteLengthUtility;
 
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
@@ -204,13 +206,16 @@ namespace Tsavorite.core
         /// <param name="device"></param>
         /// <param name="objectLogDevice"></param>
         /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
-        protected abstract void WriteAsyncToDevice<TContext>(CircularDiskWriteBuffer flushBuffers, long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress);
+        protected abstract void WriteAsyncToDevice<TContext>(CircularDiskWriteBuffer flushBuffers, long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+            PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress);
 
         /// <summary>Read objects to memory (async)</summary>
-        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default);
+        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context,
+            SectorAlignedMemory result = default);
 
         /// <summary>Read page from device (async)</summary>
-        protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length, DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
+        protected abstract void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
 
         /// <summary>Write page to device (async)</summary>
         protected abstract void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
@@ -234,7 +239,7 @@ namespace Tsavorite.core
             {
                 long startPage = GetPage(startAddress);
                 long endPage = GetPage(endAddress);
-                if (endAddress > GetStartAbsoluteLogicalAddressOfPage(endPage))
+                if (endAddress > GetAbsoluteLogicalAddressOfStartOfPage(endPage))
                     endPage++;
 
                 long prevEndPage = GetPage(prevEndAddress);
@@ -249,7 +254,7 @@ namespace Tsavorite.core
                     for (long p = startPage; p < endPage; p++)
                     {
                         // Check if we have the entire page safely available to process in memory
-                        if (HeadAddress >= GetStartAbsoluteLogicalAddressOfPage(p) + PageSize)
+                        if (HeadAddress >= GetAbsoluteLogicalAddressOfStartOfPage(p) + PageSize)
                             continue;
 
                         // All RCU pages need to be added to delta
@@ -257,7 +262,7 @@ namespace Tsavorite.core
                         if ((p < prevEndPage || endAddress == prevEndAddress) && PageStatusIndicator[p % BufferSize].Dirty < version)
                             continue;
 
-                        var logicalAddress = GetStartAbsoluteLogicalAddressOfPage(p);
+                        var logicalAddress = GetAbsoluteLogicalAddressOfStartOfPage(p);
                         var physicalAddress = GetPhysicalAddress(logicalAddress);
 
                         var endLogicalAddress = logicalAddress + PageSize;
@@ -411,8 +416,8 @@ namespace Tsavorite.core
         {
             if (log == null) return;
 
-            long startLogicalAddress = GetStartAbsoluteLogicalAddressOfPage(startPage);
-            long endLogicalAddress = GetStartAbsoluteLogicalAddressOfPage(endPage);
+            long startLogicalAddress = GetAbsoluteLogicalAddressOfStartOfPage(startPage);
+            long endLogicalAddress = GetAbsoluteLogicalAddressOfStartOfPage(endPage);
 
             log.Reset();
             while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
@@ -505,10 +510,10 @@ namespace Tsavorite.core
             if (asyncResult.partial)
             {
                 // Write only required bytes within the page
-                int aligned_start = (int)(asyncResult.fromAddress - GetStartAbsoluteLogicalAddressOfPage(asyncResult.page));
+                int aligned_start = (int)(asyncResult.fromAddress - GetAbsoluteLogicalAddressOfStartOfPage(asyncResult.page));
                 aligned_start = (aligned_start / sectorSize) * sectorSize;
 
-                int aligned_end = (int)(asyncResult.untilAddress - GetStartAbsoluteLogicalAddressOfPage(asyncResult.page));
+                int aligned_end = (int)(asyncResult.untilAddress - GetAbsoluteLogicalAddressOfStartOfPage(asyncResult.page));
                 aligned_end = (aligned_end + (sectorSize - 1)) & ~(sectorSize - 1);
 
                 numBytesToWrite = (uint)(aligned_end - aligned_start);
@@ -538,8 +543,8 @@ namespace Tsavorite.core
             // Validation
             if (logSettings.PageSizeBits < LogSettings.kMinPageSizeBits || logSettings.PageSizeBits > LogSettings.kMaxPageSizeBits)
                 throw new TsavoriteException($"{nameof(logSettings.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
-            if (logSettings.SegmentSizeBits < LogSettings.kMinSegmentSizeBits || logSettings.SegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
-                throw new TsavoriteException($"{nameof(logSettings.SegmentSizeBits)} must be between {LogSettings.kMinSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
+            if (logSettings.SegmentSizeBits < LogSettings.kMinMainLogSegmentSizeBits || logSettings.SegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
+                throw new TsavoriteException($"{nameof(logSettings.SegmentSizeBits)} must be between {LogSettings.kMinMainLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
             if (logSettings.MemorySizeBits != 0 && (logSettings.MemorySizeBits < LogSettings.kMinMemorySizeBits || logSettings.MemorySizeBits > LogSettings.kMaxMemorySizeBits))
                 throw new TsavoriteException($"{nameof(logSettings.MemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}, or may be 0 for ReadOnly TsavoriteLog");
             if (logSettings.MutableFraction < 0.0 || logSettings.MutableFraction > 1.0)
@@ -647,6 +652,9 @@ namespace Tsavorite.core
             return *(pagePointers + pageIndex) + offset;
         }
         internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
+
+        internal void ClearPage(long page, int offset)
+            => NativeMemory.Clear((byte*)pagePointers[page % BufferSize] + offset, (nuint)(PageSize - offset));
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal void VerifyRecoveryInfo(HybridLogCheckpointInfo recoveredHLCInfo, bool trimLog = false)
@@ -792,8 +800,8 @@ namespace Tsavorite.core
                     headOffsetLagSize -= emptyPageCount;
 
                     // Address lag offsets correspond to the number of pages "behind" TailPageOffset (the tail in the circular buffer).
-                    ReadOnlyAddressLagOffset = GetStartAbsoluteLogicalAddressOfPage((long)(LogMutableFraction * headOffsetLagSize));
-                    HeadAddressLagOffset = GetStartAbsoluteLogicalAddressOfPage(headOffsetLagSize);
+                    ReadOnlyAddressLagOffset = GetAbsoluteLogicalAddressOfStartOfPage((long)(LogMutableFraction * headOffsetLagSize));
+                    HeadAddressLagOffset = GetAbsoluteLogicalAddressOfStartOfPage(headOffsetLagSize);
                 }
 
                 // Force eviction now if empty page count has increased
@@ -854,12 +862,12 @@ namespace Tsavorite.core
                 _ = Thread.Yield();
                 local = TailPageOffset;
             }
-            return GetStartAbsoluteLogicalAddressOfPage(local.Page) | (uint)local.Offset;
+            return GetAbsoluteLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
         }
 
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetPage(long logicalAddress) => LogAddress.GetPage(logicalAddress, LogPageSizeBits);
+        public long GetPage(long logicalAddress) => LogAddress.GetPageOfAddress(logicalAddress, LogPageSizeBits);
 
         /// <summary>Get page index for page</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -867,7 +875,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(LogAddress.GetPage(logicalAddress, LogPageSizeBits));
+        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(LogAddress.GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
         /// <summary>Get capacity (number of pages)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -879,7 +887,7 @@ namespace Tsavorite.core
 
         /// <summary>Get logical address of start of page</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetAddressOfStartOfPage(long address) => address & ~PageSizeMask;
+        public long GetAddressOfStartOfPageOfAddress(long address) => address & ~PageSizeMask;
 
         /// <summary>Get offset in page</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -887,11 +895,11 @@ namespace Tsavorite.core
 
         /// <summary>Get start logical address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetStartAbsoluteLogicalAddressOfPage(long page) => LogAddress.GetStartAbsoluteLogicalAddressOfPage(page, LogPageSizeBits);
+        public long GetAbsoluteLogicalAddressOfStartOfPage(long page) => LogAddress.GetAbsoluteLogicalAddressOfStartOfPage(page, LogPageSizeBits);
 
         /// <summary>Get first valid address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetFirstValidLogicalAddressOnPage(long page) => page == 0 ? FirstValidAddress : GetStartAbsoluteLogicalAddressOfPage(page);
+        public long GetFirstValidLogicalAddressOnPage(long page) => GetAbsoluteLogicalAddressOfStartOfPage(page) + FirstValidAddress;
 
         /// <summary>Get log segment index from <paramref name="logicalAddress"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -950,8 +958,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         bool NeedToShiftAddress(long pageIndex, PageOffset localTailPageOffset, int numSlots)
         {
-            var tailAddress = GetStartAbsoluteLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
-            var shiftAddress = GetStartAbsoluteLogicalAddressOfPage(pageIndex);
+            var tailAddress = GetAbsoluteLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
+            var shiftAddress = GetAbsoluteLogicalAddressOfStartOfPage(pageIndex);
 
             // Check whether we need to shift ROA
             var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
@@ -980,7 +988,7 @@ namespace Tsavorite.core
         void IssueShiftAddress(long pageIndex)
         {
             // Issue the shift of address
-            var shiftAddress = GetStartAbsoluteLogicalAddressOfPage(pageIndex);
+            var shiftAddress = GetAbsoluteLogicalAddressOfStartOfPage(pageIndex);
             var tailAddress = GetTailAddress();
 
             var desiredReadOnlyAddress = shiftAddress - ReadOnlyAddressLagOffset;
@@ -1052,8 +1060,7 @@ namespace Tsavorite.core
 
             // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
 
-            // Offset is zero for the first allocation on the new page
-            return GetStartAbsoluteLogicalAddressOfPage(localTailPageOffset.Page);
+            return GetAbsoluteLogicalAddressOfStartOfPage(localTailPageOffset.Page);
         }
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
@@ -1093,7 +1100,7 @@ namespace Tsavorite.core
                 return HandlePageOverflow(ref localTailPageOffset, numSlots);
             }
 
-            return GetStartAbsoluteLogicalAddressOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
+            return GetAbsoluteLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
         }
 
         /// <summary>Try allocate, spin for RETRY_NOW (logicalAddress is less than 0) case</summary>
@@ -1215,8 +1222,8 @@ namespace Tsavorite.core
         /// <summary>Invokes eviction observer if set and then frees the page.</summary>
         internal virtual void EvictPage(long page)
         {
-            var start = GetStartAbsoluteLogicalAddressOfPage(page);
-            var end = GetStartAbsoluteLogicalAddressOfPage(page + 1);
+            var start = GetAbsoluteLogicalAddressOfStartOfPage(page);
+            var end = GetAbsoluteLogicalAddressOfStartOfPage(page + 1);
             if (OnEvictionObserver is not null)
                 MemoryPageScan(start, end, OnEvictionObserver);
             _wrapper.FreePage(page);
@@ -1288,7 +1295,7 @@ namespace Tsavorite.core
                     EvictCallback(closeStartAddress, closeEndAddress);
 
                 // Process a page (possibly fragment) at a time.
-                for (long closePageAddress = GetAddressOfStartOfPage(closeStartAddress); closePageAddress < closeEndAddress; closePageAddress += PageSize)
+                for (long closePageAddress = GetAddressOfStartOfPageOfAddress(closeStartAddress); closePageAddress < closeEndAddress; closePageAddress += PageSize)
                 {
                     // Get the range on this page: the start may be 0 or greater, and the end may be end-of-page or less.
                     long start = closeStartAddress > closePageAddress ? closeStartAddress : closePageAddress;
@@ -1344,7 +1351,7 @@ namespace Tsavorite.core
         /// </summary>
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
-            long desiredReadOnlyAddress = GetAddressOfStartOfPage(currentTailAddress) - ReadOnlyAddressLagOffset;
+            long desiredReadOnlyAddress = GetAddressOfStartOfPageOfAddress(currentTailAddress) - ReadOnlyAddressLagOffset;
             if (MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
@@ -1360,14 +1367,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PageAlignedShiftHeadAddress(long currentTailAddress)
         {
-            var desiredHeadAddress = GetAddressOfStartOfPage(currentTailAddress) - HeadAddressLagOffset;
+            var desiredHeadAddress = GetAddressOfStartOfPageOfAddress(currentTailAddress) - HeadAddressLagOffset;
 
             // Obtain local values of variables that can change.
             var currentFlushedUntilAddress = FlushedUntilAddress;
 
             // If the new head address would be higher than the last flushed address, cap it at the start of the last flushed address' page start.
             if (desiredHeadAddress > currentFlushedUntilAddress)
-                desiredHeadAddress = GetAddressOfStartOfPage(currentFlushedUntilAddress);
+                desiredHeadAddress = GetAddressOfStartOfPageOfAddress(currentFlushedUntilAddress);
 
             if (MonotonicUpdate(ref HeadAddress, desiredHeadAddress, out _))
             {
@@ -1414,7 +1421,7 @@ namespace Tsavorite.core
 
             bool update = false;
             long pageLastFlushedAddress = PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress;
-            while (pageLastFlushedAddress >= currentFlushedUntilAddress && currentFlushedUntilAddress >= GetStartAbsoluteLogicalAddressOfPage(page))
+            while (pageLastFlushedAddress >= currentFlushedUntilAddress && currentFlushedUntilAddress >= GetAbsoluteLogicalAddressOfStartOfPage(page))
             {
                 currentFlushedUntilAddress = pageLastFlushedAddress;
                 update = true;
@@ -1503,81 +1510,46 @@ namespace Tsavorite.core
             logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
         }
 
-        /// <summary>Invoked by users to obtain a record from disk. It uses sector aligned memory to read the record efficiently into memory.</summary>
+        /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/> - used for RUMD operations.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
+        internal unsafe void AsyncReadInlineRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-            var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);
-
-            var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);  // Round up in length (due to alignedFileOffset round-down to sector start)
-            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1)); // Round up to sector end
-
-            var record = bufferPool.Get((int)alignedReadLength);
-            record.valid_offset = (int)(fileOffset - alignedFileOffset);
-            record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));   // alignedReadLength - (valid_offset, which is the round-down to sector start))
-            record.required_bytes = numBytes;
-
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
             asyncResult.context = context;
-            asyncResult.context.record = record;
-            device.ReadAsync(alignedFileOffset,
-                        (IntPtr)asyncResult.context.record.aligned_pointer,
-                        alignedReadLength,
-                        callback,
-                        asyncResult);
+            GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength, out context.record);
+            device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
 
-        /// <summary>
-        /// Read record to memory - simple read context version
-        /// </summary>
-        /// <param name="fromLogicalAddress"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="callback"></param>
-        /// <param name="context"></param>
+        /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/>> - simple read context version. Used by TsavoriteLog.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
-            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
-            var alignedFileOffset = (ulong)(((long)fileOffset / sectorSize) * sectorSize);              // Round down to sector start
-
-            var alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);      // Round up in length (due to alignedFileOffset round-down to sector start)
-            alignedReadLength = (uint)((alignedReadLength + (sectorSize - 1)) & ~(sectorSize - 1));     // Round up to sector end
-
-            context.record = bufferPool.Get((int)alignedReadLength);
-            context.record.valid_offset = (int)(fileOffset - alignedFileOffset);
-            context.record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));   // alignedReadLength - (valid_offset, which is the round-down to sector start))
-            context.record.required_bytes = numBytes;
-
-            device.ReadAsync(alignedFileOffset,
-                        (IntPtr)context.record.aligned_pointer,
-                        alignedReadLength,
-                        callback,
-                        context);
+            GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength, out context.record);
+            device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
         }
 
-        /// <summary>Read pages from specified device</summary>
-        public void AsyncReadPagesForRecovery<TContext>(
-                                long readPageStart,
-                                int numPages,
-                                long untilAddress,
-                                DeviceIOCompletionCallback callback,
-                                TContext context,
-                                long devicePageOffset = 0,
-                                IDevice logDevice = null, IDevice objectLogDevice = null)
-            => AsyncReadPagesFromDevice(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
+        private void GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength, out SectorAlignedMemory record)
+        {
+            var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
+            alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
+            alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
+            alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
-        /// <summary>Read pages from specified device</summary>
+            record = bufferPool.Get((int)alignedReadLength);
+            record.valid_offset = (int)(fileOffset - alignedFileOffset);
+            record.available_bytes = (int)(alignedReadLength - record.valid_offset);
+            record.required_bytes = numBytes;
+        }
+
+        /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event</summary>
+        public void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
+                                TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
+            => AsyncReadPagesForRecovery(readBuffers, readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
+
+        /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncReadPagesFromDevice<TContext>(
-                                        long readPageStart,
-                                        int numPages,
-                                        long untilAddress,
-                                        DeviceIOCompletionCallback callback,
-                                        TContext context,
-                                        out CountdownEvent completed,
-                                        long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
+        private void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
+                                TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null)
         {
             var usedDevice = device ?? this.device;
             IDevice usedObjlogDevice = objectLogDevice;
@@ -1614,7 +1586,8 @@ namespace Tsavorite.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
+                // Call the overridden ReadAsync for the derived allocator class
+                ReadAsync(readBuffers, offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -1655,8 +1628,8 @@ namespace Tsavorite.core
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
             {
                 // Default to writing the full page.
-                long pageStartAddress = GetStartAbsoluteLogicalAddressOfPage(flushPage);
-                long pageEndAddress = GetStartAbsoluteLogicalAddressOfPage(flushPage + 1);
+                long pageStartAddress = GetAbsoluteLogicalAddressOfStartOfPage(flushPage);
+                long pageEndAddress = GetAbsoluteLogicalAddressOfStartOfPage(flushPage + 1);
 
                 var asyncResult = new PageAsyncFlushResult<Empty>
                 {
@@ -1754,7 +1727,7 @@ namespace Tsavorite.core
                     context = context,
                     count = 1,
                     partial = false,
-                    untilAddress = GetStartAbsoluteLogicalAddressOfPage(flushPage + 1),
+                    untilAddress = GetAbsoluteLogicalAddressOfStartOfPage(flushPage + 1),
                     flushBuffers = flushBuffers
                 };
 
@@ -1804,7 +1777,7 @@ namespace Tsavorite.core
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
-                    long flushPageAddress = GetStartAbsoluteLogicalAddressOfPage(flushPage);
+                    long flushPageAddress = GetAbsoluteLogicalAddressOfStartOfPage(flushPage);
                     var pageSize = PageSize;
                     if (flushPage == endPage - 1)
                         pageSize = (int)(endLogicalAddress - flushPageAddress);
@@ -1816,7 +1789,7 @@ namespace Tsavorite.core
                         fromAddress = flushPageAddress,
                         untilAddress = flushPageAddress + pageSize,
                         count = 1,
-                        flushBuffers
+                        flushBuffers = flushBuffers,
                     };
 
                     // Intended destination is flushPage
@@ -1846,7 +1819,7 @@ namespace Tsavorite.core
             }
 
             if (result == null)
-                AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
+                AsyncReadInlineRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
             else
                 AsyncReadRecordObjectsToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, context, result);
         }
@@ -1864,7 +1837,7 @@ namespace Tsavorite.core
                                         BlittableFrame frame,
                                         out CountdownEvent completed,
                                         long devicePageOffset = 0,
-                                        IDevice device = null, IDevice objectLogDevice = null)
+                                        IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
             var usedDevice = device ?? this.device;
 
@@ -1882,7 +1855,8 @@ namespace Tsavorite.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    frame = frame
+                    frame = frame,
+                    cts = cts
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
@@ -1902,6 +1876,82 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Checks to see if we have a full record, or at least enough to compare the key.
+        /// </summary>
+        /// <param name="ctx">The context from the IO operation</param>
+        /// <param name="prevAddressToRead">If we return false, the address to issue the next IO for</param>
+        /// <param name="prevLengthToRead">If we return false, the number of bytes to issue the next IO for</param>
+        /// <returns>True if we have the full record and the key was the requested key; if the record is fully inline, then the ctx.diskLogRecord is set and the ctx.record is transferred to it.
+        /// Otherwise it is false, and:
+        /// <list type="bullet">
+        ///     <item>If the key was present, it did not match ctx.request_key; <paramref name="prevAddressToRead"/> is recordInfo.PreviousAddress, and <paramref name="prevLengthToRead"/>
+        ///         is the initial IO size.</item>
+        ///     <item>Otherwise, the data we have is not sufficient to determine record length, or we know the length and it is greater than the data we have now.
+        ///         <paramref name="prevAddressToRead"/> is the same address we just read, and <paramref name="prevLengthToRead"/>is one of:</item>
+        ///         <list type="bullet">
+        ///             <item>If we did not have enough data to determine required length, we use the initial IO size. This should seldom happen as we issue the initial
+        ///                 IO request with this size, but perhaps this is called with a partial buffer.</item>
+        ///             <item>Otherwise, we know the data length needed, and we set <paramref name="prevLengthToRead"/> to that.</item>
+        ///         </list>
+        /// </list>
+        /// </returns>
+        /// <remarks>If we have a complete record and the key passes the comparison and we have overflow or objects, then this will be overridden by a derived class (see 
+        ///     <see cref="ObjectAllocatorImpl{TStoreFunctions}"/>) which will issue additional reads to retrieve those objects.</remarks>
+        private protected virtual bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        {
+            // Initialize to "key is not present (data too small) or does not match so get previous record" length to read
+            prevLengthToRead = IStreamBuffer.InitialIOSize;
+
+            // See if we have a complete record.
+            var currentLength = ctx.record.available_bytes;
+            if (currentLength >= RecordInfo.Size + LogRecord.MinLengthMetadataBytes)
+            {
+                var ptr = ctx.record.GetValidPointer();
+                var (keyLengthBytes, valueLengthBytes, _ /*usesChainedChunks*/) = DeconstructIndicatorByte(*(ptr + RecordInfo.Size));
+                var recordInfo = *(RecordInfo*)ptr;
+
+                // Initialize to "key does not match so get previous record" address to read
+                prevAddressToRead = recordInfo.PreviousAddress;
+
+                if (recordInfo.Invalid) // includes IsNull
+                    return false;
+
+                var optionalLength = LogRecord.GetOptionalLength(recordInfo);
+                var offsetToKeyStart = RecordInfo.Size + LogRecord.IndicatorBytes + keyLengthBytes + valueLengthBytes;
+
+                // If the length is up to offsetToKeyStart, we can read the full lengths.
+                if (currentLength >= offsetToKeyStart)
+                {
+                    var keyLengthPtr = ptr + RecordInfo.Size + LogRecord.IndicatorBytes;
+                    var keyLength = GetKeyLength(keyLengthBytes, keyLengthPtr);
+
+                    // We have the full key, so check for a match if we had a requested key, and return if not.
+                    if (!ctx.request_key.IsEmpty && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(ptr + offsetToKeyStart, keyLength)))
+                        return false;
+
+                    // Values in SpanByteAllocator will always be string, thus limited to 512MB, so cast to int is OK.
+                    var valueLength = (int)GetValueLength(valueLengthBytes, keyLengthPtr + keyLengthBytes);
+                    var recordLength = offsetToKeyStart + keyLength + valueLength + optionalLength;
+
+                    // If we have the full record and the keys match, success.
+                    if (currentLength >= recordLength)
+                    {
+                        ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record);
+                        return true;
+                    }
+
+                    // We need to read the same address, but with the full record length we now know.
+                    prevLengthToRead = recordLength;
+                }
+            }
+
+            // Either we didn't have the full record size, or we didn't have enough bytes to even read the full record size. Either way, prevLengthToRead
+            // is set for a re-read of the same record.
+            prevAddressToRead = ctx.logicalAddress;
+            return false;
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private unsafe void AsyncGetFromDiskCallback(uint errorCode, uint numBytes, object context)
         {
@@ -1916,55 +1966,31 @@ namespace Tsavorite.core
                 // InitialIOSize request can be fulfilled.
                 ctx.record.available_bytes = (int)numBytes;
 
-                var hasFullRecord = DiskLogRecord.IsComplete(ctx.record, out bool hasFullKey, out int requiredBytes);
-                if (hasFullKey || ctx.request_key.IsEmpty)
+                if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
                 {
                     Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, "Invalid records should not be in the hash chain for pending IO");
 
-                    var diskLogRecord = new DiskLogRecord((long)ctx.record.GetValidPointer());  // This ctor does not test for having the complete record; we've already set hasFullRecord
-                    Debug.Assert(!diskLogRecord.Info.Invalid, "Invalid records should not be in the hash chain for pending IO");
-
-                    // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    var currentRecordIsInRange = ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress;
-                    if (!ctx.request_key.IsEmpty && !storeFunctions.KeysEqual(ctx.request_key, diskLogRecord.Key))
+                    // Either we had an incomplete record and we're re-reading the current record, or the record Key didn't match and we're reading the previous record
+                    // in the chain. If the record to read is in the range to resolve then issue the read, else fall through to signal "IO complete".
+                    ctx.logicalAddress = prevAddressToRead;
+                    if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                     {
-                        // Keys don't match so request the previous record in the chain if it is in the range to resolve.
-                        ctx.logicalAddress = diskLogRecord.Info.PreviousAddress;
-                        if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
-                        {
-                            ctx.record.Return();
-                            ctx.record = ctx.objBuffer = default;
-                            AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                            return;
-                        }
-                    }
-
-                    if (hasFullRecord)
-                    {
-                        // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
-                        if (currentRecordIsInRange && diskLogRecord.Info.ValueIsObject)
-                            ctx.ValueObject = diskLogRecord.DeserializeValueObject(storeFunctions.CreateValueObjectSerializer());
-
-                        if (ctx.completionEvent is not null)
-                            ctx.completionEvent.Set(ref ctx);
-                        else
-                            ctx.callbackQueue.Enqueue(ctx);
+                        ctx.DisposeRecord();
+                        AsyncGetFromDisk(ctx.logicalAddress, prevLengthToRead, ctx);
+                        return;
                     }
                 }
 
-                if (!hasFullRecord)
-                {
-                    // We don't have the full record and may not even have gotten a full key, so we need to do another IO
-                    if (requiredBytes > int.MaxValue)
-                        throw new TsavoriteException("Records exceeding 2GB are not yet supported"); // TODO note: We should not have written this yet; serialization is int-limited
-
-                    ctx.record.Return();
-                    AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
-                }
+                // Either we have a full record with a key match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                if (ctx.completionEvent is not null)
+                    ctx.completionEvent.Set(ref ctx);
+                else
+                    ctx.callbackQueue.Enqueue(ctx);
             }
             catch (Exception e)
             {
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                ctx.DisposeRecord();
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
                 else
@@ -2054,7 +2080,7 @@ namespace Tsavorite.core
                 // Unset dirty bit for flushed pages
                 try
                 {
-                    var startAddress = GetStartAbsoluteLogicalAddressOfPage(result.page);
+                    var startAddress = GetAbsoluteLogicalAddressOfStartOfPage(result.page);
                     var endAddress = startAddress + PageSize;
 
                     if (result.fromAddress > startAddress)

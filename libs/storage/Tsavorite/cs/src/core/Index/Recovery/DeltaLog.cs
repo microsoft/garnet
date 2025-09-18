@@ -167,7 +167,7 @@ namespace Tsavorite.core
                     logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
                     result.cts?.Cancel();
                 }
-                Debug.Assert(result.freeBuffer1 == null);
+                Debug.Assert(result.mainLogPageBuffer == null);
 
                 if (errorCode == 0)
                     result.handle?.Signal();

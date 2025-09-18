@@ -116,13 +116,12 @@ namespace Tsavorite.core
             }
             set
             {
-                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
 
-                Debug.Assert(length == ObjectIdMap.ObjectIdSize, "Expected set_KeyOverflow to be called only at initialization from DiskLogRecord, which sets size to ObjectIdSize");
-                if (*(int*)dataAddress == ObjectIdMap.InvalidObjectId)
-                    *(int*)dataAddress = objectIdMap.Allocate();
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
+                    throw new TsavoriteException("set_KeyOverflow should only be called by DiskLogRecord with KeyIsInline==false and key.Length==ObjectIdSize");
+                *(int*)dataAddress = objectIdMap.Allocate();
                 objectIdMap.Set(*(int*)dataAddress, value);
-                InfoRef.SetKeyIsOverflow();
             }
         }
 
@@ -149,6 +148,15 @@ namespace Tsavorite.core
                     return default;
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return objectIdMap.GetHeapObject(*(int*)dataAddress);
+            }
+            internal set
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                if (!Info.ValueIsObject || length != ObjectIdMap.ObjectIdSize)
+                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord with ValueIsObject==true and value.Length=+ObjectIdSize");
+
+                *(int*)dataAddress = objectIdMap.Allocate();
+                objectIdMap.Set(*(int*)dataAddress, value);
             }
         }
 
@@ -185,20 +193,19 @@ namespace Tsavorite.core
         {
             get
             {
-                if (Info.ValueIsInline)
-                    throw new TsavoriteException("get_Overflow is unavailable when Value is inline");
+                if (!Info.ValueIsOverflow)
+                    throw new TsavoriteException("get_Overflow is unavailable when Value is not overflow");
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
             }
             set
             {
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                if (!Info.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
+                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord with ValueIsInline==false and ValueIsObject==false and value.Length=+ObjectIdSize");
 
-                Debug.Assert(length == ObjectIdMap.ObjectIdSize, "Expected set_ValueOverflow to be called only at initialization from DiskLogRecord, which sets size to ObjectIdSize");
-                if (*(int*)dataAddress == ObjectIdMap.InvalidObjectId)
-                    *(int*)dataAddress = objectIdMap.Allocate();
+                *(int*)dataAddress = objectIdMap.Allocate();
                 objectIdMap.Set(*(int*)dataAddress, value);
-                InfoRef.SetValueIsOverflow();
             }
         }
 
@@ -310,50 +317,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RecordInfo GetInfo(long physicalAddress) => *(RecordInfo*)physicalAddress;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly OverflowByteArray GetKeyOverflow()
-        {
-            if (Info.KeyIsInline)
-                return default;
-            var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
-            var objectId = *(int*)dataAddress;
-            return objectIdMap.GetOverflowByteArray(objectId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void SetKeyOverflow(OverflowByteArray overflowArray)
-        {
-            var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
-            Debug.Assert(Info.KeyIsInline && length == ObjectIdMap.ObjectIdSize, "SetKeyOverflow should only be called by CopyFrom(ref DiskLogRecord) with KeyIsInline and ObjectIdSize");
-            Debug.Assert(*(int*)dataAddress == ObjectIdMap.InvalidObjectId, "SetKeyOverflow should only be called by CopyFrom(ref DiskLogRecord) with InvalidObjectId");
-            var objectId = objectIdMap.Allocate();
-            *(int*)dataAddress = objectId;
-            objectIdMap.Set(objectId, overflowArray);
-            Info.SetKeyIsOverflow();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly OverflowByteArray GetValueOverflow()
-        {
-            if (Info.ValueIsInline)
-                return default;
-            var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-            var objectId = *(int*)dataAddress;
-            return objectIdMap.GetOverflowByteArray(objectId);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly void SetValueOverflow(OverflowByteArray overflowArray)
-        {
-            var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-            Debug.Assert(Info.ValueIsInline && length == ObjectIdMap.ObjectIdSize, "SetValueOverflow should only be called by CopyFrom(ref DiskLogRecord) with KeyIsInline and ObjectIdSize");
-            Debug.Assert(*(int*)dataAddress == ObjectIdMap.InvalidObjectId, "SetKeyOverflow should only be called by CopyFrom(ref DiskLogRecord) with InvalidObjectId");
-            var objectId = objectIdMap.Allocate();
-            *(int*)dataAddress = objectId;
-            objectIdMap.Set(objectId, overflowArray);
-            Info.SetValueIsOverflow();
-        }
-
         internal static ReadOnlySpan<byte> GetInlineKey(long physicalAddress)
         {
             Debug.Assert((*(RecordInfo*)physicalAddress).KeyIsInline, "Key must be inline");
@@ -369,6 +332,17 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return (int)(dataAddress - physicalAddress + length + OptionalLength);
+            }
+        }
+
+        public readonly Span<byte> RecordSpan
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                return Info.RecordIsInline
+                    ? new((byte*)physicalAddress, GetInlineRecordSizes().actualSize)
+                    : throw new TsavoriteException("RecordSpan is not valid for non-inline records");
             }
         }
 

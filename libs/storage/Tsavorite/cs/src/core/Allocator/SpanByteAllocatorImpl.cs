@@ -9,10 +9,6 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-#pragma warning disable IDE0065 // Misplaced using directive
-    using static LogAddress;
-    using static Utility;
-
     // Allocator for ReadOnlySpan<byte> Key and Span<byte> Value.
     internal sealed unsafe class SpanByteAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>
         where TStoreFunctions : IStoreFunctions
@@ -44,14 +40,14 @@ namespace Tsavorite.core
             IncrementAllocatedPageCount();
 
             if (freePagePool.TryGet(out var item))
-            {
                 pagePointers[index] = item.pointer;
-                return;
+            else
+            {
+                // No free pages are available so allocate new
+                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+                NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
             }
-
-            // No free pages are available so allocate new
-            pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
+            PageHeader.Initialize(pagePointers[index]);
         }
 
         void ReturnPage(int index)
@@ -197,9 +193,6 @@ namespace Tsavorite.core
                         (uint)AlignedPageSizeBytes, callback, asyncResult, device);
         }
 
-        internal void ClearPage(long page, int offset)
-            => NativeMemory.Clear((byte*)pagePointers[page % BufferSize] + offset, (nuint)(PageSize - offset));
-
         internal void FreePage(long page)
         {
             ClearPage(page, 0);
@@ -207,7 +200,7 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        protected override void ReadAsync<TContext>(ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 

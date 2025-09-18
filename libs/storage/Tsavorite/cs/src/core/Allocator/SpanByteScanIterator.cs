@@ -183,7 +183,7 @@ namespace Tsavorite.core
                     // If record does not fit on page, skip to the next page.
                     if (offset + allocatedSize > hlogBase.PageSize)
                     {
-                        nextAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(1 + hlogBase.GetPage(currentAddress));
+                        nextAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(1 + hlogBase.GetPage(currentAddress));
                         epoch.Suspend();
                         continue;
                     }
@@ -371,7 +371,7 @@ namespace Tsavorite.core
 
         internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice);
+            => hlogBase.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {

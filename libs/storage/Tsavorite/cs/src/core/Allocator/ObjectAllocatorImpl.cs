@@ -30,10 +30,19 @@ namespace Tsavorite.core
             internal readonly void Clear() => objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
         }
 
-        internal ObjectPage[] values;
+        /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
+        internal ObjectPage[] pages;
+        /// <summary>The free pages of the log</summary>
 
-        readonly int maxInlineKeySize;
-        readonly int maxInlineValueSize;
+        /// <summary>The address of the next write to the device. Will always be sector-aligned.</summary>
+        ulong alignedNextMainLogFlushAddress;
+
+        /// <summary>The address of the next write to the object log.</summary>
+        ulong alignedNextObjectLogFlushAddress;
+
+        // Default to max sizes so testing a size as "greater than" will always be false
+        readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
+        readonly int maxInlineValueSize = int.MaxValue;
 
         readonly int numberOfFlushBuffers;
         readonly int numberOfDeserializationBuffers;
@@ -52,10 +61,6 @@ namespace Tsavorite.core
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
 
-            var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
-            pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
-            NativeMemory.Clear(pagePointers, bufferSizeInBytes);
-
             if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfFlushBuffers)} must be between {LogSettings.kMinFlushBuffers} and {LogSettings.kMaxFlushBuffers - 1} and a power of 2");
             numberOfFlushBuffers = settings.LogSettings.NumberOfFlushBuffers;
@@ -64,9 +69,12 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfDeserializationBuffers)} must be between {LogSettings.kMinDeserializationBuffers} and {LogSettings.kMaxDeserializationBuffers - 1} and a power of 2");
             numberOfDeserializationBuffers = settings.LogSettings.NumberOfDeserializationBuffers;
 
-            values = new ObjectPage[BufferSize];
+            if (settings.LogSettings.ObjectLogSegmentSizeBits < LogSettings.kMinObjectLogSegmentSizeBits || settings.LogSettings.ObjectLogSegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
+                throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
+
+            pages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
-                values[ii] = new();
+                pages[ii] = new();
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -90,15 +98,16 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
-                values[index] = item.value;
-                // TODO resize the values[index] arrays smaller if they are above a certain point
-                return;
+                pages[index] = item.value;
             }
-
-            // No free pages are available so allocate new
-            pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-            NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
-            values[index] = new();
+            else
+            {
+                // No free pages are available so allocate new
+                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
+                NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
+                pages[index] = new();
+            }
+            PageHeader.Initialize(pagePointers[index]);
         }
 
         void ReturnPage(int index)
@@ -109,7 +118,7 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
-                    value = values[index]
+                    value = pages[index]
                 });
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -120,10 +129,10 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, values[GetPageIndexForAddress(logicalAddress)].objectIdMap);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => values[GetPageIndexForAddress(logicalAddress)].objectIdMap;
+        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => pages[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
@@ -202,37 +211,30 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
+            // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
             // Key
-            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeyDataSize <= maxInlineKeySize;
-            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeyDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.KeyIsInline = sizeInfo.FieldInfo.KeySize <= maxInlineKeySize;
+            var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
 
             // Value
-            sizeInfo.MaxInlineValueSpanSize = maxInlineValueSize;
-            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueDataSize <= sizeInfo.MaxInlineValueSpanSize;
-            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueDataSize + LogField.InlineLengthPrefixSize : ObjectIdMap.ObjectIdSize;
+            sizeInfo.MaxInlineValueSize = maxInlineValueSize;
+            sizeInfo.ValueIsInline = !sizeInfo.ValueIsObject && sizeInfo.FieldInfo.ValueSize <= sizeInfo.MaxInlineValueSize;
+            var valueSize = sizeInfo.ValueIsInline ? sizeInfo.FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
 
             // Record
-            sizeInfo.ActualInlineRecordSize = RecordInfo.Size + keySize + valueSize + sizeInfo.OptionalSize;
-            sizeInfo.AllocatedInlineRecordSize = RoundUp(sizeInfo.ActualInlineRecordSize, Constants.kRecordAlignment);
+            sizeInfo.CalculateSizes(keySize, valueSize);
         }
 
+        /// <summary>
+        /// Dispose an in-memory <see cref="LogRecord"/>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
             logRecord.ClearOptionals();
             if (disposeReason != DisposeReason.Deleted)
-                _ = logRecord.FreeKeyOverflow();
-
-            if (!logRecord.Info.ValueIsInline)
-            {
-                if (!logRecord.FreeValueOverflow() && logRecord.ValueObjectId != ObjectIdMap.InvalidObjectId)
-                {
-                    var heapObj = logRecord.ValueObject;
-                    if (heapObj is not null)
-                        storeFunctions.DisposeValueObject(heapObj, disposeReason);
-                    logRecord.objectIdMap.Free(logRecord.ValueObjectId);
-                }
-            }
+                _ = logRecord.ClearKeyIfOverflow();
+            _ = logRecord.ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, disposeReason));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -248,7 +250,7 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            var localValues = Interlocked.Exchange(ref values, null);
+            var localValues = Interlocked.Exchange(ref pages, null);
             if (localValues != null)
             {
                 freePagePool.Dispose();
@@ -258,18 +260,19 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void TruncateUntilAddress(long toAddress)    // TODO: ObjectAllocator specifics if any
+        protected override void TruncateUntilAddress(long toAddress)
         {
             base.TruncateUntilAddress(toAddress);
         }
 
-        protected override void TruncateUntilAddressBlocking(long toAddress)    // TODO: ObjectAllocator specifics if any
+        protected override void TruncateUntilAddressBlocking(long toAddress)
         {
             base.TruncateUntilAddressBlocking(toAddress);
         }
 
-        protected override void RemoveSegment(int segment)    // TODO: ObjectAllocator specifics if any
+        protected override void RemoveSegment(int segment)
         {
+            TODO("Switch Segments over to per-page recording of the segment extent of each page");
             base.RemoveSegment(segment);
         }
 
@@ -285,7 +288,7 @@ namespace Tsavorite.core
             var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
-                if (HeadAddress >= GetStartAbsoluteLogicalAddressOfPage(flushPage) + possiblyPartialPageSize)
+                if (HeadAddress >= GetAbsoluteLogicalAddressOfStartOfPage(flushPage) + possiblyPartialPageSize)
                 {
                     // Requested page is unavailable in memory, ignore
                     callback(0, 0, asyncResult);
@@ -303,14 +306,10 @@ namespace Tsavorite.core
             }
         }
 
-        internal void ClearPage(long page, int offset)
-        {
-            // This is called during recovery, not as part of normal operations, so there is no need to walk pages starting at offset to Free() ObjectIds
-            NativeMemory.Clear((byte*)pagePointers[page] + offset, (nuint)(PageSize - offset));
-        }
-
         internal void FreePage(long page)
         {
+            pages[page].objectIdMap.Clear();
+
             ClearPage(page, 0);
 
             // Close segments
@@ -343,6 +342,7 @@ namespace Tsavorite.core
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)
         {
+            TODO("Modernize this");
 #if READ_WRITE
             // Short circuit if we are using a null device
             if ((device as NullDevice) != null)
@@ -611,8 +611,37 @@ namespace Tsavorite.core
             _ = result.handle.Signal();
         }
 
-        protected override void ReadAsync<TContext>(
-            ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        /// <inheritdoc />
+        /// <remarks>This override of the base function reads Overflow keys or values, or Object values.</remarks>
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        {
+            // If this fails it is either too-short main-log record or a key mismatch. Let the top-level retry handle it.
+            if (!base.VerifyRecordFromDiskCallback(ref ctx, out prevAddressToRead, out prevLengthToRead) && ctx.diskLogRecord.IsSet)
+                return false;
+
+            // If the record is inline, we have not Overflow or Objects to retrieve.
+            ref var diskLogRecord = ref ctx.diskLogRecord;
+            if (diskLogRecord.Info.RecordIsInline)
+                return true;
+
+            var deserializationBuffers = diskLogRecord.Info.ValueIsObject ? CreateDeserializationBuffers(bufferPool, device, logger) : default;
+
+            DiskStreamReader<TStoreFunctions>.DiskReadParameters readParams =
+                new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, IStreamBuffer.BufferSize, ctx.logicalAddress, storeFunctions);
+            var readBuffer = new DiskStreamReader<TStoreFunctions>(in readParams, device, deserializationBuffers, logger);
+            if (readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord, out _ /*recordLength*/))
+            {
+                // Success; default the output arguments.
+                prevAddressToRead = 0;
+                return true;
+            }
+
+            // If readBuffer.Read returned false it was due to key mismatch or Invalid record, so get the previous record.
+            prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
+            return false;
+        }
+
+        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
 #if READ_WRITE
@@ -649,16 +678,20 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         private void AsyncFlushPartialObjectLogCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
+#if READ_WRITE
             if (errorCode != 0)
                 logger?.LogError($"{nameof(AsyncFlushPartialObjectLogCallback)} error: {{errorCode}}", errorCode);
 
             // Set the page status to flushed
             var result = (PageAsyncFlushResult<TContext>)context;
             _ = result.done.Set();
+#endif // READ_WRITE
         }
 
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
+            TODO("Ensure cts is passed through to Deserialize and CircularDiskReadBuffer.Read");
+            TODO("Do not track deserialization size changes if we are deserializing to a frame");
 #if READ_WRITE
             if (errorCode != 0)
                 logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);

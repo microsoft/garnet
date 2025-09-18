@@ -167,7 +167,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log
         /// </summary>
-        public long MemorySizeBytes => allocator.GetStartAbsoluteLogicalAddressOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
+        public long MemorySizeBytes => allocator.GetAbsoluteLogicalAddressOfStartOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
 
         /// <summary>
         /// Create new log instance
@@ -2054,7 +2054,7 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
                 if (snapToPageStart)
-                    untilAddress = allocator.GetAddressOfStartOfPage(untilAddress);
+                    untilAddress = allocator.GetAddressOfStartOfPageOfAddress(untilAddress);
 
                 bool epochProtected = epoch.ThisInstanceProtected();
                 try
@@ -2079,7 +2079,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPage(untilAddress), out _);
+            Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPageOfAddress(untilAddress), out _);
         }
 
         /// <summary>

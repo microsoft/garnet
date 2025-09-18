@@ -155,7 +155,7 @@ namespace Tsavorite.core
             }
 
             DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-            request.Dispose();
+            request.DisposeRecord();
             return status;
         }
         #endregion

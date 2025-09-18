@@ -228,11 +228,11 @@ namespace Tsavorite.core
             using var current = new HybridLogCheckpointInfo();
             // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
             current.Recover(token, checkpointManager, hlogBase.LogPageSizeBits, out var _, true, version);
-            long snapshotDeviceOffset = hlogBase.GetStartAbsoluteLogicalAddressOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
+            long snapshotDeviceOffset = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
             return new LogFileInfo
             {
                 snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
-                hybridLogFileStartAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(hlogBase.GetPage(current.info.beginAddress)),
+                hybridLogFileStartAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
                 hybridLogFileEndAddress = current.info.flushedLogicalAddress,
                 deltaLogTailAddress = current.info.deltaTailAddress,
             };
@@ -540,12 +540,12 @@ namespace Tsavorite.core
         private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress, long lastFreedPage)
         {
             // Adjust head and read-only address post-recovery
-            var _head = hlogBase.GetStartAbsoluteLogicalAddressOfPage(1 + hlogBase.GetPage(tailAddress) - (hlogBase.GetCapacityNumPages() - hlogBase.MinEmptyPageCount));
+            var _head = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(1 + hlogBase.GetPage(tailAddress) - (hlogBase.GetCapacityNumPages() - hlogBase.MinEmptyPageCount));
 
             // If additional pages have been freed to accommodate heap memory constraints, adjust head address accordingly
             if (lastFreedPage != NoPageFreed)
             {
-                var nextAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(lastFreedPage + 1);
+                var nextAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(lastFreedPage + 1);
                 if (_head < nextAddress)
                     _head = nextAddress;
             }
@@ -636,7 +636,7 @@ namespace Tsavorite.core
             headAddress = recoveredHLCInfo.info.headAddress;
             if (numPagesToPreload != -1)
             {
-                var head = hlogBase.GetStartAbsoluteLogicalAddressOfPage(hlogBase.GetPage(tailAddress) - numPagesToPreload);
+                var head = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(hlogBase.GetPage(tailAddress) - numPagesToPreload);
                 if (head > headAddress)
                     headAddress = head;
             }
@@ -843,7 +843,7 @@ namespace Tsavorite.core
         {
             startPage = hlogBase.GetPage(scanFromAddress);
             endPage = hlogBase.GetPage(untilAddress);
-            if (untilAddress > hlogBase.GetStartAbsoluteLogicalAddressOfPage(endPage) && untilAddress > scanFromAddress)
+            if (untilAddress > hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(endPage) && untilAddress > scanFromAddress)
             {
                 endPage++;
             }
@@ -872,8 +872,8 @@ namespace Tsavorite.core
 
         private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
-            var startLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(page);
-            var endLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(page + 1);
+            var startLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(page);
+            var endLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(page + 1);
             var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
             if (recoverFromAddress >= endLogicalAddress)
@@ -1002,7 +1002,7 @@ namespace Tsavorite.core
             {
                 int pageIndex = hlogBase.GetPageIndexForPage(p);
 
-                var endLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(p + 1);
+                var endLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(p + 1);
                 if (recoverFromAddress < endLogicalAddress && recoverFromAddress < untilAddress)
                     ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
@@ -1022,11 +1022,11 @@ namespace Tsavorite.core
             // Compute startPage and endPage
             startPage = hlogBase.GetPage(fromAddress);
             endPage = hlogBase.GetPage(untilAddress);
-            if (untilAddress > hlogBase.GetStartAbsoluteLogicalAddressOfPage(endPage) && untilAddress > fromAddress)
+            if (untilAddress > hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(endPage) && untilAddress > fromAddress)
                 endPage++;
             long snapshotStartPage = hlogBase.GetPage(snapshotStartAddress);
             snapshotEndPage = hlogBase.GetPage(snapshotEndAddress);
-            if (snapshotEndAddress > hlogBase.GetStartAbsoluteLogicalAddressOfPage(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
+            if (snapshotEndAddress > hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
                 snapshotEndPage++;
 
             // By default first page has one extra record
@@ -1053,8 +1053,8 @@ namespace Tsavorite.core
         private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             // Page at hand
-            var startLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(page);
-            var endLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(page + 1);
+            var startLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(page);
+            var endLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(page + 1);
 
             // Perform recovery if page is part of the re-do portion of log
             if (fromAddress < endLogicalAddress && fromAddress < untilAddress)
@@ -1086,8 +1086,8 @@ namespace Tsavorite.core
 
         private unsafe void ClearBitsOnPage(long page, RecoveryOptions options)
         {
-            var startLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(page);
-            var endLogicalAddress = hlogBase.GetStartAbsoluteLogicalAddressOfPage(page + 1);
+            var startLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(page);
+            var endLogicalAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(page + 1);
             var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
 
             // no need to clear locks for records that will not end up in main memory
@@ -1248,7 +1248,7 @@ namespace Tsavorite.core
         {
             if (numPagesToPreload != -1)
             {
-                var head = GetStartAbsoluteLogicalAddressOfPage(GetPage(untilAddress) - numPagesToPreload);
+                var head = GetAbsoluteLogicalAddressOfStartOfPage(GetPage(untilAddress) - numPagesToPreload);
                 if (head > headAddress)
                     headAddress = head;
             }
@@ -1305,10 +1305,10 @@ namespace Tsavorite.core
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
 
-            if (result.freeBuffer1 != null)
+            if (result.mainLogPageBuffer != null)
             {
-                _wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
-                result.freeBuffer1.Return();
+                _wrapper.PopulatePage(result.mainLogPageBuffer.GetValidPointer(), result.mainLogPageBuffer.required_bytes, result.page);
+                result.mainLogPageBuffer.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);
             if (errorCode != 0)

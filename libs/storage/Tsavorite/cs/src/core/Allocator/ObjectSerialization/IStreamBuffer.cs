@@ -24,7 +24,7 @@ namespace Tsavorite.core
         internal const int DiskReadForceOverflowSize = 1 * 1024 * 1024;
 
         /// <summary>The size of the buffer used for writing data to and reading it from the disk. Must be a sector multiple.</summary>
-        internal const int BufferSize = 1 << LogSettings.kMinSegmentSizeBits;
+        internal const int BufferSize = 1 << LogSettings.kMinMainLogSegmentSizeBits;
 
         /// <summary>Initial IO size to read.</summary>
         internal static int InitialIOSize => Environment.SystemPageSize;

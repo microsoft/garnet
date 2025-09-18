@@ -25,7 +25,7 @@ namespace Tsavorite.core
         public PinnedSpanByte request_key;
 
         /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
-        public LogRecord logRecord;
+        public DiskLogRecord diskLogRecord;
 
         /// <summary>
         /// Logical address
@@ -65,18 +65,18 @@ namespace Tsavorite.core
         /// <summary>
         /// Dispose
         /// </summary>
-        public void Dispose()
+        public void DisposeRecord()
         {
             // Do not dispose request_key as it is a shallow copy of the key in pendingContext
-            logRecord.Dispose(recordDisposeAction); // TODO add recordDisposeAction along with LogRecord; make a SetLogRecord(lr, action)
-            logRecord = default;
+            diskLogRecord.Dispose();
+            diskLogRecord = default;
             record?.Return();
             record = null;
         }
 
         /// <inheritdoc/>
         public override readonly string ToString()
-            => $"id {id}, key {request_key}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{logRecord}]";
+            => $"id {id}, key {request_key}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
@@ -102,7 +102,7 @@ namespace Tsavorite.core
         /// </remarks>
         internal void Prepare(PinnedSpanByte request_key, long logicalAddress)
         {
-            request.Dispose();
+            request.DisposeRecord();
             request.request_key = request_key;
             request.logicalAddress = logicalAddress;
         }
@@ -110,7 +110,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Set(ref AsyncIOContext ctx)
         {
-            request.Dispose();
+            request.DisposeRecord();
             request = ctx;
             exception = null;
             _ = semaphore.Release(1);
@@ -119,7 +119,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetException(Exception ex)
         {
-            request.Dispose();
+            request.DisposeRecord();
             request = default;
             exception = ex;
             _ = semaphore.Release(1);
@@ -130,7 +130,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            request.Dispose();
+            request.DisposeRecord();
             semaphore?.Dispose();
         }
     }
