@@ -4,6 +4,7 @@
 using System;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
@@ -58,6 +59,7 @@ namespace Garnet.cluster
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
                 var disableObjects = clusterProvider.serverOptions.DisableObjects;
                 GarnetClientSession gcs = null;
+                resetHandler ??= new CancellationTokenSource();
                 try
                 {
                     if (!clusterProvider.serverOptions.EnableFastCommit)
@@ -119,7 +121,8 @@ namespace Garnet.cluster
                         currentReplicationOffset: ReplicationOffset,
                         checkpointEntry: checkpointEntry);
 
-                    var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).ConfigureAwait(false);
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
+                    var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).WaitAsync(replicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -144,6 +147,11 @@ namespace Garnet.cluster
                     }
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
+                    if (!resetHandler.TryReset())
+                    {
+                        resetHandler.Dispose();
+                        resetHandler = new CancellationTokenSource();
+                    }
                 }
                 return null;
             }

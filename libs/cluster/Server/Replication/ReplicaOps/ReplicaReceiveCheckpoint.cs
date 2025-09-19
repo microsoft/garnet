@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
@@ -72,6 +73,7 @@ namespace Garnet.cluster
             {
                 Debug.Assert(IsRecovering);
                 GarnetClientSession gcs = null;
+                resetHandler ??= new CancellationTokenSource();
                 try
                 {
                     // Immediately try to connect to a primary, so we FAIL
@@ -139,12 +141,13 @@ namespace Garnet.cluster
                     // 4. Replica responds with aofStartAddress sync
                     // 5. Primary will initiate aof sync task
                     // 6. Primary releases checkpoint
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                     var resp = await gcs.ExecuteReplicaSync(
                         nodeId,
                         PrimaryReplId,
                         cEntry.ToByteArray(),
                         storeWrapper.appendOnlyFile.BeginAddress,
-                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(replicaAttachTimeout, ctsRepManager.Token).ConfigureAwait(false);
+                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(replicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -167,6 +170,11 @@ namespace Garnet.cluster
                     }
                     recvCheckpointHandler?.Dispose();
                     gcs?.Dispose();
+                    if (!resetHandler.TryReset())
+                    {
+                        resetHandler.Dispose();
+                        resetHandler = new CancellationTokenSource();
+                    }
                 }
                 return null;
             }

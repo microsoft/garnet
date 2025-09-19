@@ -27,6 +27,7 @@ namespace Garnet.cluster
 
         readonly CancellationTokenSource ctsRepManager = new();
         readonly TimeSpan replicaAttachTimeout;
+        CancellationTokenSource resetHandler = new();
 
         readonly int pageSizeBits;
 
@@ -457,6 +458,16 @@ namespace Garnet.cluster
             }
         }
 
+        public void ResetRecovery()
+        {
+            switch (currentRecoveryStatus)
+            {
+                case RecoveryStatus.ClusterReplicate:
+                    resetHandler.Cancel();
+                    break;
+            }
+        }
+
         public void Dispose()
         {
             _disposed = true;
@@ -473,6 +484,8 @@ namespace Garnet.cluster
             replicaReplayTaskCts.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
+            resetHandler.Cancel();
+            resetHandler.Dispose();
             aofTaskStore.Dispose();
             aofProcessor?.Dispose();
             networkPool?.Dispose();
