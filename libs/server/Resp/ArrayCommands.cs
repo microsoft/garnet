@@ -194,10 +194,11 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             int keysDeleted = 0;
+
             for (int c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c);
-                var status = storageApi.DELETE(key, StoreType.All);
+                var status = storageApi.DELETE(key);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)

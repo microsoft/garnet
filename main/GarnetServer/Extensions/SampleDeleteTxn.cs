@@ -57,7 +57,7 @@ namespace Garnet
 
             var mainStoreKey = GetNextArg(ref procInput, ref offset);
 
-            api.DELETE(mainStoreKey, StoreType.Main);
+            api.DELETE(mainStoreKey);
 
             var sortedSet1Key = GetNextArg(ref procInput, ref offset);
             var sortedSet1Entry = GetNextArg(ref procInput, ref offset);

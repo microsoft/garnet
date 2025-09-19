@@ -361,8 +361,7 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedStoreInput(RespCommand.EXISTS);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = new GarnetUnifiedStoreOutput();
 
             for (var i = 0; i < parseState.Count; i++)
             {

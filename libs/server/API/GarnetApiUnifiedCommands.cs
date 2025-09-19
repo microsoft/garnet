@@ -59,5 +59,13 @@ namespace Garnet.server
             => storageSession.EXISTS(key, ref unifiedContext);
 
         #endregion
+
+        #region DELETE
+
+        /// <inheritdoc />
+        public GarnetStatus DELETE(PinnedSpanByte key)
+            => storageSession.DELETE(key, ref unifiedContext);
+
+        #endregion
     }
 }

@@ -27,7 +27,7 @@ namespace Garnet
         {
             var offset = 0;
             var key = GetNextArg(ref procInput.parseState, ref offset);
-            api.DELETE(key, StoreType.Main);
+            api.DELETE(key);
             WriteSimpleString(ref output, "SUCCESS");
         }
     }

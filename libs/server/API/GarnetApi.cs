@@ -260,12 +260,6 @@ namespace Garnet.server
         }
         #endregion
 
-        #region DELETE
-        /// <inheritdoc />
-        public GarnetStatus DELETE(PinnedSpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.DELETE(key, storeType, ref context, ref objectContext);
-        #endregion
-
         #region GETDEL
         /// <inheritdoc />
         public GarnetStatus GETDEL(PinnedSpanByte key, ref SpanByteAndMemory output)

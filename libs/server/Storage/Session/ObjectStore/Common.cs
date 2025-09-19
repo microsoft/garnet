@@ -776,6 +776,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Deletes a key from the object store context.
+        /// </summary>
+        /// <param name="key">The name of the key to use in the operation</param>
+        /// <param name="objectContext">Basic context for the object store.</param>
+        /// <returns></returns>
+        public GarnetStatus DELETE_ObjectStore<TObjectContext>(PinnedSpanByte key, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var status = objectContext.Delete(key.ReadOnlySpan);
+            Debug.Assert(!status.IsPending);
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
         /// Iterates members of a collection object using a cursor,
         /// a match pattern and count parameters
         /// </summary>

@@ -286,13 +286,14 @@ namespace Garnet.server
         #endregion
 
         #region DELETE
+
         /// <summary>
-        /// DELETE
+        /// Deletes a key from the unified store
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus DELETE(PinnedSpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus DELETE(PinnedSpanByte key);
+
         #endregion
 
         #region GETDEL

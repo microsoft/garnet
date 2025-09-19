@@ -485,7 +485,7 @@ namespace Garnet.cluster
                 var key = iter.Key;
                 var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key), StoreType.Main);
+                    _ = BasicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
             }
         }
 
@@ -502,7 +502,7 @@ namespace Garnet.cluster
                 var key = iterObject.Key;
                 var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key), StoreType.Object);
+                    _ = BasicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
             }
         }
     }

@@ -494,26 +494,18 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus DELETE<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
+        /// <summary>
+        /// Deletes a key from the main store context.
+        /// </summary>
+        /// <param name="key">The name of the key to use in the operation</param>
+        /// <param name="context">Basic context for the main store.</param>
+        /// <returns></returns>
+        public GarnetStatus DELETE_MainStore<TContext>(PinnedSpanByte key, ref TContext context)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var found = false;
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var status = context.Delete(key.ReadOnlySpan);
-                Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
-            }
-
-            if (!objectStoreBasicContext.IsNull && (storeType == StoreType.Object || storeType == StoreType.All))
-            {
-                var status = objectContext.Delete(key.ReadOnlySpan);
-                Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
-            }
-            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+            var status = context.Delete(key.ReadOnlySpan);
+            Debug.Assert(!status.IsPending);
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, StoreType storeType, bool withEtag)
@@ -647,12 +639,12 @@ namespace Garnet.server
                             // Delete the old key only when SET NX succeeded
                             if (isNX && result == 1)
                             {
-                                DELETE(oldKey, StoreType.Main, ref context, ref objectContext);
+                                DELETE_MainStore(oldKey, ref context);
                             }
                             else if (!isNX)
                             {
                                 // Delete the old key
-                                DELETE(oldKey, StoreType.Main, ref context, ref objectContext);
+                                DELETE_MainStore(oldKey, ref context);
                                 returnStatus = GarnetStatus.OK;
                             }
                         }
@@ -699,7 +691,7 @@ namespace Garnet.server
                             SET(newKeySlice, valObj, ref objectContext);
 
                             // Delete the old key
-                            DELETE(oldKeySlice, StoreType.Object, ref context, ref objectContext);
+                            DELETE_ObjectStore(oldKeySlice, ref objectContext);
 
                             result = 1;
                         }
