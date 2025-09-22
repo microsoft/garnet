@@ -80,7 +80,7 @@ namespace Tsavorite.core
 
         /// <summary>Sets the slot's object.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Set(int objectId, OverflowByteArray element) => objectArray.Set(objectId, element.Data);
+        internal void Set(int objectId, OverflowByteArray element) => objectArray.Set(objectId, element.Array);
 
         /// <summary>Clear the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

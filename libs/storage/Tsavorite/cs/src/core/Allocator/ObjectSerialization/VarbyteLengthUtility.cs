@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// <list>
         /// <item>In-memory: this is limited to 16MB inline, so 3 bytes; <see cref="ObjectAllocator{TStoreFunctions}"/> allows Overflow and Object,
         ///     which take only <see cref="ObjectIdMap.ObjectIdSize"/> (4) bytes</item>
-        /// <item>On-disk: this is limited to either max Object length, but since we have an effective limit of <see cref="LogAddress.kAddressTypeBitOffset"/> bits
+        /// <item>On-disk: this is limited to either max Object length, but since we have an effective limit of <see cref="LogAddress.kAddressBits"/> bits
         ///     <see cref="RecordInfo.PreviousAddress"/>, this will not be greater than 6 bytes.</item>
         /// </list>
         /// </summary>

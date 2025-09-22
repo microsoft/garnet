@@ -22,51 +22,51 @@ namespace Tsavorite.core
             internal int startOffset, endOffset;
         }
 
-        internal readonly byte[] Data { get; init; }
+        internal readonly byte[] Array { get; init; }
 
-        internal readonly bool IsEmpty => Data is null;
+        internal readonly bool IsEmpty => Array is null;
 
-        internal readonly int StartOffset => Unsafe.As<byte, OverflowHeader>(ref Data[0]).startOffset + OverflowHeader.Size;
+        internal readonly int StartOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).startOffset + OverflowHeader.Size;
 
-        readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Data[0]).endOffset;
+        readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset;
 
-        internal readonly int Length => Data.Length - StartOffset - EndOffset;
+        internal readonly int Length => Array.Length - StartOffset - EndOffset;
 
         /// <summary>Span of data between offsets</summary>
-        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Data.AsSpan().Slice(StartOffset, Length);
+        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Array.AsSpan().Slice(StartOffset, Length);
         /// <summary>Span of data between offsets</summary>
-        internal readonly Span<byte> Span => Data.AsSpan().Slice(StartOffset, Length);
+        internal readonly Span<byte> Span => Array.AsSpan().Slice(StartOffset, Length);
 
         /// <summary>Span of all data, including before and after offsets; this is for aligned Read from the device.</summary>
-        internal readonly Span<byte> AlignedReadSpan => Data.AsSpan().Slice(OverflowHeader.Size);
+        internal readonly Span<byte> AlignedReadSpan => Array.AsSpan().Slice(OverflowHeader.Size);
 
         /// <summary>Construct an <see cref="OverflowByteArray"/> from a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/>.</summary>
-        internal OverflowByteArray(byte[] data) => Data = data;
+        internal OverflowByteArray(byte[] data) => Array = data;
 
         internal OverflowByteArray(int length, int startOffset, int endOffset, bool zeroInit)
         {
             // Allocate with enough extra space for the metadata (offset from start and end)
-            Data = !zeroInit 
+            Array = !zeroInit 
                 ? GC.AllocateUninitializedArray<byte>(length + OverflowHeader.Size) 
                 : (new byte[length + OverflowHeader.Size]);
-            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Data[0]);
+            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
             header.startOffset = startOffset;
             header.endOffset = endOffset;
         }
 
         /// <summary>Increase the offset from the start, e.g. after having extracted the key that was read in the same IO operation as the value.</summary>
-        /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/> array field, only its contents.</remarks>
-        internal readonly void AdjustOffsetFromStart(int increment) => Unsafe.As<byte, OverflowHeader>(ref Data[0]).startOffset += increment;
+        /// <remarks>This is 'readonly' because it does not alter the <see cref="Array"/> array field, only its contents.</remarks>
+        internal readonly void AdjustOffsetFromStart(int increment) => Unsafe.As<byte, OverflowHeader>(ref Array[0]).startOffset += increment;
         /// <summary>Increase the offset from the end, e.g. after having extracted the optionals that were read in the same IO operation as the value.</summary>
-        /// <remarks>This is 'readonly' because it does not alter the <see cref="Data"/>> array field, only its contents.</remarks>
-        internal readonly void AdjustOffsetFromEnd(int increment) => Unsafe.As<byte, OverflowHeader>(ref Data[0]).endOffset += increment;
+        /// <remarks>This is 'readonly' because it does not alter the <see cref="Array"/>> array field, only its contents.</remarks>
+        internal readonly void AdjustOffsetFromEnd(int increment) => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset += increment;
 
         internal readonly void SetOffsets(int offsetFromStart, int offsetFromEnd)
         {
-            Debug.Assert(offsetFromStart > 0 && offsetFromStart < Data.Length - 1, "offsetFromStart is out of range");
-            Debug.Assert(offsetFromEnd > 0 && offsetFromEnd < Data.Length - 1, "offsetFromEnd is out of range");
+            Debug.Assert(offsetFromStart > 0 && offsetFromStart < Array.Length - 1, "offsetFromStart is out of range");
+            Debug.Assert(offsetFromEnd > 0 && offsetFromEnd < Array.Length - 1, "offsetFromEnd is out of range");
             Debug.Assert(offsetFromStart < offsetFromEnd, "offsetFromStart must be less than offsetFromEnd");
-            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Data[0]);
+            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
             header.startOffset = offsetFromStart;
             header.endOffset = offsetFromEnd;
         }

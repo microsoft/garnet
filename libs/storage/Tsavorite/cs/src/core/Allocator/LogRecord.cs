@@ -169,9 +169,6 @@ namespace Tsavorite.core
             return new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
         }
 
-        /// <summary>The span of the RecordInfo.</summary>
-        public readonly ReadOnlySpan<byte> RecordInfoSpan => new((byte*)physicalAddress, RecordInfo.Size);
-
         /// <inheritdoc/>
         public readonly bool IsPinnedValue => Info.ValueIsInline;
 

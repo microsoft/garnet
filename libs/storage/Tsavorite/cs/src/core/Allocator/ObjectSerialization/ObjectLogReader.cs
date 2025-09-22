@@ -21,25 +21,18 @@ namespace Tsavorite.core
     ///     <item>At the lower level, it provides the stream for the valueObjectSerializer, which is called via Deserialize() by the higher level.</item>
     /// </list>
     /// </summary>
-    internal unsafe partial class DiskStreamReader<TStoreFunctions> : IStreamBuffer
+    internal unsafe partial class ObjectLogReader<TStoreFunctions> : IStreamBuffer
         where TStoreFunctions : IStoreFunctions
     {
         readonly DiskReadParameters readParams;
         readonly IDevice logDevice;
         IObjectSerializer<IHeapObject> valueObjectSerializer;
-        PinnedMemoryStream<DiskStreamReader<TStoreFunctions>> pinnedMemoryStream;
+        PinnedMemoryStream<ObjectLogReader<TStoreFunctions>> pinnedMemoryStream;
         readonly ILogger logger;
 
         /// <summary>The <see cref="SectorAlignedMemory"/> of the non-overflow key buffer.</summary>
         /// <remarks>Held as a field instead of a local so it can be Dispose()d in case of an exception.</remarks>
         SectorAlignedMemory keyBuffer;
-
-        /// <summary>Information about page breaks within non-object key data space. The page border metadata size is not part of the key length metadata, plus we have to
-        /// omit the page metadata information from the user-visible span.</summary>
-        PageBreakInfo keyPageBreakInfo;
-        /// <summary>Information about page breaks within non-object value data space, and following optionals if present (so we can optimize them along with the value).
-        /// The page border metadata size is not part of the value length metadata, plus we have to omit the page metadata information from the user-visible span.</summary>
-        PageBreakInfo valueAndOptionalsPageBreakInfo;
 
         /// <summary>The offset (past <see cref="DiskReadParameters.recordAddress"/>) of the start of the value bytes.</summary>
         int offsetToValueStart;
@@ -61,14 +54,8 @@ namespace Tsavorite.core
         /// <summary>Size of the disk page.</summary>
         const int MaxBufferSize = IStreamBuffer.BufferSize;
 
-        /// <summary>The single buffer or overflowArray if we could retrieve the value (either object or overflow) in a single allocation.</summary>
-        ValueSingleAllocation valueSingleAllocation;
-
         /// <summary>The circular buffer we cycle through for large-object deserialization.</summary>
         readonly CircularDiskReadBuffer circularDeserializationBuffers;
-
-        /// <summary>Record optionals extracted from the buffer or read from disk.</summary>
-        RecordOptionals recordOptionals;
 
         /// <summary>The total capacity of the buffer.</summary>
         public bool IsForWrite => false;
@@ -76,7 +63,7 @@ namespace Tsavorite.core
         int SectorSize => (int)logDevice.SectorSize;
 
 #pragma warning disable IDE0290 // Use primary constructor
-        public DiskStreamReader(in DiskReadParameters readParams, IDevice logDevice, CircularDiskReadBuffer deserializationBuffers, ILogger logger)
+        public ObjectLogReader(in DiskReadParameters readParams, IDevice logDevice, CircularDiskReadBuffer deserializationBuffers, ILogger logger)
         {
             this.readParams = readParams;
             this.logDevice = logDevice ?? throw new ArgumentNullException(nameof(logDevice));
@@ -88,7 +75,7 @@ namespace Tsavorite.core
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("FlushAndReset is not supported for DiskStreamReadBuffer");
 
         /// <inheritdoc/>
-        public void Write(in LogRecord logRecord, long diskTailOffset, out int recordStartAdjustment) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
+        public long Write(in LogRecord logRecord, long diskTailOffset, out int recordStartAdjustment) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <inheritdoc/>
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
@@ -113,7 +100,6 @@ namespace Tsavorite.core
         {
             var ptr = recordBuffer.GetValidPointer();
             diskLogRecord = default;
-            recordOptionals.Initialize();
 
             // First see if we have a page break in this initial (possibly partial) record, and compact over it if so.
             var initialPageBreakBytes = CompactOverPageBreakIfNeeded(recordBuffer, offsetToStartOfField: 0, out var offsetToInitialPageBreak);
@@ -319,7 +305,7 @@ namespace Tsavorite.core
             // we prefer the SectorAlignedMemory where possible as we have a pool for it, which saves GC overhead. However, we choose overflow
             // at a lower limit if there is a page break, to minimize copying to cover up the page boundary metadata.
             var valueIsOverflow = !recordInfo.ValueIsObject
-                                    && valueLength > (valueAndOptionalsPageBreakInfo.hasPageBreak ? DiskStreamWriter.MaxCopySpanLen : readParams.maxInlineValueLength);
+                                    && valueLength > (valueAndOptionalsPageBreakInfo.hasPageBreak ? ObjectLogWriter.MaxCopySpanLen : readParams.maxInlineValueLength);
             valueSingleAllocation = default;
 
             if (valueIsOverflow)
@@ -379,7 +365,7 @@ namespace Tsavorite.core
             if (totalLength < MaxBufferSize && !hasContinuationChunk)
             {
                 // See if this record crosses a page boundary. If it does and is less than MaxCopySpanLen, just read and compact it in-place; otherwise fall through to do more complex reading.
-                if (!recordHasPageBreaks || totalLength <= DiskStreamWriter.MaxCopySpanLen)
+                if (!recordHasPageBreaks || totalLength <= ObjectLogWriter.MaxCopySpanLen)
                 {
                     // If the optionals are present in the recordBuffer DiskLogRecord.Transfer extracts them, so we don't need to process them here.
                     valueSingleAllocation.Set(AllocateBufferAndReadFromDevice(offsetToStartOfField: 0, (int)totalLength, ref recordPageBreakInfo, extractOptionals: false), currentPosition: offsetToValueStart);
@@ -408,7 +394,7 @@ namespace Tsavorite.core
                 // Since keys are usually small and optionals are at most two longs (which will at worst add an additional sector), we can usually get all the data with one
                 // IO via AllocateOverflowAndReadFromDevice, then copy out the key and optionals, set the Value offsets, and we're done. See if the key is small enough to 
                 // read and copy (if it is too large, we'll prefer multiple IOs).
-                if (keyLength <= DiskStreamWriter.MaxCopySpanLen)
+                if (keyLength <= ObjectLogWriter.MaxCopySpanLen)
                 {
                     // We'll start reading at alignedKeyStart, which will use offsetToKeyStart as the OverflowByteArray's start, and include optionals.
                     // From that we'll extract the key and update the offset to be at the beginning of the actual value, and extract optionals and adjust the end offset.
@@ -514,8 +500,8 @@ namespace Tsavorite.core
                 else
                 {
                     // The multiCountdownEvent case must use a GCHandle because we will leave the 'fixed' scope before doing the Wait().
-                    context.gcHandle = GCHandle.Alloc(overflowArray.Data, GCHandleType.Pinned);
-                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)Unsafe.AsPointer(ref overflowArray.Data[0]), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
+                    context.gcHandle = GCHandle.Alloc(overflowArray.Array, GCHandleType.Pinned);
+                    logDevice.ReadAsync((ulong)alignedReadOffset, (IntPtr)Unsafe.AsPointer(ref overflowArray.Array[0]), (uint)alignedBytesToRead, ReadFromDeviceCallback, context);
                 }
                 return overflowArray;
             }
@@ -532,12 +518,12 @@ namespace Tsavorite.core
             overflowArray = new OverflowByteArray((int)overflowLen, startOffset: startPadding, endOffset:0, zeroInit: false);
             
             // Create the refcounted pinned GCHandle with a refcount of 1, so that if a read completes while we're still setting up, we won't get an early unpin.
-            RefCountedPinnedGCHandle refCountedGCHandle = new(GCHandle.Alloc(overflowArray.Data, GCHandleType.Pinned), initialCount: 1);
+            RefCountedPinnedGCHandle refCountedGCHandle = new(GCHandle.Alloc(overflowArray.Array, GCHandleType.Pinned), initialCount: 1);
             var destinationOffset = 0;
 
             // Leave an extra sector out of the page border allowance; PageBorderLen is probably a multiple of OS page size, so we don't want to force it to read
             // another OS page of data just to get the first sector on the following page.
-            var bufferSizeAtEndOfPage = DiskStreamWriter.PageBorderLen - SectorSize;
+            var bufferSizeAtEndOfPage = ObjectLogWriter.PageBorderLen - SectorSize;
 
             // Do this inside try/finally to ensure we release resources.
             try
@@ -556,7 +542,7 @@ namespace Tsavorite.core
                     };
 
                     // If the first fragment is large, issue a direct read for the longest sector-aligned portion so we don't have to allocate and copy from a large buffer.
-                    if (pageBreakInfo.firstPageFragmentSize > DiskStreamWriter.MaxCopySpanLen)
+                    if (pageBreakInfo.firstPageFragmentSize > ObjectLogWriter.MaxCopySpanLen)
                     {
                         // Read up to the last sector of the page before, and adjust the copy length to be from bufferSizeAtEndOfPage to one sector before end of page.
                         var firstReadLen = alignedFirstFragmentSize - bufferSizeAtEndOfPage;

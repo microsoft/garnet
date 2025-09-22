@@ -8,7 +8,6 @@ namespace Tsavorite.core
     [StructLayout(LayoutKind.Explicit, Size = Size)]
     internal struct PageHeader
     {
-        const int PositionNotSet = -1;
         const ushort CurrentVersion = 1;
 
         /// <summary>The size of the struct. Must be a power of 2. Currently set to the size that the 0'th page offset was; 64 bytes</summary>
@@ -26,7 +25,7 @@ namespace Tsavorite.core
 
         /// <summary>The lowest object-log position on this main-log page, if ObjectAllocator. Contains both segmentId and offset on segment</summary>
         [FieldOffset(sizeof(long))]
-        internal long objectLogLowestPosition;
+        internal ulong objectLogLowestPosition;
 
         // Unused; as they become used, start with higher #
         [FieldOffset(sizeof(long) * 2)]
@@ -50,7 +49,7 @@ namespace Tsavorite.core
         {
             this = default;
             version = CurrentVersion;
-            objectLogLowestPosition = PositionNotSet;
+            objectLogLowestPosition = ObjectLogFilePositionInfo.PositionNotSet;
         }
 
         internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
@@ -59,10 +58,10 @@ namespace Tsavorite.core
         /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
         /// </summary>
         /// <param name="position">The position in the object log.</param>
-        internal void SetLowestObjectLogPosition(int position)
+        internal void SetLowestObjectLogPosition(in ObjectLogFilePositionInfo position)
         {
-            if (objectLogLowestPosition == PositionNotSet)
-                objectLogLowestPosition = position;
+            if (objectLogLowestPosition == ObjectLogFilePositionInfo.PositionNotSet)
+                objectLogLowestPosition = position.word;
         }
 
         public override readonly string ToString()

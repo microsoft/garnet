@@ -2,12 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
+    using static Utility;
 
     internal sealed unsafe class DiskWriteBuffer : IDisposable
     {
@@ -23,10 +25,21 @@ namespace Tsavorite.core
         /// <remarks><see cref="currentPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
         internal int currentPosition;
 
-        /// <summary>Last position flushed to in this buffer (i.e. 0->flushedUntilPosition have been flushed). This is necessary because completing
-        /// a flush fragment (partial page, or complete page in a multi-page flush) requires immediate flushing so the flushedUntilAddress can be updated.</summary>
-        /// <remarks><see cref="flushedUntilPosition"/> is the current length, since it is *past* the last byte copied to the buffer.</remarks>
+        /// <summary>Last position flushed to in this buffer (i.e. 0->flushedUntilPosition have been flushed). This allows using the buffer for
+        /// multiple small writes sandwiched around large internal direct writes from overflow.</summary>
+        /// <remarks>If <see cref="flushedUntilPosition"/> is less than <see cref="currentPosition"/> then there is unflushed data in the buffer.</remarks>
         internal int flushedUntilPosition;
+
+        /// <summary>The end position of the buffer. Usually the size of the buffer, but may be less if we're at the end of a segment.
+        /// This should always be sector-aligned, because we start the partial flush sector-aligned and this is either a bufferSize past
+        /// the previous buffer or a sector-aligned distance from the end of the segment; the latter may be less than the end of the buffer
+        /// due to directly writing internal spans for <see cref="OverflowByteArray"/> Keys and Values that are less than a full buffer size.</summary>
+        internal int endPosition;
+
+        internal int RemainingLength => endPosition - currentPosition;
+
+        /// <summary>The remaining space in the buffer, from <see cref="currentPosition"/> to <see cref="endPosition"/>.</summary>
+        internal Span<byte> RemainingSpan => new(memory.GetValidPointer(), RemainingLength);
 
         internal readonly IDevice device;
         internal readonly ILogger logger;
@@ -38,17 +51,22 @@ namespace Tsavorite.core
             this.logger = logger;
         }
 
-        internal void WaitUntilFreeAndInitialize(int sectorSize)
+        internal void WaitUntilFreeAndInitialize(int endPosition)
         {
+            Debug.Assert(IsAligned(endPosition, (int)device.SectorSize), $"endPosition {endPosition} is not sector-aligned");
+
             // First wait for any pending write in this buffer to complete. If this is our first time in this buffer there won't be a CountdownEvent yet;
             // we defer that because we may not need all the buffers in the circular buffer.
             countdownEvent?.Wait();
+
+            // Initialize fields.
+            this.endPosition = endPosition;
             memory.valid_offset = 0;
-            currentPosition = (*(DiskPageHeader*)memory.GetValidPointer()).Initialize(sectorSize);
+            currentPosition = 0;
             flushedUntilPosition = 0;
         }
 
-        internal int RemainingCapacity => memory.AlignedTotalCapacity - currentPosition;  // DiskPageHeader.Size is included in currentPosition
+        internal int RemainingCapacity => endPosition - currentPosition;  // DiskPageHeader.Size is included in currentPosition
 
         internal ReadOnlySpan<byte> GetTailSpan(int start) => new(memory.GetValidPointer() + start, currentPosition - start);
 
@@ -71,19 +89,26 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>
-        /// Write the span directly to the device without changing the buffer. The span may be either an external span (e.g. a large overflow key or value, which must be pinned)
-        /// or a slice of the buffer's memory span. Because of this, the caller controls adjustment of <see cref="currentPosition"/>, <see cref="flushedUntilPosition"/>, etc.
-        /// </summary>
-        /// <remarks>This takes a Span rather than a range because there may be a non-buffer write associated with the buffer; e.g. the buffer is used to store the beginning and ending
-        /// of a page image (for alignment) and the interior is a direct write from external data.</remarks>
-        internal void FlushToDevice(ReadOnlySpan<byte> span, ulong alignedDeviceAddress, DeviceIOCompletionCallback callback, DiskWriteCallbackContext pageWriteCallbackContext)
+        internal void FlushToDevice(ref ObjectLogFilePositionInfo filePosition, DeviceIOCompletionCallback callback, DiskWriteCallbackContext pageWriteCallbackContext)
         {
+            Debug.Assert(currentPosition < endPosition, $"currentPosition ({currentPosition}) cannot exceed endPosition ({endPosition})");
+
+            // We are flushing the buffer. currentPosition must already be sector-aligned; either it is at endPosition (which is always sector-aligned),
+            // which is the normal "buffer is full so flush it" handling, or it is less than endPosition which means it is called from one of:
+            //   a. OnPartialFlushComplete, in which case the caller has sector-aligned it before calling this
+            //   b. OverflowByteArray sector-aligning writes at the beginning or end, which means we copied a sector-aligned number of bytes to the buffer.
+            Debug.Assert(IsAligned(currentPosition, (int)device.SectorSize), $"currentPosition ({currentPosition}) is not sector-aligned");
+            Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"Starting file flush position ({filePosition}) is not sector-aligned");
             IncrementOrResetCountdown(ref countdownEvent);
 
-            // The span must already be pinned, as it must remain pinned after this call returns; here, we used fixed only to convert it to a byte*.
-            fixed (byte* spanPtr = span)
-                device.WriteAsync((IntPtr)spanPtr, alignedDeviceAddress, (uint)span.Length, callback, pageWriteCallbackContext);
+            var flushLength = (uint)(currentPosition - flushedUntilPosition);
+            Debug.Assert(IsAligned(flushLength, (int)device.SectorSize), $"flushLength {flushLength} is not sector-aligned");
+            Debug.Assert(flushLength <= filePosition.RemainingSize, $"flushLength ({flushLength}) cannot be greater than filePosition.RemainingSize ({filePosition.RemainingSize})");
+
+            var spanPtr = memory.GetValidPointer() + flushedUntilPosition;
+            device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, flushLength, callback, pageWriteCallbackContext);
+            flushedUntilPosition = currentPosition;
+            filePosition.Offset += flushLength;
         }
 
         internal void Wait() => countdownEvent?.Wait();
@@ -92,6 +117,8 @@ namespace Tsavorite.core
         {
             memory?.Return();
             memory = null;
+
+            Debug.Assert(countdownEvent.CurrentCount == 0, $"Unexpected count ({countdownEvent.CurrentCount}) remains");
             countdownEvent.Dispose();
             countdownEvent = null;
         }
@@ -99,8 +126,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
         {
-            var countdownString = countdownEvent?.CurrentCount.ToString() ?? "-0-";
-            return $"currPos {currentPosition}; flushedUntilPos {flushedUntilPosition}; countDown {countdownEvent?.CurrentCount}; buf: {memory}";
+            var countdownString = countdownEvent?.CurrentCount.ToString() ?? "null";
+            return $"currPos {currentPosition}; flushedUntilPos {flushedUntilPosition}; countDown {countdownString}; buf: {memory}";
         }
     }
 }

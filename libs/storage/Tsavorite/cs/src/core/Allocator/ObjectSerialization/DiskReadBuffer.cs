@@ -30,8 +30,8 @@ namespace Tsavorite.core
         const int NoPosition = -1;
 
         /// <summary>Current read position (we do not support write in this buffer). This class only supports Read and no Seek,
-        /// so currentPosition is always where <see cref="DiskStreamReader{TStoreFunctions}"/> will read from next.</summary>
-        /// <remarks>This will be either 0 or greater than or equal to <see cref="DiskPageHeader.Size"/>.</remarks>
+        /// so currentPosition is always where <see cref="ObjectLogReader{TStoreFunctions}"/> will read from next.</summary>
+        /// <remarks>This will be either 0 or greater than or equal to <see cref="PageHeader.Size"/>.</remarks>
         internal int currentPosition;
 
         /// <summary>Non-inclusive last position in this buffer; the number of byte read. If <see cref="currentPosition"/> equals this, then we are out of space and

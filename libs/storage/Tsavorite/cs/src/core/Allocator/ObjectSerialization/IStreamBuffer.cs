@@ -46,7 +46,8 @@ namespace Tsavorite.core
         /// <param name="logRecord">The <see cref="LogRecord"/> to write to the device.</param>
         /// <remarks>This is the serialization driver for the passed <see cref="LogRecord"/>; if the value is an object, then the 
         /// implementation calls valueObjectSerializer to serialize, which in turn calls <see cref="Write(ReadOnlySpan{byte}, CancellationToken)"/>.</remarks>
-        void Write(in LogRecord logRecord);
+        /// <returns>The number of bytes written to the object log file</returns>
+        long Write(in LogRecord logRecord);
 
         /// <summary>
         /// Write span of bytes to the storage or network buffer. Actual flushing (e.g. to disk) is done as needed..

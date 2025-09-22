@@ -158,6 +158,16 @@ namespace Tsavorite.core
         public int AlignedTotalCapacity => buffer.Length - aligned_offset;
 
         /// <summary>
+        /// Get the total valid memory capacity of the buffer
+        /// </summary>
+        public int ValidTotalCapacity => AlignedTotalCapacity - valid_offset;
+
+        /// <summary>
+        /// Get the total valid required (requested) capacity of the buffer
+        /// </summary>
+        public int RequiredCapacity => required_bytes - valid_offset;
+
+        /// <summary>
         /// Get valid pointer (accounts for aligned padding plus any offset specified for the valid start of data)
         /// </summary>
         /// <returns></returns>
@@ -167,17 +177,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Get Span of entire allocated space after the valid pointer
         /// </summary>
-        public Span<byte> TotalValidSpan => new(GetValidPointer(), AlignedTotalCapacity);
+        public Span<byte> TotalValidSpan => new(GetValidPointer(), ValidTotalCapacity);
 
         /// <summary>
-        /// Get Span of entire allocated space after the valid pointer (see <see cref="available_bytes"/>).
+        /// Get Span of entire allocated space after the aligned pointer (see <see cref="available_bytes"/>).
         /// </summary>
-        public Span<byte> AvailableValidSpan => new(GetValidPointer(), available_bytes);
+        public Span<byte> AvailableSpan => new(aligned_pointer, available_bytes);
+
+        /// <summary>
+        /// Get Span of entire allocated space after the valid pointer (see <see cref="valid_offset"/>).
+        /// </summary>
+        public Span<byte> AvailableValidSpan => new(GetValidPointer(), available_bytes - valid_offset);
 
         /// <summary>
         /// Returns the Span of requested space (see <see cref="required_bytes"/>).
         /// </summary>
-        public Span<byte> RequiredValidSpan => new(GetValidPointer(), required_bytes);
+        public Span<byte> RequiredValidSpan => new(GetValidPointer(), RequiredCapacity);
 
         /// <summary>
         /// ToString

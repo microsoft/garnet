@@ -32,7 +32,7 @@ namespace Tsavorite.core
     /// </list>
     /// </summary>
     /// <remarks>This class implements <see cref="IDisposable"/> because reads are all Wait()ed on (in parallel) before the
-    ///     <see cref="DiskStreamReader{TStoreFunctions}.ReadFromDevice(SectorAlignedMemory, long, int, int, System.Threading.CountdownEvent)"/> returns.</remarks>
+    ///     <see cref="ObjectLogReader{TStoreFunctions}.ReadFromDevice(SectorAlignedMemory, long, int, int, System.Threading.CountdownEvent)"/> returns.</remarks>
     public class CircularDiskReadBuffer : IDisposable
     {
         internal readonly SectorAlignedBufferPool bufferPool;
@@ -74,7 +74,7 @@ namespace Tsavorite.core
         int optionalLength;
 
         /// <summary>The cumulative length read; this includes page-break metadata, optionals if read, etc. It allows us to position ourselves to the next record start after the
-        /// <see cref="DiskStreamReader{TStoreFunctions}.ReadFromDevice(SectorAlignedMemory, long, int, int, System.Threading.CountdownEvent)"/>> is complete.</summary>
+        /// <see cref="ObjectLogReader{TStoreFunctions}.ReadFromDevice(SectorAlignedMemory, long, int, int, System.Threading.CountdownEvent)"/>> is complete.</summary>
         internal long readCumulativeLength = 0;
 
         /// <summary>The cumulative length of object data read from the device.</summary>

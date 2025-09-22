@@ -127,10 +127,7 @@ namespace Tsavorite.core
             return v.ToString() + "B";
         }
 
-        /// <summary>Rounds up value to alignment</summary>
-        /// <param name="value">Value to be aligned</param>
-        /// <param name="alignment">Align to this</param>
-        /// <returns>Aligned value</returns>
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int RoundUp(int value, int alignment)
         {
@@ -138,6 +135,15 @@ namespace Tsavorite.core
             return (value + (alignment - 1)) & ~(alignment - 1);
         }
 
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint RoundUp(uint value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(uint) alignment must be a power of two");
+            return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long RoundUp(long value, int alignment)
         {
@@ -145,6 +151,15 @@ namespace Tsavorite.core
             return (value + (alignment - 1)) & ~(alignment - 1);
         }
 
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong RoundUp(ulong value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(ulong) alignment must be a power of two");
+            return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int RoundDown(int value, int alignment)
         {
@@ -152,6 +167,15 @@ namespace Tsavorite.core
             return value & ~(alignment - 1);
         }
 
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static uint RoundDown(uint value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(uint) alignment must be a power of two");
+            return value & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long RoundDown(long value, int alignment)
         {
@@ -159,11 +183,28 @@ namespace Tsavorite.core
             return value & ~(alignment - 1);
         }
 
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong RoundDown(ulong value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(ulong) alignment must be a power of two");
+            return value & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Verifies that <paramref name="value"/> is aligned to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsAligned(long value, int alignment)
         {
             Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(long) alignment must be a power of two");
             return (value & (alignment - 1)) == 0;
+        }
+
+        /// <summary>Verifies that <paramref name="value"/> is aligned to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAligned(ulong value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(ulong) alignment must be a power of two");
+            return (value & ((uint)alignment - 1)) == 0;
         }
 
         /// <summary>

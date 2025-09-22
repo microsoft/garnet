@@ -9,7 +9,7 @@ namespace Tsavorite.core
 #pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
 
-    internal unsafe partial class DiskStreamReader<TStoreFunctions> where TStoreFunctions : IStoreFunctions
+    internal unsafe partial class ObjectLogReader<TStoreFunctions> where TStoreFunctions : IStoreFunctions
     {
         /// <summary>
         /// Information for the IO read operation.
@@ -69,7 +69,7 @@ namespace Tsavorite.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal bool CalculatePageBreaks(long length, int distanceFromEndOfPage, out PageBreakInfo pageBreakInfo) 
-                => DiskStreamWriter.CalculatePageBreaks(length, distanceFromEndOfPage, UsablePageSize, out pageBreakInfo);
+                => ObjectLogWriter.CalculatePageBreaks(length, distanceFromEndOfPage, UsablePageSize, out pageBreakInfo);
         }
     }
 }

@@ -893,11 +893,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetOffsetOnPage(long address) => address & PageSizeMask;
 
-        /// <summary>Get start logical address</summary>
+        /// <summary>Get start logical address; this is the 0'th byte on the page, i.e. the <see cref="PageHeader"/> start; it is *not* a valid record address
+        /// (for that see <see cref="GetFirstValidLogicalAddressOnPage"/>).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetAbsoluteLogicalAddressOfStartOfPage(long page) => LogAddress.GetAbsoluteLogicalAddressOfStartOfPage(page, LogPageSizeBits);
 
-        /// <summary>Get first valid address</summary>
+        /// <summary>Get first valid address on a page (which is the start of the page plus sizeof(<see cref="PageHeader"/>)).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetFirstValidLogicalAddressOnPage(long page) => GetAbsoluteLogicalAddressOfStartOfPage(page) + FirstValidAddress;
 
@@ -1499,7 +1500,7 @@ namespace Tsavorite.core
             pageIndex = GetPageIndexForAddress(tailAddress);
 
             // clear the last page starting from tail address
-            _wrapper.ClearPage(pageIndex, (int)GetOffsetOnPage(tailAddress));
+            ClearPage(pageIndex, (int)GetOffsetOnPage(tailAddress));
 
             // Printing debug info
             logger?.LogInformation("******* Recovered HybridLog Stats *******");
@@ -1561,12 +1562,12 @@ namespace Tsavorite.core
                 if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
                 else
-                    _wrapper.ClearPage(readPage);
+                    ClearPage(readPage, offset: 0);
 
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
                     page = readPage,
-                    offset = devicePageOffset,
+                    devicePageOffset = devicePageOffset,
                     context = context,
                     handle = completed,
                     maxPtr = PageSize
@@ -1733,8 +1734,6 @@ namespace Tsavorite.core
 
                 WriteAsync(flushBuffers, flushPage, callback, asyncResult);
             }
-
-            flushBuffers.OnFlushComplete();
         }
 
         /// <summary>
@@ -1757,16 +1756,11 @@ namespace Tsavorite.core
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
 
-            // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-            using var flushBuffers = CreateFlushBuffers(bufferPool, device, logger);
-
             // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
             if (throttleCheckpointFlushDelayMs >= 0)
                 _ = Task.Run(FlushRunner);
             else
                 FlushRunner();
-
-            flushBuffers.OnFlushComplete();
 
             void FlushRunner()
             {
@@ -1774,6 +1768,9 @@ namespace Tsavorite.core
 
                 var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
                 var localSegmentOffsets = new long[SegmentBufferSize];
+
+                // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
+                using var flushBuffers = CreateFlushBuffers(bufferPool, device, logger);
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
