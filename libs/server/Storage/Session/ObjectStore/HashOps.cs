@@ -376,7 +376,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashSet<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashSet<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
@@ -444,7 +444,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
@@ -457,7 +457,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <returns></returns>
-        public GarnetStatus HashStrLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashStrLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
@@ -470,7 +470,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashDelete<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashDelete<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
           where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
@@ -483,7 +483,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashExists<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus HashExists<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
@@ -522,7 +522,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashIncrement<TObjectContext>(PinnedSpanByte key, PinnedSpanByte input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus HashIncrement<TObjectContext>(PinnedSpanByte key, PinnedSpanByte input, out OutputHeader output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperation(key.ReadOnlySpan, input, out output, ref objectContext);
 

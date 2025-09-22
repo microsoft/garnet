@@ -782,7 +782,7 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Span<byte> rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
+            Span<byte> rmwOutput = stackalloc byte[OutputHeader.Size];
             var output = SpanByteAndMemory.FromPinnedSpan(rmwOutput);
             timeoutSet = false;
 
@@ -819,7 +819,7 @@ namespace Garnet.server
             }
 
             Debug.Assert(output.IsSpanByte);
-            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
+            if (found) timeoutSet = ((OutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
 
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
@@ -887,7 +887,7 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Span<byte> rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
+            Span<byte> rmwOutput = stackalloc byte[OutputHeader.Size];
             var output = SpanByteAndMemory.FromPinnedSpan(rmwOutput);
             timeoutSet = false;
             var found = false;
@@ -932,7 +932,7 @@ namespace Garnet.server
             }
 
             Debug.Assert(output.IsSpanByte);
-            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
+            if (found) timeoutSet = ((OutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
 
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

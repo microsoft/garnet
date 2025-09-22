@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -154,6 +153,7 @@ namespace Garnet.server
                     case RespCommand.PERSIST:
                         if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                             return false;
+
                         if (srcLogRecord.Info.HasExpiration)
                         {
                             dstLogRecord.RemoveExpiration();
@@ -247,8 +247,7 @@ namespace Garnet.server
                         functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     }
                     else
-                    {
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);}
+                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
 
                     if (!logRecord.Info.ValueIsObject)
                     {
@@ -304,12 +303,14 @@ namespace Garnet.server
             shouldUpdateEtag = false;
             if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                 return false;
+
             if (srcLogRecord.Info.HasExpiration)
             {
                 dstLogRecord.RemoveExpiration();
-                using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                writer.WriteOne();
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
             }
+            else
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
 
             return true;
         }

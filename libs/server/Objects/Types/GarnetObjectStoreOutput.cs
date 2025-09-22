@@ -23,9 +23,9 @@ namespace Garnet.server
         public IGarnetObject GarnetObject;
 
         /// <summary>
-        /// Object header
+        /// Output header
         /// </summary>
-        public ObjectOutputHeader Header;
+        public OutputHeader Header;
 
         /// <summary>
         /// Output flags

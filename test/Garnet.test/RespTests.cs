@@ -2553,7 +2553,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(key, (string)value);
 
             if (command.Equals("EXPIRE"))
-                db.KeyExpire(key, TimeSpan.FromSeconds(1));
+            {
+                var res = db.KeyExpire(key, TimeSpan.FromSeconds(1));
+            }
             else
                 db.Execute(command, [key, 1000]);
 

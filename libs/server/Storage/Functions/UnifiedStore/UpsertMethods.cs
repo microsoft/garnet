@@ -139,7 +139,9 @@ namespace Garnet.server
                     var newETag = functionsState.etagState.ETag + 1;
                     ok = logRecord.TrySetETag(newETag);
                     if (ok)
+                    {
                         functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
+                    }
                 }
                 else
                     ok = logRecord.RemoveETag();

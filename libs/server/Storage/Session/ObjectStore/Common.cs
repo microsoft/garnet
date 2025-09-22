@@ -19,7 +19,7 @@ namespace Garnet.server
     {
         #region Common ObjectStore Methods
 
-        unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (objectStoreContext.Session is null)
@@ -36,7 +36,7 @@ namespace Garnet.server
         }
 
         unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, PinnedSpanByte input,
-            out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (objectStoreContext.Session is null)
@@ -714,7 +714,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, PinnedSpanByte input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, PinnedSpanByte input, out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (objectStoreContext.Session is null)
@@ -750,7 +750,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             if (objectStoreContext.Session is null)

@@ -30,9 +30,6 @@ namespace Garnet.server
                 switch (cmd)
                 {
                     case RespCommand.EXPIRE:
-                    case RespCommand.PEXPIRE:
-                    case RespCommand.EXPIREAT:
-                    case RespCommand.PEXPIREAT:
                         {
                             // Set HasExpiration to match with EvaluateExpireInPlace.
                             if (srcLogRecord.Info.HasExpiration)

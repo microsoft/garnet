@@ -82,29 +82,27 @@ namespace Garnet.server
 
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref GarnetUnifiedStoreOutput output)
         {
-            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-
             // TODO ETag?
             if (!logRecord.TrySetValueSpan(newValue, in sizeInfo))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
-                writer.WriteZero();
                 return false;
             }
 
-            return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, writer);
+            return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, ref output);
         }
 
         bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetUnifiedStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
-            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-            return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, writer);
+            return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, ref output);
         }
 
-        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, RespMemoryWriter writer)
+        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetUnifiedStoreOutput output)
         {
+            var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
+            o->result1 = 0;
             var expiryExists = logRecord.Info.HasExpiration;
 
             if (expiryExists)
@@ -113,62 +111,53 @@ namespace Garnet.server
                 switch (optionType)
                 {
                     case ExpireOption.NX:
-                        writer.WriteZero();
                         return true;
                     case ExpireOption.XX:
                     case ExpireOption.None:
                         _ = logRecord.TrySetExpiration(newExpiry);
-                        writer.WriteOne();
+                        o->result1 = 1;
                         return true;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                         if (newExpiry > logRecord.Expiration)
                         {
                             _ = logRecord.TrySetExpiration(newExpiry);
-                            writer.WriteOne();
-                            return true;
+                            o->result1 = 1;
                         }
-                        writer.WriteZero();
                         return true;
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
                         if (newExpiry < logRecord.Expiration)
                         {
                             _ = logRecord.TrySetExpiration(newExpiry);
-                            writer.WriteOne();
-                            return true;
+                            o->result1 = 1;
                         }
-                        writer.WriteZero();
                         return true;
                     default:
                         throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is false: optionType{optionType}");
                 }
             }
-            else
+
+            // No expiration yet. Because this is CopyUpdate we should already have verified the space, but check anyway
+            switch (optionType)
             {
-                // No expiration yet. Because this is CopyUpdate we should already have verified the space, but check anyway
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                    case ExpireOption.None:
-                    case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        if (!logRecord.TrySetExpiration(newExpiry))
-                        {
-                            functionsState.logger?.LogError("Failed to add expiration in {methodName}.{caseName}", "EvaluateExpireCopyUpdate", "LT");
-                            writer.WriteZero();
-                            return false;
-                        }
-                        writer.WriteOne();
-                        return true;
-                    case ExpireOption.XX:
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                    case ExpireOption.XXLT:
-                        writer.WriteZero();
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is true: optionType{optionType}");
-                }
+                case ExpireOption.NX:
+                case ExpireOption.None:
+                case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
+                    if (!logRecord.TrySetExpiration(newExpiry))
+                    {
+                        functionsState.logger?.LogError("Failed to add expiration in {methodName}.{caseName}", "EvaluateExpireCopyUpdate", "LT");
+                        return false;
+                    }
+                    o->result1 = 1;
+                    return true;
+                case ExpireOption.XX:
+                case ExpireOption.GT:
+                case ExpireOption.XXGT:
+                case ExpireOption.XXLT:
+                    return true;
+                default:
+                    throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is true: optionType{optionType}");
             }
         }
     }
