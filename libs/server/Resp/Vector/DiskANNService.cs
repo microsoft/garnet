@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -6,6 +8,8 @@ namespace Garnet.server
 {
     internal sealed unsafe class DiskANNService : IVectorService
     {
+        private static readonly bool UseMultiInsertCallback = false;
+
         // Term types.
         private const byte FullVector = 0;
         private const byte NeighborList = 1;
@@ -86,6 +90,87 @@ namespace Garnet.server
             var attributes_len = attributes.Length;
 
             return NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len) == 1;
+        }
+
+        public void MultiInsert(ulong context, nint index, ReadOnlySpan<PointerLengthPair> ids, VectorValueType vectorType, ReadOnlySpan<PointerLengthPair> vectors, ReadOnlySpan<PointerLengthPair> attributes, Span<bool> insertSuccess)
+        {
+            if (UseMultiInsertCallback)
+            {
+                var ids_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(ids));
+                var ids_len = (nuint)ids.Length;
+
+                nint vectors_data;
+                nuint vectors_len;
+
+                float[] rentedTempData = null;
+                try
+                {
+                    Span<float> tempData = vectorType == VectorValueType.XB8 ? stackalloc float[128] : default;
+                    Span<PointerLengthPair> temp = vectorType == VectorValueType.XB8 ? stackalloc PointerLengthPair[vectors.Length] : default;
+                    if (vectorType == VectorValueType.F32)
+                    {
+                        vectors_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(vectors));
+                        vectors_len = (nuint)vectors.Length;
+                    }
+                    else
+                    {
+                        var vectorLength = vectors[0].Length;
+
+                        // TODO: Eventually DiskANN will just take this directly, for now map to floats
+                        var neededFloatSpace = (int)(ids.Length * vectorLength);
+                        if (tempData.Length < neededFloatSpace)
+                        {
+                            rentedTempData = ArrayPool<float>.Shared.Rent(neededFloatSpace);
+                            tempData = rentedTempData;
+                        }
+
+                        tempData = tempData[..neededFloatSpace];
+                        var remainingTempData = tempData;
+
+                        for (var i = 0; i < vectors.Length; i++)
+                        {
+                            var asBytes = vectors[i].AsByteSpan();
+                            Debug.Assert(asBytes.Length == vectorLength, "All vectors should have same length for insertion");
+
+                            var floatEquiv = remainingTempData[..asBytes.Length];
+                            for (var j = 0; j < asBytes.Length; j++)
+                            {
+                                floatEquiv[j] = asBytes[j];
+                            }
+
+                            temp[i] = PointerLengthPair.From(floatEquiv);
+
+                            remainingTempData = remainingTempData[asBytes.Length..];
+                        }
+
+                        vectors_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(temp));
+                        vectors_len = (nuint)temp.Length;
+                    }
+
+                    var attributes_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
+                    var attributes_len = (nuint)attributes.Length;
+
+                    // These are treated as bytes on the Rust side
+                    var insert_success_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(insertSuccess));
+                    var insert_success_len = (nuint)insertSuccess.Length;
+
+                    NativeDiskANNMethods.multi_insert(context, index, ids_data, ids_len, vectors_data, vectors_len, attributes_data, attributes_len, insert_success_data, insert_success_len);
+                }
+                finally
+                {
+                    if (rentedTempData != null)
+                    {
+                        ArrayPool<float>.Shared.Return(rentedTempData);
+                    }
+                }
+            }
+            else
+            {
+                for (var i = 0; i < ids.Length; i++)
+                {
+                    insertSuccess[i] = Insert(context, index, ids[i].AsByteSpan(), vectorType, vectors[i].AsByteSpan(), attributes[i].AsByteSpan());
+                }
+            }
         }
 
         public int SearchVector(
@@ -241,6 +326,20 @@ namespace Garnet.server
             nuint vector_len,
             nint attribute_data,
             nuint attribute_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial void multi_insert(
+            ulong context,
+            nint index,
+            nint ids_data,
+            nuint ids_len,
+            nint vectors_data,
+            nuint vectors_len,
+            nint attributes_data,
+            nuint attributes_len,
+            nint insert_success_data,
+            nuint insert_success_len
         );
 
         [LibraryImport(DISKANN_GARNET)]

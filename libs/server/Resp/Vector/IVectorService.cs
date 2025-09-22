@@ -2,12 +2,79 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
     public delegate int VectorReadDelegate(ulong context, ReadOnlySpan<byte> key, Span<byte> value);
     public delegate bool VectorWriteDelegate(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value);
     public delegate bool VectorDeleteDelegate(ulong context, ReadOnlySpan<byte> key);
+
+    /// <summary>
+    /// For passing multiple Span-like values at once with well defined layout and offset on the native side.
+    /// 
+    /// Struct is 16 bytes for alignment purposes, although only 13 are used at maximum.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    public readonly struct PointerLengthPair
+    {
+        /// <summary>
+        /// Pointer to a memory chunk.
+        /// </summary>
+        [FieldOffset(0)]
+        public readonly nint Pointer;
+
+        /// <summary>
+        /// Length of a memory chunk, in whatever units were intended.
+        /// </summary>
+        [FieldOffset(8)]
+        public readonly uint Length;
+
+        /// <summary>
+        /// Size of an individual unit in the <see cref="PointerLengthPair"/>.
+        /// For example, if we're storing bytes this is 1, floats this is 4, doubles this is 8, etc.
+        /// </summary>
+        [FieldOffset(12)]
+        public readonly byte UnitSizeBytes;
+
+        private unsafe PointerLengthPair(void* pointer, uint length, byte unitSize)
+        {
+            Pointer = (nint)pointer;
+            Length = length;
+        }
+
+        /// <summary>
+        /// Create a <see cref="PointerLengthPair"/> from a byte Span.
+        /// </summary>
+        public static unsafe PointerLengthPair From(ReadOnlySpan<byte> data)
+        => new(Unsafe.AsPointer(ref MemoryMarshal.GetReference(data)), (uint)data.Length, sizeof(byte));
+
+        /// <summary>
+        /// Create a <see cref="PointerLengthPair"/> from a float Span.
+        /// </summary>
+        public static unsafe PointerLengthPair From(ReadOnlySpan<float> data)
+        => new(Unsafe.AsPointer(ref MemoryMarshal.GetReference(data)), (uint)data.Length, sizeof(float));
+
+        /// <summary>
+        /// Convert this <see cref="PointerLengthPair"/> into a Span of bytes.
+        /// </summary>
+        public readonly unsafe Span<byte> AsByteSpan()
+        {
+            Debug.Assert(UnitSizeBytes == sizeof(byte), "Incompatible conversion");
+            return MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>((void*)Pointer), (int)Length);
+        }
+
+        /// <summary>
+        /// Convert this <see cref="PointerLengthPair"/> into a Span of floats.
+        /// </summary>
+        public readonly unsafe Span<float> AsFloatSpan()
+        {
+            Debug.Assert(UnitSizeBytes == sizeof(float), "Incompatible conversion");
+            return MemoryMarshal.CreateSpan(ref Unsafe.AsRef<float>((void*)Pointer), (int)Length);
+        }
+    }
 
     /// <summary>
     /// For Mocking/Plugging purposes, represents the actual implementation of a bunch of Vector Set operations.
@@ -49,6 +116,12 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if the vector was added, false otherwise.</returns>
         bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, VectorValueType vectorType, ReadOnlySpan<byte> vector, ReadOnlySpan<byte> attributes);
+
+        /// <summary>
+        /// Insert several vectors into an index.
+        /// </summary>
+        /// <returns>Each successful insert sets it's corresponding value in <paramref name="insertSuccess"/> to true.</returns>
+        void MultiInsert(ulong context, nint index, ReadOnlySpan<PointerLengthPair> ids, VectorValueType vectorType, ReadOnlySpan<PointerLengthPair> vectors, ReadOnlySpan<PointerLengthPair> attributes, Span<bool> insertSuccess);
 
         /// <summary>
         /// Search for similar vectors, given a vector.
