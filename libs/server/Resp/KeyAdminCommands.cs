@@ -459,13 +459,16 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new RawStringInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
-            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
+            var input = new UnifiedStoreInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
-            if (status == GarnetStatus.OK && timeoutSet)
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.EXPIRE(key, ref input, ref output);
+
+            if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

@@ -19,10 +19,20 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
 
-            if (status.Found)
-                return GarnetStatus.OK;
-            else
-                return GarnetStatus.NOTFOUND;
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        public GarnetStatus RMW_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, ref TUnifiedContext context)
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var status = context.RMW(key, ref input, ref output);
+
+            if (status.IsPending)
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
+
+            return status.Found || status.Record.Created || status.Record.InPlaceUpdated
+                ? GarnetStatus.OK
+                : GarnetStatus.NOTFOUND;
         }
     }
 }

@@ -67,5 +67,13 @@ namespace Garnet.server
             => storageSession.DELETE(key, ref unifiedContext);
 
         #endregion
+
+        #region EXPIRE
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+        
+        #endregion
     }
 }

@@ -15,6 +15,43 @@ namespace Garnet.server
     public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
     {
         /// <summary>
+        /// Logging upsert from
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
+        /// </summary>
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, ReadOnlySpan<byte> value, long version, int sessionID)
+        {
+            if (functionsState.StoredProcMode)
+                return;
+
+            input.header.flags |= RespInputFlags.Deterministic;
+
+            functionsState.appendOnlyFile.Enqueue(
+                new AofHeader { opType = AofEntryType.UnifiedStoreUpsert, storeVersion = version, sessionID = sessionID },
+                key, value, out _);
+        }
+
+        /// <summary>
+        /// Logging upsert from
+        /// a. InPlaceWriter
+        /// b. PostInitialWriter
+        /// </summary>
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, IGarnetObject value, long version, int sessionID)
+        {
+            if (functionsState.StoredProcMode)
+                return;
+            input.header.flags |= RespInputFlags.Deterministic;
+
+            GarnetObjectSerializer.Serialize(value, out var valueBytes);
+            fixed (byte* valPtr = valueBytes)
+            {
+                functionsState.appendOnlyFile.Enqueue(
+                    new AofHeader { opType = AofEntryType.UnifiedStoreUpsert, storeVersion = version, sessionID = sessionID },
+                    key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
+            }
+        }
+
+        /// <summary>
         ///  Logging Delete from
         ///  a. InPlaceDeleter
         ///  b. PostInitialDeleter
@@ -58,7 +95,7 @@ namespace Garnet.server
             return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, writer);
         }
 
-        bool EvaluateObjectExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetUnifiedStoreOutput output)
+        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetUnifiedStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 

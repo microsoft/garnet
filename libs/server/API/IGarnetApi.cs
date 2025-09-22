@@ -185,10 +185,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="input"></param>
-        /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, ref RawStringInput input, out bool timeoutSet, StoreType storeType = StoreType.All);
+        GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds

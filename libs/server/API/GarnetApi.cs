@@ -170,9 +170,6 @@ namespace Garnet.server
         #endregion
 
         #region EXPIRE
-        /// <inheritdoc />
-        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref RawStringInput input, out bool timeoutSet, StoreType storeType = StoreType.All)
-            => storageSession.EXPIRE(key, ref input, out timeoutSet, storeType, ref context, ref objectContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
