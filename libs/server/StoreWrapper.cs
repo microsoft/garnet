@@ -391,9 +391,8 @@ namespace Garnet.server
         /// <summary>
         /// Recover checkpoint
         /// </summary>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
-            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
-            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null)
+            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, metadata);
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing

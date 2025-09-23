@@ -85,9 +85,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="replicaRecover"></param>
         /// <param name="recoverMainStoreFromToken"></param>
-        /// <param name="recoverObjectStoreFromToken"></param>
         /// <param name="metadata"></param>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
         /// Take checkpoint of all active databases if checkpointing is not in progress
