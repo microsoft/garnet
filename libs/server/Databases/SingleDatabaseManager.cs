@@ -53,7 +53,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null)
         {
             long storeVersion = 0;
             try
@@ -173,7 +173,7 @@ namespace Garnet.server
 
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-                
+
                 defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
             finally

@@ -254,16 +254,15 @@ namespace Garnet.cluster
         /// Process request from primary to start recovery process from the retrieved checkpoint.
         /// </summary>
         /// <param name="recoverMainStoreFromToken"></param>
-        /// <param name="recoverObjectStoreFromToken"></param>
         /// <param name="replayAOF"></param>
         /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
+        /// <param name="errorMessage"></param>
         /// <returns></returns>
         public long BeginReplicaRecover(
             bool recoverMainStoreFromToken,
-            bool recoverObjectStoreFromToken,
             bool replayAOF,
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
@@ -284,7 +283,6 @@ namespace Garnet.cluster
                 storeWrapper.RecoverCheckpoint(
                     replicaRecover: true,
                     recoverMainStoreFromToken,
-                    recoverObjectStoreFromToken,
                     remoteCheckpoint.metadata);
 
                 if (replayAOF)
