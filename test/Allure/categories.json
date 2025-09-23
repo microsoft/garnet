@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Passed Tests",
+    "matchedStatuses": [ "passed" ],
+    "messageRegex": ".*"
+  },
+  {
+    "name": "Connection Failures",
+    "matchedStatuses": [ "failed" ],
+    "messageRegex": ".*Failed to connect within.*"
+  },
+  {
+    "name": "Assertion Failures",
+    "matchedStatuses": [ "failed" ],
+    "messageRegex": ".*expected.*but found.*"
+  },
+  {
+    "name": "All Failures",
+    "matchedStatuses": [ "failed" ],
+    "messageRegex": ".*"
+  }
+]
