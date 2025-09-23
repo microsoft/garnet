@@ -73,7 +73,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
             => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
-        
+
+        #endregion
+
+        #region PERSIST
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus PERSIST(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
         #endregion
     }
 }

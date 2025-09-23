@@ -228,13 +228,15 @@ namespace Garnet.server
         #endregion
 
         #region PERSIST
+
         /// <summary>
         /// PERSIST
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus PERSIST(PinnedSpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus PERSIST(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)

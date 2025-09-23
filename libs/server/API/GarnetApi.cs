@@ -192,12 +192,6 @@ namespace Garnet.server
 
         #endregion
 
-        #region PERSIST
-        /// <inheritdoc />
-        public unsafe GarnetStatus PERSIST(PinnedSpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.PERSIST(key, storeType, ref context, ref objectContext);
-        #endregion
-
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
         public GarnetStatus Increment(PinnedSpanByte key, ref RawStringInput input, ref PinnedSpanByte output)

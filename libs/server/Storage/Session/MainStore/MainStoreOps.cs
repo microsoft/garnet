@@ -937,51 +937,6 @@ namespace Garnet.server
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public unsafe GarnetStatus PERSIST<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref TContext context, ref TObjectContext objectStoreContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            GarnetStatus status = GarnetStatus.NOTFOUND;
-
-            var inputHeader = new RawStringInput(RespCommand.PERSIST);
-
-            var pbOutput = stackalloc byte[8];
-            var o = SpanByteAndMemory.FromPinnedPointer(pbOutput, 8);
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var _status = context.RMW(key.ReadOnlySpan, ref inputHeader, ref o);
-
-                if (_status.IsPending)
-                    CompletePendingForSession(ref _status, ref o, ref context);
-
-                Debug.Assert(o.IsSpanByte);
-                if (o.SpanByte.ReadOnlySpan[0] == 1)
-                    status = GarnetStatus.OK;
-            }
-
-            if (status == GarnetStatus.NOTFOUND && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                // Retry on object store
-                var header = new RespInputHeader(GarnetObjectType.Persist);
-                var objInput = new ObjectInput(header);
-
-                var objO = new GarnetObjectStoreOutput(o);
-                var _key = key.ToArray();
-                var _status = objectStoreContext.RMW(key.ReadOnlySpan, ref objInput, ref objO);
-
-                if (_status.IsPending)
-                    CompletePendingForObjectStoreSession(ref _status, ref objO, ref objectStoreContext);
-
-                Debug.Assert(o.IsSpanByte);
-                if (o.SpanByte.ReadOnlySpan.Slice(0, CmdStrings.RESP_RETURN_VAL_1.Length)
-                    .SequenceEqual(CmdStrings.RESP_RETURN_VAL_1))
-                    status = GarnetStatus.OK;
-            }
-
-            return status;
-        }
-
         /// <summary>
         /// For existing keys - overwrites part of the value at a specified offset (in-place if possible)
         /// For non-existing keys - creates a new string with the value at a specified offset (padded with '\0's)

@@ -1501,36 +1501,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void GarnetObjectStoreDisabledError()
-        {
-            TearDown();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var iter = 100;
-            var mykey = "mykey";
-            for (var i = 0; i < iter; i++)
-            {
-                var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
-                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
-            }
-
-            // Ensure connection is still healthy
-            for (var i = 0; i < iter; i++)
-            {
-                var myvalue = "myvalue" + i;
-                var result = db.StringSet(mykey, myvalue);
-                ClassicAssert.IsTrue(result);
-                var returned = (string)db.StringGet(mykey);
-                ClassicAssert.AreEqual(myvalue, returned);
-            }
-        }
-
-        [Test]
         public void MultiKeyDelete([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)
@@ -3388,21 +3358,36 @@ namespace Garnet.test
             // Do StringSet
             ClassicAssert.IsTrue(db.StringSet(key, "v1"));
 
+            // Do SetAdd using the same key, expected error
+            Assert.Throws<RedisServerException>(() => db.SetAdd(key, "v2"),
+                Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
+
+            // One key "test:1" with a string value is expected
+            var keys = server.Keys(db.Database, key).ToList();
+            ClassicAssert.AreEqual(1, keys.Count);
+            ClassicAssert.AreEqual(key, (string)keys[0]);
+            var value = db.StringGet(key);
+            ClassicAssert.AreEqual("v1", (string)value);
+
+            // do ListRightPush using the same key, expected error
+            Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"), Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
+
+            // Delete the key
+            ClassicAssert.IsTrue(db.KeyDelete(key));
+
             // Do SetAdd using the same key
             ClassicAssert.IsTrue(db.SetAdd(key, "v2"));
 
-            // Two keys "test:1" - this is expected as of now
-            // because Garnet has a separate main and object store
-            var keys = server.Keys(db.Database, key).ToList();
-            ClassicAssert.AreEqual(2, keys.Count);
-            ClassicAssert.AreEqual(key, (string)keys[0]);
-            ClassicAssert.AreEqual(key, (string)keys[1]);
+            // Do StringIncrement using the same key, expected error
+            //Assert.Throws<RedisServerException>(() => db.StringIncrement(key), Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
 
-            // do ListRightPush using the same key, expected error
-            var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
-            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(expectedError, ex.Message);
+            // One key "test:1" with a set value is expected
+            keys = server.Keys(db.Database, key).ToList();
+            ClassicAssert.AreEqual(1, keys.Count);
+            ClassicAssert.AreEqual(key, (string)keys[0]);
+            var members = db.SetMembers(key);
+            ClassicAssert.AreEqual(1, members.Length);
+            ClassicAssert.AreEqual("v2", (string)members[0]);
         }
 
         [Test]

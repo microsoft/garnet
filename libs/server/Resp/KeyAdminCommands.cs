@@ -495,12 +495,18 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var status = storageApi.PERSIST(key);
+
+            // Prepare input
+            var input = new UnifiedStoreInput(RespCommand.PERSIST);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.PERSIST(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

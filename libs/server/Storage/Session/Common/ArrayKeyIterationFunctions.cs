@@ -13,22 +13,18 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         // These contain classes so instantiate once and re-initialize
-        private ArrayKeyIterationFunctions.MainStoreGetDBSize mainStoreDbSizeFuncs;
-        private ArrayKeyIterationFunctions.ObjectStoreGetDBSize objectStoreDbSizeFuncs;
+        private ArrayKeyIterationFunctions.UnifiedStoreGetDBSize unifiedStoreDbSizeFuncs;
 
-        // Iterators for SCAN command
-        private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
-        private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbScanFuncs;
+        // Iterator for SCAN command
+        private ArrayKeyIterationFunctions.UnifiedStoreGetDBKeys unifiedStoreDbScanFuncs;
 
-        // Iterators for expired key deletion
+        // Iterator for expired key deletion
         private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan expiredKeyDeletionScanFuncs;
 
-        // Iterators for KEYS command
-        private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbKeysFuncs;
-        private ArrayKeyIterationFunctions.ObjectStoreGetDBKeys objStoreDbKeysFuncs;
+        // Iterator for KEYS command
+        private ArrayKeyIterationFunctions.UnifiedStoreGetDBKeys unifiedStoreDbKeysFuncs;
 
         long lastScanCursor;
-        List<byte[]> objStoreKeys;
         List<byte[]> Keys;
 
         /// <summary>
@@ -45,12 +41,8 @@ namespace Garnet.server
         /// <returns></returns>
         internal unsafe bool DbScan(PinnedSpanByte patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
         {
-            const long IsObjectStoreCursor = 1L << LogAddress.kAddressBits;
             Keys ??= new();
             Keys.Clear();
-
-            objStoreKeys ??= new();
-            objStoreKeys.Clear();
 
             keys = Keys;
 
@@ -81,35 +73,16 @@ namespace Garnet.server
                 }
             }
 
-            byte* patternPtr = patternB.ToPointer();
+            var patternPtr = patternB.ToPointer();
 
-            mainStoreDbScanFuncs ??= new();
-            mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length);
-            objStoreDbScanFuncs ??= new();
-            objStoreDbScanFuncs.Initialize(objStoreKeys, allKeys ? null : patternPtr, patternB.Length, matchType);
+            unifiedStoreDbScanFuncs ??= new();
+            unifiedStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
             storeCursor = cursor;
-            long remainingCount = count;
+            var remainingCount = count;
 
-            // Cursor is zero or not an object store address
-            // Scan main store only for string or default key type
-            if ((cursor & IsObjectStoreCursor) == 0 && (typeObject.IsEmpty || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
-            {
-                basicContext.Session.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
-                remainingCount -= Keys.Count;
-            }
-
-            // Scan object store with the type parameter
-            // Check the cursor value corresponds to the object store
-            if (!objectStoreBasicContext.IsNull && remainingCount > 0 && (typeObject.IsEmpty || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
-            {
-                var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
-                storeCursor &= ~IsObjectStoreCursor;
-                objectStoreBasicContext.Session.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
-                if (storeCursor != 0)
-                    storeCursor |= IsObjectStoreCursor;
-                Keys.AddRange(objStoreKeys);
-            }
+            unifiedStoreBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            remainingCount -= Keys.Count; remainingCount -= Keys.Count;
 
             lastScanCursor = storeCursor;
             return true;
@@ -122,7 +95,7 @@ namespace Garnet.server
         {
             expiredKeyDeletionScanFuncs ??= new();
             expiredKeyDeletionScanFuncs.Initialize(this);
-            _ = basicContext.Session.ScanCursor(ref fromAddress, untilAddress, expiredKeyDeletionScanFuncs);
+            _ = unifiedStoreBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, expiredKeyDeletionScanFuncs);
             return (expiredKeyDeletionScanFuncs.deletedCount, expiredKeyDeletionScanFuncs.totalCount);
         }
 
@@ -159,7 +132,7 @@ namespace Garnet.server
         /// <param name="includeTombstones"></param>
         /// <returns></returns>
         internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
-           where TScanFunctions : IScanIteratorFunctions
+            where TScanFunctions : IScanIteratorFunctions
             => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
@@ -167,6 +140,27 @@ namespace Garnet.server
         /// </summary>
         internal ITsavoriteScanIterator IterateObjectStore()
             => objectStoreBasicContext.Session.Iterate();
+
+        /// <summary>
+        /// Iterate the contents of the unified store (push-based)
+        /// </summary>
+        /// <typeparam name="TScanFunctions"></typeparam>
+        /// <param name="scanFunctions"></param>
+        /// <param name="untilAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="validateCursor"></param>
+        /// <param name="includeTombstones"></param>
+        /// <returns></returns>
+        internal bool IterateUnifiedStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
+            where TScanFunctions : IScanIteratorFunctions
+            => unifiedStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
+
+        /// <summary>
+        /// Iterate the contents of the unified store (pull based)
+        /// </summary>
+        internal ITsavoriteScanIterator IterateUnifiedStore()
+            => unifiedStoreBasicContext.Session.Iterate();
 
         /// <summary>
         ///  Get a list of the keys in the store and object store when using pattern
@@ -179,16 +173,9 @@ namespace Garnet.server
 
             var allKeys = *pattern.ToPointer() == '*' && pattern.Length == 1;
 
-            mainStoreDbKeysFuncs ??= new();
-            mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length);
-            basicContext.Session.Iterate(ref mainStoreDbKeysFuncs);
-
-            if (!objectStoreBasicContext.IsNull)
-            {
-                objStoreDbKeysFuncs ??= new();
-                objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length, matchType: null);
-                objectStoreBasicContext.Session.Iterate(ref objStoreDbKeysFuncs);
-            }
+            unifiedStoreDbKeysFuncs ??= new();
+            unifiedStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length);
+            unifiedStoreBasicContext.Session.Iterate(ref unifiedStoreDbKeysFuncs);
 
             return Keys;
         }
@@ -199,21 +186,12 @@ namespace Garnet.server
         /// <returns></returns>
         internal int DbSize()
         {
-            mainStoreDbSizeFuncs ??= new();
-            mainStoreDbSizeFuncs.Initialize();
+            unifiedStoreDbSizeFuncs ??= new();
+            unifiedStoreDbSizeFuncs.Initialize();
             long cursor = 0;
-            basicContext.Session.ScanCursor(ref cursor, long.MaxValue, mainStoreDbSizeFuncs);
-            int count = mainStoreDbSizeFuncs.Count;
-            if (objectStoreBasicContext.Session != null)
-            {
-                objectStoreDbSizeFuncs ??= new();
-                objectStoreDbSizeFuncs.Initialize();
-                cursor = 0;
-                _ = objectStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, objectStoreDbSizeFuncs);
-                count += objectStoreDbSizeFuncs.Count;
-            }
+            unifiedStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
 
-            return count;
+            return unifiedStoreDbSizeFuncs.Count;
         }
 
         internal static unsafe class ArrayKeyIterationFunctions
@@ -235,20 +213,17 @@ namespace Garnet.server
                 }
             }
 
-            internal sealed class ObjectStoreExpiredKeyDeletionScan : ExpiredKeysBase
-            {
-                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
-                {
-                    var input = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
-                    var output = new GarnetObjectStoreOutput();
-                    return GarnetStatus.OK == storageSession.RMW_ObjectStore(logRecord.Key, ref input, ref output, ref storageSession.objectStoreBasicContext);
-                }
-            }
-
             internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase
             {
                 protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
                 {
+                    if (logRecord.Info.ValueIsObject)
+                    {
+                        var objInput = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
+                        var output = new GarnetObjectStoreOutput();
+                        return GarnetStatus.OK == storageSession.RMW_ObjectStore(logRecord.Key, ref objInput, ref output, ref storageSession.objectStoreBasicContext);
+                    }
+
                     var input = new RawStringInput(RespCommand.DELIFEXPIM);
                     return GarnetStatus.OK == storageSession.DEL_Conditional(PinnedSpanByte.FromPinnedSpan(logRecord.Key), ref input, ref storageSession.basicContext);
                 }
@@ -294,56 +269,11 @@ namespace Garnet.server
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class MainStoreGetDBKeys : IScanIteratorFunctions
+            internal sealed class UnifiedStoreGetDBKeys : IScanIteratorFunctions
             {
                 private readonly GetDBKeysInfo info;
 
-                internal MainStoreGetDBKeys() => info = new();
-
-                internal void Initialize(List<byte[]> keys, byte* patternB, int length)
-                    => info.Initialize(keys, patternB, length);
-
-                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                {
-                    var key = logRecord.Key;
-
-                    if (CheckExpiry(in logRecord))
-                    {
-                        cursorRecordResult = CursorRecordResult.Skip;
-                        return true;
-                    }
-
-                    if (info.patternB != null)
-                    {
-                        bool ok;
-                        if (logRecord.IsPinnedKey)
-                            ok = GlobUtils.Match(info.patternB, info.patternLength, logRecord.PinnedKeyPointer, key.Length, true);
-                        else
-                            fixed (byte* keyPtr = key)
-                                ok = GlobUtils.Match(info.patternB, info.patternLength, keyPtr, key.Length, true);
-                        if (!ok)
-                        {
-                            cursorRecordResult = CursorRecordResult.Skip;
-                            return true;
-                        }
-                    }
-
-                    info.keys.Add(key.ToArray());
-                    cursorRecordResult = CursorRecordResult.Accept;
-                    return true;
-                }
-
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
-            internal sealed class ObjectStoreGetDBKeys : IScanIteratorFunctions
-            {
-                private readonly GetDBKeysInfo info;
-
-                internal ObjectStoreGetDBKeys() => info = new();
+                internal UnifiedStoreGetDBKeys() => info = new();
 
                 internal void Initialize(List<byte[]> keys, byte* patternB, int length, Type matchType = null)
                     => info.Initialize(keys, patternB, length, matchType);
@@ -397,37 +327,13 @@ namespace Garnet.server
                 internal void Initialize() => count = 0;
             }
 
-            internal sealed class MainStoreGetDBSize : IScanIteratorFunctions
+            internal sealed class UnifiedStoreGetDBSize : IScanIteratorFunctions
             {
                 private readonly GetDBSizeInfo info;
 
                 internal int Count => info.count;
 
-                internal MainStoreGetDBSize() => info = new();
-
-                internal void Initialize() => info.Initialize();
-
-                public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                {
-                    cursorRecordResult = CursorRecordResult.Skip;
-                    if (!CheckExpiry(in logRecord))
-                        ++info.count;
-                    return true;
-                }
-
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
-            internal sealed class ObjectStoreGetDBSize : IScanIteratorFunctions
-            {
-                private readonly GetDBSizeInfo info;
-
-                internal int Count => info.count;
-
-                internal ObjectStoreGetDBSize() => info = new();
+                internal UnifiedStoreGetDBSize() => info = new();
 
                 internal void Initialize() => info.Initialize();
 
