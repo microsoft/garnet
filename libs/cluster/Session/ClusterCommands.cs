@@ -120,7 +120,6 @@ namespace Garnet.cluster
             {
                 RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
-                RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(out invalidParameters),
                 RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
                 RespCommand.CLUSTER_ATTACH_SYNC => NetworkClusterAttachSync(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),

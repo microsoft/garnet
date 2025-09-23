@@ -610,14 +610,6 @@
         "AclCategories": "Admin, Dangerous, Slow"
       },
       {
-        "Command": "CLUSTER_AOFSYNC",
-        "Name": "CLUSTER|AOFSYNC",
-        "IsInternal": true,
-        "Arity": 3,
-        "Flags": "Admin, NoMulti, NoScript",
-        "AclCategories": "Admin, Dangerous, Slow, Garnet"
-      },
-      {
         "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,

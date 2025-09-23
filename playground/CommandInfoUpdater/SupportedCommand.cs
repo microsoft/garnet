@@ -59,7 +59,6 @@ namespace CommandInfoUpdater
             [
                 new("CLUSTER|ADDSLOTS", RespCommand.CLUSTER_ADDSLOTS),
                 new("CLUSTER|ADDSLOTSRANGE", RespCommand.CLUSTER_ADDSLOTSRANGE),
-                new("CLUSTER|AOFSYNC", RespCommand.CLUSTER_AOFSYNC),
                 new("CLUSTER|APPENDLOG", RespCommand.CLUSTER_APPENDLOG),
                 new("CLUSTER|ATTACH_SYNC", RespCommand.CLUSTER_ATTACH_SYNC),
                 new("CLUSTER|BANLIST", RespCommand.CLUSTER_BANLIST),

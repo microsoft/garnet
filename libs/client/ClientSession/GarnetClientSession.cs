@@ -329,8 +329,16 @@ namespace Garnet.client
         static ReadOnlySpan<byte> appendLog => "APPENDLOG"u8;
 
         /// <summary>
-        /// ClusterAppendLog
+        /// Ship log page to replica
         /// </summary>
+        /// <param name="nodeId"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        /// <param name="payloadPtr"></param>
+        /// <param name="payloadLength"></param>
+        /// <exception cref="Exception"></exception>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAppendLog"/>
         public unsafe void ExecuteClusterAppendLog(string nodeId, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
         {
             Debug.Assert(nodeId != null);
