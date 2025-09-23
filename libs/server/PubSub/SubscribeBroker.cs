@@ -22,7 +22,7 @@ namespace Garnet.server
         bool initialized = false;
         ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
         ReadOptimizedConcurrentSet<PatternSubscriptionEntry> patternSubscriptions;
-        readonly TsavoriteLog log;
+        readonly Tsavorite.core.TsavoriteLog log;
         readonly IDevice device;
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
@@ -42,7 +42,7 @@ namespace Garnet.server
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(logDir + "/pubsubkv", preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
+            log = new Tsavorite.core.TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, SafeTailRefreshFrequencyMs = subscriberRefreshFrequencyMs });
             pageSizeBits = log.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 log.TruncateUntil(log.CommittedUntilAddress);

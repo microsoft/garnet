@@ -749,7 +749,6 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
-
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
                 ref key, ref input, out _);
