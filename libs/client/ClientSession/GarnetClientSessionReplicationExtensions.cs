@@ -31,6 +31,7 @@ namespace Garnet.client
         /// <param name="aofBeginAddress"></param>
         /// <param name="aofTailAddress"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterInitiateReplicaSync"/>
         public Task<string> ExecuteReplicaSync(string nodeId, string primary_replid, byte[] checkpointEntryData, long aofBeginAddress, long aofTailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -112,6 +113,7 @@ namespace Garnet.client
         /// <param name="fileTokenBytes"></param>
         /// <param name="fileType"></param>
         /// <param name="data"></param>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointMetadata"/>
         public Task<string> ExecuteSendCkptMetadata(Memory<byte> fileTokenBytes, int fileType, Memory<byte> data)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -178,6 +180,7 @@ namespace Garnet.client
         /// <param name="startAddress"></param>
         /// <param name="data"></param>
         /// <param name="segmentId"></param>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointFileSegment"/>
         public Task<string> ExecuteSendFileSegments(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data, int segmentId = -1)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -263,6 +266,7 @@ namespace Garnet.client
         /// <param name="beginAddress"></param>
         /// <param name="tailAddress"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterBeginReplicaRecover"/>
         public Task<string> ExecuteBeginReplicaRecover(bool sendStoreCheckpoint, bool replayAOF, string primary_replid, byte[] checkpointEntryData, long beginAddress, long tailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -351,6 +355,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="syncMetadata"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAttachSync"/>
         public Task<string> ExecuteAttachSync(byte[] syncMetadata)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -399,6 +404,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="isMainStore"></param>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSync"/>
         public void SetClusterSyncHeader(string sourceNodeId, bool isMainStore)
         {
             // Unlike Migration, where we don't know at the time of header initialization if we have a record or not, in Replication 
