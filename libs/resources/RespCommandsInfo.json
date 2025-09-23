@@ -86,6 +86,13 @@
         "Arity": -2,
         "Flags": "Loading, NoScript, Stale",
         "AclCategories": "Slow"
+      },
+      {
+        "Command": "ACL_HELP",
+        "Name": "ACL|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       }
     ]
   },
@@ -523,6 +530,13 @@
         "Arity": 2,
         "Flags": "Loading, NoScript, Stale",
         "AclCategories": "Connection, Slow"
+      },
+      {
+        "Command": "CLIENT_HELP",
+        "Name": "CLIENT|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       },
       {
         "Command": "CLIENT_ID",
@@ -1019,6 +1033,13 @@
         "AclCategories": "Connection, Slow"
       },
       {
+        "Command": "COMMAND_HELP",
+        "Name": "COMMAND|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "COMMAND_INFO",
         "Name": "COMMAND|INFO",
         "Arity": -2,
@@ -1052,6 +1073,13 @@
         "Arity": -3,
         "Flags": "Admin, Loading, NoScript, Stale",
         "AclCategories": "Admin, Dangerous, Slow"
+      },
+      {
+        "Command": "CONFIG_HELP",
+        "Name": "CONFIG|HELP",
+        "Arity": 2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "AclCategories": "Slow, Garnet"
       },
       {
         "Command": "CONFIG_REWRITE",
@@ -2781,8 +2809,8 @@
         "Command": "LATENCY_HELP",
         "Name": "LATENCY|HELP",
         "Arity": 2,
-        "Flags": "Admin, Loading, NoScript, Stale",
-        "AclCategories": "Slow, Garnet"
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       },
       {
         "Command": "LATENCY_HISTOGRAM",
@@ -3176,6 +3204,13 @@
     "AclCategories": "Slow",
     "SubCommands": [
       {
+        "Command": "MEMORY_HELP",
+        "Name": "MEMORY|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "MEMORY_USAGE",
         "Name": "MEMORY|USAGE",
         "Arity": -3,
@@ -3285,6 +3320,13 @@
         "Arity": -3,
         "Flags": "Admin, NoAsyncLoading, NoScript",
         "AclCategories": "Admin, Dangerous, Slow"
+      },
+      {
+        "Command": "MODULE_HELP",
+        "Name": "MODULE|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       }
     ]
   },
@@ -3635,6 +3677,13 @@
         "Arity": -2,
         "Flags": "Loading, PubSub, Stale",
         "AclCategories": "PubSub, Slow"
+      },
+      {
+        "Command": "PUBSUB_HELP",
+        "Name": "PUBSUB|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       },
       {
         "Command": "PUBSUB_NUMPAT",
@@ -4034,6 +4083,13 @@
           "request_policy:all_nodes",
           "response_policy:all_succeeded"
         ]
+      },
+      {
+        "Command": "SCRIPT_HELP",
+        "Name": "SCRIPT|HELP",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "AclCategories": "Slow"
       },
       {
         "Command": "SCRIPT_LOAD",

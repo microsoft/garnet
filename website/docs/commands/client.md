@@ -56,6 +56,16 @@ Bulk string reply: the name of the client, or an empty string if no name is set.
 
 ---
 
+### CLIENT HELP
+
+```bash
+    CLIENT HELP
+```
+
+The CLIENT HELP command returns a helpful text describing the different subcommands.
+
+---
+
 ### CLIENT SETNAME
 
 #### Syntax

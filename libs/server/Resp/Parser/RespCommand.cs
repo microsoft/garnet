@@ -234,6 +234,7 @@ namespace Garnet.server
         // Pub/Sub commands
         PUBSUB,
         PUBSUB_CHANNELS,
+        PUBSUB_HELP,
         PUBSUB_NUMPAT,
         PUBSUB_NUMSUB,
         PUBLISH,
@@ -247,6 +248,7 @@ namespace Garnet.server
         ECHO,
 
         CLIENT,
+        CLIENT_HELP,
         CLIENT_ID,
         CLIENT_INFO,
         CLIENT_LIST,
@@ -256,8 +258,11 @@ namespace Garnet.server
         CLIENT_SETINFO,
         CLIENT_UNBLOCK,
 
+        MEMORY_HELP,
+
         MONITOR,
         MODULE,
+        MODULE_HELP,
         MODULE_LOADCS,
         REGISTERCS,
 
@@ -294,6 +299,7 @@ namespace Garnet.server
         SCRIPT,
         SCRIPT_EXISTS,
         SCRIPT_FLUSH,
+        SCRIPT_HELP,
         SCRIPT_LOAD,
 
         ACL,
@@ -301,6 +307,7 @@ namespace Garnet.server
         ACL_DELUSER,
         ACL_GENPASS,
         ACL_GETUSER,
+        ACL_HELP,
         ACL_LIST,
         ACL_LOAD,
         ACL_SAVE,
@@ -314,12 +321,14 @@ namespace Garnet.server
         COMMAND_INFO,
         COMMAND_GETKEYS,
         COMMAND_GETKEYSANDFLAGS,
+        COMMAND_HELP,
 
         MEMORY,
         // MEMORY_USAGE is a read-only command, so moved up
 
         CONFIG,
         CONFIG_GET,
+        CONFIG_HELP,
         CONFIG_REWRITE,
         CONFIG_SET,
 
@@ -411,6 +420,7 @@ namespace Garnet.server
             RespCommand.SWAPDB,
             RespCommand.ECHO,
             RespCommand.MONITOR,
+            RespCommand.MODULE_HELP,
             RespCommand.MODULE_LOADCS,
             RespCommand.REGISTERCS,
             RespCommand.INFO,
@@ -421,6 +431,7 @@ namespace Garnet.server
             RespCommand.ACL_DELUSER,
             RespCommand.ACL_GENPASS,
             RespCommand.ACL_GETUSER,
+            RespCommand.ACL_HELP,
             RespCommand.ACL_LIST,
             RespCommand.ACL_LOAD,
             RespCommand.ACL_SAVE,
@@ -428,6 +439,7 @@ namespace Garnet.server
             RespCommand.ACL_USERS,
             RespCommand.ACL_WHOAMI,
             // Client
+            RespCommand.CLIENT_HELP,
             RespCommand.CLIENT_ID,
             RespCommand.CLIENT_INFO,
             RespCommand.CLIENT_LIST,
@@ -443,8 +455,10 @@ namespace Garnet.server
             RespCommand.COMMAND_INFO,
             RespCommand.COMMAND_GETKEYS,
             RespCommand.COMMAND_GETKEYSANDFLAGS,
+            RespCommand.COMMAND_HELP,
             RespCommand.MEMORY_USAGE,
             // Config
+            RespCommand.CONFIG_HELP,
             RespCommand.CONFIG_GET,
             RespCommand.CONFIG_REWRITE,
             RespCommand.CONFIG_SET,
@@ -1847,6 +1861,11 @@ namespace Garnet.server
                     return RespCommand.SCRIPT_EXISTS;
                 }
 
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.SCRIPT_HELP;
+                }
+
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
                                               Encoding.UTF8.GetString(subCommand),
                                               nameof(RespCommand.SCRIPT));
@@ -1903,18 +1922,22 @@ namespace Garnet.server
                 {
                     return RespCommand.CONFIG_GET;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
+                if (subCommand.SequenceEqual(CmdStrings.REWRITE))
                 {
                     return RespCommand.CONFIG_REWRITE;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.SET))
+                if (subCommand.SequenceEqual(CmdStrings.SET))
                 {
                     return RespCommand.CONFIG_SET;
                 }
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.CONFIG_HELP;
+                }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.CONFIG));
+                var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                           Encoding.UTF8.GetString(subCommand),
+                                           nameof(RespCommand.CONFIG));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
             }
@@ -1967,6 +1990,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.UNBLOCK))
                 {
                     return RespCommand.CLIENT_UNBLOCK;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.CLIENT_HELP;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
@@ -2026,6 +2053,11 @@ namespace Garnet.server
                 if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSANDFLAGS))
                 {
                     return RespCommand.COMMAND_GETKEYSANDFLAGS;
+                }
+
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.COMMAND_HELP;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
@@ -2395,9 +2427,14 @@ namespace Garnet.server
                     return RespCommand.MEMORY_USAGE;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.MEMORY));
+                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
+                {
+                    return RespCommand.MEMORY_HELP;
+                }
+
+                var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                           Encoding.UTF8.GetString(subCommand),
+                                           nameof(RespCommand.MEMORY));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
             }
@@ -2438,6 +2475,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.GETUSER))
                 {
                     return RespCommand.ACL_GETUSER;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.ACL_HELP;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.LIST))
                 {
@@ -2501,6 +2542,11 @@ namespace Garnet.server
                     return RespCommand.MODULE_LOADCS;
                 }
 
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.MODULE_HELP;
+                }
+
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
                                               Encoding.UTF8.GetString(subCommand),
                                               nameof(RespCommand.MODULE));
@@ -2529,18 +2575,25 @@ namespace Garnet.server
                 {
                     return RespCommand.PUBSUB_CHANNELS;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
+
+                if (subCommand.SequenceEqual(CmdStrings.NUMSUB))
                 {
                     return RespCommand.PUBSUB_NUMSUB;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
+
+                if (subCommand.SequenceEqual(CmdStrings.NUMPAT))
                 {
                     return RespCommand.PUBSUB_NUMPAT;
                 }
 
-                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
-                                              Encoding.UTF8.GetString(subCommand),
-                                              nameof(RespCommand.PUBSUB));
+                if (subCommand.SequenceEqual(CmdStrings.HELP))
+                {
+                    return RespCommand.PUBSUB_HELP;
+                }
+
+                var errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommandNoHelp,
+                                           Encoding.UTF8.GetString(subCommand),
+                                           nameof(RespCommand.PUBSUB));
                 specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
                 return RespCommand.INVALID;
             }

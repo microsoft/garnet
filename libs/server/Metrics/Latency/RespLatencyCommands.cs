@@ -17,18 +17,11 @@ namespace Garnet.server
             // No additional arguments
             if (parseState.Count != 0)
             {
-                return AbortWithErrorMessage($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.");
+                return AbortWithWrongNumberOfArguments("latency|help");
             }
 
-            List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
-            while (!RespWriteUtils.TryWriteArrayLength(latencyCommands.Count, ref dcurr, dend))
-                SendAndReset();
-
-            foreach (string command in latencyCommands)
-            {
-                while (!RespWriteUtils.TryWriteSimpleString(command, ref dcurr, dend))
-                    SendAndReset();
-            }
+            var latencyCommands = RespLatencyHelp.GetLatencyCommands();
+            WriteHelp(latencyCommands);
 
             return true;
         }

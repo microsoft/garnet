@@ -807,6 +807,7 @@ namespace Garnet.server
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(),
                 RespCommand.PUBSUB_CHANNELS => NetworkPUBSUB_CHANNELS(),
+                RespCommand.PUBSUB_HELP => NetworkPUBSUB_HELP(),
                 RespCommand.PUBSUB_NUMSUB => NetworkPUBSUB_NUMSUB(),
                 RespCommand.PUBSUB_NUMPAT => NetworkPUBSUB_NUMPAT(),
                 // Custom Object Commands
@@ -961,6 +962,7 @@ namespace Garnet.server
             {
                 RespCommand.AUTH => NetworkAUTH(),
                 RespCommand.MEMORY_USAGE => NetworkMemoryUsage(ref storageApi),
+                RespCommand.MEMORY_HELP => NetworkMemoryHelp(),
                 RespCommand.CLIENT_ID => NetworkCLIENTID(),
                 RespCommand.CLIENT_INFO => NetworkCLIENTINFO(),
                 RespCommand.CLIENT_LIST => NetworkCLIENTLIST(),
@@ -969,12 +971,14 @@ namespace Garnet.server
                 RespCommand.CLIENT_SETNAME => NetworkCLIENTSETNAME(),
                 RespCommand.CLIENT_SETINFO => NetworkCLIENTSETINFO(),
                 RespCommand.CLIENT_UNBLOCK => NetworkCLIENTUNBLOCK(),
+                RespCommand.CLIENT_HELP => NetworkCLIENTHELP(),
                 RespCommand.COMMAND => NetworkCOMMAND(),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(),
                 RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(),
                 RespCommand.COMMAND_GETKEYS => NetworkCOMMAND_GETKEYS(),
                 RespCommand.COMMAND_GETKEYSANDFLAGS => NetworkCOMMAND_GETKEYSANDFLAGS(),
+                RespCommand.COMMAND_HELP => NetworkCOMMAND_HELP(),
                 RespCommand.ECHO => NetworkECHO(),
                 RespCommand.HELLO => NetworkHELLO(),
                 RespCommand.TIME => NetworkTIME(),
@@ -998,6 +1002,7 @@ namespace Garnet.server
                 RespCommand.SCRIPT_EXISTS => NetworkScriptExists(),
                 RespCommand.SCRIPT_FLUSH => NetworkScriptFlush(),
                 RespCommand.SCRIPT_LOAD => NetworkScriptLoad(),
+                RespCommand.SCRIPT_HELP => NetworkScriptHelp(),
 
                 RespCommand.EVAL => TryEVAL(),
                 RespCommand.EVALSHA => TryEVALSHA(),

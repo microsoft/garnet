@@ -39,6 +39,7 @@ namespace Garnet.server
             _ = command switch
             {
                 RespCommand.CONFIG_GET => NetworkCONFIG_GET(),
+                RespCommand.CONFIG_HELP => NetworkCONFIG_HELP(),
                 RespCommand.CONFIG_REWRITE => NetworkCONFIG_REWRITE(),
                 RespCommand.CONFIG_SET => NetworkCONFIG_SET(),
                 RespCommand.FAILOVER or
@@ -65,6 +66,7 @@ namespace Garnet.server
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
                 RespCommand.ACL_GENPASS => NetworkAclGenPass(),
                 RespCommand.ACL_GETUSER => NetworkAclGetUser(),
+                RespCommand.ACL_HELP => NetworkAclHelp(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
@@ -72,6 +74,7 @@ namespace Garnet.server
                 RespCommand.ACL_SAVE => NetworkAclSave(),
                 RespCommand.DEBUG => NetworkDebug(),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
+                RespCommand.MODULE_HELP => NetworkModuleHelp(),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 RespCommand.PURGEBP => NetworkPurgeBP(),
                 _ => cmdFound = false
@@ -523,6 +526,27 @@ namespace Garnet.server
             return true;
         }
 
+        private bool NetworkModuleHelp()
+        {
+            if (parseState.Count != 0)
+            {
+                return AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.HELP)}");
+            }
+
+            if (!CanRunModule())
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrCommandDisallowedWithOption, RespCommand.MODULE, "enable-module-command");
+            }
+
+            WriteHelp(
+                "MODULE <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
+                "LOADCS <path>",
+                "\tLoad a module library from <path>",
+                "HELP",
+                "\tPrint this help.");
+            return true;
+        }
+
         private bool NetworkModuleLoad(CustomCommandManager customCommandManager)
         {
             if (parseState.Count < 1) // At least module path is required
@@ -753,8 +777,13 @@ namespace Garnet.server
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
-                var help = new string[]
+                if (parseState.Count != 1)
                 {
+                    return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(Encoding.ASCII.GetString(command),
+                                                                              nameof(RespCommand.DEBUG));
+                }
+
+                WriteHelp(
                     "DEBUG <subcommand> [<arg> [value] [opt] ...]. Subcommands are:",
                     "ERROR <string>",
                     "\tReturn a Redis protocol error with <string> as message. Useful for clients",
@@ -765,13 +794,7 @@ namespace Garnet.server
                     "\tCrash the server simulating a panic.",
                     "HELP",
                     "\tPrints this help"
-                };
-
-                WriteArrayLength(help.Length);
-                foreach (var line in help)
-                {
-                    WriteSimpleString(line);
-                }
+                );
                 return true;
             }
 

@@ -213,6 +213,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task AclHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL HELP",
+                [DoAclListAsync]
+            );
+
+            static async Task DoAclListAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("ACL", ["HELP"]);
+                ClassicAssert.IsNotNull(val);
+            }
+        }
+
+        [Test]
         public async Task AclListACLsAsync()
         {
             await CheckCommandsAsync(
@@ -686,6 +701,21 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("BITPOS", ["empty", "1", "5", "7", "BYTE"]);
                 ClassicAssert.AreEqual(-1, val);
+            }
+        }
+
+        [Test]
+        public async Task ClientHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CLIENT HELP",
+                [DoClientHelpAsync]
+            );
+
+            static async Task DoClientHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("CLIENT", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
             }
         }
 
@@ -2614,6 +2644,36 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task CommandHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND HELP",
+                [DoCommandHelpAsync]
+            );
+
+            static async Task DoCommandHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("COMMAND", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
+        public async Task ConfigHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "CONFIG HELP",
+                [DoCommandHelpAsync]
+            );
+
+            static async Task DoCommandHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("CONFIG", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task ConfigRewriteACLsAsync()
         {
             await CheckCommandsAsync(
@@ -2830,6 +2890,21 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
+            }
+        }
+
+        [Test]
+        public async Task ScriptHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "SCRIPT",
+                [DoScriptHelpAsync]
+            );
+
+            static async Task DoScriptHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("SCRIPT", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
             }
         }
 
@@ -4706,6 +4781,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task MemoryHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "MEMORY HELP",
+                [DoMemoryHelpAsync]
+            );
+
+            static async Task DoMemoryHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("MEMORY", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task MemoryUsageACLsAsync()
         {
             await CheckCommandsAsync(
@@ -4815,10 +4905,25 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ModuleHelpACLsAsync()
+        {
+            // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
+            await CheckCommandsAsync(
+                "MODULE HELP",
+                [DoModuleHelpAsync]
+            );
+
+            static async Task DoModuleHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("MODULE", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
+            }
+        }
+
+        [Test]
         public async Task ModuleLoadCSACLsAsync()
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
-
             await CheckCommandsAsync(
                 "MODULE",
                 [DoModuleLoadAsync]
@@ -5173,6 +5278,21 @@ namespace Garnet.test.Resp.ACL
             {
                 var count = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["CHANNELS"]);
                 CollectionAssert.IsEmpty(count);
+            }
+        }
+
+        [Test]
+        public async Task PubSubHelpACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBSUB",
+                [DoPubSubHelpAsync]
+            );
+
+            static async Task DoPubSubHelpAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringArrayResultAsync("PUBSUB", ["HELP"]);
+                ClassicAssert.IsNotNull(result);
             }
         }
 
