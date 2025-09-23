@@ -301,26 +301,25 @@ namespace Garnet.cluster
             invalidParameters = false;
 
             // Expecting exactly 7 arguments
-            if (parseState.Count != 7)
+            if (parseState.Count != 6)
             {
                 invalidParameters = true;
                 return true;
             }
 
             if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) ||
-                !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) ||
-                !parseState.TryGetBool(2, out var replayAOF))
+                !parseState.TryGetBool(1, out var replayAOF))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var primaryReplicaId = parseState.GetString(3);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).ToArray();
+            var primaryReplicaId = parseState.GetString(2);
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(3).ToArray();
 
-            if (!parseState.TryGetLong(5, out var beginAddress) ||
-                !parseState.TryGetLong(6, out var tailAddress))
+            if (!parseState.TryGetLong(4, out var beginAddress) ||
+                !parseState.TryGetLong(5, out var tailAddress))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
@@ -330,7 +329,6 @@ namespace Garnet.cluster
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
             var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
                 recoverMainStoreFromToken,
-                recoverObjectStoreFromToken,
                 replayAOF,
                 primaryReplicaId,
                 entry,

@@ -37,8 +37,7 @@ namespace Garnet.server
         public abstract void ResumeCheckpoints(int dbId);
 
         /// <inheritdoc/>
-        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
-            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
         public abstract bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
