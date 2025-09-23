@@ -1175,23 +1175,21 @@ namespace Garnet.server
             }
 
             var cmdName = parseState.GetString(0);
-            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
 
-            if (!cmdFound)
-            {
+            // Try to parse command and get its simplified info
+            if (!TryGetSimpleCommandInfo(cmdName, out var simpleCmdInfo))
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
-            }
 
-            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
-            {
+            // If command has no key specifications, abort with error
+            if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
-            }
 
-            parseState.TryExtractKeysFromSpecs(cmdInfo.KeySpecifications, out var keys);
+            // Extract command keys from parse state and key specification
+            // An offset is applied to the parse state, as the command (and possibly subcommand) are included in the parse state.
+            var slicedParseState = parseState.Slice(simpleCmdInfo.IsSubCommand ? 2 : 1);
+            var keys = slicedParseState.ExtractCommandKeys(simpleCmdInfo);
 
-
-            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(keys.Length, ref dcurr, dend))
                 SendAndReset();
 
             foreach (var key in keys)
@@ -1214,35 +1212,35 @@ namespace Garnet.server
             }
 
             var cmdName = parseState.GetString(0);
-            bool cmdFound = RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, true, true, logger) ||
-                          storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo);
 
-            if (!cmdFound)
-            {
+            // Try to parse command and get its simplified info
+            if (!TryGetSimpleCommandInfo(cmdName, out var simpleCmdInfo))
                 return AbortWithErrorMessage(CmdStrings.RESP_INVALID_COMMAND_SPECIFIED);
-            }
 
-            if (cmdInfo.KeySpecifications == null || cmdInfo.KeySpecifications.Length == 0)
-            {
+            // If command has no key specifications, abort with error
+            if (simpleCmdInfo.KeySpecs == null || simpleCmdInfo.KeySpecs.Length == 0)
                 return AbortWithErrorMessage(CmdStrings.RESP_COMMAND_HAS_NO_KEY_ARGS);
-            }
 
-            parseState.TryExtractKeysAndFlagsFromSpecs(cmdInfo.KeySpecifications, out var keys, out var flags);
+            // Extract command keys from parse state and key specification
+            // An offset is applied to the parse state, as the command (and possibly subcommand) are included in the parse state.
+            var slicedParseState = parseState.Slice(simpleCmdInfo.IsSubCommand ? 2 : 1);
+            var keysAndFlags = slicedParseState.ExtractCommandKeysAndFlags(simpleCmdInfo);
 
-            while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteArrayLength(keysAndFlags.Length, ref dcurr, dend))
                 SendAndReset();
 
-            for (int i = 0; i < keys.Count; i++)
+            for (var i = 0; i < keysAndFlags.Length; i++)
             {
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(keys[i].Span, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteBulkString(keysAndFlags[i].Item1.Span, ref dcurr, dend))
                     SendAndReset();
 
-                WriteSetLength(flags[i].Length);
+                var flags = EnumUtils.GetEnumDescriptions(keysAndFlags[i].Item2);
+                WriteSetLength(flags.Length);
 
-                foreach (var flag in flags[i])
+                foreach (var flag in flags)
                 {
                     while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
                         SendAndReset();
@@ -1759,6 +1757,29 @@ namespace Garnet.server
                 return false;
             }
             key = parseState.GetArgSliceByRef(0).SpanByte;
+            return true;
+        }
+
+        private bool TryGetSimpleCommandInfo(string cmdName, out SimpleRespCommandInfo simpleCmdInfo)
+        {
+            simpleCmdInfo = SimpleRespCommandInfo.Default;
+
+            // Try to parse known command from name and obtain its command info
+            if (!Enum.TryParse<RespCommand>(cmdName, true, out var cmd) ||
+                !RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out simpleCmdInfo, logger))
+            {
+                // If we no known command or info was found, attempt to find custom command
+                if (storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out var cmdInfo))
+                {
+                    cmdInfo.PopulateSimpleCommandInfo(ref simpleCmdInfo);
+                }
+                else
+                {
+                    // No matching command was found
+                    return false;
+                }
+            }
+
             return true;
         }
 
