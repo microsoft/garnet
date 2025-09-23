@@ -67,6 +67,12 @@ namespace Tsavorite.core
         /// <summary>Return the <see cref="LogRecord"/> for the allocator page at <paramref name="physicalAddress"/></summary>
         LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);
 
+        /// <summary>Return the <see cref="LogRecord"/> for a transient (e.g. iterator or pending IO) page at <paramref name="physicalAddress"/></summary>
+        LogRecord CreateTransientLogRecord(long logicalAddress, long physicalAddress);
+
+        /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
+        ObjectIdMap TranssientObjectIdMap { get; }
+
         /// <summary>Dispose an in-memory log record</summary>
         void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason);
 

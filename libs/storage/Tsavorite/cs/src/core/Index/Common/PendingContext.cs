@@ -204,6 +204,13 @@ namespace Tsavorite.core
             public byte* PinnedKeyPointer => logRecord.PinnedKeyPointer;
 
             /// <inheritdoc/>
+            public OverflowByteArray KeyOverflow
+            {
+                readonly get => logRecord.KeyOverflow;
+                set => logRecord.KeyOverflow = value;
+            }
+
+            /// <inheritdoc/>
             public readonly unsafe Span<byte> ValueSpan => logRecord.ValueSpan;
 
             /// <inheritdoc/>
@@ -219,34 +226,36 @@ namespace Tsavorite.core
             public byte* PinnedValuePointer => logRecord.PinnedValuePointer;
 
             /// <inheritdoc/>
+            public OverflowByteArray ValueOverflow
+            {
+                readonly get => logRecord.ValueOverflow;
+                set => logRecord.ValueOverflow = value;
+            }
+
+            /// <inheritdoc/>
             public readonly long ETag => logRecord.ETag;
 
             /// <inheritdoc/>
             public readonly long Expiration => logRecord.Expiration;
 
             /// <inheritdoc/>
-            public readonly void ClearValueObject(Action<IHeapObject> disposer) { }  // Not relevant for PendingContext
+            public readonly bool IsMemoryLogRecord => false;
 
             /// <inheritdoc/>
-            public readonly bool AsLogRecord(out LogRecord logRecord)
-            {
-                logRecord = default;
-                return false;
-            }
+            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref this.logRecord;
 
             /// <inheritdoc/>
-            public readonly bool AsDiskLogRecord(out DiskLogRecord diskLogRecord)
-            {
-                diskLogRecord = this.logRecord;
-                return true;
-            }
+            public readonly bool IsDiskLogRecord => true;
+
+            /// <inheritdoc/>
+            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in this);
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public readonly RecordFieldInfo GetRecordFieldInfo() => new()
             {
-                KeyDataSize = Key.Length,
-                ValueDataSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
+                KeySize = Key.Length,
+                ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
                 ValueIsObject = Info.ValueIsObject,
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration

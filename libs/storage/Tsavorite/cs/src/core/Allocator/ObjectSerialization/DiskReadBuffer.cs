@@ -7,9 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-#pragma warning disable IDE0065 // Misplaced using directive
-    using static Utility;
-
     internal sealed unsafe class DiskReadBuffer : IDisposable
     {
         internal readonly IDevice device;
@@ -38,14 +35,7 @@ namespace Tsavorite.core
         /// must move to the next buffer.</summary>
         internal int endPosition;
 
-        /// <summary>Set by <see cref="CircularDiskReadBuffer"/> for the last chunk to read. This also indicates we may have the optionals in that read.</summary>
-        internal bool isLastChunk;
-
-        /// <summary>Set by <see cref="CircularDiskReadBuffer"/> for the last chunk to read, if there is enough room on the page to read all the optionals as well.
-        ///     If so, this must be subtracted from endPosition.</summary>
-        internal int optionalLength;
-
-        internal int AvailableLength => endPosition - currentPosition;  // DiskPageHeader.Size is included in currentPosition, which is before AvailableLength
+        internal int AvailableLength => endPosition - currentPosition;
 
         internal ReadOnlySpan<byte> AvailableSpan => new(memory.GetValidPointer() + currentPosition, endPosition - currentPosition);
 
@@ -60,8 +50,6 @@ namespace Tsavorite.core
         internal void Initialize()
         {
             currentPosition = endPosition = NoPosition;
-            isLastChunk = false;
-            optionalLength = 0;
         }
 
         internal ReadOnlySpan<byte> GetTailSpan(int start) => new(memory.GetValidPointer() + start, currentPosition - start);
@@ -69,18 +57,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Read the first chunk of an Object deserialization from the device.
         /// </summary>
-        /// <param name="alignedReadStart">Sector-aligned position in the device</param>
-        /// <param name="startPosition">Start position on the page (relative to start of page)</param>
-        /// <param name="length">Number of bytes to read</param>
+        /// <param name="filePosition">Sector-aligned position in the device</param>
+        /// <param name="startPosition">Start position in the buffer (relative to start of buffer)</param>
+        /// <param name="alignedReadLength">Number of bytes to read</param>
         /// <param name="callback">The <see cref="CircularDiskReadBuffer"/> callback.</param>
-        internal void ReadFromDevice(ulong alignedReadStart, int startPosition, int length, DeviceIOCompletionCallback callback)
+        internal void ReadFromDevice(ObjectLogFilePositionInfo filePosition, int startPosition, uint alignedReadLength, DeviceIOCompletionCallback callback)
         {
             IncrementOrResetCountdown(ref countdownEvent);
 
-            var startPadding = startPosition - RoundDown(startPosition, (int)device.SectorSize);
-            var alignedBytesToRead = RoundUp((long)alignedReadStart + startPadding + length, (int)device.SectorSize);
-            currentPosition = startPosition;
-            device.ReadAsync(alignedReadStart, (IntPtr)memory.aligned_pointer + startPosition, (uint)alignedBytesToRead, callback, context: this);
+            currentPosition = endPosition = startPosition;
+            device.ReadAsync(filePosition.SegmentId, filePosition.Offset, (IntPtr)memory.aligned_pointer, (uint)alignedReadLength, callback, context: this);
         }
 
         internal static void IncrementOrResetCountdown(ref CountdownEvent countdownEvent) => DiskWriteBuffer.IncrementOrResetCountdown(ref countdownEvent);

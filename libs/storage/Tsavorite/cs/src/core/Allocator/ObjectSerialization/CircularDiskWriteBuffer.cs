@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -218,7 +217,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString() 
-            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePos {filePosition},"
-                + " alignDevAddr {alignedDeviceAddress} = {alignedDeviceAddress:H}, isFirsPartial {isFirstPartialFlush}; SecSize {SectorSize}";
+            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePos {filePosition}, SecSize {(int)device.SectorSize}";
     }
 }

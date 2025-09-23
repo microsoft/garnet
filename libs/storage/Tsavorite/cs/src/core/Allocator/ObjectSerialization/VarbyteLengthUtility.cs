@@ -29,7 +29,7 @@ namespace Tsavorite.core
 
         // These share the same bit: HasFiller is only in-memory, and IsChunked is only on-disk.
         internal const long kHasFillerBitMask = 1 << 5; // 1 bit for "has filler" indicator; in-memory only
-        const long kIsChunkedValueBitMask = 1 << 5;     // 1 bit for chunked value indicator; on-disk only
+        const long kIsChunkedValueBitMask = 1 << 5;     // 1 bit for chunked value indicator; on-disk only, TODO currently not implemented
 
         // The bottom 5 bits are actual length bytecounts
         /// <summary>
@@ -116,14 +116,6 @@ namespace Tsavorite.core
 
         internal static long GetValueLength(int numBytes, byte* ptrToFirstByte) => ReadVarbyteLength(numBytes, ptrToFirstByte);
 
-        internal static int GetChainedChunkValueLength(byte* ptrToFirstByte, out bool isChunkedValue)
-        {
-            // For ChainedChunk format we always use an int (4 bytes) for simplicity
-            var length = *(int*)ptrToFirstByte;
-            isChunkedValue = (length & IStreamBuffer.ValueChunkContinuationBit) != 0;
-            return length & ~IStreamBuffer.ValueChunkContinuationBit;
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte ConstructIndicatorByte(int keyLength, long valueLength, out int keyByteCount, out int valueByteCount)
         {
@@ -148,7 +140,7 @@ namespace Tsavorite.core
             Debug.Assert(kIsChunkedValueBitMask == kHasFillerBitMask, "kIsChunkedValueBitMask must equal kHasFillerBitMask");   // We "union" this bit
             var keyLengthBytes = (int)((indicatorByte & kKeyLengthBitMask) >> 3) + 1;   // add 1 due to 0-based
             var valueLengthBytes = (int)(indicatorByte & kValueLengthBitMask) + 1;      // add 1 due to 0-based
-            var isChunkedValueOrHasFiller = (indicatorByte & kIsChunkedValueBitMask) != 0;
+            var isChunkedValueOrHasFiller = (indicatorByte & kHasFillerBitMask) != 0;
             return (keyLengthBytes, valueLengthBytes, isChunkedValueOrHasFiller);
         }
 
@@ -286,7 +278,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <return>keyLengthBytes, valueLengthBytes, and the "has filler" indicator</return>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe (int keyLengthBytes, int valueLengthBytes, bool hasFiller) DeconstructInlineVarbyteLengthWord(long word)
+        internal static unsafe (int keyLength, int valueLength, bool hasFiller) DeconstructInlineVarbyteLengthWord(long word)
         {
             var ptr = (byte*)&word;
             (var keyLengthBytes, var valueLengthBytes, var hasFiller) = DeconstructIndicatorByte(*ptr++);
@@ -299,7 +291,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Update the value length in the in-memory inline varbyte indicator word 
+        /// Update the key and value lengths in the in-memory inline varbyte indicator word 
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe void UpdateInlineVarbyteLengthWord(long indicatorAddress, int keyLengthBytes, int valueLengthBytes, int valueLength, long hasFillerBit)
@@ -308,6 +300,19 @@ namespace Tsavorite.core
             var word = *(long*)indicatorAddress & ~kHasFillerBitMask;
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             *(long*)indicatorAddress = word | hasFillerBit;
+        }
+
+        /// <summary>
+        /// Update the value length high byte in the in-memory inline varbyte indicator word (it is combined with the length that is stored in the ObjectId field data
+        /// of a record in the on-disk log).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void UpdateVarbyteValueLengthHighByteInWord(long indicatorAddress, byte valueLength)
+        {
+            var word = *(long*)indicatorAddress;
+            (var keyLengthBytes, var valueLengthBytes, var _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)&word);
+            WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
+            *(long*)indicatorAddress = word;
         }
     }
 }

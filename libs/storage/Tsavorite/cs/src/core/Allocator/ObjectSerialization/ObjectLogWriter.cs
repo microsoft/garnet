@@ -31,15 +31,13 @@ namespace Tsavorite.core
 
         /// <summary>In the most common case, SerializedSizeIsExact is true and this is the expected length of the serialized value object
         /// (used to verify the serialized size after serialization completes).</summary>
-        long expectedSerializedLength;
+        ulong expectedSerializedLength;
 
-        /// <summary>For object serialization via chained chunks, indicates that the position is not set (i.e. we're not doing chunk chaining)</summary>
-        const int NoPosition = -1;
         /// <summary>For object serialization, the cumulative length of the value bytes.</summary>
-        long totalValueObjectLength;
+        ulong totalValueObjectLength;
 
         /// <summary>Sum of Key and Value overflow lengths; used for the numBytes parametger of the callback for the partial flush.</summary>
-        long totalOverflowLength;
+        ulong totalOverflowLength;
 
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
         internal const int MaxCopySpanLen = 128 * 1024;
@@ -89,15 +87,20 @@ namespace Tsavorite.core
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
         internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ref ulong mainLogAlignedDeviceOffset, 
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endFilePosition)
-            => circularFlushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, ref mainLogAlignedDeviceOffset, 
-                (ulong)(totalOverflowLength + totalValueObjectLength), externalCallback, externalContext, out endFilePosition);
+            => circularFlushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, ref mainLogAlignedDeviceOffset,
+                totalOverflowLength + totalValueObjectLength, externalCallback, externalContext, out endFilePosition);
 
-        /// <inheritdoc/>
-        public long Write(in LogRecord logRecord)
+        /// <summary>
+        /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
+        /// </summary>
+        /// <param name="logRecord">The <see cref="LogRecord"/> whose Keys and Values are to be written to the device.</param>
+        /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately.</remarks>
+        /// <returns>The number of bytes written for the value object, if any (Overflow lengths are known in already)</returns>
+        public ulong WriteObjects(in LogRecord logRecord)
         {
             Debug.Assert(!logRecord.Info.RecordIsInline, "Cannot call ObjectLogWriter with an inline record");
 
-            var startLength = totalOverflowLength + totalValueObjectLength;
+            var startObjectLength = totalValueObjectLength;
 
             // If the key is overflow, start with that. (Inline keys are written as part of the main-log record.)
             if (logRecord.Info.KeyIsOverflow)
@@ -108,10 +111,11 @@ namespace Tsavorite.core
             else if (logRecord.Info.ValueIsObject)
             {
                 var obj = logRecord.ValueObject;
-                expectedSerializedLength = obj.SerializedSizeIsExact ? obj.SerializedSize : NoPosition;
+                if (obj.SerializedSizeIsExact)
+                    expectedSerializedLength = (ulong)obj.SerializedSize;
                 DoSerialize(obj);
             }
-            return totalOverflowLength + totalValueObjectLength - startLength;
+            return totalValueObjectLength - startObjectLength;
         }
 
         /// <summary>Start off the write using the full span of the <see cref="OverflowByteArray"/>.</summary>
@@ -125,7 +129,7 @@ namespace Tsavorite.core
         /// <param name="refCountedGCHandle">The refcounted GC handle if this is a recursive call</param>
         void WriteDirect(OverflowByteArray overflow, ReadOnlySpan<byte> fullDataSpan, RefCountedPinnedGCHandle refCountedGCHandle)
         {
-            totalOverflowLength += overflow.Length;
+            totalOverflowLength += (uint)overflow.Length;
 
             if (overflow.Length <= MaxCopySpanLen)
                 Write(fullDataSpan);
@@ -216,7 +220,7 @@ namespace Tsavorite.core
                 dataStart += requestLength;
                 writeBuffer.currentPosition += requestLength;
                 if (inSerialize)
-                    totalValueObjectLength += requestLength;
+                    totalValueObjectLength += (uint)requestLength;
 
                 // See if we're at the end of the buffer.
                 if (writeBuffer.RemainingCapacity == 0)
@@ -249,13 +253,13 @@ namespace Tsavorite.core
             // Update value length with the continuation bit NOT set. This may set it to zero if we did not have any more data in the object after the last buffer flush.
             inSerialize = false;
 
-            if (expectedSerializedLength != NoPosition)
+            if (valueObject.SerializedSizeIsExact)
             {
                 if (totalValueObjectLength != expectedSerializedLength)
                     throw new TsavoriteException($"Expected value length {expectedSerializedLength} does not match actual value length {totalValueObjectLength}.");
             }
             else
-                valueObject.SerializedSize = totalValueObjectLength;
+                valueObject.SerializedSize = (long)totalValueObjectLength;
         }
 
         /// <summary>Called when a <see cref="LogRecord"/> Write is completed. Ensures end-of-record alignment.</summary>

@@ -39,6 +39,24 @@ namespace Tsavorite.core
         public int Allocate()
             => freeSlots.TryPop(out var objectId) ? objectId : objectArray.Allocate();
 
+        /// <summary>Reserve a slot, place the Overflow into it, and return the slot's ID.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int AllocateAndSet(OverflowByteArray element)
+        {
+            var id = Allocate();
+            Set(id, element);
+            return id;
+        }
+
+        /// <summary>Reserve a slot, place the Object into it, and return the slot's ID.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int AllocateAndSet(IHeapObject element)
+        {
+            var id = Allocate();
+            Set(id, element);
+            return id;
+        }
+
         /// <summary>Free a slot for reuse by another record on this page (e.g. when sending a record to the revivification freelist, or on a failed CAS, etc.).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free(int objectId)

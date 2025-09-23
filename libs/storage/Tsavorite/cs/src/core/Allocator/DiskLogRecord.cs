@@ -52,6 +52,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (which is assumed to have transient ObjectIds if it has objects).
+        /// </summary>
+        internal DiskLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer)
+        {
+            logRecord = memoryLogRecord;
+            this.objectDisposer = objectDisposer;
+        }
+
+        /// <summary>
         /// Copies a LogRecord with no out-of-line objects into our contained <see cref="logRecord"/>. Private; use either CopyFrom or TransferFrom.
         /// </summary>
         /// <param name="recordBuffer">The record buffer, either from IO or a copy for pending operations such as Compact or ConditionalCopyToTail.</param>

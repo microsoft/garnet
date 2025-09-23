@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed unsafe class SpanByteScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
+    internal sealed unsafe class ObjectScanIterator<TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator, IPushScanIterator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -38,7 +38,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal SpanByteScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch,
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
@@ -54,7 +54,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal SpanByteScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(),
                 DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
@@ -66,7 +66,7 @@ namespace Tsavorite.core
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
         }
 
-        #region TODO Unify with ObjectScanIterator
+        #region TODO Unify with SpanByteScanIterator
         /// <inheritdoc/>
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
@@ -177,7 +177,7 @@ namespace Tsavorite.core
             (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
             return logRecord.physicalAddress;
         }
-        #endregion TODO Unify with ObjectScanIterator
+        #endregion TODO Unify with SpanByteScanIterator
 
         /// <summary>
         /// Get next record in iterator
@@ -232,7 +232,7 @@ namespace Tsavorite.core
                                 recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);
                             }
 
-                            // These objects are still alive in the log, so do not dispose the value object if any (SpanByteAllocator has none).
+                            // These objects are still alive in the log, so do not dispose the value object if any.
                             Buffer.MemoryCopy((byte*)physicalAddress, recordBuffer.GetValidPointer(), allocatedSize, allocatedSize);
                             var memoryLogRecord = hlogBase._wrapper.CreateTransientLogRecord(currentAddress, physicalAddress);
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
@@ -246,7 +246,7 @@ namespace Tsavorite.core
                     else
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
-                        // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail (SpanByteAllocator has no objects).
+                        // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
                         diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TranssientObjectIdMap),
                                             obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
                     }

@@ -51,16 +51,20 @@ namespace Tsavorite.core
         /// <summary>The max address on the main log page to iterate records, one ObjectBlockSize chunk of object-log records at a time.</summary>
         internal long maxPtr;
 
-        /// <summary>
-        /// Free
-        /// </summary>
-        public void Free()
+        /// <summary>Return the <see cref="mainLogPageBuffer"/> to its pool.</summary>
+        public void FreeBuffer()
         {
             if (mainLogPageBuffer != null)
             {
                 mainLogPageBuffer.Return();
                 mainLogPageBuffer = null;
             }
+        }
+
+        /// <inheritdoc/>
+        public void DisposeHandle()
+        {
+            handle?.Dispose();
         }
     }
 

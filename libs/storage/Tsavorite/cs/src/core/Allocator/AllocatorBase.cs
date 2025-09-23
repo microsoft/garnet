@@ -1825,7 +1825,7 @@ namespace Tsavorite.core
         /// Read pages from specified device
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
+        internal void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers,
                                         long readPageStart,
                                         int numPages,
                                         long untilAddress,
@@ -1869,7 +1869,7 @@ namespace Tsavorite.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
+                ReadAsync(readBuffers, offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, objectLogDevice);
             }
         }
 

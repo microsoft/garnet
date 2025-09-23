@@ -64,6 +64,9 @@ namespace Tsavorite.core
         /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
         public readonly int ExpirationSize => FieldInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
 
+        /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
+        public readonly int ObjectLogPositionSize => FieldInfo.ValueIsObject ? LogRecord.ObjectLogPositionSize : 0;
+
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
         public readonly int OptionalSize => ETagSize + ExpirationSize;
 

@@ -114,6 +114,12 @@ namespace Tsavorite.core
         public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
 
         /// <inheritdoc/>
+        public readonly LogRecord CreateTransientLogRecord(long logicalAddress, long physicalAddress) => _this.CreateTransientLogRecord(logicalAddress, physicalAddress);
+
+        /// <inheritdoc/>
+        public readonly ObjectIdMap TranssientObjectIdMap => _this.transientObjectIdMap;
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason) => _this.DisposeRecord(ref logRecord, disposeReason);
 

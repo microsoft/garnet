@@ -31,7 +31,9 @@ namespace Tsavorite.core
 
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
         internal ObjectPage[] pages;
-        /// <summary>The free pages of the log</summary>
+
+        /// <summary>The <see cref="ObjectIdMap"/> for transient <see cref="LogRecord"/> creation, such as for iterators.</summary>
+        internal ObjectIdMap transientObjectIdMap = new();
 
         /// <summary>The address of the next write to the device. Will always be sector-aligned.</summary>
         ulong alignedNextMainLogFlushAddress;
@@ -48,6 +50,7 @@ namespace Tsavorite.core
 
         private readonly IDevice objectLogDevice;
 
+        /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
@@ -130,6 +133,10 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LogRecord CreateTransientLogRecord(long logicalAddress, long physicalAddress)
+            => new (physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectIdMap GetObjectIdMap(long logicalAddress) => pages[GetPageIndexForAddress(logicalAddress)].objectIdMap;
@@ -367,6 +374,7 @@ namespace Tsavorite.core
                 endOffset = (int)(asyncResult.untilAddress - pageStart);
                 numBytesToWrite = (uint)(endOffset - startOffset);
             }
+            var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
 
             // Initialize disk offset from logicalAddress to subtract the GetFirstValidLogicalAddressOnPage(), then ensure we are aligned to the PageHeader
             // (for the first record on the page the caller probably passed the address of the start of the page rather than the offset of the header position).
@@ -379,29 +387,44 @@ namespace Tsavorite.core
 
             _ = flushBuffers.OnBeginPartialFlush();
 
-            // Create a local copy of the main-log page inline data. Space for ObjectIds and the ObjectLogFilePosition will be updated as we go
-            // (ObjectId space and the length-metadata space will combine for 5 bytes or 1TB of object size, which is our max).
-            // Note: The ShiftHeadAddress check to always remain below FlushedUntilAddress means the actual log page, inluding ObjectIdMap, will remain valid until we
-            // complete this partial flush; but we need to create the disk image (and do so without changing record lengths).
-            // TODO: We could make this initial buffer copy smaller by looping on successive subsets of the records.
-            var localObjectIdMap = pages[flushPage % BufferSize].objectIdMap;
-            var srcBuffer = bufferPool.Get((int)numBytesToWrite);
-            var pageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
-            pageSpan.CopyTo(srcBuffer.TotalValidSpan);
-            srcBuffer.available_bytes = (int)numBytesToWrite;
-
-            // We suspend epoch during the time-consuming actual flush. As noted in the preceding comment, we don't need the epoch to keep the log page stable.
+            // We suspend epoch during the time-consuming actual flush. Note: The ShiftHeadAddress check to always remain below FlushedUntilAddress
+            // means the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush.
             var epochWasProtected = epoch.ThisInstanceProtected();
             if (epochWasProtected)
                 epoch.Suspend();
 
-            // Object keys and values are serialized into this Stream.
-            var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
-            var logWriter = new ObjectLogWriter(device, flushBuffers, valueObjectSerializer);
-            PinnedMemoryStream<ObjectLogWriter> pinnedMemoryStream = new(logWriter);
-
+            // Do everything below here in the try{} to be sure the epoch is Resumed()d if we had it.
+            SectorAlignedMemory srcBuffer = default;;
             try
             {
+                // Create a local copy of the main-log page inline data. Space for ObjectIds and the ObjectLogPosition will be updated as we go
+                // (ObjectId space and the length-metadata space will combine for 5 bytes or 1TB of object size, which is our max). Note that this
+                // does not change record sizes, so the logicalAddress space is unchanged.
+                // TODO: We could make this initial buffer copy smaller by looping on successive subsets of the records.
+                var localObjectIdMap = pages[flushPage % BufferSize].objectIdMap;
+                srcBuffer = bufferPool.Get((int)numBytesToWrite);
+
+                // Read back the first sector if the start is not aligned (the alignment means we wrote a partially-filled sector (with ObjectLog fields set).
+                // TODO: cache this sector from previous flushes to avoid the Read.. but it will still rewrite the sector.
+                if (alignedStartOffset < startOffset)
+                {
+                    TODO("This will potentially overwrite sectors");
+                    PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+                    device.ReadAsync(alignedNextMainLogFlushAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer + alignedStartOffset,
+                        (uint)sectorSize, AsyncReadPageCallback, result);
+                    result.handle.Wait();
+                    result.DisposeHandle();
+                }
+
+                var pageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
+                pageSpan.CopyTo(srcBuffer.TotalValidSpan);
+                srcBuffer.available_bytes = (int)numBytesToWrite;
+
+                // Object keys and values are serialized into this Stream.
+                var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
+                var logWriter = new ObjectLogWriter(device, flushBuffers, valueObjectSerializer);
+                PinnedMemoryStream<ObjectLogWriter> pinnedMemoryStream = new(logWriter);
+
                 flushBuffers.filePosition = objectLogNextRecordStartPosition;
                 valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
 
@@ -424,8 +447,8 @@ namespace Tsavorite.core
                             var recordStartPosition = logWriter.GetNextRecordStartPosition();
                             if (hasPageHeader)
                                 pageHeaderPtr->SetLowestObjectLogPosition(recordStartPosition);
-                            var recordObjectLength = logWriter.Write(in logRecord);
-                            logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, recordObjectLength);
+                            var valueObjectLength = logWriter.WriteObjects(in logRecord);
+                            logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
                         }
                         else
                         {
@@ -440,7 +463,6 @@ namespace Tsavorite.core
 
                 // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
                 // to the main log file.
-                var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
                 if (asyncResult.partial)
                 {
                     // We're writing only a subset of the page, so update our count of bytes to write.
@@ -466,7 +488,7 @@ namespace Tsavorite.core
 
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
         {
-            TODO("Is this still needed");
+            TODO("Is this still needed?");
             if (errorCode != 0)
                 logger?.LogError($"{nameof(AsyncReadPageCallback)} error: {{errorCode}}", errorCode);
 
@@ -490,17 +512,19 @@ namespace Tsavorite.core
 
             var deserializationBuffers = diskLogRecord.Info.ValueIsObject ? CreateDeserializationBuffers(bufferPool, device, logger) : default;
 
-            ObjectLogReader<TStoreFunctions>.DiskReadParameters readParams =
-                new(bufferPool, maxInlineKeySize, maxInlineValueSize, device.SectorSize, IStreamBuffer.BufferSize, ctx.logicalAddress, storeFunctions);
-            var readBuffer = new ObjectLogReader<TStoreFunctions>(in readParams, device, deserializationBuffers, logger);
-            if (readBuffer.Read(ref ctx.record, ctx.request_key, out ctx.diskLogRecord, out _ /*recordLength*/))
+            var logReader = new ObjectLogReader<TStoreFunctions>(device, deserializationBuffers, storeFunctions, logger);
+            if (logReader.ReadObjects((long)ctx.record.GetValidPointer(), ctx.record.required_bytes, ctx.request_key, transientObjectIdMap,
+                    objectLogNextRecordStartPosition.SegmentSizeBits, out var logRecord))
             {
-                // Success; default the output arguments.
+                // Success; set the DiskLogRecord. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
+                ctx.diskLogRecord = new(in logRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+
+                // Default the output arguments.
                 prevAddressToRead = 0;
                 return true;
             }
 
-            // If readBuffer.Read returned false it was due to key mismatch or Invalid record, so get the previous record.
+            // If readBuffer.Read returned false it was due to an Overflow key mismatch or an Invalid record, so get the previous record.
             prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
             return false;
         }
@@ -508,16 +532,8 @@ namespace Tsavorite.core
         protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
         {
-#if READ_WRITE
-            asyncResult.freeBuffer1 = bufferPool.Get((int)aligned_read_length);
-            asyncResult.freeBuffer1.required_bytes = (int)aligned_read_length;
-
-            if (!(KeyHasObjects() || ValueHasObjects()))
-            {
-                device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.aligned_pointer,
-                    aligned_read_length, callback, asyncResult);
-                return;
-            }
+            asyncResult.mainLogPageBuffer = bufferPool.Get((int)aligned_read_length);
+            asyncResult.mainLogPageBuffer.required_bytes = (int)aligned_read_length;
 
             asyncResult.callback = callback;
 
@@ -528,9 +544,8 @@ namespace Tsavorite.core
             }
             asyncResult.objlogDevice = objlogDevice;
 
-            device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.freeBuffer1.aligned_pointer,
+            device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.mainLogPageBuffer.aligned_pointer,
                     aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
-#endif // READ_WRITE
         }
 
 
@@ -538,6 +553,7 @@ namespace Tsavorite.core
         {
             TODO("Ensure cts is passed through to Deserialize and CircularDiskReadBuffer.Read");
             TODO("Do not track deserialization size changes if we are deserializing to a frame");
+            TODO("Update or replace this");
 #if READ_WRITE
             if (errorCode != 0)
                 logger?.LogError($"{nameof(AsyncReadPageWithObjectsCallback)} error: {{errorCode}}", errorCode);

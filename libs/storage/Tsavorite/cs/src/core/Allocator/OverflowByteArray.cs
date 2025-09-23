@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
@@ -69,20 +68,6 @@ namespace Tsavorite.core
             ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
             header.startOffset = offsetFromStart;
             header.endOffset = offsetFromEnd;
-        }
-
-        internal readonly void ExtractOptionalsAtEnd(RecordInfo recordInfo, int optionalLength, out RecordOptionals optionals)
-        {
-            var optionalOffset = Length - optionalLength;
-            optionals = default;
-            if (recordInfo.HasETag)
-            {
-                optionals.eTag = MemoryMarshal.Cast<byte, long>(ReadOnlySpan.Slice(optionalOffset, LogRecord.ETagSize))[0];
-                optionalOffset += LogRecord.ETagSize;
-            }
-            if (recordInfo.HasExpiration)
-                optionals.expiration = MemoryMarshal.Cast<byte, long>(ReadOnlySpan.Slice(optionalOffset, LogRecord.ExpirationSize))[0];
-            AdjustOffsetFromEnd(Length - optionalLength);
         }
 
         /// <summary>Get the <see cref="ReadOnlySpan{_byte_}"/> of a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/> constructor.</summary>

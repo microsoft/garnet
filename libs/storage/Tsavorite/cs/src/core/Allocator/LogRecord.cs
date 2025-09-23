@@ -47,6 +47,8 @@ namespace Tsavorite.core
         public const int NoETag = 0;
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
+        /// <summary>Number of bytes required to the object log position</summary>
+        public const int ObjectLogPositionSize = sizeof(long);
         /// <summary>Number of bytes required to store the FillerLen</summary>
         internal const int FillerLengthSize = sizeof(int);
 
@@ -65,6 +67,37 @@ namespace Tsavorite.core
             : this(physicalAddress)
         {
             this.objectIdMap = objectIdMap;
+        }
+
+        /// <summary>This ctor is used to remap a transient LogRecord's object Ids to the transient map. <paramref name="physicalAddress"/> is assumed to be
+        /// a pointer to transient memory that contains a copy of the in-memory allocator page's record span. This is primarily used for iteration.
+        /// Note that the objects are not removed from the allocator-page map, so for iteration they may temporarily be in both.
+        /// </summary> 
+        /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal LogRecord(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
+            : this(physicalAddress)
+        {
+            if (Info.KeyIsOverflow)
+            {
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
+                *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
+            }
+
+            if (Info.ValueIsOverflow)
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
+                *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
+            }
+            else if (Info.ValueIsObject)
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var heapObj = allocatorMap.GetHeapObject(*(int*)dataAddress);
+                *(int*)dataAddress = transientMap.AllocateAndSet(heapObj);
+            }
+            this.objectIdMap = transientMap;
         }
 
         #region ISourceLogRecord
@@ -120,8 +153,7 @@ namespace Tsavorite.core
                 var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
                 if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     throw new TsavoriteException("set_KeyOverflow should only be called by DiskLogRecord with KeyIsInline==false and key.Length==ObjectIdSize");
-                *(int*)dataAddress = objectIdMap.Allocate();
-                objectIdMap.Set(*(int*)dataAddress, value);
+                *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
 
@@ -200,13 +232,11 @@ namespace Tsavorite.core
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 if (!Info.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord with ValueIsInline==false and ValueIsObject==false and value.Length=+ObjectIdSize");
-
-                *(int*)dataAddress = objectIdMap.Allocate();
-                objectIdMap.Set(*(int*)dataAddress, value);
+                *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
 
-        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0);
+        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0) + (info.ValueIsObject ? sizeof(long) : 0);
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : NoETag;
@@ -355,7 +385,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Tries to set the length of the value field, with consideration to whether there is also space for the optionals (ETag and Expiration).
+        /// Tries to set the length of the value field, with consideration to whether there is also space for the optionals (ETag, Expiration, ObjectLogPosition).
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -553,6 +583,7 @@ namespace Tsavorite.core
 
         private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
+        private readonly int ObjectLogPositionLen => Info.ValueIsObject ? ObjectLogPositionSize : 0;
 
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
@@ -579,6 +610,8 @@ namespace Tsavorite.core
         internal readonly long GetETagAddress() => GetOptionalStartAddress();
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal readonly long GetObjectLogPositionAddress() => GetExpirationAddress() + ExpirationLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetFillerLengthAddress() => physicalAddress + ActualRecordSize;
@@ -939,6 +972,70 @@ namespace Tsavorite.core
             // Finally, set the new record layout and update sizeInfo.
             *(long*)IndicatorAddress = ConstructInlineVarbyteLengthWord(keyLengthBytes, keyLength, valueLengthBytes, valueLength, hasFillerBit);
             sizeInfo.AllocatedInlineRecordSize = allocatedSize;
+        }
+
+        /// <summary>
+        /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.
+        /// </summary>
+        /// <remarks>
+        /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
+        /// </remarks>
+        internal void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
+        {
+            var objLogPositionPtr = (ulong*)GetObjectLogPositionAddress();
+            *objLogPositionPtr = objectLogFilePosition.word;
+            if (Info.KeyIsOverflow)
+            {
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
+                *(int*)dataAddress = overflow.Length;
+            }
+
+            if (Info.ValueIsOverflow)
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
+                *(int*)dataAddress = overflow.Length;
+            }
+            else if (Info.ValueIsObject)
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                *(uint*)dataAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
+                UpdateVarbyteValueLengthHighByteInWord(IndicatorAddress, (byte)((valueObjectLength >> 32) & 0xFF));
+            }
+        }
+
+        /// <summary>
+        /// Returns the object log position for the start of the key (if any) and value (if any).
+        /// </summary>
+        /// <param name="keyLength">Outputs key length; will always be for overflow</param>
+        /// <param name="valueLength">Outputs key length; will be for overflow or object</param>
+        /// <returns>The object log position for this record</returns>
+        internal ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueLength)
+        {
+            var objLogPositionPtr = (ulong*)GetObjectLogPositionAddress();
+            if (Info.KeyIsOverflow)
+            {
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                keyLength = *(int*)dataAddress;
+            }
+            else
+                keyLength = 0;
+
+            if (Info.ValueIsOverflow)
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                valueLength = (ulong)*(int*)dataAddress;
+            }
+            else if (Info.ValueIsObject)
+            {
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                valueLength = *(uint*)dataAddress | (((ulong)length & 0xFF) << 32);
+            }
+            else
+                valueLength = 0;
+
+            return *objLogPositionPtr;
         }
 
         public void Dispose(Action<IHeapObject> objectDisposer)
