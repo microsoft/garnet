@@ -468,6 +468,8 @@ namespace Garnet
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();
+
+            vectorManager.Dispose();
         }
 
         private static void DeleteDirectory(string path)

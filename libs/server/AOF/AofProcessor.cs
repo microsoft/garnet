@@ -57,6 +57,9 @@ namespace Garnet.server
 
         readonly ILogger logger;
 
+        readonly StoreWrapper replayAofStoreWrapper;
+        readonly IClusterProvider clusterProvider;
+
         MemoryResult<byte> output;
 
         /// <summary>
@@ -70,10 +73,11 @@ namespace Garnet.server
         {
             this.storeWrapper = storeWrapper;
 
-            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            this.clusterProvider = clusterProvider;
 
             this.activeDbId = 0;
-            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+            this.respServerSession = ObtainServerSession();
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -89,6 +93,9 @@ namespace Garnet.server
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
             this.logger = logger;
         }
+
+        private RespServerSession ObtainServerSession()
+        => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -341,7 +348,7 @@ namespace Garnet.server
                     StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, respServerSession.storageSession, entryPtr);
+                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, ObtainServerSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(basicContext, entryPtr);
@@ -419,7 +426,7 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, VectorManager vectorManager, StorageSession storageSession, byte* ptr)
+        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, VectorManager vectorManager, Func<RespServerSession> obtainServerSession, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -433,8 +440,12 @@ namespace Garnet.server
             // VADD requires special handling, shove it over to the VectorManager
             if (storeInput.header.cmd == RespCommand.VADD)
             {
-                vectorManager.HandleVectorSetAddReplication(storageSession, ref key, ref storeInput, ref basicContext);
+                vectorManager.HandleVectorSetAddReplication(obtainServerSession, ref key, ref storeInput);
                 return;
+            }
+            else
+            {
+                vectorManager.WaitForVectorOperationsToComplete();
             }
 
             var pbOutput = stackalloc byte[32];
