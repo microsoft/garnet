@@ -5,6 +5,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ namespace Garnet.test.cluster
     public class ClusterVectorSetTests
     {
         private const int DefaultShards = 2;
+        private const int HighReplicationShards = 6;
 
         private static readonly Dictionary<string, LogLevel> MonitorTests =
             new()
@@ -225,6 +227,117 @@ namespace Garnet.test.cluster
                     ClassicAssert.IsTrue(Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5), "Too long has passed without a vector set catching up on the secondary");
                 }
             }
+        }
+
+        [Test]
+        public async Task MultipleReplicasWithVectorSetsAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryStartIndex = 1;
+            const int SecondaryEndIndex = 5;
+            const int Vectors = 2_000;
+            const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
+
+            context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5, logger: context.logger);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
+            for (var i = SecondaryStartIndex; i <= SecondaryEndIndex; i++)
+            {
+                secondaries[i - SecondaryStartIndex] = (IPEndPoint)context.endpoints[i];
+            }
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+
+            foreach (var secondary in secondaries)
+            {
+                ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+            }
+
+            // Build some repeatably random data for inserts
+            var vectors = new byte[Vectors][];
+            {
+                var r = new Random(2025_09_23_00);
+
+                for (var i = 0; i < vectors.Length; i++)
+                {
+                    vectors[i] = new byte[64];
+                    r.NextBytes(vectors[i]);
+                }
+            }
+
+            using var sync = new SemaphoreSlim(2);
+
+            var writeTask =
+                Task.Run(
+                    async () =>
+                    {
+                        await sync.WaitAsync();
+
+                        var key = new byte[4];
+                        for (var i = 0; i < vectors.Length; i++)
+                        {
+                            BinaryPrimitives.WriteInt32LittleEndian(key, i);
+                            var val = vectors[i];
+                            var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8"]);
+                            ClassicAssert.AreEqual(1, addRes);
+                        }
+                    }
+                );
+
+            using var cts = new CancellationTokenSource();
+
+            var readTasks = new Task<int>[secondaries.Length];
+
+            for (var i = 0; i < secondaries.Length; i++)
+            {
+                var secondary = secondaries[i];
+                var readTask =
+                    Task.Run(
+                        async () =>
+                        {
+                            var r = new Random(2025_09_23_01);
+
+                            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+                            await sync.WaitAsync();
+
+                            var nonZeroReturns = 0;
+
+                            while (!cts.Token.IsCancellationRequested)
+                            {
+                                var val = vectors[r.Next(vectors.Length)];
+
+                                var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
+                                if (readRes.Length > 0)
+                                {
+                                    nonZeroReturns++;
+                                }
+                            }
+
+                            return nonZeroReturns;
+                        }
+                    );
+
+                readTasks[i] = readTask;
+            }
+
+            _ = sync.Release(secondaries.Length + 1);
+            await writeTask;
+
+            for (var secondaryIndex = SecondaryStartIndex; secondaryIndex <= SecondaryEndIndex; secondaryIndex++)
+            {
+                context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, secondaryIndex);
+            }
+
+            cts.CancelAfter(TimeSpan.FromSeconds(1));
+
+            var searchesWithNonZeroResults = await Task.WhenAll(readTasks);
+
+            ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
         }
     }
 }
