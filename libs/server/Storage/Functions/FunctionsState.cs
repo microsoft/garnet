@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -14,7 +13,7 @@ namespace Garnet.server
     {
         private readonly CustomCommandManager customCommandManager;
 
-        public readonly TsavoriteLog appendOnlyFile;
+        public readonly IAppendOnlyFile appendOnlyFile;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
@@ -25,7 +24,7 @@ namespace Garnet.server
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
-        public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
+        public FunctionsState(IAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
