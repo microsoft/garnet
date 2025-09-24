@@ -25,6 +25,7 @@ namespace Garnet.cluster
         readonly CheckpointStore checkpointStore;
         readonly ReplicationSyncManager replicationSyncManager;
         readonly CancellationTokenSource ctsRepManager = new();
+        CancellationTokenSource resetHandler = new();
 
         readonly int pageSizeBits;
 
@@ -454,6 +455,20 @@ namespace Garnet.cluster
             }
         }
 
+        public void ResetRecovery()
+        {
+            switch (currentRecoveryStatus)
+            {
+                case RecoveryStatus.ClusterReplicate:
+                case RecoveryStatus.ClusterFailover:
+                case RecoveryStatus.ReplicaOfNoOne:
+                case RecoveryStatus.CheckpointRecoveredAtReplica:
+                case RecoveryStatus.InitializeRecover:
+                    resetHandler.Cancel();
+                    break;
+            }
+        }
+
         public void Dispose()
         {
             _disposed = true;
@@ -470,6 +485,8 @@ namespace Garnet.cluster
             replicaReplayTaskCts.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
+            resetHandler.Cancel();
+            resetHandler.Dispose();
             aofTaskStore.Dispose();
             aofProcessor?.Dispose();
             networkPool?.Dispose();
