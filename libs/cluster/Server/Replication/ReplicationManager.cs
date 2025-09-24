@@ -25,11 +25,8 @@ namespace Garnet.cluster
         readonly CheckpointStore checkpointStore;
         readonly ReplicationSyncManager replicationSyncManager;
         readonly CancellationTokenSource ctsRepManager = new();
-<<<<<<< HEAD
         readonly TimeSpan replicaAttachTimeout;
         CancellationTokenSource resetHandler = new();
-=======
->>>>>>> origin/main
 
         readonly int pageSizeBits;
 

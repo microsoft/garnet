@@ -147,11 +147,7 @@ namespace Garnet.cluster
                         PrimaryReplId,
                         cEntry.ToByteArray(),
                         storeWrapper.appendOnlyFile.BeginAddress,
-<<<<<<< HEAD
-                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(replicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
-=======
-                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, ctsRepManager.Token).ConfigureAwait(false);
->>>>>>> origin/main
+                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
