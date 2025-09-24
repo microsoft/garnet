@@ -38,7 +38,6 @@ namespace Garnet.test.cluster.ReplicationTests
             context?.TearDown();
         }
 
-#if DEBUG
         /// <summary>
         /// Test CLUSTER RESET HARD functionality during diskless replication attach.
         /// This test simulates a scenario where a replica gets stuck while attaching to a primary
@@ -149,6 +148,5 @@ namespace Garnet.test.cluster.ReplicationTests
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync);
             }
         }
-#endif
     }
 }
