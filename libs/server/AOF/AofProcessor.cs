@@ -342,6 +342,14 @@ namespace Garnet.server
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
             if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
+            // StoreRMW can queue VADDs onto different threads
+            // but everything else needs to WAIT for those to complete
+            // otherwise we might loose consistency
+            if (header.opType != AofEntryType.StoreRMW)
+            {
+                storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
+            }
+
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:

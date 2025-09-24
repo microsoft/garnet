@@ -815,39 +815,77 @@ namespace Garnet.server
 
                         var input = new RawStringInput(RespCommand.VADD, ref parseState);
 
-                        // Equivalent to VectorStoreOps.VectorSetAdd, except with no locking or formatting
-                        while (true)
+                        // Equivalent to VectorStoreOps.VectorSetAdd
+                        //
+                        // We still need locking here because the replays may proceed in parallel
+
+                        var lockCtx = storageSession.objectStoreLockableContext;
+
+                        lockCtx.BeginLockable();
+                        try
                         {
-                            var readStatus = context.Read(ref key, ref input, ref indexConfig);
-                            if (readStatus.IsPending)
-                            {
-                                CompletePending(ref readStatus, ref indexConfig, ref context);
-                            }
+                            TxnKeyEntry vectorLockEntry = new();
+                            vectorLockEntry.isObject = false;
+                            vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
 
-                            if (!readStatus.Found)
+                            // Ensure creation of the index, leaving indexBytes populated
+                            // and a Shared lock acquired by the time we exit
+                            while (true)
                             {
-                                // Create the vector set index
-                                var writeStatus = context.RMW(ref key, ref input);
-                                if (writeStatus.IsPending)
+                                vectorLockEntry.lockType = LockType.Shared;
+                                lockCtx.Lock([vectorLockEntry]);
+
+                                var readStatus = context.Read(ref key, ref input, ref indexConfig);
+                                if (readStatus.IsPending)
                                 {
-                                    CompletePending(ref writeStatus, ref indexConfig, ref context);
+                                    CompletePending(ref readStatus, ref indexConfig, ref context);
                                 }
 
-                                if (!writeStatus.IsCompletedSuccessfully)
+                                if (!readStatus.Found)
                                 {
-                                    throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
+                                    if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                                    {
+                                        // Try again
+                                        lockCtx.Unlock([vectorLockEntry]);
+                                        continue;
+                                    }
+
+                                    vectorLockEntry.lockType = LockType.Exclusive;
+
+                                    // Create the vector set index
+                                    var writeStatus = context.RMW(ref key, ref input);
+                                    if (writeStatus.IsPending)
+                                    {
+                                        CompletePending(ref writeStatus, ref indexConfig, ref context);
+                                    }
+
+                                    if (!writeStatus.IsCompletedSuccessfully)
+                                    {
+                                        lockCtx.Unlock([vectorLockEntry]);
+                                        throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
+                                    }
                                 }
+                                else
+                                {
+                                    break;
+                                }
+
+                                lockCtx.Unlock([vectorLockEntry]);
                             }
-                            else
+
+                            Debug.Assert(vectorLockEntry.lockType == LockType.Shared, "Shouldn't hold exclusive lock while adding to vector set");
+
+                            var addRes = self.TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
+                            lockCtx.Unlock([vectorLockEntry]);
+
+                            if (addRes != VectorManagerResult.OK)
                             {
-                                break;
+                                throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
                             }
                         }
-
-                        var addRes = self.TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
-                        if (addRes != VectorManagerResult.OK)
+                        finally
                         {
-                            throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                            lockCtx.EndLockable();
                         }
                     }
                 }
