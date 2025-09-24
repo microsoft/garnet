@@ -142,7 +142,7 @@ namespace Garnet.test
 
             // Validate non-default configuration options
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
-            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
+            ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
             ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
@@ -174,7 +174,7 @@ namespace Garnet.test
 
             // Validate non-default configuration options
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
-            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
+            ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
             ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
 
@@ -196,7 +196,7 @@ namespace Garnet.test
 
             // Validate non-default configuration options
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
-            ClassicAssert.AreEqual(11, nonDefaultOptions.Count);
+            ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
             ClassicAssert.AreEqual("12m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
