@@ -100,10 +100,10 @@ namespace Garnet.cluster
             try
             {
                 SuspendConfigMerge();
-                
+
                 // Reset recovery operations before proceeding with reset
                 clusterProvider.replicationManager.ResetRecovery();
-                
+
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
