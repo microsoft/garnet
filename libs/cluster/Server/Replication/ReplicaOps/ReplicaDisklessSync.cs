@@ -122,7 +122,7 @@ namespace Garnet.cluster
                         checkpointEntry: checkpointEntry);
 
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
-                    var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).WaitAsync(replicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                    var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
