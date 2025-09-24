@@ -87,7 +87,7 @@ namespace Garnet.cluster
                 }
             }
 
-            Task.Run(aofSyncTaskInfo.ReplicaSyncTask);
+            Task.Run(aofSyncTaskInfo.Run);
             return true;
         }
     }

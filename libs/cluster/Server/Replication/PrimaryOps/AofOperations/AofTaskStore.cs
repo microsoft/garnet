@@ -85,8 +85,8 @@ namespace Garnet.cluster
                         address = address,
                         port = port,
                         replication_state = cr.IsConnected ? "online" : "offline",
-                        replication_offset = cr.previousAddress,
-                        replication_lag = cr.previousAddress - PrimaryReplicationOffset
+                        replication_offset = cr.PreviousAddress,
+                        replication_lag = cr.PreviousAddress - PrimaryReplicationOffset
                     });
                 }
             }
@@ -371,8 +371,8 @@ namespace Garnet.cluster
             for (int i = 0; i < numTasks; i++)
             {
                 Debug.Assert(syncDrivers[i] != null);
-                if (syncDrivers[i].previousAddress < TruncatedUntil)
-                    TruncatedUntil = syncDrivers[i].previousAddress;
+                if (syncDrivers[i].PreviousAddress < TruncatedUntil)
+                    TruncatedUntil = syncDrivers[i].PreviousAddress;
             }
 
             // Inform that we have logically truncatedUntil
