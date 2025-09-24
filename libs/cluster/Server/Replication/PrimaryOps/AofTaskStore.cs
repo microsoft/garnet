@@ -79,7 +79,7 @@ namespace Garnet.cluster
                 for (int i = 0; i < numTasks; ++i)
                 {
                     var cr = tasks[i];
-                    var (address, port) = current.GetWorkerAddressFromNodeId(cr.remoteNodeId);
+                    var (address, port) = current.GetWorkerAddressFromNodeId(cr.RemoteNodeId);
 
                     replicaInfo.Add(new()
                     {
@@ -176,7 +176,7 @@ namespace Garnet.cluster
                 {
                     var t = tasks[i];
                     Debug.Assert(t != null);
-                    if (t.remoteNodeId == remoteNodeId)
+                    if (t.RemoteNodeId == remoteNodeId)
                     {
                         tasks[i] = aofSyncTaskInfo;
                         t.Dispose();
@@ -282,7 +282,7 @@ namespace Garnet.cluster
                     {
                         var t = tasks[i];
                         Debug.Assert(t != null);
-                        if (t.remoteNodeId == rss.replicaNodeId)
+                        if (t.RemoteNodeId == rss.replicaNodeId)
                         {
                             tasks[i] = rss.AofSyncTask;
                             t.Dispose();

@@ -16,7 +16,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly AofTaskStore aofTaskStore;
         readonly string localNodeId;
-        public readonly string remoteNodeId;
+        readonly string remoteNodeId;
         readonly ILogger logger;
         readonly GarnetClientSession garnetClient;
         readonly CancellationTokenSource cts;
@@ -28,6 +28,11 @@ namespace Garnet.cluster
         /// Check if client connection is healthy
         /// </summary>
         public bool IsConnected => garnetClient != null && garnetClient.IsConnected;
+
+        /// <summary>
+        /// Node-id associated with this AofSyncTask
+        /// </summary>
+        public string RemoteNodeId => remoteNodeId;
 
         /// <summary>
         /// Return start address for this AOF iterator
@@ -163,6 +168,6 @@ namespace Garnet.cluster
 
         public Task<string> SendAndResetIterationBuffer()
             => garnetClient.SendAndResetIterationBuffer();
-        #endregion    
+        #endregion
     }
 }
