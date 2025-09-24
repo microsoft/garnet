@@ -85,7 +85,7 @@ namespace Garnet.cluster
                     {
                         address = address,
                         port = port,
-                        replication_state = cr.garnetClient.IsConnected ? "online" : "offline",
+                        replication_state = cr.IsConnected ? "online" : "offline",
                         replication_offset = cr.previousAddress,
                         replication_lag = cr.previousAddress - PrimaryReplicationOffset
                     });
@@ -421,7 +421,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numTasks; i++)
                 {
                     var t = tasks[i];
-                    count += t.garnetClient.IsConnected ? 1 : 0;
+                    count += t.IsConnected ? 1 : 0;
                 }
             }
             finally

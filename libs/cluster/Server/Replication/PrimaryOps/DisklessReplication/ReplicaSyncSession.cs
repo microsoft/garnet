@@ -43,20 +43,16 @@ namespace Garnet.cluster
         /// Connect client
         /// </summary>
         public void Connect()
-        {
-            if (!AofSyncTask.IsConnected)
-                AofSyncTask.garnetClient.Connect();
-        }
+            => AofSyncTask.ConnectClient();
 
         /// <summary>
-        /// Execute async command
+        /// Issue FlushAll
         /// </summary>
-        /// <param name="commands"></param>
         /// <returns></returns>
-        public Task<string> ExecuteAsync(params string[] commands)
+        public Task<string> IssueFlushAllAsync()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.ExecuteAsync(commands);
+            return AofSyncTask.IssuesFlushAll();
         }
 
         /// <summary>
@@ -65,7 +61,7 @@ namespace Garnet.cluster
         public void InitializeIterationBuffer()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            AofSyncTask.garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
+            AofSyncTask.InitializeIterationBuffer();
         }
 
         /// <summary>
@@ -75,8 +71,7 @@ namespace Garnet.cluster
         public void SetClusterSyncHeader(bool isMainStore)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            if (AofSyncTask.garnetClient.NeedsInitialization)
-                AofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
+            AofSyncTask.InitializeIfNeeded(isMainStore);
         }
 
         /// <summary>
@@ -89,7 +84,7 @@ namespace Garnet.cluster
         public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
+            return AofSyncTask.TryWriteKeyValueSpanByte(ref key, ref value, out task);
         }
 
         /// <summary>
@@ -103,7 +98,7 @@ namespace Garnet.cluster
         public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
+            return AofSyncTask.TryWriteKeyValueByteArray(key, value, expiration, out task);
         }
 
         /// <summary>
@@ -113,7 +108,7 @@ namespace Garnet.cluster
         public void SendAndResetIterationBuffer()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            SetFlushTask(AofSyncTask.garnetClient.SendAndResetIterationBuffer());
+            SetFlushTask(AofSyncTask.SendAndResetIterationBuffer());
         }
         #endregion
 
@@ -251,7 +246,7 @@ namespace Garnet.cluster
                     currentReplicationOffset: clusterProvider.replicationManager.ReplicationOffset,
                     checkpointEntry: null);
 
-                var result = await aofSyncTask.garnetClient.ExecuteAttachSync(recoverSyncMetadata.ToByteArray());
+                var result = await aofSyncTask.ExecuteAttachSync(recoverSyncMetadata);
                 if (!long.TryParse(result, out var syncFromAofAddress))
                 {
                     logger?.LogError("Failed to parse syncFromAddress at {method}", nameof(BeginAofSync));
