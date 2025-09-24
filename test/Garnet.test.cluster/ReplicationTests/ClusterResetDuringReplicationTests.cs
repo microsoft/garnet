@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if DEBUG
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -150,3 +151,4 @@ namespace Garnet.test.cluster.ReplicationTests
         }
     }
 }
+#endif
