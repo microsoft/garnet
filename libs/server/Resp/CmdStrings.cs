@@ -31,6 +31,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REWRITE => "REWRITE"u8;
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
+        public static ReadOnlySpan<byte> Memory => "memory"u8;
+        public static ReadOnlySpan<byte> ObjLogMemory => "obj-log-memory"u8;
+        public static ReadOnlySpan<byte> ObjHeapMemory => "obj-heap-memory"u8;
+        public static ReadOnlySpan<byte> Index => "index"u8;
+        public static ReadOnlySpan<byte> ObjIndex => "obj-index"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
         public static ReadOnlySpan<byte> CertPassword => "cert-password"u8;
         public static ReadOnlySpan<byte> ClusterUsername => "cluster-username"u8;
@@ -298,6 +303,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS => "ERR checkpoint already in progress"u8;
 
         /// <summary>
         /// Response string templates
@@ -326,6 +332,13 @@ namespace Garnet.server
         public const string GenericErrStoreCommand = "ERR STORE option in {0} is not compatible with WITHDIST, WITHHASH and WITHCOORD options";
         public const string GenericErrCommandDisallowedWithOption =
             @"ERR {0} command not allowed. If the {1} option is set to ""local"", you can run it from a local connection, otherwise you need to set this option in the configuration file, and then restart the server.";
+        public const string GenericErrIncorrectSizeFormat = "ERR Incorrect size format in (option: '{0}')";
+        public const string GenericErrIndexSizePowerOfTwo = "ERR Index size must be a power of 2 (option: '{0}')";
+        public const string GenericErrIndexSizeAutoGrow = "ERR Cannot adjust index size when auto-grow task is running (option: '{0}')";
+        public const string GenericErrIndexSizeSmallerThanCurrent = "ERR Cannot set dynamic index size smaller than current index size (option: '{0}')";
+        public const string GenericErrIndexSizeGrowFailed = "ERR failed to grow index size beyond current size (option: '{0}')";
+        public const string GenericErrMemorySizeGreaterThanBuffer = "ERR Cannot set dynamic memory size greater than configured circular buffer size (option: '{0}')";
+        public const string GenericErrHeapMemorySizeTrackerNotRunning = "ERR Cannot adjust object store heap memory size when size tracker is not running (option: '{0}')";
 
         /// <summary>
         /// Response errors while scripting
@@ -375,6 +388,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
         public static ReadOnlySpan<byte> EXISTS => "EXISTS"u8;
         public static ReadOnlySpan<byte> FLUSH => "FLUSH"u8;
+        public static ReadOnlySpan<byte> GENPASS => "GENPASS"u8;
         public static ReadOnlySpan<byte> GETUSER => "GETUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
         public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;

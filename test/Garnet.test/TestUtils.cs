@@ -12,6 +12,7 @@ using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -224,8 +225,9 @@ namespace Garnet.test
             bool disablePubSub = false,
             bool tryRecover = false,
             bool lowMemory = false,
-            string MemorySize = default,
-            string PageSize = default,
+            string memorySize = default,
+            string objectStoreLogMemorySize = default,
+            string pageSize = default,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -237,6 +239,7 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
+            string objectStorePageSize = default,
             string objectStoreHeapMemorySize = default,
             string objectStoreIndexSize = "16k",
             string objectStoreIndexMaxSize = default,
@@ -269,16 +272,17 @@ namespace Garnet.test
             bool enableCluster = false,
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
-            bool useInChainRevivOnly = false
+            bool useInChainRevivOnly = false,
+            bool useLogNullDevice = false
             )
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
-            var logDir = logCheckpointDir;
-            if (useAzureStorage)
+            var logDir = useLogNullDevice ? null : logCheckpointDir;
+            if (useAzureStorage && !useLogNullDevice)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
             if (useAzureStorage)
@@ -312,7 +316,7 @@ namespace Garnet.test
 
             GarnetServerOptions opts = new(logger)
             {
-                EnableStorageTier = logCheckpointDir != null,
+                EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 EndPoints = endpoints ?? ([EndPoint]),
@@ -359,8 +363,20 @@ namespace Garnet.test
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
             };
 
+            if (!string.IsNullOrEmpty(memorySize))
+                opts.MemorySize = memorySize;
+
+            if (!string.IsNullOrEmpty(objectStoreLogMemorySize))
+                opts.ObjectStoreLogMemorySize = objectStoreLogMemorySize;
+
+            if (!string.IsNullOrEmpty(pageSize))
+                opts.PageSize = pageSize;
+
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
+
+            if (!string.IsNullOrEmpty(objectStorePageSize))
+                opts.ObjectStorePageSize = objectStorePageSize;
 
             if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
                 opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
@@ -373,8 +389,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "1024" : MemorySize;
-                opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
+                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
+                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
                 if (enableReadCache)
                 {
                     opts.ReadCacheMemorySize = opts.MemorySize;
@@ -758,7 +774,7 @@ namespace Garnet.test
                 LoggingFrequency = loggingFrequencySecs,
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
-                ReplicaSyncTimeout = replicaSyncTimeout,
+                ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
             };
 
             if (lowMemory)
@@ -1113,6 +1129,31 @@ using System.Threading.Tasks;
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// Get effective memory size based on configured memory size and page size.
+        /// </summary>
+        /// <param name="memorySize">Memory size string</param>
+        /// <param name="pageSize">Page size string</param>
+        /// <param name="parsedPageSize">Parsed page size</param>
+        /// <returns>Effective memory size</returns>
+        public static long GetEffectiveMemorySize(string memorySize, string pageSize, out long parsedPageSize)
+        {
+            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
+            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memorySize, pageSize, out var epc);
+            return parsedMemorySize - (epc * parsedPageSize);
+        }
+
+        /// <summary>
+        /// Get a random alphanumeric string of specified length
+        /// </summary>
+        /// <param name="len">Length of string</param>
+        /// <returns>Random alphanumeric string</returns>
+        public static string GetRandomString(int len)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            return RandomNumberGenerator.GetString(chars, len);
         }
     }
 }

@@ -63,6 +63,7 @@ namespace Garnet.server
                 RespCommand.ZCOLLECT => NetworkZCOLLECT(ref storageApi),
                 RespCommand.MONITOR => NetworkMonitor(),
                 RespCommand.ACL_DELUSER => NetworkAclDelUser(),
+                RespCommand.ACL_GENPASS => NetworkAclGenPass(),
                 RespCommand.ACL_GETUSER => NetworkAclGetUser(),
                 RespCommand.ACL_LIST => NetworkAclList(),
                 RespCommand.ACL_LOAD => NetworkAclLoad(),
@@ -879,7 +880,7 @@ namespace Garnet.server
 
             if (!storeWrapper.TakeCheckpoint(false, dbId: dbId, logger: logger))
             {
-                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -1002,7 +1003,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.TryWriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
                     SendAndReset();
             }
 

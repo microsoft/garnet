@@ -76,12 +76,13 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+        public static readonly int ResizeTaskDelaySeconds = 10;
+
         private ConcurrentCounter logSize;
         private long lowTargetSize;
         private long highTargetSize;
         public TLogSizeCalculator LogSizeCalculator;
         private readonly ILogger logger;
-        internal const int resizeTaskDelaySeconds = 10;
 
         internal LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> logAccessor;
 
@@ -98,6 +99,9 @@ namespace Tsavorite.core
         /// <summary>Size of log heap memory</summary>
         public long LogHeapSizeBytes => logSize.Total;
 
+        /// <summary>Target size for the hybrid log memory utilization</summary>
+        public long TargetSize => (highTargetSize + lowTargetSize) / 2;
+
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
         /// <param name="logSizeCalculator">Size calculator</param>
@@ -113,8 +117,7 @@ namespace Tsavorite.core
 
             this.logAccessor = logAccessor;
             logSize = new ConcurrentCounter();
-            lowTargetSize = targetSize - delta;
-            highTargetSize = targetSize + delta;
+            this.UpdateTargetSize(targetSize, delta);
             this.LogSizeCalculator = logSizeCalculator;
             this.logger = logger;
             Stopped = false;
@@ -129,6 +132,20 @@ namespace Tsavorite.core
         {
             Debug.Assert(Stopped == false);
             Task.Run(() => ResizerTask(token));
+        }
+
+        /// <summary>
+        /// Update target size for the hybrid log memory utilization
+        /// </summary>
+        /// <param name="targetSize">The target size</param>
+        /// <param name="delta">Delta from the target size</param>
+        public void UpdateTargetSize(long targetSize, long delta)
+        {
+            Debug.Assert(delta >= 0);
+            Debug.Assert(targetSize > delta);
+            lowTargetSize = targetSize - delta;
+            highTargetSize = targetSize + delta;
+            logger?.LogInformation("Target size updated to {targetSize} with delta {delta}", targetSize, delta);
         }
 
         public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;
@@ -172,7 +189,7 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(resizeTaskDelaySeconds), token);
+                    await Task.Delay(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), token);
                     ResizeIfNeeded(token);
                 }
                 catch (OperationCanceledException)

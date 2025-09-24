@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -97,7 +98,7 @@ namespace Garnet.server
         public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
-        /// Take checkpoint of all active databases
+        /// Take checkpoint of all active databases if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="logger">Logger</param>
@@ -106,7 +107,7 @@ namespace Garnet.server
         public bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
 
         /// <summary>
-        /// Take checkpoint of specified database ID
+        /// Take checkpoint of specified database ID if checkpointing is not in progress
         /// </summary>
         /// <param name="background">True if method can return before checkpoint is taken</param>
         /// <param name="dbId">ID of database to checkpoint</param>
@@ -267,5 +268,11 @@ namespace Garnet.server
         /// On Demand Expired Keys collection, for a db given its ID
         /// </summary>
         public (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId);
+
+        /// <summary>
+        /// Collect and return an array mapping db Id to its stats
+        /// </summary>
+        /// <returns></returns>
+        public (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
     }
 }

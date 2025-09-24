@@ -17,7 +17,6 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly CancellationTokenSource cts;
-        readonly TimeSpan replicaSyncTimeout;
         IDevice writeIntoCkptDevice = null;
         private SemaphoreSlim writeCheckpointSemaphore = null;
         private SectorAlignedBufferPool writeCheckpointBufferPool = null;
@@ -29,7 +28,6 @@ namespace Garnet.cluster
             this.clusterProvider = clusterProvider;
             this.logger = logger;
             cts = new();
-            replicaSyncTimeout = TimeSpan.FromSeconds(clusterProvider.serverOptions.ReplicaSyncTimeout);
         }
 
         public void Dispose()
@@ -110,7 +108,7 @@ namespace Garnet.cluster
                 else
                     device.WriteAsync((IntPtr)pbuffer.aligned_pointer, segmentId, address, (uint)numBytesToWrite, IOCallback, null);
 
-                _ = writeCheckpointSemaphore.Wait(replicaSyncTimeout, cts.Token);
+                _ = writeCheckpointSemaphore.Wait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
             }
             finally
             {
