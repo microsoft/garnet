@@ -263,7 +263,9 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<nint, int> garnetCall;
             if (txnMode)
             {
-                txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.transactionalContext, respServerSession.storageSession.objectStoreTransactionalContext);
+                txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.transactionalContext,
+                    respServerSession.storageSession.objectStoreTransactionalContext,
+                    respServerSession.storageSession.unifiedStoreTransactionalContext);
 
                 garnetCall = &LuaRunnerTrampolines.GarnetCallWithTransaction;
             }
@@ -1237,9 +1239,7 @@ namespace Garnet.server
                     foreach (var key in keys)
                     {
                         var _key = scratchBufferBuilder.CreateArgSlice(key);
-                        txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
-                            txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
+                        txnKeyEntries.AddKey(_key, StoreType.All, Tsavorite.core.LockType.Exclusive);
                     }
 
                     adapter = new(scratchBufferBuilder);

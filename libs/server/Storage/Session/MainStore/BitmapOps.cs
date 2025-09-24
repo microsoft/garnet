@@ -88,9 +88,9 @@ namespace Garnet.server
             {
                 createTransaction = true;
                 Debug.Assert(txnManager.state == TxnState.None);
-                txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(keys[0], StoreType.Main, LockType.Exclusive);
                 for (var i = 1; i < keys.Length; i++)
-                    txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(keys[i], StoreType.Main, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 

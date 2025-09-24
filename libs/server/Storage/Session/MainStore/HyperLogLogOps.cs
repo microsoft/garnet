@@ -102,11 +102,11 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 var dstKey = input.parseState.GetArgSliceByRef(0);
-                txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(dstKey, StoreType.Main, LockType.Exclusive);
                 for (var i = 1; i < input.parseState.Count; i++)
                 {
                     var currSrcKey = input.parseState.GetArgSliceByRef(i);
-                    txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(currSrcKey, StoreType.Main, LockType.Shared);
                 }
                 _ = txnManager.Run(true);
             }
@@ -195,11 +195,11 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 var dstKey = input.parseState.GetArgSliceByRef(0);
-                txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(dstKey, StoreType.Main, LockType.Exclusive);
                 for (var i = 1; i < input.parseState.Count; i++)
                 {
                     var currSrcKey = input.parseState.GetArgSliceByRef(i);
-                    txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(currSrcKey, StoreType.Main, LockType.Shared);
                 }
                 _ = txnManager.Run(true);
             }

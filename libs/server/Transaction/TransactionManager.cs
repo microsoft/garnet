@@ -56,6 +56,16 @@ namespace Garnet.server
         /// </summary>
         readonly TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
 
+        /// <summary>
+        /// Basic context for unified store
+        /// </summary>
+        readonly BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+
+        /// <summary>
+        /// Transactional context for unified store
+        /// </summary>
+        readonly TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
 
@@ -80,9 +90,11 @@ namespace Garnet.server
         public TxnState state;
         private const int initialSliceBufferSize = 1 << 10;
         private const int initialKeyBufferSize = 1 << 10;
-        StoreType transactionStoreType;
         readonly ILogger logger;
         long txnVersion;
+        private bool isMainTxn = false;
+        private bool isObjectTxn = false;
+        private bool isUnifiedTxn = false;
 
         internal TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalContext
             => transactionalContext;
@@ -90,6 +102,8 @@ namespace Garnet.server
             => basicContext.Session.TransactionalUnsafeContext;
         internal TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectStoreTransactionalContext
             => objectStoreTransactionalContext;
+        internal TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedStoreTransactionalContext
+            => unifiedStoreTransactionalContext;
 
         /// <summary>
         /// Array to keep pointer keys in keyBuffer
@@ -111,11 +125,12 @@ namespace Garnet.server
             transactionalContext = session.TransactionalContext;
 
             var objectStoreSession = storageSession.objectStoreBasicContext.Session;
-            if (objectStoreSession != null)
-            {
-                objectStoreBasicContext = objectStoreSession.BasicContext;
-                objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
-            }
+            objectStoreBasicContext = objectStoreSession.BasicContext;
+            objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+
+            var unifiedStoreSession = storageSession.unifiedStoreBasicContext.Session;
+            unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
+            unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
 
             this.functionsState = storageSession.functionsState;
             this.appendOnlyFile = functionsState.appendOnlyFile;
@@ -124,7 +139,7 @@ namespace Garnet.server
             this.respSession = respSession;
 
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
-            keyEntries = new TxnKeyEntries(initialSliceBufferSize, transactionalContext, objectStoreTransactionalContext);
+            keyEntries = new TxnKeyEntries(initialSliceBufferSize, transactionalContext, objectStoreTransactionalContext, unifiedStoreTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
@@ -151,14 +166,12 @@ namespace Garnet.server
                     keyEntries.UnlockAllKeys();
 
                     // Release context
-                    if (transactionStoreType == StoreType.Main || transactionStoreType == StoreType.All)
+                    if (isMainTxn)
                         transactionalContext.EndTransaction();
-                    if (transactionStoreType == StoreType.Object || transactionStoreType == StoreType.All)
-                    {
-                        if (objectStoreBasicContext.IsNull)
-                            throw new Exception("Trying to perform object store transaction with object store disabled");
+                    if (isObjectTxn)
                         objectStoreTransactionalContext.EndTransaction();
-                    }
+                    if (isUnifiedTxn)
+                        unifiedStoreTransactionalContext.EndTransaction();
                 }
                 finally
                 {
@@ -169,7 +182,9 @@ namespace Garnet.server
             this.txnStartHead = 0;
             this.operationCntTxn = 0;
             this.state = TxnState.None;
-            this.transactionStoreType = 0;
+            this.isMainTxn = false;
+            this.isObjectTxn = false;
+            this.isUnifiedTxn = false;
             functionsState.StoredProcMode = false;
 
             // Reset cluster variables used for slot verification
@@ -282,30 +297,37 @@ namespace Garnet.server
 
         internal void Watch(PinnedSpanByte key, StoreType type)
         {
-            // Update watch type if object store is disabled
-            if (type == StoreType.All && objectStoreBasicContext.IsNull)
-                type = StoreType.Main;
-
             UpdateTransactionStoreType(type);
             watchContainer.AddWatch(key, type);
 
-            if (type == StoreType.Main || type == StoreType.All)
-                basicContext.ResetModified(key.ReadOnlySpan);
-            if ((type == StoreType.Object || type == StoreType.All) && !objectStoreBasicContext.IsNull)
-                objectStoreBasicContext.ResetModified(key.ReadOnlySpan);
+            // Release context
+            switch (type)
+            {
+                case StoreType.Main:
+                    basicContext.ResetModified(key.ReadOnlySpan);
+                    break;
+                case StoreType.Object:
+                    objectStoreBasicContext.ResetModified(key.ReadOnlySpan);
+                    break;
+                case StoreType.All:
+                    unifiedStoreBasicContext.ResetModified(key.ReadOnlySpan);
+                    break;
+            }
         }
 
         void UpdateTransactionStoreType(StoreType type)
         {
-            if (transactionStoreType != StoreType.All)
+            switch (type)
             {
-                if (transactionStoreType == 0)
-                    transactionStoreType = type;
-                else
-                {
-                    if (transactionStoreType != type)
-                        transactionStoreType = StoreType.All;
-                }
+                case StoreType.Main:
+                    isMainTxn = true;
+                    break;
+                case StoreType.Object:
+                    isObjectTxn = true;
+                    break;
+                case StoreType.All:
+                    isUnifiedTxn = true;
+                    break;
             }
         }
 
@@ -320,32 +342,24 @@ namespace Garnet.server
             readOnly = keyEntries.IsReadOnly;
         }
 
-        void BeginTransaction(StoreType transactionStoreType)
+        void BeginTransaction()
         {
-            if (transactionStoreType is StoreType.All or StoreType.Main)
-            {
+            if (isMainTxn)
                 transactionalContext.BeginTransaction();
-            }
-            if (transactionStoreType is StoreType.All or StoreType.Object)
-            {
-                if (objectStoreBasicContext.IsNull)
-                    throw new Exception("Trying to perform object store transaction with object store disabled");
+            if (isObjectTxn)
                 objectStoreTransactionalContext.BeginTransaction();
-            }
+            if (isUnifiedTxn)
+                unifiedStoreTransactionalContext.BeginTransaction();
         }
 
-        void LocksAcquired(StoreType transactionStoreType, long txnVersion)
+        void LocksAcquired(long txnVersion)
         {
-            if (transactionStoreType is StoreType.All or StoreType.Main)
-            {
+            if (isMainTxn)
                 transactionalContext.LocksAcquired(txnVersion);
-            }
-            if (transactionStoreType is StoreType.All or StoreType.Object)
-            {
-                if (objectStoreBasicContext.IsNull)
-                    throw new Exception("Trying to perform object store transaction with object store disabled");
+            if (isObjectTxn)
                 objectStoreTransactionalContext.LocksAcquired(txnVersion);
-            }
+            if (isUnifiedTxn)
+                unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
         }
 
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)
@@ -358,7 +372,7 @@ namespace Garnet.server
             txnVersion = stateMachineDriver.AcquireTransactionVersion();
 
             // Acquire lock sessions
-            BeginTransaction(transactionStoreType);
+            BeginTransaction();
 
             bool lockSuccess;
             if (fail_fast_on_lock)
@@ -388,7 +402,7 @@ namespace Garnet.server
             txnVersion = stateMachineDriver.VerifyTransactionVersion(txnVersion);
 
             // Update sessions with transaction version
-            LocksAcquired(transactionStoreType, txnVersion);
+            LocksAcquired(txnVersion);
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {

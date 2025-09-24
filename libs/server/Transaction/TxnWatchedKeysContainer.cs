@@ -129,10 +129,7 @@ namespace Garnet.server
                 if (watchedKeySlice.type == 0) continue;
 
                 var slice = keySlices[i].slice;
-                if (watchedKeySlice.type == StoreType.Main || watchedKeySlice.type == StoreType.All)
-                    txnManager.SaveKeyEntryToLock(slice, false, LockType.Shared);
-                if (watchedKeySlice.type == StoreType.Object || watchedKeySlice.type == StoreType.All)
-                    txnManager.SaveKeyEntryToLock(slice, true, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(slice, watchedKeySlice.type, LockType.Shared);
             }
             return true;
         }

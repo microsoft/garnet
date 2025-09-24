@@ -529,10 +529,10 @@ namespace Garnet.server
             {
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
-                storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
+                storageSession.txnManager.SaveKeyEntryToLock(asKey, StoreType.Object, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
-                    storageSession.txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
+                    storageSession.txnManager.SaveKeyEntryToLock(dstKey, StoreType.Object, LockType.Exclusive);
 
                 _ = storageSession.txnManager.Run(true);
             }

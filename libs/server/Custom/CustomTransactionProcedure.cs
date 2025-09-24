@@ -36,10 +36,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        /// <param name="isObject"></param>
-        protected void AddKey(PinnedSpanByte key, LockType type, bool isObject)
+        /// <param name="storeType"></param>
+        protected void AddKey(PinnedSpanByte key, LockType type, StoreType storeType)
         {
-            txnManager.SaveKeyEntryToLock(key, isObject, type);
+            txnManager.SaveKeyEntryToLock(key, storeType, type);
             txnManager.VerifyKeyOwnership(key, type);
         }
 

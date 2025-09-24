@@ -267,8 +267,8 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(sourceKey, StoreType.Object, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, StoreType.Object, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
 
@@ -362,7 +362,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -403,9 +403,9 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -533,7 +533,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -572,9 +572,9 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -793,7 +793,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -832,9 +832,9 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -951,7 +951,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 

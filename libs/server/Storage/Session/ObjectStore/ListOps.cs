@@ -218,8 +218,8 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(sourceKey, StoreType.Object, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, StoreType.Object, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
 

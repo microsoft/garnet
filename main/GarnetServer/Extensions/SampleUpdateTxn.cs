@@ -34,12 +34,12 @@ namespace Garnet
             var mainStoreKey = GetNextArg(ref procInput, ref offset);
             GetNextArg(ref procInput, ref offset); // mainStoreValue
 
-            AddKey(mainStoreKey, LockType.Exclusive, false);
+            AddKey(mainStoreKey, LockType.Exclusive, StoreType.Main);
 
             var sortedSet1Key = GetNextArg(ref procInput, ref offset);
             if (sortedSet1Key.Length > 0)
             {
-                AddKey(sortedSet1Key, LockType.Exclusive, true);
+                AddKey(sortedSet1Key, LockType.Exclusive, StoreType.Object);
             }
 
             GetNextArg(ref procInput, ref offset); // sortedSet1Entry
@@ -48,7 +48,7 @@ namespace Garnet
             var sortedSet2Key = GetNextArg(ref procInput, ref offset);
             if (sortedSet2Key.Length > 0)
             {
-                AddKey(sortedSet2Key, LockType.Exclusive, true);
+                AddKey(sortedSet2Key, LockType.Exclusive, StoreType.Object);
             }
 
             return true;
