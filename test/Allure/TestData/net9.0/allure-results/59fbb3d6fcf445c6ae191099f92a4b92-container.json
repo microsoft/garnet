@@ -1,0 +1,20 @@
+{
+  "uuid": "83532f74-3ae7-417d-a30e-ecdb6f5a5694",
+  "name": "AllureTests.EasyTests",
+  "children": [
+    "36d32f40-dd37-4c32-9dcf-57afa81928db",
+    "5a882134-3f43-491d-b250-a9f5203d8a90",
+    "2f469412-b54f-41b7-a535-2180355e9b4e",
+    "75dfdd7d-b5e4-447e-af97-06db6df4192a",
+    "d8cf3e65-f00d-4d07-ab2e-db98b0ff28e2",
+    "23fabdac-3063-449b-98a4-f2b231b01e0c",
+    "991be7e7-f298-4a91-804d-b583cdfac41f",
+    "73f8ce6a-85fa-4aa3-9e5c-c644fb83728e",
+    "24adde6f-4511-4fd9-8f69-2e08fcd5461f"
+  ],
+  "befores": [],
+  "afters": [],
+  "links": [],
+  "start": 1758650308648,
+  "stop": 1758650308741
+}

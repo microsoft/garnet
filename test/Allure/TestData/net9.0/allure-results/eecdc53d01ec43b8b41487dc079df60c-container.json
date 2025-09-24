@@ -1,0 +1,12 @@
+{
+  "uuid": "e61cd60c-d266-4fe2-93a4-ab53f5351384",
+  "name": "AllureTests.EasyTests.Test1",
+  "children": [
+    "83916302-24f8-4d30-a26f-d1ea7f5511ef"
+  ],
+  "befores": [],
+  "afters": [],
+  "links": [],
+  "start": 1758668318153,
+  "stop": 1758668318210
+}

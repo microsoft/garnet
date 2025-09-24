@@ -1,0 +1,70 @@
+{
+  "uuid": "6cf7eef3-bdfd-4ace-bed6-63fcc295ab1d",
+  "historyId": "89fcb44fd6902c8145a885a0cb54cf76",
+  "testCaseId": "7ecf9cd73e7c541fd2af9b0b1219c428",
+  "fullName": "AllureTests:AllureTests.EasyTests.Test3()",
+  "labels": [
+    {
+      "name": "thread",
+      "value": "NUnit.Fw.NonParallelWorker"
+    },
+    {
+      "name": "host",
+      "value": "DARRENGE4"
+    },
+    {
+      "name": "language",
+      "value": "C#"
+    },
+    {
+      "name": "framework",
+      "value": "NUnit 3"
+    },
+    {
+      "name": "package",
+      "value": "AllureTests"
+    },
+    {
+      "name": "testMethod",
+      "value": "Test3"
+    },
+    {
+      "name": "testClass",
+      "value": "EasyTests"
+    },
+    {
+      "name": "parentSuite",
+      "value": "AllureTests - 9/23/2025 10:58"
+    },
+    {
+      "name": "suite",
+      "value": "win32nt"
+    },
+    {
+      "name": "subSuite",
+      "value": "net8.0 | Debug"
+    }
+  ],
+  "links": [],
+  "name": "Test3",
+  "status": "failed",
+  "statusDetails": {
+    "known": false,
+    "muted": false,
+    "flaky": false,
+    "message": "Failed to connect within 30 seconds",
+    "trace": "   at AllureTests.EasyTests.Test3() in C:\\AllureTestProject\\AllureTestProject\\AllureTests\\EasyTests.cs:line 73\r\n"
+  },
+  "stage": "finished",
+  "steps": [],
+  "attachments": [],
+  "parameters": [
+    {
+      "name": "env",
+      "value": "\"[win32nt, net8.0, Debug]\"",
+      "excluded": false
+    }
+  ],
+  "start": 1758650307941,
+  "stop": 1758650307942
+}

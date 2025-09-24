@@ -38,7 +38,7 @@ if (-not (Test-Path -Path $allureResultsCombinedDir)) {
 
 # Copy all the results from the test directory to the CombinedResults directory
 # $sourceAllureResultsDir = "$basePath/test/$testsuite/bin/$configuration/$framework/allure-results"   # <-- will use this one when we have real data
-$sourceAllureResultsDir = "$basePath/test/Allure/TestData/$testsuite/bin/$configuration/$framework/allure-results"   # <--- this is just using the test data that is checked in because real data not available yet
+$sourceAllureResultsDir = "$basePath/test/Allure/TestData/$framework/allure-results"   # <--- this is just using the test data that is checked in because real data not available yet
 if (Test-Path -Path $sourceAllureResultsDir) {
     Write-Host "Copying Allure results from $sourceAllureResultsDir to $allureResultsCombinedDir"
     Copy-Item -Path "$sourceAllureResultsDir\*" -Destination $allureResultsCombinedDir -Recurse -Force

@@ -1,0 +1,70 @@
+{
+  "uuid": "a3dd2288-47f4-401e-8a78-3c7fa9052a16",
+  "historyId": "4fb37945cdfea2821ec37e8184ce89cb",
+  "testCaseId": "8f8678b6a8ab6fed3f24ce5a2db0c4c0",
+  "fullName": "AllureTests:AllureTests.EasyTests.Test5()",
+  "labels": [
+    {
+      "name": "thread",
+      "value": "NUnit.Fw.NonParallelWorker"
+    },
+    {
+      "name": "host",
+      "value": "DARRENGE4"
+    },
+    {
+      "name": "language",
+      "value": "C#"
+    },
+    {
+      "name": "framework",
+      "value": "NUnit 3"
+    },
+    {
+      "name": "package",
+      "value": "AllureTests"
+    },
+    {
+      "name": "testMethod",
+      "value": "Test5"
+    },
+    {
+      "name": "testClass",
+      "value": "EasyTests"
+    },
+    {
+      "name": "parentSuite",
+      "value": "AllureTests - 9/23/2025 15:58"
+    },
+    {
+      "name": "suite",
+      "value": "win32nt"
+    },
+    {
+      "name": "subSuite",
+      "value": "net8.0 | Debug"
+    }
+  ],
+  "links": [],
+  "name": "Test5",
+  "status": "passed",
+  "statusDetails": {
+    "known": false,
+    "muted": false,
+    "flaky": false,
+    "message": "Test Passed",
+    "trace": "   at AllureTests.EasyTests.Test5() in C:\\AllureTestProject\\AllureTestProject\\AllureTests\\EasyTests.cs:line 88\r\n"
+  },
+  "stage": "finished",
+  "steps": [],
+  "attachments": [],
+  "parameters": [
+    {
+      "name": "env",
+      "value": "\"[win32nt, net8.0, Debug]\"",
+      "excluded": false
+    }
+  ],
+  "start": 1758668283455,
+  "stop": 1758668283455
+}
