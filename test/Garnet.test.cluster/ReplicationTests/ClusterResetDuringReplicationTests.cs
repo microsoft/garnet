@@ -57,7 +57,7 @@ namespace Garnet.test.cluster.ReplicationTests
             context.CreateConnection();
 
             // Setup primary
-            _ = context.clusterTestUtils.AddDelSlotsRange (primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
