@@ -20,7 +20,7 @@ namespace Garnet.cluster
 
         public List<RoleInfo> GetReplicaInfo() => aofTaskStore.GetReplicaInfo(ReplicationOffset);
 
-        public bool TryAddReplicationTask(string nodeid, long startAddress, out AofSyncTaskInfo aofSyncTaskInfo)
+        public bool TryAddReplicationTask(string nodeid, long startAddress, out AofSyncDriver aofSyncTaskInfo)
             => aofTaskStore.TryAddReplicationTask(nodeid, startAddress, out aofSyncTaskInfo);
 
         public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, long startAddress)
@@ -28,7 +28,7 @@ namespace Garnet.cluster
 
         public long AofTruncatedUntil => aofTaskStore.AofTruncatedUntil;
 
-        public bool TryRemoveReplicationTask(AofSyncTaskInfo aofSyncTaskInfo)
+        public bool TryRemoveReplicationTask(AofSyncDriver aofSyncTaskInfo)
             => aofTaskStore.TryRemove(aofSyncTaskInfo);
 
         /// <summary>
@@ -47,7 +47,7 @@ namespace Garnet.cluster
         /// <param name="aofSyncTaskInfo"></param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryConnectToReplica(string nodeid, long startAddress, AofSyncTaskInfo aofSyncTaskInfo, out ReadOnlySpan<byte> errorMessage)
+        public bool TryConnectToReplica(string nodeid, long startAddress, AofSyncDriver aofSyncTaskInfo, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             if (_disposed)

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -11,7 +12,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class AofSyncTaskInfo : IBulkLogEntryConsumer, IDisposable
+    internal sealed class AofSyncDriver : IBulkLogEntryConsumer, IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly AofTaskStore aofTaskStore;
@@ -39,12 +40,12 @@ namespace Garnet.cluster
         /// </summary>
         public long StartAddress => startAddress;
 
-        public AofSyncTaskInfo(
+        public AofSyncDriver(
             ClusterProvider clusterProvider,
             AofTaskStore aofTaskStore,
             string localNodeId,
             string remoteNodeId,
-            GarnetClientSession garnetClient,
+            IPEndPoint endPoint,
             long startAddress,
             ILogger logger)
         {
@@ -53,10 +54,18 @@ namespace Garnet.cluster
             this.localNodeId = localNodeId;
             this.remoteNodeId = remoteNodeId;
             this.logger = logger;
-            this.garnetClient = garnetClient;
             this.startAddress = startAddress;
             previousAddress = startAddress;
             cts = new CancellationTokenSource();
+
+            this.garnetClient = new GarnetClientSession(
+                        endPoint,
+                        clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: clusterProvider.ClusterUsername,
+                        authPassword: clusterProvider.ClusterPassword,
+                        logger: logger);
         }
 
         public void Dispose()
