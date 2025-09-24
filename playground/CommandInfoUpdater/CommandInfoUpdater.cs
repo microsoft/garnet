@@ -15,7 +15,7 @@ namespace CommandInfoUpdater
     /// </summary>
     public class CommandInfoUpdater
     {
-        const int QUERY_CMD_BATCH_SIZE = 10;
+        const int QUERY_CMD_BATCH_SIZE = 1;
         private static readonly string CommandInfoFileName = "RespCommandsInfo.json";
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
 
@@ -62,7 +62,7 @@ namespace CommandInfoUpdater
 
             IDictionary<string, RespCommandsInfo> queriedCommandsInfo = new Dictionary<string, RespCommandsInfo>();
             var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
-                .Where(c => !garnetCommandsInfo.ContainsKey(c) || !garnetCommandsInfo[c].IsInternal).ToArray();
+                .Where(c => !garnetCommandsInfo.ContainsKey(c) || (garnetCommandsInfo[c].SubCommands?.Length > 0 && !garnetCommandsInfo[c].IsInternal)).ToArray();
 
             if (commandsToQuery.Length > 0)
             {
@@ -131,6 +131,26 @@ namespace CommandInfoUpdater
                 }
             }
 
+            // Update store types
+            foreach (var sc in commandsToAdd.Keys)
+            {
+                if (!additionalCommandsInfo.TryGetValue(sc.Command, out var commandInfo))
+                    continue;
+
+                commandInfo.StoreType = sc.StoreType;
+
+                if (commandInfo.SubCommands == null)
+                    continue;
+
+                foreach (var subCommandInfo in commandInfo.SubCommands)
+                {
+                    if (sc.SubCommands.TryGetValue(subCommandInfo.Name, out var scSubCommand))
+                    {
+                        subCommandInfo.StoreType = scSubCommand.StoreType;
+                    }
+                }
+            }
+
             updatedCommandsInfo = GetUpdatedCommandsInfo(existingCommandsInfo, commandsToAdd, commandsToRemove,
                 additionalCommandsInfo);
 
@@ -175,9 +195,9 @@ namespace CommandInfoUpdater
             }
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
-            var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
+            var supportedCommands = new ReadOnlyDictionary<string, (RespCommand, StoreType)>(
                 SupportedCommand.SupportedCommandsFlattenedMap.ToDictionary(kvp => kvp.Key,
-                    kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
+                    kvp => (kvp.Value.RespCommand, kvp.Value.StoreType), StringComparer.OrdinalIgnoreCase));
 
             // Parse the response
             fixed (byte* respPtr = response)
@@ -259,6 +279,7 @@ namespace CommandInfoUpdater
                     AclCategories = existingCommand.AclCategories,
                     Tips = existingCommand.Tips,
                     KeySpecifications = existingCommand.KeySpecifications,
+                    StoreType = existingCommand.StoreType,
                     SubCommands = remainingSubCommands == null || remainingSubCommands.Length == 0
                         ? null
                         : [.. existingCommand.SubCommands.Where(sc => remainingSubCommands.Contains(sc.Name))]
@@ -315,6 +336,7 @@ namespace CommandInfoUpdater
                     AclCategories = baseCommand.AclCategories,
                     Tips = baseCommand.Tips,
                     KeySpecifications = baseCommand.KeySpecifications,
+                    StoreType = baseCommand.StoreType,
                     SubCommands = updatedSubCommands?.ToArray()
                 };
 
