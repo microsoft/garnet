@@ -72,12 +72,6 @@ jobs:
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
-      - name: List contents of current working directory
-        run: |
-          Get-Location
-          Get-ChildItem
-        shell: pwsh
-
       - name: Debug path existence using matrix variables
         shell: pwsh
         run: |
@@ -88,18 +82,6 @@ jobs:
           } else {
             Write-Host "Source path does NOT exist."
           }
-
-      - name: Debug path existence using hard coded values
-        shell: pwsh
-        run: |
-          $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
-          Write-Host "Checking source path for hardcoded: $source"
-          if (Test-Path $source) {
-            Write-Host "Source path exists."
-          } else {
-            Write-Host "Source path does NOT exist."
-          }
-
 
       - name: Copy mock allure-results to test output - just use until get real allure results in place
         run: |
@@ -117,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: CombinedResults
-          path: GarnetGitHub/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results
+          path: ${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code
@@ -173,12 +155,13 @@ jobs:
   pipeline-success:
     name: Garnet Nightly (Complete)
     runs-on: windows-2022  
-    needs: [ build-test-garnet,  build-test-tsavorite ]
+    needs: [ build-test-garnet, build-test-tsavorite ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
       - name: Run GenerateAllureReport.ps1
-        run: .\test\allure\GenerateAllureReport.ps1
         shell: pwsh
+        run: |
+          & "${{ github.workspace }}\test\allure\GenerateAllureReport.ps1"
 
       - name: Echo completion
         run: echo Done!
