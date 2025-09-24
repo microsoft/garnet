@@ -30,9 +30,9 @@ namespace Garnet.server
                 RespCommand.EXISTS => true,
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref input, ref output, ref readInfo),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref input, ref output, ref readInfo),
-                RespCommand.TTL or 
+                RespCommand.TTL or
                 RespCommand.PTTL => HandleTtl(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PTTL),
-                RespCommand.EXPIRETIME or 
+                RespCommand.EXPIRETIME or
                 RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PEXPIRETIME),
                 _ => throw new NotImplementedException(),
             };
@@ -101,7 +101,7 @@ namespace Garnet.server
             var ttlValue = milliseconds
                 ? ConvertUtils.MillisecondsFromDiffUtcNowTicks(expiration)
                 : ConvertUtils.SecondsFromDiffUtcNowTicks(expiration);
-            
+
             writer.WriteInt64(ttlValue);
             return true;
         }

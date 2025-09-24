@@ -182,7 +182,7 @@ namespace Garnet.cluster
 
                 // Set DB version
                 storeWrapper.store.SetVersion(primarySyncMetadata.currentStoreVersion);
-               
+
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primarySyncMetadata.currentPrimaryReplId);

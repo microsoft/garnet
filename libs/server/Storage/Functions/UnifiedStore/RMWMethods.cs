@@ -99,7 +99,7 @@ namespace Garnet.server
                 _ => throw new NotImplementedException()
             };
 
-            if (!result) 
+            if (!result)
                 return false;
 
             if (shouldUpdateEtag)

@@ -81,7 +81,7 @@ namespace Garnet.cluster
             if (entry == null) return;
             logger?.LogCheckpointEntry(LogLevel.Trace, nameof(PurgeAllCheckpointsExceptEntry), entry);
             PurgeAllCheckpointsExceptTokens(entry.metadata.storeHlogToken, entry.metadata.storeIndexToken);
-            
+
             void PurgeAllCheckpointsExceptTokens(Guid logToken, Guid indexToken)
             {
                 var ckptManager = clusterProvider.GetReplicationLogCheckpointManager();

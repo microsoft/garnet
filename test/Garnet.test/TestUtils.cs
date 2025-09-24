@@ -373,7 +373,7 @@ namespace Garnet.test
             if (lowMemory)
             {
                 opts.MemorySize = memorySize == default ? "1024" : memorySize;
-                opts.PageSize =  pageSize == default ? "512" : pageSize;
+                opts.PageSize = pageSize == default ? "512" : pageSize;
                 if (enableReadCache)
                 {
                     opts.ReadCacheMemorySize = opts.MemorySize;

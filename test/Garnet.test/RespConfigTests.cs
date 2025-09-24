@@ -320,7 +320,7 @@ namespace Garnet.test
         [Test]
         [TestCase("1m", "4m")]
         [TestCase("1024k", "4000k")]
-        [TestCase( "1024", "4000")]
+        [TestCase("1024", "4000")]
         [TestCase("1024", "4096")]
         public void ConfigSetMemorySizeUtilizationTest(string smallerSize, string largerSize)
         {

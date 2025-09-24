@@ -38,7 +38,7 @@ namespace Garnet.server
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
                 logRecord.ClearValueObject(obj => { });
             }
-            
+
             return true;
         }
     }
