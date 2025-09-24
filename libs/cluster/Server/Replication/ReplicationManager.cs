@@ -461,6 +461,10 @@ namespace Garnet.cluster
             switch (currentRecoveryStatus)
             {
                 case RecoveryStatus.ClusterReplicate:
+                case RecoveryStatus.ClusterFailover:
+                case RecoveryStatus.ReplicaOfNoOne:
+                case RecoveryStatus.CheckpointRecoveredAtReplica:
+                case RecoveryStatus.InitializeRecover:
                     resetHandler.Cancel();
                     break;
             }
