@@ -19,7 +19,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Get the associated aof sync task instance with this replica sync session
         /// </summary>
-        public AofSyncTaskInfo AofSyncTask { get; private set; } = null;
+        public AofSyncDriver AofSyncTask { get; private set; } = null;
 
         public bool IsConnected => AofSyncTask != null && AofSyncTask.IsConnected;
 
@@ -116,7 +116,7 @@ namespace Garnet.cluster
         /// Associated aof sync task instance with this replica sync session
         /// </summary>
         /// <param name="aofSyncTask"></param>
-        public void AddAofSyncTask(AofSyncTaskInfo aofSyncTask) => AofSyncTask = aofSyncTask;
+        public void AddAofSyncTask(AofSyncDriver aofSyncTask) => AofSyncTask = aofSyncTask;
 
         /// <summary>
         /// Set status of replica sync session

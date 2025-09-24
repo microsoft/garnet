@@ -121,7 +121,7 @@ namespace Garnet.cluster
                 authPassword: clusterProvider.ClusterPassword,
                 logger: logger);
             CheckpointEntry localEntry = default;
-            AofSyncTaskInfo aofSyncTaskInfo = null;
+            AofSyncDriver aofSyncTaskInfo = null;
 
             try
             {
@@ -344,9 +344,9 @@ namespace Garnet.cluster
             return true;
         }
 
-        public async Task<(CheckpointEntry, AofSyncTaskInfo)> AcquireCheckpointEntry()
+        public async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntry()
         {
-            AofSyncTaskInfo aofSyncTaskInfo;
+            AofSyncDriver aofSyncTaskInfo;
             CheckpointEntry cEntry;
 
             // This loop tries to provide the following two guarantees
