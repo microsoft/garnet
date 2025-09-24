@@ -27,15 +27,12 @@ if ($pathstring.Contains("test")) {
     Set-Location .\test\Allure\
 }
 
-# Don't need this yet
-$os = (Get-CimInstance -ClassName Win32_OperatingSystem).Caption
-Write-Host "Operating System: $os"
-
 # C:\AllureTestProject\AllureTestProject\AllureTests\CombinedResults -- might not be needed as will have combined results dir in artifacts
 $allureResultsCombinedDir = "$basePath/test/Allure/CombinedResults"
 
 # Create CombinedResults dir if it doesn't exist
 if (-not (Test-Path -Path $allureResultsCombinedDir)) {
+    Write-Host "Created CombinedResults directory at $allureResultsCombinedDir"
     New-Item -Path $allureResultsCombinedDir -ItemType Directory
 }
 
@@ -49,6 +46,14 @@ if (Test-Path -Path $sourceAllureResultsDir) {
     Write-Error -Message "The source Allure results directory $sourceAllureResultsDir does not exist. Make sure the tests have been run and generated Allure results." -Category ObjectNotFound
     exit
 }       
+
+# Verify got results files into CombinedResults directory
+$fileCount = (Get-ChildItem -Path $allureResultsCombinedDir -Recurse | Measure-Object).Count
+if ($fileCount -le 0) {
+    Write-Error -Message "No result files were found in $allureResultsCombinedDir directory." -Category ObjectNotFound
+    exit
+}
+
 Write-Output "************************"
 Write-Output "**"
 Write-Output "**  Done!"

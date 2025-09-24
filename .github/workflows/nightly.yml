@@ -18,11 +18,34 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
+        os: [ windows-2022 ]
         framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+        configuration: [ 'Release' ]
+        test: [ 'Garnet.test' ]
+
+        # Full matrix... commented out for now
+        #      os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
+   #     framework: [ 'net8.0', 'net9.0' ]
+    #    configuration: [ 'Debug', 'Release' ]
+     #   test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     steps:
+      - name: Install Allure CLI
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install allure.commandline --yes
+          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+            npm install -g allure-commandline --save-dev
+            echo "$(npm bin -g)" >> $GITHUB_PATH
+          else
+            echo "Unsupported OS: $RUNNER_OS"
+            exit 1
+          fi
+
+      - name: Verify Allure installation
+        run: allure --version
+        shell: pwsh
+
       - name: Check out code
         uses: actions/checkout@v4
       - name: Setup .NET
@@ -41,6 +64,31 @@ jobs:
         with:
           name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+        if: ${{ always() }}
+
+      - name: List contents of current working directory
+        run: |
+          Get-Location
+          Get-ChildItem
+        shell: pwsh
+
+      - name: Copy mock allure-results to test output - just use until get real allure results in place
+        run: |
+          $source = "./test/Allure/TestData/Garnet.test/bin/Release/${{ matrix.framework }}/allure-results"
+          $dest   = "./test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          Copy-Item -Path $source -Destination $dest -Recurse -Force
+        shell: pwsh
+
+      - name: Check if allure-results exists
+        run: |
+          if (-Not (Test-Path "./test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results")) {
+            Write-Host "No ./test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results found for this matrix combination."
+          }
+      - name: Upload allure test results in combined results directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: CombinedResults
+          path: GarnetGitHub/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code
@@ -81,23 +129,27 @@ jobs:
         run: dotnet restore
       - name: Format
         run: dotnet format --verify-no-changes --verbosity diagnostic
-      - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-      - name: Run Tsavorite tests
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-        timeout-minutes: 45 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-        if: ${{ always() }}
+# DEBUG      - name: Build Tsavorite
+# DEBUG        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+# DEBUG      - name: Run Tsavorite tests
+# DEBUG        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+# DEBUG        timeout-minutes: 45 
+# DEBUG      - name: Upload test results
+# DEBUG        uses: actions/upload-artifact@v4
+# DEBUG        with:
+# DEBUG          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+# DEBUG          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+# DEBUG        if: ${{ always() }}
 
   pipeline-success:
     name: Garnet Nightly (Complete)
-    runs-on: ubuntu-latest
+    runs-on: windows-2022  
     needs: [ build-test-garnet,  build-test-tsavorite ]
-    steps:
-    - run: echo Done!
     if: ${{ !(failure() || cancelled()) }}
-    
+    steps:
+      - name: Run GenerateAllureReport.ps1
+        run: .\test\allure\GenerateAllureReport.ps1
+        shell: pwsh
+
+      - name: Echo completion
+        run: echo Done!

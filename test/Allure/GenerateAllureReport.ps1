@@ -2,7 +2,7 @@
 
 <#$f
 .SYNOPSIS
-    This script is called after all the ALlure data is merged into one location and generates the Allure report.
+    This script is called after all the Allure data is merged (by GetAllureData.ps1) into one location and generates the Allure report.
 #>
 
 $OFS = "`r`n"
@@ -28,9 +28,11 @@ if (-not (Test-Path -Path $allureResultsCombinedDir)) {
 }
 
 # Copy categories.json to the CombinedResults directory
+Write-Host "Copying categories.json to $allureResultsCombinedDir"
 Copy-Item -Path "$basePath/test/Allure/categories.json" -Destination "$allureResultsCombinedDir/categories.json"
 
 # Copy the history folder to CombinedResults - this is where history of tests all store
+Write-Host "Copying history to $allureResultsCombinedDir"
 $historySourceDir = "$basePath/test/Allure/history"
 $historyDestDir = "$allureResultsCombinedDir/history"
 if (Test-Path -Path $historySourceDir) {
@@ -38,18 +40,29 @@ if (Test-Path -Path $historySourceDir) {
 }   
 
 # Generate the report
+Write-Host "Generate the Allure report from $allureResultsCombinedDir"
 Start-Process -FilePath "allure" -ArgumentList "generate CombinedResults -o allure-report --clean" -NoNewWindow -Wait
 
+# verify report generated
+$reportDir = "$basePath/test/Allure/allure-report"
+if (-not (Test-Path -Path $reportDir)) {
+    Write-Error -Message "The Allure report directory $reportDir did not get created." -Category ObjectNotFound
+    exit
+}
+
 # Open the report - only when ran locally ... in GitHub action, don't want to run this
+Write-Host "Open the Allure report"
 Start-Process -FilePath "allure" -ArgumentList "open allure-report" -WindowStyle Normal
 
 # Deletes all .json except categories.json - do this after the report is ran just so we don't have a 1000s of result files in artifacts for each run
+Write-Host "Deleting Allure result files from $allureResultsCombinedDir"
 Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
     Where-Object { $_.Name -ne 'categories.json' } |
     Remove-Item
 
-# Copy the history folder from C:\GarnetGitHub\test\Allure\allure-report to C:\GarnetGitHub\test\Allure
+# Copy the history folder from .\test\Allure\allure-report to .\test\Allure
 # Need to go one file at a time so it overwrites properly. Could delete history and copy, but this is safer to only overwrite files that exist
+Write-Host "Copy the history files to $basePath/test/Allure for next run"
 $historySourceDir = "$basePath/test/Allure/allure-report/history"
 $historyDestDir = "$basePath/test/Allure/history"
 
@@ -59,8 +72,6 @@ if (Test-Path -Path $historySourceDir) {
         Copy-Item -Path $_.FullName -Destination $dest -Force
     }
 }
-
-
 
 Write-Output "************************"
 Write-Output "**"
