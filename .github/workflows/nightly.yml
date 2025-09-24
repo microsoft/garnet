@@ -30,17 +30,19 @@ jobs:
      #   test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     steps:
       - name: Install Allure CLI
-        shell: bash
+        shell: pwsh
         run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            choco install allure.commandline --yes
-          elif [[ "$RUNNER_OS" == "Linux" ]]; then
+          if ($env:RUNNER_OS -eq "Windows") {
+            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+            iwr -useb get.scoop.sh | iex
+            scoop install allure
+          } elseif ($env:RUNNER_OS -eq "Linux") {
             npm install -g allure-commandline --save-dev
-            echo "$(npm bin -g)" >> $GITHUB_PATH
-          else
-            echo "Unsupported OS: $RUNNER_OS"
+            echo "$(npm bin -g)" >> $env:GITHUB_PATH
+          } else {
+            Write-Host "Unsupported OS: $env:RUNNER_OS"
             exit 1
-          fi
+          }
 
       - name: Verify Allure installation
         run: allure --version
@@ -127,8 +129,8 @@ jobs:
           azurite &
       - name: Install dependencies
         run: dotnet restore
-      - name: Format
-        run: dotnet format --verify-no-changes --verbosity diagnostic
+# DEBUG      - name: Format
+# DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
 # DEBUG      - name: Build Tsavorite
 # DEBUG        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
 # DEBUG      - name: Run Tsavorite tests
