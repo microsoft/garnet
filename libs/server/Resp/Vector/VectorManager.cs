@@ -81,20 +81,36 @@ namespace Garnet.server
 
         private int replicationReplayStarted;
         private long replicationReplayPendingVAdds;
+        private readonly ManualResetEventSlim replicationBlockEvent;
         private readonly Channel<VADDReplicationState> replicationReplayChannel;
+        private readonly Task[] replicationReplayTasks;
 
         [ThreadStatic]
         private static StorageSession ActiveThreadSession;
 
         public VectorManager()
         {
+            replicationBlockEvent = new(true);
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
+
+            // TODO: Pull this off a config or something
+            replicationReplayTasks = new Task[Environment.ProcessorCount];
+            for (var i = 0; i < replicationReplayTasks.Length; i++)
+            {
+                replicationReplayTasks[i] = Task.CompletedTask;
+            }
         }
 
         /// <inheritdoc/>
         public void Dispose()
         {
+            // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             replicationReplayChannel.Writer.Complete();
+            replicationReplayChannel.Reader.Completion.Wait();
+
+            Task.WhenAll(replicationReplayTasks).Wait();
+
+            replicationBlockEvent.Dispose();
         }
 
         /// <summary>
@@ -747,15 +763,23 @@ namespace Garnet.server
 
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
             _ = Interlocked.Increment(ref replicationReplayPendingVAdds);
+            replicationBlockEvent.Reset();
             var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks));
-            Debug.Assert(queued);
+            if (!queued)
+            {
+                // Can occur if we're being Disposed
+                var pending = Interlocked.Decrement(ref replicationReplayPendingVAdds);
+                if (pending == 0)
+                {
+                    replicationBlockEvent.Set();
+                }
+            }
 
             static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
             {
-                // TODO: Pull this off a config or something
-                for (var i = 0; i < Environment.ProcessorCount; i++)
+                for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
-                    _ = Task.Factory.StartNew(
+                    self.replicationReplayTasks[i] = Task.Factory.StartNew(
                         async () =>
                         {
                             var reader = self.replicationReplayChannel.Reader;
@@ -770,7 +794,11 @@ namespace Garnet.server
                                 }
                                 finally
                                 {
-                                    _ = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
+                                    var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
+                                    if (pending == 0)
+                                    {
+                                        self.replicationBlockEvent.Set();
+                                    }
                                 }
                             }
                         }
@@ -932,9 +960,15 @@ namespace Garnet.server
         /// </summary>
         internal void WaitForVectorOperationsToComplete()
         {
-            while (Interlocked.CompareExchange(ref replicationReplayPendingVAdds, 0, 0) != 0)
+            try
             {
-                _ = Thread.Yield();
+                replicationBlockEvent.Wait();
+            }
+            catch (ObjectDisposedException)
+            {
+                // This is possible during dispose
+                //
+                // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
         }
 
