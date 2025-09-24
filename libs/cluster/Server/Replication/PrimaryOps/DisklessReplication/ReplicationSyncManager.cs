@@ -277,37 +277,50 @@ namespace Garnet.cluster
 
                 // Iterate through main store
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
-                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
+                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
 
                 var result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
                 if (!result.success)
-                    throw new InvalidOperationException("Main store checkpoint stream failed!");
+                    throw new GarnetException("Main store checkpoint stream failed!");
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
-
+                // WaitOrDie is needed here to check if streaming checkpoint is making progress.
+                // We cannot use a timeout on the cancellationToken because we don't know in total how long the streaming checkpoint will take
                 async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
                 {
-                    var timeout = replicaSyncTimeout;
-                    var delay = TimeSpan.FromSeconds(1);
-                    while (true)
+                    try
                     {
-                        // Check if cancellation requested
-                        cts.Token.ThrowIfCancellationRequested();
+                        var timeout = replicaSyncTimeout;
+                        var delay = TimeSpan.FromSeconds(1);
+                        while (true)
+                        {
+                            // Check if cancellation requested
+                            cts.Token.ThrowIfCancellationRequested();
 
-                        // Wait for stream sync to make some progress
-                        await Task.Delay(delay);
+                            // Wait for stream sync to make some progress
+                            await Task.Delay(delay);
 
-                        // Check if checkpoint has completed
-                        if (checkpointTask.IsCompleted)
-                            return await checkpointTask;
+                            // Check if checkpoint has completed
+                            if (checkpointTask.IsCompleted)
+                                return await checkpointTask;
 
-                        // Check if we made some progress
-                        timeout = !manager.IsProgressing() ? timeout.Subtract(delay) : replicaSyncTimeout;
+                            // Check if we made some progress
+                            timeout = !manager.IsProgressing() ? timeout.Subtract(delay) : replicaSyncTimeout;
 
-                        // Throw timeout equals to zero
-                        if (timeout.TotalSeconds <= 0)
-                            throw new TimeoutException("Streaming snapshot checkpoint timed out");
+                            // Throw timeout equals to zero
+                            if (timeout.TotalSeconds <= 0)
+                            {
+                                cts.Cancel();
+                                throw new TimeoutException("Streaming snapshot checkpoint timed out");
+                            }
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "{method} faulted", nameof(WaitOrDie));
+                        cts.Cancel();
+                    }
+                    return (false, default);
                 }
             }
         }
