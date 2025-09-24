@@ -1110,7 +1110,7 @@ namespace Tsavorite.core
                 else
                 {
                     long size = logRecord.GetInlineRecordSizes().allocatedSize;
-                    Debug.Assert(size <= hlogBase.GetPageSize());   // TODO: This will likely exceed pagesize for large objects. Make sure we don't need this limitation
+                    Debug.Assert(size <= hlogBase.GetPageSize());
                     pointer += size;
                 }
             }
@@ -1135,8 +1135,8 @@ namespace Tsavorite.core
             while (pointer < untilLogicalAddressInPage)
             {
                 recordStart = pagePhysicalAddress + pointer;
-                var diskLogRecord = new DiskLogRecord(recordStart);
-                ref RecordInfo info = ref diskLogRecord.InfoRef;
+                var logRecord = new LogRecord(recordStart);
+                ref RecordInfo info = ref logRecord.InfoRef;
 
                 if (info.IsNull)
                 {
@@ -1146,7 +1146,7 @@ namespace Tsavorite.core
 
                 if (!info.Invalid)
                 {
-                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(diskLogRecord.Key));
+                    HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
                     bool ignoreRecord = ((pageLogicalAddress + pointer) >= options.fuzzyRegionStartAddress) && info.IsInNewVersion;
@@ -1172,7 +1172,7 @@ namespace Tsavorite.core
                         }
                     }
                 }
-                pointer += diskLogRecord.GetSerializedLength();
+                pointer += logRecord.GetInlineRecordSizes().allocatedSize;
             }
 
             return touched;
@@ -1302,12 +1302,6 @@ namespace Tsavorite.core
 
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
-
-            if (result.recordBuffer != null)
-            {
-                _wrapper.PopulatePage(result.recordBuffer.GetValidPointer(), result.recordBuffer.required_bytes, result.page);
-                result.recordBuffer.Return();
-            }
 
             var pageIndex = GetPageIndexForPage(result.page);
             if (errorCode != 0)

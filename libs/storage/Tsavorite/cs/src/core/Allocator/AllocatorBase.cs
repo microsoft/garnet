@@ -210,7 +210,7 @@ namespace Tsavorite.core
             PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress);
 
         /// <summary>Read page from device (async)</summary>
-        protected abstract void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        protected abstract void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
 
         /// <summary>Write page to device (async)</summary>
@@ -1513,7 +1513,7 @@ namespace Tsavorite.core
         {
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
             asyncResult.context = context;
-            GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength, out context.record);
+            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
 
@@ -1521,21 +1521,22 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
-            GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength, out context.record);
+            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
             device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
         }
 
-        private void GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength, out SectorAlignedMemory record)
+        private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedFileOffset, out uint alignedReadLength)
         {
             var fileOffset = (ulong)(AlignedPageSizeBytes * GetPage(fromLogicalAddress) + GetOffsetOnPage(fromLogicalAddress));
             alignedFileOffset = (ulong)RoundDown((long)fileOffset, sectorSize);
             alignedReadLength = (uint)((long)fileOffset + numBytes - (long)alignedFileOffset);
             alignedReadLength = (uint)RoundUp(alignedReadLength, sectorSize);
 
-            record = bufferPool.Get((int)alignedReadLength);
+            var record = bufferPool.Get((int)alignedReadLength);
             record.valid_offset = (int)(fileOffset - alignedFileOffset);
             record.available_bytes = (int)(alignedReadLength - record.valid_offset);
             record.required_bytes = numBytes;
+            return record;
         }
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event</summary>
@@ -1584,7 +1585,7 @@ namespace Tsavorite.core
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
                 // Call the overridden ReadAsync for the derived allocator class
-                ReadAsync(readBuffers, offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(readBuffers, offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
             }
         }
 
@@ -1862,7 +1863,7 @@ namespace Tsavorite.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(readBuffers, offsetInFile, pageIndex, readLength, callback, asyncResult, usedDevice, objectLogDevice);
+                ReadAsync(readBuffers, offsetInFile, (IntPtr)frame.GetPhysicalAddress(pageIndex), readLength, callback, asyncResult, usedDevice, objectLogDevice);
             }
         }
 

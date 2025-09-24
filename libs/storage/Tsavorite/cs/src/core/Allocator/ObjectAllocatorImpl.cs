@@ -393,10 +393,10 @@ namespace Tsavorite.core
                 srcBuffer = bufferPool.Get((int)numBytesToWrite);
 
                 // Read back the first sector if the start is not aligned (the alignment means we wrote a partially-filled sector (with ObjectLog fields set).
-                // TODO: cache this sector from previous flushes to avoid the Read.. but it will still rewrite the sector.
                 if (alignedStartOffset < startOffset)
                 {
-                    TODO("This will potentially overwrite sectors");
+                    // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
+                    // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
                     PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
                     device.ReadAsync(alignedNextMainLogFlushAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer + alignedStartOffset,
                         (uint)sectorSize, AsyncReadPageCallback, result);
@@ -462,7 +462,7 @@ namespace Tsavorite.core
                 var alignedNumBytesToWrite = RoundUp(numBytesToWrite, (int)device.SectorSize);
 
                 // Finally write the main log page as part of OnPartialFlushComplete.
-                TODO("This will potentially overwrite sectors");
+                // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                 var mainLogSpan = new ReadOnlySpan<byte>(srcBuffer.GetValidPointer() + alignedStartOffset, (int)alignedNumBytesToWrite);
                 logWriter.OnPartialFlushComplete(mainLogSpan, device, ref alignedNextMainLogFlushAddress, callback, asyncResult, out objectLogNextRecordStartPosition);
             }
@@ -516,26 +516,20 @@ namespace Tsavorite.core
             return false;
         }
 
-        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)   // TODO add a CancellationToken
         {
-            asyncResult.recordBuffer = bufferPool.Get((int)aligned_read_length);
-            asyncResult.recordBuffer.required_bytes = (int)aligned_read_length;
+            TODO("Verify the objectLogDevice is the same in readBuffers and paramlist, and if so remove the latter");
+            TODO("Add CancellationToken to the ReadAsync path");
 
             asyncResult.callback = callback;
+            asyncResult.destinationPtr = destinationPtr;
 
-            if (objlogDevice == null)
-            {
-                Debug.Assert(objectLogDevice != null);
-                objlogDevice = objectLogDevice;
-            }
-            asyncResult.objlogDevice = objlogDevice;
-            asyncResult.readBuffers = readBuffers;
+            asyncResult.objlogDevice = objlogDevice; TODO("I can probably remove this now as I am passing readBuffers as a param");
+            asyncResult.readBuffers = readBuffers; TODO("I can probably remove this now as I am passing readBuffers as a param");
 
-            device.ReadAsync(alignedSourceAddress, (IntPtr)asyncResult.recordBuffer.aligned_pointer,
-                    aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
+            device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
-
 
         private void AsyncReadPageWithObjectsCallback<TContext>(uint errorCode, uint numBytes, object context)
         {
@@ -544,21 +538,8 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
 
-            long physicalAddress;
-            ObjectIdMap objectIdMap;
-            if (result.frame != null)
-            {
-                // It's a frame, so get the physicalAddress from the frame's page and use the transient ObjectId map.
-                physicalAddress = result.frame.GetPhysicalAddress(result.page % result.frame.frameSize, offset: PageHeader.Size);
-                objectIdMap = transientObjectIdMap;
-            }
-            else
-            {
-                // Not a frame, so use the allocator page's objectIdMap and physicalAddress.
-                var pageIndex = result.page % BufferSize;
-                physicalAddress = pagePointers[pageIndex] + PageHeader.Size;
-                objectIdMap = pages[pageIndex].objectIdMap;
-            }
+            TODO("Replace result.frame with ObjectIdMap?");
+            long physicalAddress = (long)result.destinationPtr;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
             ObjectLogFilePositionInfo startPosition = default;
@@ -591,6 +572,7 @@ namespace Tsavorite.core
                 }
             }
 
+            // The page may not have contained any records with objects
             if (startPosition.IsSet)
             {
                 // Iterate all records again to actually do the deserialization.
@@ -612,7 +594,7 @@ namespace Tsavorite.core
                         continue;
 
                     // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
-                    // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap).
+                    // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
                     _ = logReader.ReadObjects(physicalAddress, logRecordSize, noKey, transientObjectIdMap, startPosition.SegmentSizeBits, out _ /*diskLogRecord*/);
 
                     // If the incremented record address is at or beyond the maxPtr, we have processed all records.
@@ -621,6 +603,7 @@ namespace Tsavorite.core
 
             // Call the "real" page read callback
             result.callback(errorCode, numBytes, context);
+            result.Free();
             return;
         }
 

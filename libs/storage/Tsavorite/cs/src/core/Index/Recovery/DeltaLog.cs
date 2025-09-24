@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -117,7 +116,8 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress,
+            TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
             IDevice usedDevice = deltaLogDevice;
             completed = new CountdownEvent(numPages);
@@ -167,10 +167,9 @@ namespace Tsavorite.core
                     logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
                     result.cts?.Cancel();
                 }
-                Debug.Assert(result.recordBuffer == null);
 
                 if (errorCode == 0)
-                    result.handle?.Signal();
+                    _ = result.handle?.Signal();
 
                 Interlocked.MemoryBarrier();
             }

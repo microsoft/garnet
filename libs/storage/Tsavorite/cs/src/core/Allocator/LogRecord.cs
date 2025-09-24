@@ -69,9 +69,9 @@ namespace Tsavorite.core
             this.objectIdMap = objectIdMap;
         }
 
-        /// <summary>This ctor is used to remap a transient LogRecord's object Ids to the transient map. <paramref name="physicalAddress"/> is assumed to be
-        /// a pointer to transient memory that contains a copy of the in-memory allocator page's record span. This is primarily used for iteration.
-        /// Note that the objects are not removed from the allocator-page map, so for iteration they may temporarily be in both.
+        /// <summary>This ctor is used construct a transient copy of an in-memory LogRecord that remaps the object Ids in <paramref name="physicalAddress"/> to the transient map. 
+        /// <paramref name="physicalAddress"/> is must be a pointer to transient memory that contains a copy of the in-memory allocator page's record span, including the objectIds
+        /// in Key and Value data. This is used for iteration. Note that the objects are not removed from the allocator-page map, so for iteration they may temporarily be in both.
         /// </summary> 
         /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -97,7 +97,7 @@ namespace Tsavorite.core
                 var heapObj = allocatorMap.GetHeapObject(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(heapObj);
             }
-            this.objectIdMap = transientMap;
+            objectIdMap = transientMap;
         }
 
         #region ISourceLogRecord
@@ -185,10 +185,11 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 if (!Info.ValueIsObject || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord with ValueIsObject==true and value.Length=+ObjectIdSize");
+                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true and value.Length=+ObjectIdSize");
+                *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
 
-                *(int*)dataAddress = objectIdMap.Allocate();
-                objectIdMap.Set(*(int*)dataAddress, value);
+                // We reused the varbyte length as the high byte of the 5-byte length, so reset it now to ObjectIdSize.
+                UpdateVarbyteValueLengthByteInWord(IndicatorAddress, ObjectIdMap.ObjectIdSize);
             }
         }
 
@@ -980,7 +981,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
         /// </remarks>
-        internal void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
+        internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
         {
             var objLogPositionPtr = (ulong*)GetObjectLogPositionAddress();
             *objLogPositionPtr = objectLogFilePosition.word;
@@ -1001,7 +1002,8 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 *(uint*)dataAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
-                UpdateVarbyteValueLengthHighByteInWord(IndicatorAddress, (byte)((valueObjectLength >> 32) & 0xFF));
+                // Update the high byte in the value length metadata (it is combined with the length that is stored in the ObjectId field data of the record).
+                UpdateVarbyteValueLengthByteInWord(IndicatorAddress, (byte)((valueObjectLength >> 32) & 0xFF));
             }
         }
 
@@ -1011,7 +1013,7 @@ namespace Tsavorite.core
         /// <param name="keyLength">Outputs key length; will always be for overflow</param>
         /// <param name="valueLength">Outputs key length; will be for overflow or object</param>
         /// <returns>The object log position for this record</returns>
-        internal ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueLength)
+        internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueLength)
         {
             var objLogPositionPtr = (ulong*)GetObjectLogPositionAddress();
             if (Info.KeyIsOverflow)
@@ -1040,8 +1042,8 @@ namespace Tsavorite.core
 
         public void Dispose(Action<IHeapObject> objectDisposer)
         {
-            ClearKeyIfOverflow();
-            ClearValueIfHeap(objectDisposer);
+            _ = ClearKeyIfOverflow();
+            _ = ClearValueIfHeap(objectDisposer);
         }
 
         public override readonly string ToString()

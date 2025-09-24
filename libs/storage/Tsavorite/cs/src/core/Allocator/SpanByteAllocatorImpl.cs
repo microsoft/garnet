@@ -200,9 +200,9 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
-            => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
+            => device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, callback, asyncResult);
 
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log

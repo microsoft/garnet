@@ -95,7 +95,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The <see cref="LogRecord"/> whose Keys and Values are to be written to the device.</param>
         /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately.</remarks>
-        /// <returns>The number of bytes written for the value object, if any (Overflow lengths are known in already)</returns>
+        /// <returns>The number of bytes written for the value object, if any (Overflow lengths and the length of objects that support
+        ///     <see cref="IHeapObject.SerializedSizeIsExact"/> are already known, but an object that does not support that will not know its
+        ///     <see cref="IHeapObject.SerializedSize"/>) until we've serialized it).</returns>
         public ulong WriteObjects(in LogRecord logRecord)
         {
             Debug.Assert(!logRecord.Info.RecordIsInline, "Cannot call ObjectLogWriter with an inline record");
@@ -112,8 +114,14 @@ namespace Tsavorite.core
             {
                 var obj = logRecord.ValueObject;
                 if (obj.SerializedSizeIsExact)
+                {
+                    if (obj.SerializedSize >= IHeapObject.MaxSerializedObjectSize)
+                        throw new TsavoriteException($"Object size exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
                     expectedSerializedLength = (ulong)obj.SerializedSize;
+                }
                 DoSerialize(obj);
+                if (!obj.SerializedSizeIsExact && obj.SerializedSize >= IHeapObject.MaxSerializedObjectSize)
+                    throw new TsavoriteException($"Object size exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
             }
             return totalValueObjectLength - startObjectLength;
         }

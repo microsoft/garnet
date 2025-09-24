@@ -245,7 +245,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         /// <summary>

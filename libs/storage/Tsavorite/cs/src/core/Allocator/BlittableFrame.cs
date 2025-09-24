@@ -42,7 +42,7 @@ namespace Tsavorite.core
             Array.Clear(frame[pageIndex], 0, frame[pageIndex].Length);
         }
 
-        public long GetPhysicalAddress(long frameNumber, long offset)
+        public long GetPhysicalAddress(long frameNumber, long offset = 0)
         {
             return pointers[frameNumber % frameSize] + offset;
         }

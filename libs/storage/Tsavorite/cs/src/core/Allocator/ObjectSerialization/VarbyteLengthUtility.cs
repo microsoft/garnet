@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Utilities for varlen bytes: one indicator byte identifying the number of key and value bytes. The layout of this indicator byte is:
     /// <list type="bullet">
-    ///     <item>Indicator byte: version, chunked or filler flag number of bytes in value length</item>
+    ///     <item>Indicators: version, filler flag</item>
     ///     <item>Number of bytes in key length; may be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow</item>
     ///     <item>Number of bytes in value length; may be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow or Object</item>
     /// </list>
@@ -27,10 +27,7 @@ namespace Tsavorite.core
         const long kVersionBitMask = 7 << 6;            // 2 bits for version; currently not checked and may be repurposed
         const long CurrentVersion = 0 << 6;             // Initial version is 0; shift will always be 6
 
-        // These share the same bit: HasFiller is only in-memory, and IsChunked is only on-disk.
-        internal const long kHasFillerBitMask = 1 << 5; // 1 bit for "has filler" indicator; in-memory only
-        const long kIsChunkedValueBitMask = 1 << 5;     // 1 bit for chunked value indicator; on-disk only,
-        TODO("remove this; we need filler on disk");
+        internal const long kHasFillerBitMask = 1 << 5; // 1 bit for "has filler" indicator
 
         // The bottom 5 bits are actual length bytecounts
         /// <summary>
@@ -109,8 +106,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void WriteVarbyteLengthInWord(ref long word, int value, int precedingNumBytes, int targetNumBytes)
         {
-            int shift = (1 + precedingNumBytes) * 8;
-            word = (word & ~(((1L << targetNumBytes * 8) - 1) << shift)) | ((long)value << shift);
+            var shift = (1 + precedingNumBytes) * 8;
+            word = (word & ~(((1L << (targetNumBytes * 8)) - 1) << shift)) | ((long)value << shift);
         }
 
         internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
@@ -136,20 +133,13 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static (int keyLengthBytes, int valueLengthBytes, bool isChunkedValueOrHasFiller) DeconstructIndicatorByte(byte indicatorByte)
+        internal static (int keyLengthBytes, int valueLengthBytes, bool hasFiller) DeconstructIndicatorByte(byte indicatorByte)
         {
-            Debug.Assert(kIsChunkedValueBitMask == kHasFillerBitMask, "kIsChunkedValueBitMask must equal kHasFillerBitMask");   // We "union" this bit
             var keyLengthBytes = (int)((indicatorByte & kKeyLengthBitMask) >> 3) + 1;   // add 1 due to 0-based
             var valueLengthBytes = (int)(indicatorByte & kValueLengthBitMask) + 1;      // add 1 due to 0-based
-            var isChunkedValueOrHasFiller = (indicatorByte & kHasFillerBitMask) != 0;
-            return (keyLengthBytes, valueLengthBytes, isChunkedValueOrHasFiller);
+            var hasFiller = (indicatorByte & kHasFillerBitMask) != 0;
+            return (keyLengthBytes, valueLengthBytes, hasFiller);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void SetChunkedValueIndicator(ref byte indicatorByte) => indicatorByte = (byte)(indicatorByte | kIsChunkedValueBitMask);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool HasChunkedValueIndicator(byte indicatorByte) => (indicatorByte & kIsChunkedValueBitMask) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool HasFiller(byte indicatorByte) => (indicatorByte & kHasFillerBitMask) != 0;
@@ -166,7 +156,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (int length, long dataAddress) GetKeyFieldInfo(long indicatorAddress)
         {
-            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
+            var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
 
             // Move past the indicator byte; the next bytes are key length
             var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
@@ -178,7 +168,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (long length, long dataAddress) GetValueFieldInfo(long indicatorAddress)
         {
-            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
+            var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
 
             // Move past the indicator byte; the next bytes are key length
             var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
@@ -197,7 +187,7 @@ namespace Tsavorite.core
         internal static byte* GetFieldPtr(long indicatorAddress, bool isKey, out byte* lengthPtr, out int lengthBytes, out long length)
         {
             var ptr = (byte*)indicatorAddress;
-            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValue*/) = DeconstructIndicatorByte(*ptr);
+            var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*ptr);
             ptr++;
 
             // Move past the indicator byte; the next bytes are key length
@@ -224,14 +214,14 @@ namespace Tsavorite.core
         internal static (int keyLength, int valueLength, int offsetToKeyStart) GetInlineKeyAndValueSizes(long indicatorAddress)
         {
             var ptr = (byte*)indicatorAddress;
-            var (keyLengthBytes, valueLengthBytes, _ /*isChunkedValueOrHasFiller*/) = DeconstructIndicatorByte(*ptr);
+            var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*ptr);
 
             // Move past the indicator byte; the next bytes are key length
-            var keyLength = (int)ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
+            var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
 
             // Move past the key bytes; the next bytes are valueLength
             var valueLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: keyLengthBytes, valueLengthBytes);
-            return (keyLength, (int)valueLength, RecordInfo.Size + 1 + keyLengthBytes + valueLengthBytes);
+            return (keyLength, valueLength, RecordInfo.Size + 1 + keyLengthBytes + valueLengthBytes);
         }
 
         /// <summary>
@@ -304,11 +294,22 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Update the value length high byte in the in-memory inline varbyte indicator word (it is combined with the length that is stored in the ObjectId field data
-        /// of a record in the on-disk log).
+        /// Update the Key length in the in-memory inline varbyte indicator word. Used when mapping from on-disk objectlog pointers to in-memory ObjectIds.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void UpdateVarbyteValueLengthHighByteInWord(long indicatorAddress, byte valueLength)
+        internal static unsafe void UpdateVarbyteKeyLengthByteInWord(long indicatorAddress, byte valueLength)
+        {
+            var word = *(long*)indicatorAddress;
+            (var keyLengthBytes, var valueLengthBytes, var _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)&word);
+            WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: 0, keyLengthBytes);
+            *(long*)indicatorAddress = word;
+        }
+
+        /// <summary>
+        /// Update the Value length in the in-memory inline varbyte indicator word. Used when mapping from on-disk objectlog pointers to in-memory ObjectIds.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void UpdateVarbyteValueLengthByteInWord(long indicatorAddress, byte valueLength)
         {
             var word = *(long*)indicatorAddress;
             (var keyLengthBytes, var valueLengthBytes, var _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)&word);

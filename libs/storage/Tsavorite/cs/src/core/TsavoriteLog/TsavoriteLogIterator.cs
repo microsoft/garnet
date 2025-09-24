@@ -633,7 +633,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer _ /*readBuffers*/, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
@@ -642,10 +642,9 @@ namespace Tsavorite.core
             try
             {
                 var result = (PageAsyncReadResult<Empty>)context;
-                Debug.Assert(result.frame is not null && result.recordBuffer is null, "Should have a frame and not a recordBuffer in TsavoriteLogIterator");
 
                 if (errorCode == 0)
-                    _ = (result.handle?.Signal());
+                    _ = result.handle?.Signal();
                 else
                 {
                     logger?.LogError($"{nameof(AsyncReadPagesToFrameCallback)} error: {{errorCode}}", errorCode);

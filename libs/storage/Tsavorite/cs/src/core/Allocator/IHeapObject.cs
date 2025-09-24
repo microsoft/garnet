@@ -12,6 +12,11 @@ namespace Tsavorite.core
     public interface IHeapObject : IDisposable
     {
         /// <summary>
+        /// The maximum length of a serialized Value object.
+        /// </summary>
+        public const long MaxSerializedObjectSize = 1L << 40;
+
+        /// <summary>
         /// Total estimated size of the object in heap memory, including .NET object overheads, for Overflow allocations and Objects.
         /// </summary>
         long HeapMemorySize { get; set; }

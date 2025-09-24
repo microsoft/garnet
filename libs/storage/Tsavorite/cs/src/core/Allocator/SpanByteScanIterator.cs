@@ -378,14 +378,13 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPagesFromDeviceToFrame(readBuffers: default, readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
+            => hlogBase.AsyncReadPagesFromDeviceToFrame(readBuffers, readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
             var result = (PageAsyncReadResult<Empty>)context;
-            Debug.Assert(result.frame is not null && result.recordBuffer is null, "Should have a frame and not a recordBuffer in SpanByteScanIterator");
 
             if (errorCode == 0)
                 _ = result.handle?.Signal();

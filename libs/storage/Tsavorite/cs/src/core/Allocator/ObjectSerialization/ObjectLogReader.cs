@@ -98,24 +98,24 @@ namespace Tsavorite.core
 
             if (logRecord.Info.KeyIsOverflow)
             {
+                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
                 logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset:0, endOffset:0, zeroInit:false);
                 _ = Read(logRecord.KeyOverflow.Span);
                 if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
                     return false;
-                TODO("Set key overflow; needs to clear out the serialized length");
             }
 
             if (logRecord.Info.ValueIsOverflow)
             {
+                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
                 logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 _ = Read(logRecord.ValueOverflow.Span);
-                TODO("Set value overflow; needs to clear out the serialized length");
 
                 // If value is overflow, there's no object to read
                 return true;
             }
 
-            TODO("Set value Object; needs to clear out the serialized length (including indicatorword)");
+            // This assignment also allocates the slot in ObjectIdMap and updates the varbyte length to be ObjectIdSize.
             logRecord.ValueObject = DoDeserialize();
             return true;
         }

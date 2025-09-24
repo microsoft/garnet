@@ -28,12 +28,12 @@ namespace Tsavorite.core
         /// <summary>Event to be signaled when the main-log page read is complete</summary>
         internal CountdownEvent handle;
 
-        /// <summary>The buffer to receive the main-log page being read</summary>
-        internal SectorAlignedMemory recordBuffer;
-
         /// <summary>Callback to be called when the main-log page has completed processing; for <see cref="ObjectAllocator{TStoreFunctions}"/>
         /// this means after all Overflow or Objects on the page have been read as well.</summary>
         internal DeviceIOCompletionCallback callback;
+
+        /// <summary>The destination pointer being read into.</summary>
+        internal IntPtr destinationPtr;
 
         /// <summary>The object-log device to use; may be the recovery device.</summary>
         internal IDevice objlogDevice;
@@ -54,14 +54,9 @@ namespace Tsavorite.core
         /// <summary>The max offset on the main log page to iterate records, one ObjectBlockSize chunk of object-log records at a time.</summary>
         internal long maxPtr;
 
-        /// <summary>Return the <see cref="recordBuffer"/> to its pool.</summary>
-        public void FreeBuffer()
+        /// <summary>Currently nothing to free.</summary>
+        public void Free()
         {
-            if (recordBuffer != null)
-            {
-                recordBuffer.Return();
-                recordBuffer = null;
-            }
         }
 
         /// <inheritdoc/>
