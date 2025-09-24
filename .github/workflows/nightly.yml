@@ -36,6 +36,10 @@ jobs:
             Set-ExecutionPolicy RemoteSigned -Scope Process -Force
             iwr -useb get.scoop.sh | iex
             scoop install allure
+            $shimPath = "$env:USERPROFILE\scoop\shims"
+            echo "Adding Scoop shims to PATH: $shimPath"
+            echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
           } elseif ($env:RUNNER_OS -eq "Linux") {
             npm install -g allure-commandline --save-dev
             echo "$(npm bin -g)" >> $env:GITHUB_PATH
