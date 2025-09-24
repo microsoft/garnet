@@ -80,15 +80,15 @@ jobs:
 
       - name: Copy mock allure-results to test output - just use until get real allure results in place
         run: |
-          $source = "./test/Allure/TestData/Garnet.test/bin/Release/${{ matrix.framework }}/allure-results"
-          $dest   = "./test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          $source = "${{ github.workspace }}/test/Allure/TestData/Garnet.test/bin/Release/${{ matrix.framework }}/allure-results"
+          $dest   = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           Copy-Item -Path $source -Destination $dest -Recurse -Force
         shell: pwsh
 
       - name: Check if allure-results exists
         run: |
-          if (-Not (Test-Path "./test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results")) {
-            Write-Host "No ./test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results found for this matrix combination."
+          if (-Not (Test-Path "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results")) {
+            Write-Host "No ${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results found for this matrix combination."
           }
       - name: Upload allure test results in combined results directory
         uses: actions/upload-artifact@v4
@@ -126,13 +126,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install and Run Azurite
-        shell: bash
-        run: |
-          npm install -g azurite
-          azurite &
-      - name: Install dependencies
-        run: dotnet restore
+# DEBUG      - name: Install and Run Azurite
+# DEBUG        shell: bash
+# DEBUG        run: |
+# DEBUG          npm install -g azurite
+# DEBUG          azurite &
+# DEBUG      - name: Install dependencies
+# DEBUG        run: dotnet restore
 # DEBUG      - name: Format
 # DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
 # DEBUG      - name: Build Tsavorite
