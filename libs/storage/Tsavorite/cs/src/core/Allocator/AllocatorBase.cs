@@ -209,10 +209,6 @@ namespace Tsavorite.core
         protected abstract void WriteAsyncToDevice<TContext>(CircularDiskWriteBuffer flushBuffers, long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress);
 
-        /// <summary>Read objects to memory (async)</summary>
-        protected abstract unsafe void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context,
-            SectorAlignedMemory result = default);
-
         /// <summary>Read page from device (async)</summary>
         protected abstract void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, int destinationPageIndex, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
@@ -653,7 +649,7 @@ namespace Tsavorite.core
         }
         internal bool IsAllocated(int pageIndex) => pagePointers[pageIndex] != 0;
 
-        internal void ClearPage(long page, int offset)
+        internal void ClearPage(long page, int offset = 0)
             => NativeMemory.Clear((byte*)pagePointers[page % BufferSize] + offset, (nuint)(PageSize - offset));
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1511,9 +1507,9 @@ namespace Tsavorite.core
             logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
         }
 
-        /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/> - used for RUMD operations.</summary>
+        /// <summary>Read a main log record to <see cref="SectorAlignedMemory"/> - used for RUMD operations.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal unsafe void AsyncReadInlineRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
+        internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
             asyncResult.context = context;
@@ -1593,9 +1589,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
-        protected virtual CircularDiskWriteBuffer CreateFlushBuffers(SectorAlignedBufferPool bufferPool, IDevice device, ILogger logger) => default;
+        internal virtual CircularDiskWriteBuffer CreateFlushBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
-        protected virtual CircularDiskReadBuffer CreateDeserializationBuffers(SectorAlignedBufferPool bufferPool, IDevice device, ILogger logger) => default;
+        internal virtual CircularDiskReadBuffer CreateReadBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger) => default;
 
         /// <summary>
         /// Flush page range to disk
@@ -1623,7 +1619,7 @@ namespace Tsavorite.core
             // increases monotonically.
 
             // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-            using var flushBuffers = CreateFlushBuffers(bufferPool, device, logger);
+            using var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice: null, logger);
 
             // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
@@ -1718,7 +1714,7 @@ namespace Tsavorite.core
         public void AsyncFlushPagesForRecovery<TContext>(long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
         {
             // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-            using var flushBuffers = CreateFlushBuffers(bufferPool, device, logger);
+            using var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice: null, logger);
 
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
@@ -1770,7 +1766,7 @@ namespace Tsavorite.core
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
                 // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-                using var flushBuffers = CreateFlushBuffers(bufferPool, device, logger);
+                using var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice, logger);
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
@@ -1801,7 +1797,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context, SectorAlignedMemory result = default)
+        internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
             // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
             // draining events on each iteration, but do not release the epoch.
@@ -1815,10 +1811,7 @@ namespace Tsavorite.core
                 }
             }
 
-            if (result == null)
-                AsyncReadInlineRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
-            else
-                AsyncReadRecordObjectsToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, context, result);
+            AsyncReadRecordToMemory(fromLogicalAddress, numBytes, AsyncGetFromDiskCallback, ref context);
         }
 
         /// <summary>

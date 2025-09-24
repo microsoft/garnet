@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -45,6 +46,7 @@ namespace Tsavorite.core
             set
             {
                 var mask = (ulong)(1L << SegmentSizeBits) - 1L;
+                Debug.Assert((value & ~mask) <= SegmentSize, $"New Offset ({(value & ~mask)}) exceeds max segment size");
                 word = (word & ~mask) | (value & mask);
             }
         }
@@ -67,10 +69,35 @@ namespace Tsavorite.core
             }
         }
 
+        public void Advance(ulong size)
+        {
+            var remaining = SegmentSize - Offset;
+            if (size < remaining)
+            {
+                Offset += size;
+                return;
+            }
+
+            // Note: If size == remaining, we advance to the start of the next segment.
+            size -= remaining;
+            SegmentId += (int)(size / SegmentSize) + 1;
+            Offset += size & (SegmentSize - 1);
+        }
+
         public void AdvanceToNextSegment()
         {
             SegmentId++;
             Offset = 0;
+        }
+
+        public static ulong operator-(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
+        {
+            Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");
+            Debug.Assert(left.word >= right.word, "comparison position must be greater");
+            var segmentDiff = (ulong)(left.SegmentId - right.SegmentId);
+            if (segmentDiff == 0)
+                return left.Offset - right.Offset;
+            return (segmentDiff - 1) * left.SegmentSize + (left.SegmentSize - right.Offset) + left.Offset;
         }
 
         public readonly ulong SegmentSize => 1UL << SegmentSizeBits;

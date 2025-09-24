@@ -83,11 +83,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex)
-            => TsavoriteLogAllocatorImpl.PopulatePage(src, required_bytes, destinationPageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void MarkPage(long logicalAddress, long version) => _this.MarkPage(logicalAddress, version);
 
         /// <inheritdoc/>
@@ -97,10 +92,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long[] GetSegmentOffsets() => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");    // TODO remove all the SegmentOffset stuff
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;

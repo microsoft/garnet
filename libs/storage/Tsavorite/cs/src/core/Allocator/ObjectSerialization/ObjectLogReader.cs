@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
-using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
@@ -18,20 +17,14 @@ namespace Tsavorite.core
     internal unsafe partial class ObjectLogReader<TStoreFunctions> : IStreamBuffer
         where TStoreFunctions : IStoreFunctions
     {
-        readonly IDevice logDevice;
         IObjectSerializer<IHeapObject> valueObjectSerializer;
         PinnedMemoryStream<ObjectLogReader<TStoreFunctions>> pinnedMemoryStream;
-        readonly ILogger logger;
-
-        /// <summary>The <see cref="SectorAlignedMemory"/> of the non-overflow key buffer.</summary>
-        /// <remarks>Held as a field instead of a local so it can be Dispose()d in case of an exception.</remarks>
-        SectorAlignedMemory keyBuffer;
 
         /// <summary>The current record header; used for chunks to identify when they need to extract the optionals after the final chunk.</summary>
         internal RecordInfo recordInfo;
 
         /// <summary>The circular buffer we cycle through for large-object deserialization.</summary>
-        readonly CircularDiskReadBuffer circularDeserializationBuffers;
+        readonly CircularDiskReadBuffer circularReadBuffers;
 
         /// <summary>The <see cref="IStoreFunctions"/> implementation to use</summary>
         internal readonly TStoreFunctions storeFunctions;
@@ -46,12 +39,23 @@ namespace Tsavorite.core
         public bool IsForWrite => false;
 
 #pragma warning disable IDE0290 // Use primary constructor
-        public ObjectLogReader(IDevice logDevice, CircularDiskReadBuffer deserializationBuffers, TStoreFunctions storeFunctions, ILogger logger)
+        public ObjectLogReader(CircularDiskReadBuffer readBuffers, TStoreFunctions storeFunctions)
         {
-            this.logDevice = logDevice ?? throw new ArgumentNullException(nameof(logDevice));
-            circularDeserializationBuffers = deserializationBuffers;
-            this.logger = logger;
+            circularReadBuffers = readBuffers;
             this.storeFunctions = storeFunctions ?? throw new ArgumentNullException(nameof(storeFunctions));
+        }
+
+        /// <summary>
+        /// Called when one or more records are to be read via ReadAsync.
+        /// </summary>
+        /// <param name="filePosition">The initial file position to read</param>
+        /// <param name="totalLength">The cumulative length of all object-log entries for the span of records to be read. We read ahead for all record
+        ///     in the ReadAsync call.</param>
+        internal void OnBeginReadRecords(ObjectLogFilePositionInfo filePosition, ulong totalLength)
+        {
+            inDeserialize = false;
+            deserializedLength = 0UL;
+            circularReadBuffers.OnBeginReadRecords(filePosition, totalLength);
         }
 
         /// <inheritdoc/>
@@ -61,7 +65,7 @@ namespace Tsavorite.core
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <summary>
-        /// Get the object log entries for Overflow Keys and Values and Object Values for the record in recordBufferm which came from the initial IO operation
+        /// Get the object log entries for Overflow Keys and Values and Object Values for the record in recordBuffer, which came from the initial IO operation
         /// or from an interator record:
         /// <list type="bullet">
         /// <item>If there is an Overflow key, read it and if we have a <paramref name="requestedKey"/> compare it and return false if it does not match.
@@ -87,7 +91,7 @@ namespace Tsavorite.core
                 return true;
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            circularDeserializationBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
+            circularReadBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
 
             // TODO: Optimize the reading of large internal sector-aligned parts of Overflow Keys and Values to read directly into the overflow, similar to how ObjectLogWriter writes
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
@@ -98,17 +102,20 @@ namespace Tsavorite.core
                 _ = Read(logRecord.KeyOverflow.Span);
                 if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
                     return false;
+                TODO("Set key overflow; needs to clear out the serialized length");
             }
 
             if (logRecord.Info.ValueIsOverflow)
             {
                 logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 _ = Read(logRecord.ValueOverflow.Span);
+                TODO("Set value overflow; needs to clear out the serialized length");
 
                 // If value is overflow, there's no object to read
                 return true;
             }
 
+            TODO("Set value Object; needs to clear out the serialized length (including indicatorword)");
             logRecord.ValueObject = DoDeserialize();
             return true;
         }
@@ -122,7 +129,7 @@ namespace Tsavorite.core
             var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
 
             // Read from the circular buffer.
-            var buffer = circularDeserializationBuffers.GetCurrentBuffer();
+            var buffer = circularReadBuffers.GetCurrentBuffer();
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
@@ -144,7 +151,7 @@ namespace Tsavorite.core
                 prevCopyLength += copyLength;
                 if (buffer.AvailableLength == 0)
                 {
-                    if (!circularDeserializationBuffers.MoveToNextBuffer(out buffer))
+                    if (!circularReadBuffers.MoveToNextBuffer(out buffer))
                         return prevCopyLength;
                 }
                 destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
@@ -176,6 +183,8 @@ namespace Tsavorite.core
             else
                 valueObject.SerializedSize = (long)deserializedLength;
 
+            // TODO add size tracking; do not track deserialization size changes if we are deserializing to a frame
+
             inDeserialize = false;
         }
 
@@ -184,9 +193,6 @@ namespace Tsavorite.core
         {
             pinnedMemoryStream?.Dispose();
             valueObjectSerializer?.EndDeserialize();
-
-            keyBuffer?.Return();
-            keyBuffer = default;
         }
     }
 }

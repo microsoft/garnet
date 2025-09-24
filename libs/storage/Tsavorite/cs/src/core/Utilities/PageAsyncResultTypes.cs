@@ -29,7 +29,7 @@ namespace Tsavorite.core
         internal CountdownEvent handle;
 
         /// <summary>The buffer to receive the main-log page being read</summary>
-        internal SectorAlignedMemory mainLogPageBuffer;
+        internal SectorAlignedMemory recordBuffer;
 
         /// <summary>Callback to be called when the main-log page has completed processing; for <see cref="ObjectAllocator{TStoreFunctions}"/>
         /// this means after all Overflow or Objects on the page have been read as well.</summary>
@@ -39,25 +39,28 @@ namespace Tsavorite.core
         internal IDevice objlogDevice;
 
         /// <summary>If non-null, this Read is being called for an iterator</summary>
-        internal object frame;
+        internal BlittableFrame frame;
 
         /// <summary>The cancellation token source, if any, for the Read operation</summary>
         internal CancellationTokenSource cts;
+
+        /// <summary>Read buffers if Reading ObjectAllocator.</summary>
+        public CircularDiskReadBuffer readBuffers;
 
         /// <summary>Position at which to resume the iteration of records on the log page, one ObjectBlockSize chunk of object-log records at a time.</summary>
         internal long resumePtr;
         /// <summary>How far we got during the iteration of records on the log page until we reached an ObjectBlockSize chunk of object-log records.</summary>
         internal long untilPtr;
-        /// <summary>The max address on the main log page to iterate records, one ObjectBlockSize chunk of object-log records at a time.</summary>
+        /// <summary>The max offset on the main log page to iterate records, one ObjectBlockSize chunk of object-log records at a time.</summary>
         internal long maxPtr;
 
-        /// <summary>Return the <see cref="mainLogPageBuffer"/> to its pool.</summary>
+        /// <summary>Return the <see cref="recordBuffer"/> to its pool.</summary>
         public void FreeBuffer()
         {
-            if (mainLogPageBuffer != null)
+            if (recordBuffer != null)
             {
-                mainLogPageBuffer.Return();
-                mainLogPageBuffer = null;
+                recordBuffer.Return();
+                recordBuffer = null;
             }
         }
 

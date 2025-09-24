@@ -32,7 +32,7 @@ namespace Tsavorite.core
             ///     </item>
             /// </list>
             /// </summary>
-            internal LogRecord logRecord;
+            internal DiskLogRecord diskLogRecord;
 
             internal IHeapContainer<TInput> input;
             internal TOutput output;
@@ -97,8 +97,8 @@ namespace Tsavorite.core
 
             public void Dispose()
             {
-                logRecord.Dispose();
-                logRecord = default;
+                diskLogRecord.Dispose();
+                diskLogRecord = default;
                 input?.Dispose();
                 input = default;
             }
@@ -118,9 +118,9 @@ namespace Tsavorite.core
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                if (logRecord.IsSet)
+                if (diskLogRecord.IsSet)
                     return;
-                logRecord.SerializeForPendingReadOrRMW(key, bufferPool);
+                diskLogRecord.SerializeForPendingReadOrRMW(key, bufferPool);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
@@ -153,19 +153,19 @@ namespace Tsavorite.core
             internal void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                Debug.Assert(!this.logRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
+                Debug.Assert(!this.diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
                 if (srcLogRecord.AsLogRecord(out var logRecord))
                 {
-                    this.logRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+                    this.diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
                     return;
                 }
 
                 // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
                 _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
                 if (inputDiskLogRecord.OwnsMemory)
-                    this.logRecord.TransferFrom(ref inputDiskLogRecord);
+                    this.diskLogRecord.TransferFrom(ref inputDiskLogRecord);
                 else
-                    this.logRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
+                    this.diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
             }
 
             private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions)
@@ -187,62 +187,62 @@ namespace Tsavorite.core
 
             #region ISourceLogRecord
             /// <inheritdoc/>
-            public readonly ref RecordInfo InfoRef => ref logRecord.InfoRef;
+            public readonly ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
             /// <inheritdoc/>
-            public readonly RecordInfo Info => logRecord.Info;
+            public readonly RecordInfo Info => diskLogRecord.Info;
 
             /// <inheritdoc/>
-            public readonly bool IsSet => logRecord.IsSet;
+            public readonly bool IsSet => diskLogRecord.IsSet;
 
             /// <inheritdoc/>
-            public readonly ReadOnlySpan<byte> Key => logRecord.Key;
+            public readonly ReadOnlySpan<byte> Key => diskLogRecord.Key;
 
             /// <inheritdoc/>
-            public readonly bool IsPinnedKey => logRecord.IsPinnedKey;
+            public readonly bool IsPinnedKey => diskLogRecord.IsPinnedKey;
 
             /// <inheritdoc/>
-            public byte* PinnedKeyPointer => logRecord.PinnedKeyPointer;
+            public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
 
             /// <inheritdoc/>
             public OverflowByteArray KeyOverflow
             {
-                readonly get => logRecord.KeyOverflow;
-                set => logRecord.KeyOverflow = value;
+                readonly get => diskLogRecord.KeyOverflow;
+                set => diskLogRecord.KeyOverflow = value;
             }
 
             /// <inheritdoc/>
-            public readonly unsafe Span<byte> ValueSpan => logRecord.ValueSpan;
+            public readonly unsafe Span<byte> ValueSpan => diskLogRecord.ValueSpan;
 
             /// <inheritdoc/>
-            public readonly IHeapObject ValueObject => logRecord.ValueObject;
+            public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
 
             /// <inheritdoc/>
-            public ReadOnlySpan<byte> RecordSpan => logRecord.RecordSpan;
+            public ReadOnlySpan<byte> RecordSpan => diskLogRecord.RecordSpan;
 
             /// <inheritdoc/>
-            public bool IsPinnedValue => logRecord.IsPinnedValue;
+            public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
 
             /// <inheritdoc/>
-            public byte* PinnedValuePointer => logRecord.PinnedValuePointer;
+            public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
 
             /// <inheritdoc/>
             public OverflowByteArray ValueOverflow
             {
-                readonly get => logRecord.ValueOverflow;
-                set => logRecord.ValueOverflow = value;
+                readonly get => diskLogRecord.ValueOverflow;
+                set => diskLogRecord.ValueOverflow = value;
             }
 
             /// <inheritdoc/>
-            public readonly long ETag => logRecord.ETag;
+            public readonly long ETag => diskLogRecord.ETag;
 
             /// <inheritdoc/>
-            public readonly long Expiration => logRecord.Expiration;
+            public readonly long Expiration => diskLogRecord.Expiration;
 
             /// <inheritdoc/>
             public readonly bool IsMemoryLogRecord => false;
 
             /// <inheritdoc/>
-            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref this.logRecord;
+            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref this.diskLogRecord;
 
             /// <inheritdoc/>
             public readonly bool IsDiskLogRecord => true;

@@ -17,7 +17,7 @@ namespace Tsavorite.core
     {
         internal readonly SectorAlignedBufferPool bufferPool;
         internal readonly int bufferSize;
-        internal readonly IDevice device;
+        internal readonly IDevice objectLogDevice;
         internal readonly ILogger logger;
 
         readonly DiskReadBuffer[] buffers;
@@ -30,11 +30,11 @@ namespace Tsavorite.core
         /// <summary>Track the remaining length to be read for one or more records for Object values, and we can also read some or all of Overflow values into the buffer.</summary>
         ulong unreadLengthRemaining;
 
-        internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice device, ILogger logger) 
+        internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice objectLogDevice, ILogger logger) 
         {
             this.bufferPool = bufferPool;
             this.bufferSize = bufferSize;
-            this.device = device;
+            this.objectLogDevice = objectLogDevice;
             this.logger = logger;
 
             buffers = new DiskReadBuffer[numBuffers];
@@ -61,7 +61,7 @@ namespace Tsavorite.core
             var buffer = buffers[bufferIndex];
             if (buffer is null)
             {
-                buffer = new(bufferPool.Get(bufferSize), device, logger);
+                buffer = new(bufferPool.Get(bufferSize), objectLogDevice, logger);
                 buffers[bufferIndex] = buffer;
             }
             else
@@ -70,7 +70,7 @@ namespace Tsavorite.core
                 buffer.Initialize();
             }
 
-            var alignedStartPosition = RoundDown(unalignedStartPosition, (int)device.SectorSize);
+            var alignedStartPosition = RoundDown(unalignedStartPosition, (int)objectLogDevice.SectorSize);
             var startPosition = unalignedStartPosition - alignedStartPosition;
 
             // See how much to read. We have two limits: the total size requested for this ReadAsync operation, and the segment size.
@@ -80,7 +80,7 @@ namespace Tsavorite.core
             if (filePosition.Offset + (ulong)unalignedReadLength > filePosition.SegmentSize)
                 unalignedReadLength = (int)(filePosition.SegmentSize - filePosition.Offset);
 
-            var alignedReadLength = (uint)RoundUp(unalignedReadLength, (int)device.SectorSize);
+            var alignedReadLength = (uint)RoundUp(unalignedReadLength, (int)objectLogDevice.SectorSize);
 
             buffer.ReadFromDevice(filePosition, startPosition, alignedReadLength, ReadFromDeviceCallback);
 
@@ -110,7 +110,7 @@ namespace Tsavorite.core
 
             // Do an initial read to fill the buffers, at least as much as we have. Again, totalLength applies to all records in the ReadAsync range.
             // First align the initial read.
-            var alignedReadPosition = RoundDown(filePosition.Offset, (int)device.SectorSize);
+            var alignedReadPosition = RoundDown(filePosition.Offset, (int)objectLogDevice.SectorSize);
             var startPosition = (int)(alignedReadPosition - filePosition.Offset);
             unreadLengthRemaining += (uint)startPosition;
             filePosition.Offset -= (uint)startPosition;
@@ -185,6 +185,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePosition {filePosition}; SecSize {(int)device.SectorSize}";
+            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePosition {filePosition}; SecSize {(int)objectLogDevice.SectorSize}";
     }
 }

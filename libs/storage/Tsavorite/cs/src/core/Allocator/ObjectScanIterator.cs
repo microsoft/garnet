@@ -385,22 +385,15 @@ namespace Tsavorite.core
         private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
         {
             var result = (PageAsyncReadResult<Empty>)context;
+            Debug.Assert(result.frame is not null && result.recordBuffer is null, "Should have a frame and not a recordBuffer in ObjectScanIterator");
 
-            if (errorCode != 0)
+            if (errorCode == 0)
+                _ = result.handle?.Signal();
+            else
             {
                 logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
                 result.cts?.Cancel();
             }
-
-            if (result.mainLogPageBuffer != null)
-            {
-                hlogBase._wrapper.PopulatePage(result.mainLogPageBuffer.GetValidPointer(), result.mainLogPageBuffer.required_bytes, result.page);
-                result.FreeBuffer();
-            }
-
-            if (errorCode == 0)
-                _ = result.handle?.Signal();
-
             Interlocked.MemoryBarrier();
         }
     }

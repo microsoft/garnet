@@ -635,31 +635,22 @@ namespace Tsavorite.core
 
         internal override void AsyncReadPagesFromDeviceToFrame<TContext>(long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
+            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
+        private unsafe void AsyncReadPagesToFrameCallback(uint errorCode, uint numBytes, object context)
         {
             try
             {
                 var result = (PageAsyncReadResult<Empty>)context;
-
-                if (errorCode != 0)
-                {
-                    logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
-                    result.cts?.Cancel();
-                }
-
-                if (result.mainLogPageBuffer != null)
-                {
-                    if (errorCode == 0)
-                        allocator._wrapper.PopulatePage(result.mainLogPageBuffer.GetValidPointer(), result.mainLogPageBuffer.required_bytes, result.page);
-                    result.mainLogPageBuffer.Return();
-                    result.mainLogPageBuffer = null;
-                }
+                Debug.Assert(result.frame is not null && result.recordBuffer is null, "Should have a frame and not a recordBuffer in TsavoriteLogIterator");
 
                 if (errorCode == 0)
-                    result.handle?.Signal();
-
+                    _ = (result.handle?.Signal());
+                else
+                {
+                    logger?.LogError($"{nameof(AsyncReadPagesToFrameCallback)} error: {{errorCode}}", errorCode);
+                    result.cts?.Cancel();
+                }
                 Interlocked.MemoryBarrier();
             }
             catch when (disposed) { }

@@ -14,11 +14,6 @@ namespace Tsavorite.core
         /// <summary>Allocate the page in the circular buffer slot at <paramref name="pageIndex"/></summary>
         void AllocatePage(int pageIndex);
 
-        /// <summary>
-        /// Populate the page at <paramref name="destinationPageIndex"/> from the <paramref name="src"/> pointer, which has <paramref name="required_bytes"/> bytes.
-        /// </summary>
-        unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex);
-
         /// <summary>Free the page at <paramref name="pageIndex"/></summary>
         void FreePage(long pageIndex);
 

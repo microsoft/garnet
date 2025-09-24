@@ -29,7 +29,8 @@ namespace Tsavorite.core
 
         // These share the same bit: HasFiller is only in-memory, and IsChunked is only on-disk.
         internal const long kHasFillerBitMask = 1 << 5; // 1 bit for "has filler" indicator; in-memory only
-        const long kIsChunkedValueBitMask = 1 << 5;     // 1 bit for chunked value indicator; on-disk only, TODO currently not implemented
+        const long kIsChunkedValueBitMask = 1 << 5;     // 1 bit for chunked value indicator; on-disk only,
+        TODO("remove this; we need filler on disk");
 
         // The bottom 5 bits are actual length bytecounts
         /// <summary>

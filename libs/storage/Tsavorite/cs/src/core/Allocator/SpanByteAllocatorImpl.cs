@@ -205,24 +205,6 @@ namespace Tsavorite.core
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 
         /// <summary>
-        /// Invoked by users to obtain a record from disk. It uses sector aligned memory to read 
-        /// the record efficiently into memory.
-        /// </summary>
-        /// <param name="fromLogical"></param>
-        /// <param name="numBytes"></param>
-        /// <param name="callback"></param>
-        /// <param name="context"></param>
-        /// <param name="result"></param>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
-            => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for SpanByteAllocator");
-
-        internal void PopulatePage(byte* src, int required_bytes, long destinationPage)
-        {
-            throw new TsavoriteException("SpanByteAllocator memory pages are sector aligned - use direct copy");
-            // Buffer.MemoryCopy(src, (void*)pointers[destinationPage % BufferSize], required_bytes, required_bytes);
-        }
-
-        /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
         public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> store,

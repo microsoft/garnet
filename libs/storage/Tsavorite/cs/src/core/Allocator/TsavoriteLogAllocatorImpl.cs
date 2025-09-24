@@ -115,15 +115,8 @@ namespace Tsavorite.core
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
             => device.ReadAsync(alignedSourceAddress, (IntPtr)pagePointers[destinationPageIndex], aligned_read_length, callback, asyncResult);
 
-        /// <inheritdoc/>
-        protected override void AsyncReadRecordObjectsToMemory(long fromLogical, int numBytes, DeviceIOCompletionCallback callback, AsyncIOContext context, SectorAlignedMemory result = default)
-            => throw new InvalidOperationException("AsyncReadRecordObjectsToMemory invalid for TsavoriteLogAllocator");
-
         private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
             => throw new TsavoriteException("TsavoriteLogAllocator does not support VerifyRecordFromDiskCallback");
-
-        internal static void PopulatePage(byte* src, int required_bytes, long destinationPage)
-            => throw new TsavoriteException("TsavoriteLogAllocator memory pages are sector aligned - use direct copy");
 
         /// <summary>
         /// Iterator interface for pull-scanning Tsavorite log

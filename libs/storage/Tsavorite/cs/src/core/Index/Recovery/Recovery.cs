@@ -690,9 +690,11 @@ namespace Tsavorite.core
             // constraint are freed.
             FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlogBase.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
 
+            var readBuffers = hlogBase.CreateReadBuffers(hlogBase.bufferPool, objectLogDevice: null, logger);
+
             // Issue request to read pages as much as possible
             for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlogBase.GetPageIndexForPage(p)] = ReadStatus.Pending;
-            hlogBase.AsyncReadPagesForRecovery(page, numPagesToRead, endAddress,
+            hlogBase.AsyncReadPagesForRecovery(readBuffers, page, numPagesToRead, endAddress,
                                           hlogBase.AsyncReadPagesCallbackForRecovery,
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
@@ -940,7 +942,7 @@ namespace Tsavorite.core
                         if (!hlogBase.IsAllocated(pageIndex))
                             hlog.AllocatePage(pageIndex);
                         else
-                            hlog.ClearPage(pageIndex);
+                            hlogBase.ClearPage(pageIndex);
                     }
                 }
 
@@ -982,7 +984,7 @@ namespace Tsavorite.core
                         if (!hlogBase.IsAllocated(pageIndex))
                             hlog.AllocatePage(pageIndex);
                         else
-                            hlog.ClearPage(pageIndex);
+                            hlogBase.ClearPage(pageIndex);
                     }
                 }
 
@@ -1101,13 +1103,13 @@ namespace Tsavorite.core
                 long recordStart = physicalAddress + pointer;
 
                 // DiskLogRecord ctor calls ClearBitsForDiskImages(), and then we use its size to move to the next record.
-                var diskLogRecord = new DiskLogRecord(recordStart);
+                var logRecord = new LogRecord(recordStart);
 
-                if (diskLogRecord.Info.IsNull)
+                if (logRecord.Info.IsNull)
                     pointer += RecordInfo.Size;
                 else
                 {
-                    long size = diskLogRecord.GetSerializedLength();
+                    long size = logRecord.GetInlineRecordSizes().allocatedSize;
                     Debug.Assert(size <= hlogBase.GetPageSize());   // TODO: This will likely exceed pagesize for large objects. Make sure we don't need this limitation
                     pointer += size;
                 }
@@ -1273,13 +1275,11 @@ namespace Tsavorite.core
 
                     recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), MinEmptyPageCount, tailPage, untilAddress, 0);
                     for (int i = 0; i < recoveryStatus.capacity; i++)
-                    {
                         recoveryStatus.readStatus[i] = ReadStatus.Done;
-                    }
 
                     var numPages = 0;
                     for (var page = headPage; page <= tailPage; page++)
-                    {
+                     {
                         var pageIndex = GetPageIndexForPage(page);
                         recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                         numPages++;
@@ -1298,19 +1298,18 @@ namespace Tsavorite.core
         internal unsafe void AsyncReadPagesCallbackForRecovery(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
-            {
                 logger?.LogError($"{nameof(AsyncReadPagesCallbackForRecovery)} error: {{errorCode}}", errorCode);
-            }
 
             // Set the page status to "read done"
             var result = (PageAsyncReadResult<RecoveryStatus>)context;
 
-            if (result.mainLogPageBuffer != null)
+            if (result.recordBuffer != null)
             {
-                _wrapper.PopulatePage(result.mainLogPageBuffer.GetValidPointer(), result.mainLogPageBuffer.required_bytes, result.page);
-                result.mainLogPageBuffer.Return();
+                _wrapper.PopulatePage(result.recordBuffer.GetValidPointer(), result.recordBuffer.required_bytes, result.page);
+                result.recordBuffer.Return();
             }
-            int pageIndex = GetPageIndexForPage(result.page);
+
+            var pageIndex = GetPageIndexForPage(result.page);
             if (errorCode != 0)
                 result.context.SignalReadError(pageIndex);
             else

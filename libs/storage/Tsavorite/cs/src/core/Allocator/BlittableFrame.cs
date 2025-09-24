@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+
     /// <summary>
     /// A frame is an in-memory circular buffer of log pages
     /// </summary>
@@ -29,9 +31,9 @@ namespace Tsavorite.core
         {
             var adjustedSize = pageSize + 2 * sectorSize;
 
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            var tmp = GC.AllocateArray<byte>(adjustedSize, pinned:true);
+            var p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pointers[index] = RoundUp(p, sectorSize);
             frame[index] = tmp;
         }
 
