@@ -13,6 +13,10 @@ namespace Garnet.server
     {
         readonly TsavoriteLog log = new(logSettings, logger);
 
+        public void Recover() => log.Recover();
+        public void Reset() => log.Reset();
+        public void Dispose() => log.Dispose();    
+
         public long BeginAddress => log.BeginAddress;
         public long TailAddress => log.TailAddress;
         public long CommittedUntilAddress => log.CommittedUntilAddress;
@@ -33,9 +37,6 @@ namespace Garnet.server
 
         public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
             => log.ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
-
-        public void Recover() => log.Recover();
-        public void Reset() => log.Reset();
 
         public void Initialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
             => log.Initialize(beginAddress, committedUntilAddress, lastCommitNum);
@@ -94,7 +95,5 @@ namespace Garnet.server
 
         public void WaitForCommit(long untilAddress = 0, long commitNum = -1)
             => log.WaitForCommit(untilAddress, commitNum);
-
-        public void Dispose() => log.Dispose();
     }
 }

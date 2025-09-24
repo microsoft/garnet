@@ -254,7 +254,7 @@ namespace Garnet.cluster
                         else
                         {
                             // Reset replica database in preparation for full sync
-                            Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["CLUSTER", "FLUSHALL"]));
+                            Sessions[i].SetFlushTask(Sessions[i].IssueFlushAllAsync());
                             fullSync = true;
                         }
                     }

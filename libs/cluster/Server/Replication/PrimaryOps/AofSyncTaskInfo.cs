@@ -18,7 +18,7 @@ namespace Garnet.cluster
         readonly string localNodeId;
         public readonly string remoteNodeId;
         readonly ILogger logger;
-        public readonly GarnetClientSession garnetClient;
+        readonly GarnetClientSession garnetClient;
         readonly CancellationTokenSource cts;
         TsavoriteLogScanSingleIterator iter;
         readonly long startAddress;
@@ -65,6 +65,8 @@ namespace Garnet.cluster
             // Finally, dispose the cts
             cts?.Dispose();
         }
+
+        public void DisposeClient() => garnetClient?.Dispose();
 
         public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
         {
@@ -130,5 +132,37 @@ namespace Garnet.cluster
                 }
             }
         }
+
+        #region DisklesSyncInterface
+        public void ConnectClient()
+        {
+            if (!IsConnected)
+                garnetClient.Connect();
+        }
+
+        public Task<string> IssuesFlushAll()
+            => garnetClient.ExecuteAsync(["CLUSTER", "FLUSHALL"]);
+
+        public void InitializeIterationBuffer()
+            => garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
+
+        public void InitializeIfNeeded(bool isMainStore)
+        {
+            if (garnetClient.NeedsInitialization)
+                garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
+        }
+
+        public Task<string> ExecuteAttachSync(SyncMetadata syncMetadata)
+            => garnetClient.ExecuteAttachSync(syncMetadata.ToByteArray());
+
+        public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
+            => garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
+
+        public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
+            => garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
+
+        public Task<string> SendAndResetIterationBuffer()
+            => garnetClient.SendAndResetIterationBuffer();
+        #endregion    
     }
 }

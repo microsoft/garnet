@@ -46,10 +46,9 @@ namespace Garnet.cluster
         public string errorMsg = default;
 
         const int validateMetadataMaxRetryCount = 10;
-
         public void Dispose()
         {
-            AofSyncTask?.garnetClient?.Dispose();
+            AofSyncTask?.DisposeClient();
             AofSyncTask = null;
             cts.Cancel();
             cts.Dispose();
