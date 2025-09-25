@@ -110,7 +110,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
-
+            
             var vectorSetKey = $"{nameof(VADDErrors)}_{Guid.NewGuid()}";
 
             // Bad arity
@@ -176,15 +176,14 @@ namespace Garnet.test
 
             _ = db.Execute("VADD", [vectorSetKey, "VALUES", "1", "1.0", new byte[] { 0, 0, 1, 0 }, "NOQUANT", "EF", "6", "M", "10"]);
 
-            // TODO: Redis returns the same error for all these mismatches which also seems... wrong, confirm with them
-            var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz"]));
-            ClassicAssert.AreEqual("ERR Input dimension mismatch for projection - got 2 but projection expects 1", exc16.Message);
-            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "Q8"]));
+            var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz", "NOQUANT", "EF", "6", "M", "10"]));
+            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 2 but set has 1", exc16.Message);
+            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "Q8", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc17.Message);
-            var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "EF", "12"]));
-            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc18.Message);
-            var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "M", "20"]));
-            ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc19.Message);
+            var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "fizz", "NOQUANT", "EF", "12", "M", "20"]));
+            ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc18.Message);
+
+            // TODO: Redis doesn't appear to validate attributes... so that's weird
         }
 
         [Test]
