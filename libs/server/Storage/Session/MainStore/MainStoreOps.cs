@@ -1169,14 +1169,14 @@ namespace Garnet.server
                 status = GET(key, out GarnetObjectStoreOutput objectValue, ref objectContext);
                 if (status != GarnetStatus.NOTFOUND)
                 {
-                    memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length
+                    memoryUsage = RecordInfo.Size + (2 * IntPtr.Size) + // Log record length
                         Utility.RoundUp(key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                        objectValue.GarnetObject.MemorySize; // Value allocation in heap
+                        objectValue.GarnetObject.HeapMemorySize; // Value allocation in heap
                 }
             }
             else
             {
-                memoryUsage = RecordInfo.GetLength() + Utility.RoundUp(key.TotalSize, RecordInfo.GetLength()) + Utility.RoundUp(keyValue.TotalSize, RecordInfo.GetLength());
+                memoryUsage = RecordInfo.Size + Utility.RoundUp(key.TotalSize, RecordInfo.Size) + Utility.RoundUp(keyValue.TotalSize, RecordInfo.Size);
             }
 
             return status;

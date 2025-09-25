@@ -276,7 +276,7 @@ namespace Tsavorite.core
 
         protected override void RemoveSegment(int segment)
         {
-            TODO("Get the object log segment information from this main-log segment");
+            //TODOnow("Get the object log segment information from this main-log segment");
             base.RemoveSegment(segment);
         }
 
@@ -516,7 +516,7 @@ namespace Tsavorite.core
         protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
         {
-            TODO("Add CancellationToken to the ReadAsync path");
+            //TODOnow("Add CancellationToken to the ReadAsync path");
 
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;

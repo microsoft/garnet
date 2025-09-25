@@ -230,6 +230,9 @@ namespace Tsavorite.core
             public readonly long Expiration => diskLogRecord.Expiration;
 
             /// <inheritdoc/>
+            public readonly bool ClearValueIfHeap(Action<IHeapObject> disposer) => false;  // Not relevant for PendingContext
+
+            /// <inheritdoc/>
             public readonly bool IsMemoryLogRecord => diskLogRecord.IsMemoryLogRecord;
 
             /// <inheritdoc/>

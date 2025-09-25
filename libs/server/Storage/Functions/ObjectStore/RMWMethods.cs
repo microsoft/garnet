@@ -119,6 +119,10 @@ namespace Garnet.server
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+
+                // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                functionsState.objectStoreFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
+                logRecord.ClearValueIfHeap(obj => { });
                 rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 return false;
             }
@@ -150,6 +154,10 @@ namespace Garnet.server
                         if (output.HasRemoveKey)
                         {
                             functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+
+                            // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                            functionsState.objectStoreFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+                            logRecord.ClearValueIfHeap(obj => { });
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
@@ -293,7 +301,7 @@ namespace Garnet.server
             sizeInfo.AssertOptionals(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
-            var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.MemorySize - oldValueSize : value.MemorySize;
+            var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
             functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)

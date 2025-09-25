@@ -192,7 +192,7 @@ namespace Tsavorite.core
             var objectId = *(int*)fieldAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
                 objectIdMap.Free(objectId, objectDisposer);
-            *(int*)fieldAddress = 0;
+            *(int*)fieldAddress = ObjectIdMap.InvalidObjectId;
 
             // We don't need to change the length; we'll keep the current length and just convert to inline.
             if (isKey)

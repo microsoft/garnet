@@ -626,11 +626,7 @@ namespace Tsavorite.core
                 return false;
             }
 
-            // Recover segment offsets for object log
-            if (recoveredHLCInfo.info.objectLogSegmentOffsets != null)
-                Array.Copy(recoveredHLCInfo.info.objectLogSegmentOffsets,
-                    hlog.GetSegmentOffsets(),
-                    recoveredHLCInfo.info.objectLogSegmentOffsets.Length);
+            RestoreMetadata(recoveredHLCInfo);
 
             tailAddress = recoveredHLCInfo.info.finalLogicalAddress;
             headAddress = recoveredHLCInfo.info.headAddress;
@@ -656,6 +652,17 @@ namespace Tsavorite.core
             if (hlogBase.FlushedUntilAddress > scanFromAddress)
                 scanFromAddress = hlogBase.FlushedUntilAddress;
             return true;
+        }
+
+        private void RestoreMetadata(HybridLogCheckpointInfo recoveredHLCInfo)
+        {
+#if READ_WRITE
+            // Recover segment offsets for object log
+            if (recoveredHLCInfo.info.objectLogSegmentOffsets != null)
+                Array.Copy(recoveredHLCInfo.info.objectLogSegmentOffsets,
+                    hlog.GetSegmentOffsets(),
+                    recoveredHLCInfo.info.objectLogSegmentOffsets.Length);
+#endif // READ_WRITE
         }
 
         /// <summary>

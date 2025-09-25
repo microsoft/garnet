@@ -52,6 +52,12 @@ namespace Tsavorite.core
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
+        /// <summary>If requested by CopyUpdater or InPlaceDeleter, the source ValueObject or ValueOverflow will be cleared immediately (to manage object size tracking most effectively).
+        ///     This is called after we have either ensured there is a newer record inserted at tail, or after we have tombstoned the record; either way, we won't be accessing its value.</summary>
+        /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
+        /// <returns>True if we did clear a heap object or overflow, else false</returns>
+        bool ClearValueIfHeap(Action<IHeapObject> disposer);
+
         /// <summary>Whether this is an instance of <see cref="LogRecord"/></summary>
         bool IsMemoryLogRecord { get; }
 

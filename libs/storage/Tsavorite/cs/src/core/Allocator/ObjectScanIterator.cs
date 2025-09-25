@@ -349,6 +349,9 @@ namespace Tsavorite.core
         public long Expiration => diskLogRecord.Expiration;
 
         /// <inheritdoc/>
+        public bool ClearValueIfHeap(Action<IHeapObject> disposer) => false;  // Not relevant for "iterator as logrecord"
+
+        /// <inheritdoc/>
         public bool IsMemoryLogRecord => false;
 
         /// <inheritdoc/>
@@ -375,6 +378,7 @@ namespace Tsavorite.core
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
+            //TODOnow("Dispose objects in frame");
             frame?.Dispose();
         }
 

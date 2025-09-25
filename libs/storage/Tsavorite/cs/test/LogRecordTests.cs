@@ -42,7 +42,7 @@ namespace Tsavorite.test.LogRecordTests
         [SetUp]
         public void Setup()
         {
-            expectedInitialActualInlineRecordSize = RecordInfo.GetLength() + initialVarbyteSize + initialKeyLen + initialValueLen + initialOptionalSize;
+            expectedInitialActualInlineRecordSize = RecordInfo.Size + initialVarbyteSize + initialKeyLen + initialValueLen + initialOptionalSize;
             expectedInitialAllocatedInlineRecordSize = RoundUp(expectedInitialActualInlineRecordSize, Constants.kRecordAlignment);
 
             DeleteDirectory(MethodTestDir);
@@ -333,7 +333,7 @@ namespace Tsavorite.test.LogRecordTests
             // InitializeValue
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(initialValueLen));
 
-            expectedFillerLengthAddress = logRecord.physicalAddress + RecordInfo.GetLength() + initialVarbyteSize + key.Length + value.Length;  // no OptionalsLength
+            expectedFillerLengthAddress = logRecord.physicalAddress + RecordInfo.Size + initialVarbyteSize + key.Length + value.Length;  // no OptionalsLength
             expectedFillerLength = recordEndAddress - expectedFillerLengthAddress;
             Assert.That(logRecord.GetFillerLengthAddress(), Is.EqualTo(expectedFillerLengthAddress));
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));

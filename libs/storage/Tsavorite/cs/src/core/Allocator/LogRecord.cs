@@ -605,7 +605,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly ReadOnlySpan<byte> GetOptionalFieldsSpan() => new((byte*)GetOptionalStartAddress(), OptionalLength);
 
-        public readonly int OptionalLength => ETagLen + ExpirationLen;
+        public readonly int OptionalLength => ETagLen + ExpirationLen + ObjectLogPositionLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetETagAddress() => GetOptionalStartAddress();

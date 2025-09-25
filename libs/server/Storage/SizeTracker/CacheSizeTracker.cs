@@ -60,7 +60,7 @@ namespace Garnet.server
                 {
                     var value = logRecord.ValueObject;
                     if (value != null) // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)
-                        size += value.MemorySize;
+                        size += value.HeapMemorySize;
                 }
                 return size;
             }

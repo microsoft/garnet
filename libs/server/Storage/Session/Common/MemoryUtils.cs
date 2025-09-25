@@ -53,7 +53,7 @@ namespace Garnet.server
             if (logRecord.Info.ValueIsOverflow)
                 result += Utility.RoundUp(logRecord.ValueSpan.Length, IntPtr.Size) + ByteArrayOverhead;
             else if (logRecord.Info.ValueIsObject)
-                result += logRecord.ValueObject.MemorySize;
+                result += logRecord.ValueObject.HeapMemorySize;
             return result;
         }
     }

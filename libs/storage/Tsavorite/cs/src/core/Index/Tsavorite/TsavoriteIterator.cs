@@ -309,6 +309,9 @@ namespace Tsavorite.core
         public long Expiration => CurrentIter.Expiration;
 
         /// <inheritdoc/>
+        public bool ClearValueIfHeap(Action<IHeapObject> disposer) => false;  // Not relevant for "iterator as logrecord"
+
+        /// <inheritdoc/>
         public bool IsMemoryLogRecord => CurrentIter.IsMemoryLogRecord;
 
         /// <inheritdoc/>
