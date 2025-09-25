@@ -3,6 +3,8 @@
 <#$f
 .SYNOPSIS
     This script is called after all the Allure data is merged (by GetAllureData.ps1) into one location and generates the Allure report.
+
+    It is getting the data from the test/allure/CombinedResults directory and generating the report into the allure-report directory.
 #>
 
 $OFS = "`r`n"
