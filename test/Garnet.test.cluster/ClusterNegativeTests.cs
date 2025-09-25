@@ -78,7 +78,6 @@ namespace Garnet.test.cluster
         [TestCase("mtasks", new int[] { 1, 2, 3, 4 })]
         [TestCase("replicas", new int[] { 0, 2, 3, 4 })]
         [TestCase("replicate", new int[] { 0, 3, 4 })]
-        [TestCase("AOFSYNC", new int[] { 0, 1, 3, 4 })]
         [TestCase("APPENDLOG", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("INITIATE_REPLICA_SYNC", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("SEND_CKPT_METADATA", new int[] { 0, 1, 2, 4, 5, 6 })]
