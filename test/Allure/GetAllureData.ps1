@@ -27,7 +27,7 @@ if ($pathstring.Contains("test")) {
     Set-Location .\test\Allure\
 }
 
-# C:\AllureTestProject\AllureTestProject\AllureTests\CombinedResults -- might not be needed as will have combined results dir in artifacts
+# might not be needed as will have combined results dir in artifacts
 $allureResultsCombinedDir = "$basePath/test/Allure/CombinedResults"
 
 # Create CombinedResults dir if it doesn't exist
