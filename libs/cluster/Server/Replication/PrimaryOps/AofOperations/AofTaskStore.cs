@@ -356,7 +356,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
         /// <returns></returns>
-        public long SafeTruncateAof(long CheckpointCoveredAofAddress = long.MaxValue)
+        public long SafeTruncateAof(long CheckpointCoveredAofAddress)
         {
             _lock.WriteLock();
 
@@ -367,8 +367,8 @@ namespace Garnet.cluster
             }
 
             // Calculate min address of all iterators
-            long TruncatedUntil = CheckpointCoveredAofAddress;
-            for (int i = 0; i < numTasks; i++)
+            var TruncatedUntil = CheckpointCoveredAofAddress;
+            for (var i = 0; i < numTasks; i++)
             {
                 Debug.Assert(syncDrivers[i] != null);
                 if (syncDrivers[i].PreviousAddress < TruncatedUntil)
@@ -380,18 +380,16 @@ namespace Garnet.cluster
             // Release lock early
             _lock.WriteUnlock();
 
-            if (TruncatedUntil is > 0 and < long.MaxValue)
+            if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                if (clusterProvider.serverOptions.FastAofTruncate)
-                {
-                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
-                }
-                else
-                {
-                    clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil);
-                    clusterProvider.storeWrapper.appendOnlyFile?.Commit();
-                }
+                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
             }
+            else
+            {
+                clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Commit();
+            }
+
             return TruncatedUntil;
         }
 
