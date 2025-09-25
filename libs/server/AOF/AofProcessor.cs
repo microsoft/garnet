@@ -111,13 +111,13 @@ namespace Garnet.server
         /// <param name="db">Database to recover</param>
         /// <param name="untilAddress">Tail address for recovery</param>
         /// <returns>Tail address</returns>
-        public long Recover(GarnetDatabase db, long untilAddress = -1)
+        public IAofAddress Recover(GarnetDatabase db, IAofAddress untilAddress = default)
         {
             logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
             return RecoverReplay(db, untilAddress);
         }
 
-        private long RecoverReplay(GarnetDatabase db, long untilAddress)
+        private IAofAddress RecoverReplay(GarnetDatabase db, IAofAddress untilAddress)
         {
             // Begin replay for specified database
             logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
@@ -130,7 +130,7 @@ namespace Garnet.server
                 SwitchActiveDatabaseContext(db);
 
                 // Set the tail address for replay recovery to the tail address of the AOF if none specified
-                if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
+                if (untilAddress == default) untilAddress = appendOnlyFile.TailAddress;
 
                 // Scan the AOF up to the tail address
                 using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
@@ -160,7 +160,7 @@ namespace Garnet.server
                 respServerSession.Dispose();
             }
 
-            return -1;
+            return default;
         }
 
         internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length)

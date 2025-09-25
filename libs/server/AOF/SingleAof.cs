@@ -17,8 +17,8 @@ namespace Garnet.server
         public void Reset() => log.Reset();
         public void Dispose() => log.Dispose();    
 
-        public long BeginAddress => log.BeginAddress;
-        public long TailAddress => log.TailAddress;
+        public IAofAddress BeginAddress => new SingleLogAofAddress(log.BeginAddress);
+        public IAofAddress TailAddress => new SingleLogAofAddress(log.TailAddress);
         public long CommittedUntilAddress => log.CommittedUntilAddress;
         public long MemorySizeBytes => log.MemorySizeBytes;
         public long CommittedBeginAddress => log.CommittedBeginAddress;
@@ -38,8 +38,11 @@ namespace Garnet.server
         public TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
             => log.ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
 
-        public void Initialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
-            => log.Initialize(beginAddress, committedUntilAddress, lastCommitNum);
+        public void Initialize(IAofAddress tailAddress, IAofAddress beginAddress, IAofAddress committedUntilAddress)
+        {
+            if (tailAddress.IsLesser(beginAddress))
+                log.Initialize(beginAddress.Get(), committedUntilAddress.Get(), lastCommitNum: 0);
+        }
 
         public void SafeInitialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
             => log.SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);

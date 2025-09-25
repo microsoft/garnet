@@ -111,7 +111,7 @@ namespace Garnet.server
         /// On checkpoint initiated
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
-        void OnCheckpointInitiated(out long CheckpointCoveredAofAddress);
+        void OnCheckpointInitiated(out IAofAddress CheckpointCoveredAofAddress);
 
         /// <summary>
         /// Recover the cluster

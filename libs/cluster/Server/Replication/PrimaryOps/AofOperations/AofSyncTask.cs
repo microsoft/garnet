@@ -6,6 +6,7 @@ using Tsavorite.core;
 using Garnet.client;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -15,22 +16,22 @@ namespace Garnet.cluster
         public class AofSyncTask : IBulkLogEntryConsumer, IDisposable
         {
             readonly AofSyncDriver aofSyncDriver;
-            readonly int taskId;
+            readonly uint taskId;
             public readonly GarnetClientSession garnetClient;
             readonly CancellationTokenSource cts;
-            readonly long startAddress;
+            readonly IAofAddress startAddress;
             TsavoriteLogScanSingleIterator iter;
-            long previousAddress;
+            IAofAddress previousAddress;
 
             /// <summary>
             /// Return start address for this AofSyncTask
             /// </summary>
-            public long StartAddress => startAddress;
+            public IAofAddress StartAddress => startAddress;
 
             /// <summary>
             /// Return previous address for this AofSyncTask
             /// </summary>
-            public long PreviousAddress => previousAddress;
+            public IAofAddress PreviousAddress => previousAddress;
 
             /// <summary>
             /// Check if client connection is healthy
@@ -39,9 +40,9 @@ namespace Garnet.cluster
 
             public AofSyncTask(
                 AofSyncDriver aofSyncDriver,
-                int taskId,
+                uint taskId,
                 IPEndPoint endPoint,
-                long startAddress,
+                IAofAddress startAddress,
                 CancellationTokenSource cts)
             {
                 this.aofSyncDriver = aofSyncDriver;
@@ -80,7 +81,7 @@ namespace Garnet.cluster
                     // This is called under epoch protection, so we have to wait for appending to complete
                     garnetClient.ExecuteClusterAppendLog(
                         aofSyncDriver.localNodeId,
-                        previousAddress,
+                        previousAddress.Get(taskId),
                         currentAddress,
                         nextAddress,
                         (long)payloadPtr,
@@ -88,7 +89,7 @@ namespace Garnet.cluster
 
                     // Set task address to nextAddress, as the iterator is currently at nextAddress
                     // (records at currentAddress are already sent above)
-                    previousAddress = nextAddress;
+                    previousAddress.Set(nextAddress, taskId);
                 }
                 catch (Exception ex)
                 {
@@ -121,8 +122,8 @@ namespace Garnet.cluster
                     startAddress);
 
                 if (!IsConnected) garnetClient.Connect();
-
-                iter = aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: aofSyncDriver.logger);
+                
+                iter = aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress.Get(taskId), long.MaxValue, scanUncommitted: true, recover: false, logger: aofSyncDriver.logger);
 
                 while (true)
                 {

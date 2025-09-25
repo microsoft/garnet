@@ -10,13 +10,13 @@ namespace Garnet.server
         public long storeVersion;
         public Guid storeHlogToken;
         public Guid storeIndexToken;
-        public long storeCheckpointCoveredAofAddress;
+        public IAofAddress storeCheckpointCoveredAofAddress;
         public string storePrimaryReplId;
 
         public long objectStoreVersion;
         public Guid objectStoreHlogToken;
         public Guid objectStoreIndexToken;
-        public long objectCheckpointCoveredAofAddress;
+        public IAofAddress objectCheckpointCoveredAofAddress;
         public string objectStorePrimaryReplId;
 
         public CheckpointMetadata()
@@ -24,13 +24,13 @@ namespace Garnet.server
             storeVersion = -1;
             storeHlogToken = default;
             storeIndexToken = default;
-            storeCheckpointCoveredAofAddress = long.MaxValue;
+            storeCheckpointCoveredAofAddress = default;
             storePrimaryReplId = null;
 
             objectStoreVersion = -1;
             objectStoreHlogToken = default;
             objectStoreIndexToken = default;
-            objectCheckpointCoveredAofAddress = long.MaxValue;
+            objectCheckpointCoveredAofAddress = default;
             objectStorePrimaryReplId = null;
         }
 

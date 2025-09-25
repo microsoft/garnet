@@ -272,10 +272,10 @@ namespace Garnet.server
         public override void RecoverAOF() => RecoverDatabaseAOF(defaultDatabase);
 
         /// <inheritdoc/>
-        public override long ReplayAOF(long untilAddress = -1)
+        public override IAofAddress ReplayAOF(IAofAddress untilAddress = default)
         {
             if (!StoreWrapper.serverOptions.EnableAOF)
-                return -1;
+                return default;
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.

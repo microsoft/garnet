@@ -441,16 +441,16 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override long ReplayAOF(long untilAddress = -1)
+        public override IAofAddress ReplayAOF(IAofAddress untilAddress = default)
         {
             if (!StoreWrapper.serverOptions.EnableAOF)
-                return -1;
+                return default;
 
             // When replaying AOF we do not want to write record again to AOF.
             // So initialize local AofProcessor with recordToAof: false.
             var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
 
-            long replicationOffset = 0;
+            var replicationOffset = AofAddressUtils.Fill(StoreWrapper.serverOptions.MultiLogCount, 0);
             try
             {
                 var databasesMapSnapshot = databases.Map;
@@ -461,7 +461,7 @@ namespace Garnet.server
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
-                    var offset = ReplayDatabaseAOF(aofProcessor, databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : -1);
+                    var offset = ReplayDatabaseAOF(aofProcessor, databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : default);
                     if (dbId == 0) replicationOffset = offset;
                 }
             }

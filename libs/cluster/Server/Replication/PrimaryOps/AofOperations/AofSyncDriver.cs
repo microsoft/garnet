@@ -7,10 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using Garnet.server;
 
 namespace Garnet.cluster
 {
-    internal sealed partial class AofSyncDriver : IDisposable
+    internal sealed partial class AofSyncDriver : IAofSyncDriver, IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly AofTaskStore aofTaskStore;
@@ -34,12 +35,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Return start address for underlying AofSyncTask
         /// </summary>
-        public long StartAddress => aofSyncTask.StartAddress;
+        public IAofAddress StartAddress => aofSyncTask.StartAddress;
 
         /// <summary>
         /// Return previous address for underlying AofSyncTask
         /// </summary>
-        public long PreviousAddress => aofSyncTask.PreviousAddress;
+        public IAofAddress PreviousAddress => aofSyncTask.PreviousAddress;
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
@@ -47,7 +48,7 @@ namespace Garnet.cluster
             string localNodeId,
             string remoteNodeId,
             IPEndPoint endPoint,
-            long startAddress,
+            IAofAddress startAddress,
             ILogger logger)
         {
             this.clusterProvider = clusterProvider;
@@ -59,7 +60,7 @@ namespace Garnet.cluster
 
             aofSyncTask = new AofSyncTask(
                 this,
-                -1,
+                0,
                 endPoint,
                 startAddress,
                 cts
@@ -86,7 +87,7 @@ namespace Garnet.cluster
         public async Task Run()
         {
             logger?.LogInformation("Starting ReplicationManager.ReplicaSyncTask for remote node {remoteNodeId} starting from address {address}", remoteNodeId, StartAddress);
-            
+
             try
             {
                 await aofSyncTask.RunAofSyncTask();

@@ -110,9 +110,9 @@ namespace Garnet.cluster
         string currentPrimaryReplId,
         long currentStoreVersion,
         long currentObjectStoreVersion,
-        long currentAofBeginAddress,
-        long currentAofTailAddress,
-        long currentReplicationOffset,
+        IAofAddress currentAofBeginAddress,
+        IAofAddress currentAofTailAddress,
+        IAofAddress currentReplicationOffset,
         CheckpointEntry checkpointEntry)
     {
         public readonly bool fullSync = fullSync;
@@ -121,9 +121,9 @@ namespace Garnet.cluster
         public readonly string currentPrimaryReplId = currentPrimaryReplId;
         public readonly long currentStoreVersion = currentStoreVersion;
         public readonly long currentObjectStoreVersion = currentObjectStoreVersion;
-        public readonly long currentAofBeginAddress = currentAofBeginAddress;
-        public readonly long currentAofTailAddress = currentAofTailAddress;
-        public readonly long currentReplicationOffset = currentReplicationOffset;
+        public readonly IAofAddress currentAofBeginAddress = currentAofBeginAddress;
+        public readonly IAofAddress currentAofTailAddress = currentAofTailAddress;
+        public readonly IAofAddress currentReplicationOffset = currentReplicationOffset;
         public readonly CheckpointEntry checkpointEntry = checkpointEntry;
 
         public byte[] ToByteArray()
@@ -139,9 +139,9 @@ namespace Garnet.cluster
             writer.Write(currentStoreVersion);
             writer.Write(currentObjectStoreVersion);
 
-            writer.Write(currentAofBeginAddress);
-            writer.Write(currentAofTailAddress);
-            writer.Write(currentReplicationOffset);
+            currentAofBeginAddress.Serialize(writer);
+            currentAofTailAddress.Serialize(writer);
+            currentReplicationOffset.Serialize(writer);
 
             if (checkpointEntry != null)
             {
@@ -169,9 +169,9 @@ namespace Garnet.cluster
                 currentPrimaryReplId: reader.ReadString(),
                 currentStoreVersion: reader.ReadInt64(),
                 currentObjectStoreVersion: reader.ReadInt64(),
-                currentAofBeginAddress: reader.ReadInt64(),
-                currentAofTailAddress: reader.ReadInt64(),
-                currentReplicationOffset: reader.ReadInt64(),
+                currentAofBeginAddress: AofAddressUtils.DeserializeByType(reader),
+                currentAofTailAddress: AofAddressUtils.DeserializeByType(reader),
+                currentReplicationOffset: AofAddressUtils.DeserializeByType(reader),
                 checkpointEntry: CheckpointEntry.FromByteArray(reader.ReadBytes(reader.ReadInt32()))
             );
             return syncMetadata;

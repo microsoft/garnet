@@ -11,8 +11,8 @@ namespace Garnet.server
 {
     public interface IAppendOnlyFile
     {
-        long BeginAddress { get; }
-        long TailAddress { get; }
+        IAofAddress BeginAddress { get; }
+        IAofAddress TailAddress { get; }
         long CommittedUntilAddress { get; }
 
         long MemorySizeBytes { get; }
@@ -35,7 +35,7 @@ namespace Garnet.server
 
         TsavoriteLogScanSingleIterator ScanSingle(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null);
 
-        void Initialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0);
+        void Initialize(IAofAddress tailAddress, IAofAddress beginAddress, IAofAddress committedUntilAddress);
 
         void SafeInitialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0);
 

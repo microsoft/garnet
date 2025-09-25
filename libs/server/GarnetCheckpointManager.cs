@@ -15,8 +15,8 @@ namespace Garnet.server
     {
         public string CurrentHistoryId { get; set; }
         public string RecoveredHistoryId { get; set; }
-        public long CurrentSafeAofAddress { get; set; }
-        public long RecoveredSafeAofAddress { get; set; }
+        public IAofAddress CurrentSafeAofAddress { get; set; }
+        public IAofAddress RecoveredSafeAofAddress { get; set; }
 
         /// <summary>
         /// Create new instance of Garnet checkpoint manager

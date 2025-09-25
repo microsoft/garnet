@@ -69,7 +69,7 @@ namespace Garnet.server
         public abstract void RecoverAOF();
 
         /// <inheritdoc/>
-        public abstract long ReplayAOF(long untilAddress = -1);
+        public abstract IAofAddress ReplayAOF(IAofAddress untilAddress = default);
 
         /// <inheritdoc/>
         public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
@@ -284,9 +284,9 @@ namespace Garnet.server
         /// <param name="db">Database to replay</param>
         /// <param name="untilAddress">Tail address</param>
         /// <returns>Tail address</returns>
-        protected long ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, long untilAddress = -1)
+        protected IAofAddress ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, IAofAddress untilAddress = default)
         {
-            long replicationOffset = 0;
+            IAofAddress replicationOffset = default;
             try
             {
                 replicationOffset = aofProcessor.Recover(db, untilAddress);
@@ -624,7 +624,7 @@ namespace Garnet.server
         {
             logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, dbId = {dbId}", full, checkpointType, tryIncremental, db.Id);
 
-            long checkpointCoveredAofAddress = 0;
+            var checkpointCoveredAofAddress = AofAddressUtils.Fill(StoreWrapper.serverOptions.MultiLogCount, 0);
             if (db.AppendOnlyFile != null)
             {
                 if (StoreWrapper.serverOptions.EnableCluster)

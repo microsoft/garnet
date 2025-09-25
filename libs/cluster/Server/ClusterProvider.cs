@@ -203,7 +203,7 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void OnCheckpointInitiated(out long CheckpointCoveredAofAddress)
+        public void OnCheckpointInitiated(out IAofAddress CheckpointCoveredAofAddress)
         {
             Debug.Assert(serverOptions.EnableCluster);
             if (serverOptions.EnableAOF && clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)

@@ -209,9 +209,8 @@ namespace Garnet.cluster
 
             var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
             var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
-            var outOfRangeAof = replicaSyncMetadata.currentAofTailAddress < aofBeginAddress || replicaSyncMetadata.currentAofTailAddress > aofTailAddress;
-
-            var aofTooLarge = (aofTailAddress - replicaSyncMetadata.currentAofTailAddress) > clusterProvider.serverOptions.ReplicaDisklessSyncFullSyncAofThresholdValue();
+            var outOfRangeAof = replicaSyncMetadata.currentAofTailAddress.OutOfRangeAof(aofBeginAddress, aofTailAddress);
+            var aofTooLarge = aofTailAddress.AggregateLag(replicaSyncMetadata.currentAofTailAddress) > clusterProvider.serverOptions.ReplicaDisklessSyncFullSyncAofThresholdValue();
 
             // We need to stream checkpoint if any of the following conditions are met:
             // 1. Replica has different history than primary

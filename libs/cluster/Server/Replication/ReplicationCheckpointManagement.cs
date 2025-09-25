@@ -89,18 +89,18 @@ namespace Garnet.cluster
             => checkpointStore.GetLatestCheckpointFromDiskInfo();
         #endregion
 
-        public long StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
-        public long ObjectStoreCurrentSafeAofAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
+        public IAofAddress StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
+        public IAofAddress ObjectStoreCurrentSafeAofAddress => clusterProvider.serverOptions.DisableObjects ? default : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
 
-        public long StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
-        public long ObjectStoreRecoveredSafeAofTailAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
+        public IAofAddress StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
+        public IAofAddress ObjectStoreRecoveredSafeAofTailAddress => clusterProvider.serverOptions.DisableObjects ? default : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
 
         /// <summary>
         /// Update current aof address for pending commit.
         /// This is necessary to recover safe aof address along with the commit information.
         /// </summary>
         /// <param name="safeAofTailAddress"></param>
-        public void UpdateCommitSafeAofAddress(long safeAofTailAddress)
+        public void UpdateCommitSafeAofAddress(IAofAddress safeAofTailAddress)
         {
             clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
             if (!clusterProvider.serverOptions.DisableObjects)

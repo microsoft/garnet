@@ -36,7 +36,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
         /// <returns></returns>
-        public long SafeTruncateAof(long CheckpointCoveredAofAddress)
+        public long SafeTruncateAof(IAofAddress CheckpointCoveredAofAddress)
             => aofTaskStore.SafeTruncateAof(CheckpointCoveredAofAddress);
 
         /// <summary>

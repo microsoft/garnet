@@ -167,7 +167,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1);
+        public IAofAddress ReplayAOF(IAofAddress untilAddress = default);
 
         /// <summary>
         /// Do compaction
