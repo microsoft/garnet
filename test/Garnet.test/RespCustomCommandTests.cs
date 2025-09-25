@@ -974,14 +974,15 @@ namespace Garnet.test
                 [.. args]);
 
             // Test READWRITETX
-            string key = "readkey";
+            string key1 = "readkey1";
+            string key2 = "readkey2";
             string value = "foovalue0";
-            db.StringSet(key, value);
+            db.StringSet(key1, value);
 
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
-            var result = db.Execute("READWRITETX", key, writekey1, writekey2);
+            var result = db.Execute("READWRITETX", key1, writekey1, writekey2);
             ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
@@ -997,32 +998,32 @@ namespace Garnet.test
             string newValue2 = "foovalue2";
 
             // This conditional set should pass (prefix matches)
-            result = db.Execute("SETIFPM", key, newValue1, "foo");
+            result = db.Execute("SETIFPM", key1, newValue1, "foo");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            retValue = db.StringGet(key);
+            retValue = db.StringGet(key1);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should fail (prefix does not match)
-            result = db.Execute("SETIFPM", key, newValue2, "bar");
+            result = db.Execute("SETIFPM", key1, newValue2, "bar");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            retValue = db.StringGet(key);
+            retValue = db.StringGet(key1);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // Test MYDICTSET
             string newKey1 = "newkey1";
             string newKey2 = "newkey2";
 
-            db.Execute("MYDICTSET", key, newKey1, newValue1);
+            db.Execute("MYDICTSET", key2, newKey1, newValue1);
 
-            var dictVal = db.Execute("MYDICTGET", key, newKey1);
+            var dictVal = db.Execute("MYDICTGET", key2, newKey1);
             ClassicAssert.AreEqual(newValue1, (string)dictVal);
 
-            db.Execute("MYDICTSET", key, newKey2, newValue2);
+            db.Execute("MYDICTSET", key2, newKey2, newValue2);
 
             // Test MYDICTGET
-            dictVal = db.Execute("MYDICTGET", key, newKey2);
+            dictVal = db.Execute("MYDICTGET", key2, newKey2);
             ClassicAssert.AreEqual(newValue2, (string)dictVal);
         }
 

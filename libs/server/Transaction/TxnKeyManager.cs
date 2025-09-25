@@ -17,7 +17,7 @@ namespace Garnet.server
         public void SaveKeyEntryToLock(PinnedSpanByte key, StoreType storeType, LockType type)
         {
             UpdateTransactionStoreType(storeType);
-            keyEntries.AddKey(key, storeType, type);
+            keyEntries.AddKey(key, type);
         }
 
         /// <summary>

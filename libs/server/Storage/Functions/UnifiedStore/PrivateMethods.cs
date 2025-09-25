@@ -27,7 +27,7 @@ namespace Garnet.server
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.UnifiedStoreUpsert, storeVersion = version, sessionID = sessionID },
+                new AofHeader { opType = AofEntryType.UnifiedStoreStringUpsert, storeVersion = version, sessionID = sessionID },
                 key, value, out _);
         }
 
@@ -40,13 +40,14 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode)
                 return;
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             GarnetObjectSerializer.Serialize(value, out var valueBytes);
             fixed (byte* valPtr = valueBytes)
             {
                 functionsState.appendOnlyFile.Enqueue(
-                    new AofHeader { opType = AofEntryType.UnifiedStoreUpsert, storeVersion = version, sessionID = sessionID },
+                    new AofHeader { opType = AofEntryType.UnifiedStoreObjectUpsert, storeVersion = version, sessionID = sessionID },
                     key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
             }
         }

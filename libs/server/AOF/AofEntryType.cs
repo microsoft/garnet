@@ -80,17 +80,21 @@ namespace Garnet.server
         FlushDb = 0x61,
 
         /// <summary>
-        /// Unified store upsert
+        /// Unified store upsert sting
         /// </summary>
-        UnifiedStoreUpsert = 0x70,
+        UnifiedStoreStringUpsert = 0x70,
+        /// <summary>
+        /// Unified store upsert object
+        /// </summary>
+        UnifiedStoreObjectUpsert = 0x71,
         /// <summary>
         /// Unified store RMW
         /// </summary>
-        UnifiedStoreRMW = 0x71,
+        UnifiedStoreRMW = 0x72,
         /// <summary>
         /// Unified store delete
         /// </summary>
-        UnifiedStoreDelete = 0x72,
+        UnifiedStoreDelete = 0x73,
 
         #region Deprecated markers
         /// <summary>

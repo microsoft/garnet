@@ -1239,7 +1239,7 @@ namespace Garnet.server
                     foreach (var key in keys)
                     {
                         var _key = scratchBufferBuilder.CreateArgSlice(key);
-                        txnKeyEntries.AddKey(_key, StoreType.All, Tsavorite.core.LockType.Exclusive);
+                        txnKeyEntries.AddKey(_key, Tsavorite.core.LockType.Exclusive);
                     }
 
                     adapter = new(scratchBufferBuilder);

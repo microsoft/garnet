@@ -65,6 +65,10 @@ namespace Garnet.server
                 {
                     matchType = typeof(HashObject);
                 }
+                else if (typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt))
+                {
+                    matchType = typeof(string);
+                }
                 else if (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))
                 {
                     // Unexpected typeObject type
@@ -303,7 +307,9 @@ namespace Garnet.server
                         }
                     }
 
-                    if (info.matchType != null && logRecord.ValueObject.GetType() != info.matchType)
+                    if (info.matchType != null && 
+                        ((logRecord.Info.ValueIsObject && (info.matchType == typeof(string) || info.matchType != logRecord.ValueObject.GetType())) || 
+                         (!logRecord.Info.ValueIsObject && info.matchType != typeof(string))))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                         return true;

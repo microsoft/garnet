@@ -94,7 +94,6 @@ namespace Garnet.server
         long txnVersion;
         private bool isMainTxn = false;
         private bool isObjectTxn = false;
-        private bool isUnifiedTxn = false;
 
         internal TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalContext
             => transactionalContext;
@@ -170,8 +169,7 @@ namespace Garnet.server
                         transactionalContext.EndTransaction();
                     if (isObjectTxn)
                         objectStoreTransactionalContext.EndTransaction();
-                    if (isUnifiedTxn)
-                        unifiedStoreTransactionalContext.EndTransaction();
+                    unifiedStoreTransactionalContext.EndTransaction();
                 }
                 finally
                 {
@@ -184,7 +182,6 @@ namespace Garnet.server
             this.state = TxnState.None;
             this.isMainTxn = false;
             this.isObjectTxn = false;
-            this.isUnifiedTxn = false;
             functionsState.StoredProcMode = false;
 
             // Reset cluster variables used for slot verification
@@ -325,9 +322,6 @@ namespace Garnet.server
                 case StoreType.Object:
                     isObjectTxn = true;
                     break;
-                case StoreType.All:
-                    isUnifiedTxn = true;
-                    break;
             }
         }
 
@@ -348,8 +342,8 @@ namespace Garnet.server
                 transactionalContext.BeginTransaction();
             if (isObjectTxn)
                 objectStoreTransactionalContext.BeginTransaction();
-            if (isUnifiedTxn)
-                unifiedStoreTransactionalContext.BeginTransaction();
+
+            unifiedStoreTransactionalContext.BeginTransaction();
         }
 
         void LocksAcquired(long txnVersion)
@@ -358,8 +352,8 @@ namespace Garnet.server
                 transactionalContext.LocksAcquired(txnVersion);
             if (isObjectTxn)
                 objectStoreTransactionalContext.LocksAcquired(txnVersion);
-            if (isUnifiedTxn)
-                unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
+
+            unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
         }
 
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)

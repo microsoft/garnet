@@ -1817,21 +1817,19 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(1, long.Parse(db.Execute("SET", key, "v1", "WITHETAG").ToString()));
 
-            // Do SetAdd using the same key
-            ClassicAssert.IsTrue(db.SetAdd(key, "v2"));
+            // Do SetAdd using the same key, expected error
+            Assert.Throws<RedisServerException>(() => db.SetAdd(key, "v2"),
+                Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
 
-            // Two keys "test:1" - this is expected as of now
-            // because Garnet has a separate main and object store
+            // One key "test:1" with a string value is expected
             var keys = server.Keys(db.Database, key).ToList();
-            ClassicAssert.AreEqual(2, keys.Count);
+            ClassicAssert.AreEqual(1, keys.Count);
             ClassicAssert.AreEqual(key, (string)keys[0]);
-            ClassicAssert.AreEqual(key, (string)keys[1]);
+            var value = db.StringGet(key);
+            ClassicAssert.AreEqual("v1", (string)value);
 
             // do ListRightPush using the same key, expected error
-            var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
-            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(expectedError, ex.Message);
+            Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"), Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
         }
 
         [Test]
