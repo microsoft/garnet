@@ -20,7 +20,7 @@ namespace Tsavorite.core
             internal OperationType type;
 
             /// <summary>
-            /// DiskLogRecord carries either the input to RUMD operations or a log record image. It is used for:
+            /// DiskLogRecord carries a log record image. It is used for:
             /// <list type="bullet">
             ///     <item>Pending RUMD operations; in this case it contains only the key for all operations, and values for Upsert.
             ///         Optionals (ETag and Expiration) are presumed to be carried in <see cref="input"/></item>
@@ -34,14 +34,25 @@ namespace Tsavorite.core
             /// </summary>
             internal DiskLogRecord diskLogRecord;
 
-            internal IHeapContainer<TInput> input;
-            internal TOutput output;
-            internal TContext userContext;
+            /// <summary>The Key that was sent to this operation if it was RUMD.</summary>
+            internal SpanByteHeapContainer request_key;
+            /// <summary>The hash of <see cref="request_key"/> if it is present.</summary>
             internal long keyHash;
 
-            // Some additional information about the previous attempt
+            /// <summary>The Input that was sent to this operation if it was RUMD.</summary>
+            internal IHeapContainer<TInput> input;
+            /// <summary>The Output to be returned from this operation if it was RUM.</summary>
+            internal TOutput output;
+            /// <summary>The user Context that was sent to this operation if it was RUMD.</summary>
+            internal TContext userContext;
+
+            /// <summary>The id of this operation in the <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.TsavoriteExecutionContext{TInput, TOutput, TContext}.ioPendingRequests"/> queue.</summary>
             internal long id;
+
+            /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
+
+            /// <summary>The initial highest logical address of the search; used to limit search ranges when the pending operation completes (e.g. to see if a duplicate was inserted).</summary>
             internal long initialLatestLogicalAddress;
 
             // operationFlags values
@@ -120,7 +131,8 @@ namespace Tsavorite.core
             {
                 if (diskLogRecord.IsSet)
                     return;
-                diskLogRecord.SerializeForPendingReadOrRMW(key, bufferPool);
+                request_key.Dispose();
+                request_key = new(key, bufferPool);
                 CopyIOC(ref input, output, userContext, sessionFunctions);
             }
 
@@ -154,14 +166,16 @@ namespace Tsavorite.core
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!this.diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
-                if (srcLogRecord.AsLogRecord(out var logRecord))
+                if (srcLogRecord.IsMemoryLogRecord)
                 {
-                    this.diskLogRecord.Serialize(in logRecord, bufferPool, valueSerializer);
+                    ref var memoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                    this.diskLogRecord = new(in memoryLogRecord, objectDisposer);
                     return;
                 }
 
                 // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
-                _ = srcLogRecord.AsDiskLogRecord(out var inputDiskLogRecord);
+                Debug.Assert(srcLogRecord.IsDiskLogRecord, $"Unknown SrcLogRecord implementation: {srcLogRecord}");
+                ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
                 if (inputDiskLogRecord.OwnsMemory)
                     this.diskLogRecord.TransferFrom(ref inputDiskLogRecord);
                 else
@@ -242,13 +256,13 @@ namespace Tsavorite.core
             public readonly bool IsMemoryLogRecord => false;
 
             /// <inheritdoc/>
-            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref this.diskLogRecord;
+            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref diskLogRecord.AsMemoryLogRecordRef();
 
             /// <inheritdoc/>
             public readonly bool IsDiskLogRecord => true;
 
             /// <inheritdoc/>
-            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in this);
+            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref diskLogRecord;
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

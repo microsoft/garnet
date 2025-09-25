@@ -24,7 +24,7 @@ namespace Tsavorite.core
         readonly IObjectSerializer<IHeapObject> valueObjectSerializer;
 
         /// <summary>The circular buffer we cycle through for parallelization of writes.</summary>
-        internal CircularDiskWriteBuffer circularFlushBuffers;
+        internal CircularDiskWriteBuffer flushBuffers;
 
         /// <summary>The current buffer being written to in the circular buffer list.</summary>
         internal DiskWriteBuffer writeBuffer;
@@ -50,21 +50,21 @@ namespace Tsavorite.core
 
         /// <summary>Constructor. Creates the circular buffer pool.</summary>
         /// <param name="device">The device to write to</param>
-        /// <param name="circularFlushBuffers">The circular buffer for writing records</param>
+        /// <param name="flushBuffers">The circular buffer for writing records</param>
         /// <param name="valueObjectSerializer">Serialized value objects to the underlying stream</param>
         /// <exception cref="ArgumentNullException"></exception>
 #pragma warning disable IDE0290 // Use primary constructor
-        public ObjectLogWriter(IDevice device, CircularDiskWriteBuffer circularFlushBuffers, IObjectSerializer<IHeapObject> valueObjectSerializer)
+        public ObjectLogWriter(IDevice device, CircularDiskWriteBuffer flushBuffers, IObjectSerializer<IHeapObject> valueObjectSerializer)
         {
             this.device = device ?? throw new ArgumentNullException(nameof(device));
-            this.circularFlushBuffers = circularFlushBuffers ?? throw new ArgumentNullException(nameof(circularFlushBuffers));
+            this.flushBuffers = flushBuffers ?? throw new ArgumentNullException(nameof(flushBuffers));
             this.valueObjectSerializer = valueObjectSerializer;
         }
 
         /// <inheritdoc/>
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Flushing must only be done under control of the Write() methods, due to possible Value length adjustments.");
 
-        internal ObjectLogFilePositionInfo GetNextRecordStartPosition() => circularFlushBuffers.GetNextRecordStartPosition();
+        internal ObjectLogFilePositionInfo GetNextRecordStartPosition() => flushBuffers.GetNextRecordStartPosition();
 
         /// <summary>Resets start positions for the next partial flush.</summary>
         internal void OnBeginPartialFlush()
@@ -73,7 +73,7 @@ namespace Tsavorite.core
             expectedSerializedLength = 0;
             totalValueObjectLength = 0;
             inSerialize = false;
-            writeBuffer = circularFlushBuffers.OnBeginPartialFlush();
+            writeBuffer = flushBuffers.OnBeginPartialFlush();
         }
 
         /// <summary>
@@ -87,7 +87,7 @@ namespace Tsavorite.core
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
         internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ref ulong mainLogAlignedDeviceOffset, 
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endFilePosition)
-            => circularFlushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, ref mainLogAlignedDeviceOffset,
+            => flushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, ref mainLogAlignedDeviceOffset,
                 totalOverflowLength + totalValueObjectLength, externalCallback, externalContext, out endFilePosition);
 
         /// <summary>
@@ -152,21 +152,21 @@ namespace Tsavorite.core
                     Debug.Assert(refCountedGCHandle is null, $"If refCountedGCHandle is not null then buffer.currentPosition ({writeBuffer.currentPosition}) should already be sector-aligned");
                     Write(fullDataSpan.Slice(0, copyLength));
                     dataStart += copyLength;
-                    circularFlushBuffers.FlushCurrentBuffer();
+                    flushBuffers.FlushCurrentBuffer();
                 }
 
                 // 2. Flush the sector-aligned span interior. We are writing direct to the device from a byte[], so we have to pin the array.
                 //    We may have to split across multiple segments.
                 var interiorLen = RoundDown(overflow.Array.Length - dataStart, (int)device.SectorSize);
-                var segmentRemainingLen = circularFlushBuffers.filePosition.RemainingSize;
+                var segmentRemainingLen = flushBuffers.filePosition.RemainingSize;
                 var gcHandle = (refCountedGCHandle is null) ? GCHandle.Alloc(overflow.Array, GCHandleType.Pinned) : default;
                 if ((uint)interiorLen <= segmentRemainingLen)
                 {
                     // Write the full interior in one chunk. We will be here when the segmentRemainingLength is > int.MaxValue.
                     var writeCallback = refCountedGCHandle is null
-                        ? circularFlushBuffers.CreateDiskWriteCallbackContext(gcHandle)
-                        : circularFlushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
-                    circularFlushBuffers.FlushToDevice(fullDataSpan.Slice(dataStart, interiorLen), writeCallback);
+                        ? flushBuffers.CreateDiskWriteCallbackContext(gcHandle)
+                        : flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
+                    flushBuffers.FlushToDevice(fullDataSpan.Slice(dataStart, interiorLen), writeCallback);
                     dataStart += interiorLen;
                 }
                 else
@@ -180,19 +180,19 @@ namespace Tsavorite.core
                     // Copy chunks to segments and advance the segment.
                     while (interiorLen > (int)segmentRemainingLen)
                     {
-                        var writeCallback = circularFlushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
-                        circularFlushBuffers.FlushToDevice(fullDataSpan.Slice(dataStart, (int)segmentRemainingLen), writeCallback);
+                        var writeCallback = flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
+                        flushBuffers.FlushToDevice(fullDataSpan.Slice(dataStart, (int)segmentRemainingLen), writeCallback);
                         dataStart += (int)segmentRemainingLen;
 
-                        Debug.Assert(circularFlushBuffers.filePosition.RemainingSize == 0, $"Expected to be at end of segment but there were {circularFlushBuffers.filePosition.RemainingSize} bytes remaining");
-                        circularFlushBuffers.filePosition.AdvanceToNextSegment();
-                        segmentRemainingLen = circularFlushBuffers.filePosition.RemainingSize;
+                        Debug.Assert(flushBuffers.filePosition.RemainingSize == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSize} bytes remaining");
+                        flushBuffers.filePosition.AdvanceToNextSegment();
+                        segmentRemainingLen = flushBuffers.filePosition.RemainingSize;
                     }
 
                     // Now we know we will fit in the last segment, so call recursively to optimize the "copy vs. direct" final fragment.
                     // First adjust the endPosition in case we don't have a full buffer of space remaining in the segment.
-                    if ((ulong)writeBuffer.RemainingLength > circularFlushBuffers.filePosition.RemainingSize)
-                        writeBuffer.endPosition = (int)circularFlushBuffers.filePosition.RemainingSize - writeBuffer.currentPosition;
+                    if ((ulong)writeBuffer.RemainingLength > flushBuffers.filePosition.RemainingSize)
+                        writeBuffer.endPosition = (int)flushBuffers.filePosition.RemainingSize - writeBuffer.currentPosition;
                     WriteDirect(overflow, fullDataSpan.Slice(dataStart), refCountedGCHandle);
                 }
 
@@ -244,8 +244,8 @@ namespace Tsavorite.core
             // OnSerializeComplete() after the Serialize() call has returned. "End of buffer" ends before lengthSpaceReserve if any.
             Debug.Assert(writeBuffer.currentPosition == writeBuffer.endPosition, $"CurrentPosition {writeBuffer.currentPosition} must be at writeBuffer.endPosition {writeBuffer.endPosition}).");
 
-            circularFlushBuffers.FlushCurrentBuffer();
-            writeBuffer = circularFlushBuffers.MoveToAndInitializeNextBuffer();
+            flushBuffers.FlushCurrentBuffer();
+            writeBuffer = flushBuffers.MoveToAndInitializeNextBuffer();
         }
 
         void DoSerialize(IHeapObject valueObject)

@@ -20,7 +20,7 @@ namespace Tsavorite.core
         public long id;
 
         /// <summary>
-        /// Key; this is a shallow copy of the key in pendingContext, pointing to its diskLogRecord
+        /// Key; this is a shallow copy of the key in pendingContext, pointing to its request_key
         /// </summary>
         public PinnedSpanByte request_key;
 

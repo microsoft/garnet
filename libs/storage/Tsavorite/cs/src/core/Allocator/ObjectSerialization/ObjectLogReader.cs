@@ -23,8 +23,8 @@ namespace Tsavorite.core
         /// <summary>The current record header; used for chunks to identify when they need to extract the optionals after the final chunk.</summary>
         internal RecordInfo recordInfo;
 
-        /// <summary>The circular buffer we cycle through for large-object deserialization.</summary>
-        readonly CircularDiskReadBuffer circularReadBuffers;
+        /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
+        readonly CircularDiskReadBuffer readBuffers;
 
         /// <summary>The <see cref="IStoreFunctions"/> implementation to use</summary>
         internal readonly TStoreFunctions storeFunctions;
@@ -41,7 +41,7 @@ namespace Tsavorite.core
 #pragma warning disable IDE0290 // Use primary constructor
         public ObjectLogReader(CircularDiskReadBuffer readBuffers, TStoreFunctions storeFunctions)
         {
-            circularReadBuffers = readBuffers;
+            this.readBuffers = readBuffers;
             this.storeFunctions = storeFunctions ?? throw new ArgumentNullException(nameof(storeFunctions));
         }
 
@@ -55,7 +55,7 @@ namespace Tsavorite.core
         {
             inDeserialize = false;
             deserializedLength = 0UL;
-            circularReadBuffers.OnBeginReadRecords(filePosition, totalLength);
+            readBuffers.OnBeginReadRecords(filePosition, totalLength);
         }
 
         /// <inheritdoc/>
@@ -91,7 +91,7 @@ namespace Tsavorite.core
                 return true;
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            circularReadBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
+            readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
 
             // TODO: Optimize the reading of large internal sector-aligned parts of Overflow Keys and Values to read directly into the overflow, similar to how ObjectLogWriter writes
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
@@ -129,7 +129,7 @@ namespace Tsavorite.core
             var destinationSpanAppend = destinationSpan.Slice(prevCopyLength);
 
             // Read from the circular buffer.
-            var buffer = circularReadBuffers.GetCurrentBuffer();
+            var buffer = readBuffers.GetCurrentBuffer();
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
@@ -151,7 +151,7 @@ namespace Tsavorite.core
                 prevCopyLength += copyLength;
                 if (buffer.AvailableLength == 0)
                 {
-                    if (!circularReadBuffers.MoveToNextBuffer(out buffer))
+                    if (!readBuffers.MoveToNextBuffer(out buffer))
                         return prevCopyLength;
                 }
                 destinationSpanAppend = destinationSpan.Slice(prevCopyLength);

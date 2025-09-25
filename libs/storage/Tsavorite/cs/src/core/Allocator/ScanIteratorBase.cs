@@ -14,59 +14,48 @@ namespace Tsavorite.core
     /// </summary>
     public abstract class ScanIteratorBase
     {
-        /// <summary>
-        /// Frame size
-        /// </summary>
+        /// <summary>Frame size (1 or 2)</summary>
         protected readonly int frameSize;
 
-        /// <summary>
-        /// Begin address. Cannot be readonly due to SnapCursorToLogicalAddress
-        /// </summary>
+        /// <summary>Begin address of the scan. Cannot be readonly due to SnapCursorToLogicalAddress</summary>
         protected long beginAddress;
 
-        /// <summary>
-        /// End address
-        /// </summary>
+        /// <summary>End address of the scan</summary>
         protected readonly long endAddress;
 
-        /// <summary>
-        /// Epoch
-        /// </summary>
+        /// <summary>Epoch from the store</summary>
         protected readonly LightEpoch epoch;
 
-        /// <summary>
-        /// Current and next address for iteration
-        /// </summary>
-        protected long currentAddress, nextAddress;
+        /// <summary>Current address for iteration</summary>
+        protected long currentAddress;
+        /// <summary>Next address for iteration</summary>
+        protected long nextAddress;
 
-        /// <summary>
-        /// <see cref="CountdownEvent"/> vector for waiting for frame-load completion.
-        /// </summary>
+        /// <summary><see cref="CountdownEvent"/> vector for waiting for frame-load completion.</summary>
         /// <remarks>This array is in parallel with <see cref="loadCTSs"/>, <see cref="loadedPages"/>, and <see cref="nextLoadedPages"/>.</remarks>
         private CountdownEvent[] loadCompletionEvents;
 
-        /// <summary>
-        /// <see cref="CancellationTokenSource"/> vector for canceling the wait for frame-load completion.
-        /// </summary>
+        /// <summary><see cref="CancellationTokenSource"/> vector for canceling the wait for frame-load completion.</summary>
         /// <remarks>This array is in parallel with <see cref="loadCompletionEvents"/>, <see cref="loadedPages"/>, and <see cref="nextLoadedPages"/>.</remarks>
         private CancellationTokenSource[] loadCTSs;
 
-        /// <summary>
-        /// Vector of endAddresses for the currently loaded pages of the frames.
-        /// </summary>
+        /// <summary>Vector of endAddresses for the currently loaded pages of the frames.</summary>
         /// <remarks>This array is in parallel with <see cref="loadCompletionEvents"/>, <see cref="loadCTSs"/>, and <see cref="nextLoadedPages"/>.</remarks>
         private long[] loadedPages;
 
-        /// <summary>
-        /// Vector of endAddresses for the currently in-flight, and possibly completed, loading of pages of the frames.
-        /// This is updated atomically when we start the <see cref="BufferAndLoad"/> of a page.
-        /// </summary>
+        /// <summary>Vector of endAddresses for the currently in-flight, and possibly completed, loading of pages of the frames.
+        /// This is updated atomically when we start the <see cref="BufferAndLoad"/> of a page.</summary>
         /// <remarks>This array is in parallel with <see cref="loadCompletionEvents"/>, <see cref="loadCTSs"/>, and <see cref="loadedPages"/>.</remarks>
         private long[] nextLoadedPages;
 
+        /// <summary>Number of bits in the size of the log page</summary>
         private readonly int logPageSizeBits;
+
+        /// <summary>Whether to include closed records in the scan</summary>
         protected readonly bool includeClosedRecords;
-        protected readonly bool returnTombstoned;
+
+        /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
+        readonly CircularDiskReadBuffer readBuffers;
 
         /// <summary>
         /// Current address
@@ -101,9 +90,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe ScanIteratorBase(long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode,
+        public unsafe ScanIteratorBase(CircularDiskReadBuffer readBuffers, long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode,
                 bool includeClosedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
         {
+            this.readBuffers = readBuffers;
             this.logger = logger;
             this.memScanBufferingMode = memScanBufferingMode;
 
@@ -196,13 +186,15 @@ namespace Tsavorite.core
                         {
                             epoch.BumpCurrentEpoch(() =>
                             {
-                                AsyncReadPagesFromDeviceToFrame(tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                                AsyncReadPagesFromDeviceToFrame(readBuffers, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
+                                        Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
                                 loadedPages[nextFrame] = pageEndAddress;
                             });
                         }
                         else
                         {
-                            AsyncReadPagesFromDeviceToFrame(tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress, Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                            AsyncReadPagesFromDeviceToFrame(readBuffers, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
+                                    Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }

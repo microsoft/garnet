@@ -188,7 +188,7 @@ namespace Tsavorite.core
         public readonly bool IsMemoryLogRecord => false;
 
         /// <inheritdoc/>
-        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => throw new InvalidOperationException("Cannot cast a DiskLogRecord to a memory LogRecord.");
+        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref logRecord;
 
         /// <inheritdoc/>
         public readonly bool IsDiskLogRecord => true;
