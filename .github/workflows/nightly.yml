@@ -180,6 +180,13 @@ jobs:
           name: CombinedResults-net9.0-Release-Garnet.test
           path: test/Allure/CombinedResults
 
+      - name: Show working directory and contents
+        shell: pwsh
+        run: |
+          $cwd = Get-Location
+          Write-Host "Current directory: $cwd"
+          Get-ChildItem -Force
+
       - name: Check if GenerateAllureReport.ps1 exists
         shell: pwsh
         run: |
@@ -189,6 +196,10 @@ jobs:
           } else {
             Write-Host "Script NOT found at $scriptPath"
           }
+
+      - name: List contents of test/allure
+        shell: pwsh
+        run: Get-ChildItem "${{ github.workspace }}\test\allure" -Recurse
 
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
