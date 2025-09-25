@@ -98,7 +98,7 @@ namespace Garnet.cluster
                     gcs.Connect();
 
                     // Resetting here to decide later when to sync from
-                    clusterProvider.replicationManager.ReplicationOffset = 0;
+                    clusterProvider.replicationManager.ReplicationOffset.SetValue(0);
 
                     // The caller should have stopped accepting AOF records from old primary at this point
                     // (TryREPLICAOF -> TryAddReplica -> UnsafeWaitForConfigTransition)
@@ -117,7 +117,7 @@ namespace Garnet.cluster
                     ResetReplayIterator();
 
                     // Reset replication offset
-                    ReplicationOffset = 0;
+                    ReplicationOffset.SetValue(0);
 
                     // Reset the database in preparation for connecting to primary
                     storeWrapper.Reset();
@@ -144,14 +144,12 @@ namespace Garnet.cluster
                     // 6. Primary releases checkpoint
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
 
-                    // Exception injection point for testing cluster reset during disk-based replication
-                    await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
-                    var resp = await gcs.ExecuteReplicaSync(
+                    var resp = await gcs.ExecuteClusterInitiateReplicaSync(
                         nodeId,
                         PrimaryReplId,
                         cEntry.ToByteArray(),
-                        storeWrapper.appendOnlyFile.BeginAddress,
-                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+                        storeWrapper.appendOnlyFile.BeginAddress.ToByteArray(),
+                        storeWrapper.appendOnlyFile.TailAddress.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -295,14 +293,14 @@ namespace Garnet.cluster
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
         /// <returns></returns>
-        public long BeginReplicaRecover(
+        public AofAddress BeginReplicaRecover(
             bool recoverMainStoreFromToken,
             bool recoverObjectStoreFromToken,
             bool replayAOF,
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
-            long beginAddress,
-            long recoveredReplicationOffset,
+            in AofAddress beginAddress,
+            ref AofAddress recoveredReplicationOffset,
             out ReadOnlySpan<byte> errorMessage)
         {
             try
@@ -372,7 +370,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, $"{nameof(BeginReplicaRecover)}");
                 errorMessage = Encoding.ASCII.GetBytes(ex.Message);
-                return -1;
+                return AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1);
             }
             finally
             {

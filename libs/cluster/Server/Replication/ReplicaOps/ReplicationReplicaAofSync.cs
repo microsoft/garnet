@@ -2,34 +2,36 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
-using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
 
 namespace Garnet.cluster
 {
     internal sealed partial class ReplicationManager : IDisposable
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ThrottlePrimary()
+        ReplicaAofSyncReplayTask replicaAofSyncTask = null;
+        Task replicaAofSync = null;
+
+        /// <summary>
+        /// Reset background replay iterator
+        /// </summary>
+        public void ResetReplayIterator()
         {
-            while (storeWrapper.serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null && storeWrapper.appendOnlyFile.TailAddress - ReplicationOffset > storeWrapper.serverOptions.ReplicationOffsetMaxLag)
-            {
-                replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                Thread.Yield();
-            }
+            replicaAofSyncTask?.ResetReplayIterator();
+            replicaAofSync = null;
         }
 
         /// <summary>
         /// Apply primary AOF records.
         /// </summary>
+        /// <param name="sublogIdx"></param>
         /// <param name="record"></param>
         /// <param name="recordLength"></param>
         /// <param name="previousAddress"></param>
         /// <param name="currentAddress"></param>
         /// <param name="nextAddress"></param>
-        public unsafe void ProcessPrimaryStream(byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
+        public unsafe void ProcessPrimaryStream(int sublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
         {
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -60,7 +62,7 @@ namespace Garnet.cluster
                         {
                             logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
                             storeWrapper.appendOnlyFile.SafeInitialize(currentAddress, currentAddress);
-                            ReplicationOffset = currentAddress;
+                            replicationOffset[0] = currentAddress;
                         }
                     }
                 }
@@ -68,21 +70,21 @@ namespace Garnet.cluster
                 // Injection for a "something went wrong with THIS Replica's AOF file"
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
 
-                var tail = storeWrapper.appendOnlyFile.TailAddress;
-                var nextPageBeginAddress = ((tail >> pageSizeBits) + 1) << pageSizeBits;
+                ref var tail = ref storeWrapper.appendOnlyFile.TailAddress;
+                var nextPageBeginAddress = ((tail[sublogIdx] >> pageSizeBits) + 1) << pageSizeBits;
                 // Check to ensure:
                 // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)
                 // 2. if record does not fit in current page start address of the next page matches incoming currentAddress (address of chunk send from primary node)
                 // otherwise fail and break the connection
-                if ((tail + recordLength <= nextPageBeginAddress && tail != currentAddress) ||
-                    (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
+                if ((tail[sublogIdx] + recordLength <= nextPageBeginAddress && tail[sublogIdx] != currentAddress) ||
+                    (tail[sublogIdx] + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
                 {
                     logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
                     throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Address check only if synchronous replication is enabled
-                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
+                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && ReplicationOffset[sublogIdx] != storeWrapper.appendOnlyFile.TailAddress[sublogIdx])
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
@@ -92,29 +94,21 @@ namespace Garnet.cluster
                 // Enqueue to AOF
                 _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
+                replicaAofSyncTask ??= new ReplicaAofSyncReplayTask(sublogIdx, clusterProvider, logger);
+
                 if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {
                     // Synchronous replay
-                    Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    replicaAofSyncTask.Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
                 }
                 else
                 {
-                    // Throttle to give the opportunity to the background replay task to catch up
-                    ThrottlePrimary();
-
                     // If background task has not been initialized
                     // initialize it here and start background replay task
-                    if (replayIterator == null)
-                    {
-                        replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(
-                            previousAddress,
-                            long.MaxValue,
-                            scanUncommitted: true,
-                            recover: false,
-                            logger: logger);
+                    replicaAofSync ??= Task.Run(() => replicaAofSyncTask.ReplicaReplayTask());
 
-                        System.Threading.Tasks.Task.Run(ReplicaReplayTask);
-                    }
+                    // Throttle to give the opportunity to the background replay task to catch up
+                    replicaAofSyncTask?.ThrottlePrimary();
                 }
             }
             catch (Exception ex)

@@ -264,7 +264,7 @@ namespace Garnet
                 var configMemoryLimit = (storeWrapper.store.IndexSize * 64) +
                                         storeWrapper.store.Log.MaxMemorySizeBytes +
                                         (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
-                                        (storeWrapper.appendOnlyFile?.MaxMemorySizeBytes ?? 0);
+                                        (storeWrapper.appendOnlyFile != null ? storeWrapper.appendOnlyFile.MemorySizeBytes.AggregateDiff(0) : 0);
                 if (storeWrapper.objectStore != null)
                     configMemoryLimit += (storeWrapper.objectStore.IndexSize * 64) +
                                          storeWrapper.objectStore.Log.MaxMemorySizeBytes +
@@ -346,8 +346,8 @@ namespace Garnet
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
-                clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
-                new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                clusterFactory.CreateCheckpointManager(opts.AofSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
+                new GarnetCheckpointManager(opts.AofSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
@@ -371,8 +371,8 @@ namespace Garnet
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             objKvSettings.CheckpointManager = opts.EnableCluster ?
-                clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: false, logger) :
-                new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                clusterFactory.CreateCheckpointManager(opts.AofSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: false, logger) :
+                new GarnetCheckpointManager(opts.AofSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             var objStore = new TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator>(
                 objKvSettings,
@@ -389,7 +389,7 @@ namespace Garnet
 
         }
 
-        private (IDevice, IAppendOnlyFile) CreateAOF(int dbId)
+        private (IDevice, GarnetAppendOnlyFile) CreateAOF(int dbId)
         {
             if (!opts.EnableAOF)
             {
@@ -403,7 +403,7 @@ namespace Garnet
 
             opts.GetAofSettings(dbId, out var aofSettings);
             var aofDevice = aofSettings.LogDevice;
-            var appendOnlyFile = new SingleAof(aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+            var appendOnlyFile = new GarnetAppendOnlyFile(opts, aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");
             return (aofDevice, appendOnlyFile);

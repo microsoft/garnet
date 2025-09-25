@@ -8,7 +8,7 @@ namespace Garnet.server
         /// <summary>
         /// Replication offset using string store.
         /// </summary>
-        public long replication_offset;
+        public AofAddress replication_offset;
 
         /// <summary>
         /// Replication offset lag. 

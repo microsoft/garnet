@@ -11,6 +11,7 @@ using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using System.Threading.Tasks;
 
 namespace Garnet.server
 {
@@ -111,40 +112,51 @@ namespace Garnet.server
         /// <param name="db">Database to recover</param>
         /// <param name="untilAddress">Tail address for recovery</param>
         /// <returns>Tail address</returns>
-        public long Recover(GarnetDatabase db, long untilAddress = -1)
+        public AofAddress Recover(GarnetDatabase db, AofAddress untilAddress)
         {
             logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
             return RecoverReplay(db, untilAddress);
         }
 
-        private long RecoverReplay(GarnetDatabase db, long untilAddress)
+        private AofAddress RecoverReplay(GarnetDatabase db, AofAddress untilAddress)
         {
             // Begin replay for specified database
             logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
             try
             {
-                int count = 0;
-
                 // Fetch the database AOF and update the current database context for the processor
                 var appendOnlyFile = db.AppendOnlyFile;
                 SwitchActiveDatabaseContext(db);
 
-                // Set the tail address for replay recovery to the tail address of the AOF if none specified
-                if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
+                // Set the tail address for replay recovery to the tail address of the AOF if none specified)
+                untilAddress.SetValueIf(appendOnlyFile.TailAddress, -1);
 
-                // Scan the AOF up to the tail address
-                using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
-
-                // Replay each AOF record in the current database context
-                while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
+                var tasks = new Task[untilAddress.Length];
+                for (var i = 0; i < untilAddress.Length; i++)
                 {
-                    count++;
-                    ProcessAofRecord(entry, length);
-                    if (count % 100_000 == 0)
-                        logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
+                    var taskId = i;
+                    tasks[i] = Task.Run(() => RecoverReplayTask(taskId, appendOnlyFile.BeginAddress, untilAddress));
                 }
 
-                logger?.LogInformation("Completed full AOF log replay of {count} records (DB ID: {id})", count, db.Id);
+                Task.WaitAll(tasks);
+
+                void RecoverReplayTask(int taskId, AofAddress beginAddress, AofAddress untilAddress)
+                {
+                    var count = 0;
+                    using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress[taskId], untilAddress[taskId]);
+
+                    // Replay each AOF record in the current database context
+                    while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
+                    {
+                        count++;
+                        ProcessAofRecord(entry, length);
+                        if (count % 100_000 == 0)
+                            logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
+                    }
+
+                    logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count} records (DB ID: {id})", taskId, count, db.Id);
+                }
+
                 return untilAddress;
             }
             catch (Exception ex)
@@ -160,7 +172,7 @@ namespace Garnet.server
                 respServerSession.Dispose();
             }
 
-            return -1;
+            return AofAddress.SetValue(storeWrapper.serverOptions.AofSublogCount, -1);
         }
 
         internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length)

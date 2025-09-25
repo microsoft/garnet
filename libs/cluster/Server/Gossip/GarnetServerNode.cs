@@ -159,7 +159,8 @@ namespace Garnet.cluster
             if (conf != lastConfig)
             {
                 lastConfig = conf;
-                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset);
+                //TODO: update info correctly
+                if (clusterProvider.replicationManager != null) lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.ReplicationOffset[0]);
                 byteArray = lastConfig.ToByteArray();
             }
             else
@@ -295,7 +296,7 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                gc.ClusterPublishNoResponse(cmd, ref channel, ref message);
+                gc.ExecuteClusterPublishNoResponse(cmd, ref channel, ref message);
             }
             finally
             {

@@ -48,13 +48,18 @@ namespace Garnet.cluster
 
         public CheckpointEntry()
         {
-            metadata = new();
+            metadata = new(0);
             next = null;
             _lock = new();
         }
 
-        public long GetMinAofCoveredAddress()
-            => Math.Max(Math.Min(metadata.storeCheckpointCoveredAofAddress, metadata.objectCheckpointCoveredAofAddress), 64);
+        public AofAddress GetMinAofCoveredAddress()
+        {
+            var minCoveredAofAddress = AofAddress.Min(ref metadata.storeCheckpointCoveredAofAddress, ref metadata.objectCheckpointCoveredAofAddress);
+            minCoveredAofAddress.MaxExchange(ReplicationManager.kFirstValidAofAddress);
+            return minCoveredAofAddress;
+        }
+
 
         /// <summary>
         /// Indicate addition of new reader by trying to increment reader counter
@@ -113,7 +118,7 @@ namespace Garnet.cluster
             byteBuffer = metadata.storeIndexToken.ToByteArray();
             writer.Write(byteBuffer.Length);
             writer.Write(byteBuffer);
-            writer.Write(metadata.storeCheckpointCoveredAofAddress);
+            metadata.storeCheckpointCoveredAofAddress.Serialize(writer);
             writer.Write(metadata.storePrimaryReplId == null ? 0 : 1);
             if (metadata.storePrimaryReplId != null) writer.Write(metadata.storePrimaryReplId);
 
@@ -125,7 +130,7 @@ namespace Garnet.cluster
             byteBuffer = metadata.objectStoreIndexToken.ToByteArray();
             writer.Write(byteBuffer.Length);
             writer.Write(byteBuffer);
-            writer.Write(metadata.objectCheckpointCoveredAofAddress);
+            metadata.objectCheckpointCoveredAofAddress.Serialize(writer);
             writer.Write(metadata.objectStorePrimaryReplId == null ? 0 : 1);
             if (metadata.objectStorePrimaryReplId != null) writer.Write(metadata.objectStorePrimaryReplId);
 
@@ -143,28 +148,26 @@ namespace Garnet.cluster
         public static CheckpointEntry FromByteArray(byte[] serialized)
         {
             if (serialized.Length == 0) return null;
-            var ms = new MemoryStream(serialized);
-            var reader = new BinaryReader(ms);
+            using var ms = new MemoryStream(serialized);
+            using var reader = new BinaryReader(ms);
             var cEntry = new CheckpointEntry
             {
-                metadata = new()
+                metadata = new(0)
                 {
                     storeVersion = reader.ReadInt64(),
                     storeHlogToken = new Guid(reader.ReadBytes(reader.ReadInt32())),
                     storeIndexToken = new Guid(reader.ReadBytes(reader.ReadInt32())),
-                    storeCheckpointCoveredAofAddress = reader.ReadInt64(),
+                    storeCheckpointCoveredAofAddress = AofAddress.Deserialize(reader),
                     storePrimaryReplId = reader.ReadInt32() > 0 ? reader.ReadString() : default,
 
                     objectStoreVersion = reader.ReadInt64(),
                     objectStoreHlogToken = new Guid(reader.ReadBytes(reader.ReadInt32())),
                     objectStoreIndexToken = new Guid(reader.ReadBytes(reader.ReadInt32())),
-                    objectCheckpointCoveredAofAddress = reader.ReadInt64(),
+                    objectCheckpointCoveredAofAddress = AofAddress.Deserialize(reader),
                     objectStorePrimaryReplId = reader.ReadInt32() > 0 ? reader.ReadString() : default
                 }
             };
 
-            reader.Dispose();
-            ms.Dispose();
             return cEntry;
         }
 

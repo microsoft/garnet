@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -17,7 +18,7 @@ namespace Garnet.cluster
         /// <param name="replicaSyncMetadata"></param>
         /// <param name="errorMessage"></param>
         /// <returns></returns>
-        public bool TryAttachSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
+        public bool TryBeginDisklessSync(SyncMetadata replicaSyncMetadata, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
             if (clusterProvider.serverOptions.ReplicaDisklessSync)
@@ -38,27 +39,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Start sync of remote replica from this primary
-        /// </summary>
-        /// <param name="replicaNodeId"></param>
-        /// <param name="replicaAssignedPrimaryId"></param>
-        /// <param name="replicaCheckpointEntry"></param>
-        /// <param name="replicaAofBeginAddress"></param>
-        /// <param name="replicaAofTailAddress"></param>
-        /// <param name="errorMessage"></param>
-        /// <returns></returns>
-        public bool TryBeginPrimarySync(
-            string replicaNodeId,
-            string replicaAssignedPrimaryId,
-            CheckpointEntry replicaCheckpointEntry,
-            long replicaAofBeginAddress,
-            long replicaAofTailAddress,
-            out ReadOnlySpan<byte> errorMessage)
-        {
-            return TryBeginDiskSync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, out errorMessage);
-        }
-
-        /// <summary>
         /// Begin background replica sync session
         /// </summary>
         /// <param name="replicaNodeId">Node-id of replica that is currently attaching</param>
@@ -72,8 +52,8 @@ namespace Garnet.cluster
             string replicaNodeId,
             string replicaAssignedPrimaryId,
             CheckpointEntry replicaCheckpointEntry,
-            long replicaAofBeginAddress,
-            long replicaAofTailAddress,
+            AofAddress replicaAofBeginAddress,
+            AofAddress replicaAofTailAddress,
             out ReadOnlySpan<byte> errorMessage)
         {
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress))

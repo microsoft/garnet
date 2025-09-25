@@ -92,7 +92,7 @@ namespace Garnet.server
                 main_store_log_memory_size += db.MainStore.Log.MemorySizeBytes;
                 main_store_read_cache_size += db.MainStore.ReadCache?.MemorySizeBytes ?? 0;
 
-                aof_log_memory_size += db.AppendOnlyFile?.MemorySizeBytes ?? 0;
+                aof_log_memory_size += db.AppendOnlyFile != null ? db.AppendOnlyFile.MemorySizeBytes.AggregateDiff(0) : 0;
 
                 if (!disableObj)
                 {

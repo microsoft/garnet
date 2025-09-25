@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -9,108 +10,134 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed partial class ReplicationManager : IBulkLogEntryConsumer, IDisposable
+    internal sealed partial class ReplicationManager : IDisposable
     {
-        TsavoriteLogScanSingleIterator replayIterator = null;
-        CancellationTokenSource replicaReplayTaskCts;
-        SingleWriterMultiReaderLock activeReplay;
-
-        /// <summary>
-        /// Reset background replay iterator
-        /// </summary>
-        public void ResetReplayIterator()
+        internal sealed class ReplicaAofSyncReplayTask(int sublogIdx, ClusterProvider clusterProvider, ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
         {
-            ResetReplayCts();
-            replayIterator?.Dispose();
-            replayIterator = null;
+            readonly int sublogIdx = sublogIdx;
+            readonly ClusterProvider clusterProvider = clusterProvider;
+            readonly ILogger logger = logger;
 
-            void ResetReplayCts()
+            TsavoriteLogScanSingleIterator replayIterator = null;
+            CancellationTokenSource replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
+            SingleWriterMultiReaderLock activeReplay;
+
+            public void Dispose()
             {
-                if (replicaReplayTaskCts == null)
+                replicaReplayTaskCts.Cancel();
+                activeReplay.WriteLock();
+                replicaReplayTaskCts.Dispose();
+            }
+
+            /// <summary>
+            /// Reset background replay iterator
+            /// </summary>
+            public void ResetReplayIterator()
+            {
+                ResetReplayCts();
+                replayIterator?.Dispose();
+                replayIterator = null;
+
+                void ResetReplayCts()
                 {
-                    replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
-                }
-                else
-                {
-                    replicaReplayTaskCts.Cancel();
-                    try
+                    if (replicaReplayTaskCts == null)
                     {
-                        activeReplay.WriteLock();
-                        replicaReplayTaskCts.Dispose();
-                        replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
+                        replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
                     }
-                    finally
+                    else
                     {
-                        activeReplay.WriteUnlock();
+                        replicaReplayTaskCts.Cancel();
+                        try
+                        {
+                            activeReplay.WriteLock();
+                            replicaReplayTaskCts.Dispose();
+                            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
+                        }
+                        finally
+                        {
+                            activeReplay.WriteUnlock();
+                        }
                     }
                 }
             }
-        }
 
-        public void Throttle() { }
-
-        public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
-        {
-            ReplicationOffset = currentAddress;
-            var ptr = record;
-            while (ptr < record + recordLength)
+            public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
             {
-                replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
-                var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
-                if (payloadLength > 0)
-                {
-                    aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
-                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                    // point when we take a checkpoint at the checkpoint end marker
-                    if (isCheckpointStart)
-                        ReplicationCheckpointStartOffset = ReplicationOffset;
-                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                }
-                else if (payloadLength < 0)
-                {
-                    if (!clusterProvider.serverOptions.EnableFastCommit)
-                    {
-                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
-                    }
-                    TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
-                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                }
-                ptr += entryLength;
-                ReplicationOffset += entryLength;
-            }
-
-            if (ReplicationOffset != nextAddress)
-            {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", recordLength, currentAddress, nextAddress, ReplicationOffset);
-                throw new GarnetException($"ReplicaReplayTask.Consume NextAddress Mismatch recordeLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", LogLevel.Warning, clientResponse: false);
-            }
-        }
-
-        public async void ReplicaReplayTask()
-        {
-            try
-            {
-                activeReplay.ReadLock();
-                while (true)
+                clusterProvider.replicationManager.ReplicationOffset[sublogIdx] = currentAddress;
+                var ptr = record;
+                while (ptr < record + recordLength)
                 {
                     replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                    await replayIterator.BulkConsumeAllAsync(
-                        this,
-                        clusterProvider.serverOptions.ReplicaSyncDelayMs,
-                        maxChunkSize: 1 << 20,
-                        replicaReplayTaskCts.Token);
+                    var entryLength = clusterProvider.storeWrapper.appendOnlyFile.HeaderSize;
+                    var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
+                    if (payloadLength > 0)
+                    {
+                        clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                        // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
+                        // point when we take a checkpoint at the checkpoint end marker
+                        // FIXME: Do we need to coordinate between sublogs when updating this?
+                        if (isCheckpointStart)
+                            clusterProvider.replicationManager.ReplicationCheckpointStartOffset[sublogIdx] = clusterProvider.replicationManager.ReplicationOffset[sublogIdx];
+                        entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                    }
+                    else if (payloadLength < 0)
+                    {
+                        if (!clusterProvider.serverOptions.EnableFastCommit)
+                        {
+                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                        }
+                        TsavoriteLogRecoveryInfo info = new();
+                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                        clusterProvider.storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
+                        entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                    }
+                    ptr += entryLength;
+                    clusterProvider.replicationManager.ReplicationOffset[sublogIdx] += entryLength;
+                }
+
+                if (clusterProvider.replicationManager.ReplicationOffset[sublogIdx] != nextAddress)
+                {
+                    logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", recordLength, currentAddress, nextAddress, clusterProvider.replicationManager.ReplicationOffset[sublogIdx]);
+                    throw new GarnetException($"ReplicaReplayTask.Consume NextAddress Mismatch recordeLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{clusterProvider.replicationManager.ReplicationOffset[sublogIdx]}", LogLevel.Warning, clientResponse: false);
                 }
             }
-            catch (Exception ex)
+
+            public void Throttle() { }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public void ThrottlePrimary()
             {
-                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ReplicaReplayTask - terminating");
+                while (clusterProvider.serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
+                    clusterProvider.storeWrapper.appendOnlyFile.TailAddress.AggregateDiff(clusterProvider.replicationManager.ReplicationOffset) > clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag)
+                {
+                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                    Thread.Yield();
+                }
             }
-            finally
+
+            public async void ReplicaReplayTask()
             {
-                activeReplay.ReadUnlock();
+                try
+                {
+                    activeReplay.ReadLock();
+                    while (true)
+                    {
+                        replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                        await replayIterator.BulkConsumeAllAsync(
+                            this,
+                            clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                            maxChunkSize: 1 << 20,
+                            replicaReplayTaskCts.Token);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ReplicaReplayTask - terminating");
+                }
+                finally
+                {
+                    activeReplay.ReadUnlock();
+                }
             }
         }
     }

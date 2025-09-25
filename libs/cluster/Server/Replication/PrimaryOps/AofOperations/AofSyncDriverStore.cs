@@ -14,8 +14,30 @@ namespace Garnet.cluster
     /// <summary>
     /// Storage provider for AOF tasks
     /// </summary>
-    internal sealed class AofTaskStore : IDisposable
+    internal sealed class AofSyncDriverStore : IDisposable
     {
+        internal sealed class LogShiftTailCallback(int logIdx, AofSyncDriverStore store)
+        {
+            readonly int logIdx = logIdx;
+            readonly AofSyncDriverStore store = store;
+            
+            internal void SafeTailShiftCallback(long oldTailAddress, long newTailAddress)
+            {
+                var oldPage = oldTailAddress >> store.logPageSizeBits;
+                var newPage = newTailAddress >> store.logPageSizeBits;
+                // Call truncate only once per page
+                if (oldPage != newPage)
+                {
+                    // Truncate 2 pages after ReadOnly mark, so that we have sufficient time to shift begin before we flush
+                    var truncateUntilAddress = (newTailAddress & ~store.logPageSizeMask) - store.TruncateLagAddress;
+                    // Do not truncate beyond new tail (to handle corner cases)
+                    if (truncateUntilAddress > newTailAddress) truncateUntilAddress = newTailAddress;
+                    if (truncateUntilAddress > 0)
+                        _ = store.SafeTruncateAof(truncateUntilAddress, logIdx);
+                }
+            }
+        }
+
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;
         readonly int logPageSizeBits, logPageSizeMask;
@@ -26,9 +48,9 @@ namespace Garnet.cluster
         SingleWriterMultiReaderLock _lock;
         bool _disposed;
         public int Count => numTasks;
-        long TruncatedUntil;
+        internal AofAddress TruncatedUntil;
 
-        public AofTaskStore(ClusterProvider clusterProvider, int initialSize = 1, ILogger logger = null)
+        public AofSyncDriverStore(ClusterProvider clusterProvider, int initialSize = 1, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.logger = logger;
@@ -37,34 +59,112 @@ namespace Garnet.cluster
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
                 logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
-                int logPageSize = 1 << logPageSizeBits;
+                var logPageSize = 1 << logPageSizeBits;
                 logPageSizeMask = logPageSize - 1;
-                if (clusterProvider.serverOptions.FastAofTruncate)
-                    clusterProvider.storeWrapper.appendOnlyFile.SafeTailShiftCallback = SafeTailShiftCallback;
                 TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
+                if (clusterProvider.serverOptions.FastAofTruncate)
+                {
+                    for (var i = 0; i < clusterProvider.serverOptions.AofSublogCount; i++)
+                    {
+                        var logShiftTailCallback = new LogShiftTailCallback(i, this);
+                        clusterProvider.storeWrapper.appendOnlyFile.SetLogShiftTailCallback(logShiftTailCallback.SafeTailShiftCallback, i);
+                    }
+                }
             }
-            TruncatedUntil = 0;
+            TruncatedUntil = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount,0);
         }
 
-        internal long AofTruncatedUntil => TruncatedUntil;
-
-        internal void SafeTailShiftCallback(long oldTailAddress, long newTailAddress)
+        /// <summary>
+        /// Safely truncate AOF sublog
+        /// </summary>
+        /// <param name="truncateUntil"></param>
+        /// <param name="subLogIdx"></param>
+        /// <returns></returns>
+        long SafeTruncateAof(long truncateUntil, int subLogIdx)
         {
-            long oldPage = oldTailAddress >> logPageSizeBits;
-            long newPage = newTailAddress >> logPageSizeBits;
-            // Call truncate only once per page
-            if (oldPage != newPage)
+            _lock.WriteLock();
+
+            if (_disposed)
             {
-                // Truncate 2 pages after ReadOnly mark, so that we have sufficient time to shift begin before we flush
-                long truncateUntilAddress = (newTailAddress & ~logPageSizeMask) - TruncateLagAddress;
-                // Do not truncate beyond new tail (to handle corner cases)
-                if (truncateUntilAddress > newTailAddress) truncateUntilAddress = newTailAddress;
-                if (truncateUntilAddress > 0)
-                    SafeTruncateAof(truncateUntilAddress);
+                _lock.WriteUnlock();
+                return -1;
+            }
+
+            // Calculate min address of all iterators
+            var TruncatedUntil = truncateUntil;
+            for (var i = 0; i < numTasks; i++)
+            {
+                Debug.Assert(syncDrivers[i] != null);
+                if (syncDrivers[i].PreviousAddress[subLogIdx] < TruncatedUntil)
+                    TruncatedUntil = syncDrivers[i].PreviousAddress[subLogIdx];
+            }
+
+            // Inform that we have logically truncatedUntil
+            this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, subLogIdx);
+            // Release lock early
+            _lock.WriteUnlock();
+
+            if (clusterProvider.serverOptions.FastAofTruncate)
+            {
+                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, subLogIdx, snapToPageStart: true, truncateLog: true);
+            }
+            else
+            {
+                clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil, subLogIdx);
+                clusterProvider.storeWrapper.appendOnlyFile?.Commit();
+            }
+
+            return TruncatedUntil;
+        }        
+
+        /// <summary>
+        /// Safely truncate AOF until provided address by checking against active AofSyncDrivers
+        /// </summary>
+        /// <param name="truncateUntil"></param>
+        public void SafeTruncateAof(AofAddress truncateUntil)
+        {
+            try
+            {
+                _lock.WriteLock();
+
+                if (_disposed)
+                    return;
+
+                // Calculate min address of all iterators
+                var TruncatedUntil = truncateUntil;
+                for (var i = 0; i < numTasks; i++)
+                {
+                    Debug.Assert(syncDrivers[i] != null);
+                    TruncatedUntil.MinExchange(syncDrivers[i].PreviousAddress);
+                }
+
+                // Inform that we have logically truncatedUntil
+                this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
+                // Release lock early
+                _lock.WriteUnlock();
+
+                if (clusterProvider.serverOptions.FastAofTruncate)
+                {
+                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                }
+                else
+                {
+                    clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil);
+                    clusterProvider.storeWrapper.appendOnlyFile?.Commit();
+                }
+            }
+            finally
+            {
+                _lock.WriteUnlock();
             }
         }
 
-        public List<RoleInfo> GetReplicaInfo(long PrimaryReplicationOffset)
+        /// <summary>
+        /// Get relevant information for all attached replicas
+        /// </summary>
+        /// <param name="PrimaryReplicationOffset"></param>
+        /// <returns></returns>
+        public List<RoleInfo> GetReplicaInfo(AofAddress PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
             List<RoleInfo> replicaInfo = new(numTasks);
@@ -75,7 +175,7 @@ namespace Garnet.cluster
             {
                 if (_disposed) return replicaInfo;
 
-                for (int i = 0; i < numTasks; ++i)
+                for (var i = 0; i < numTasks; ++i)
                 {
                     var cr = syncDrivers[i];
                     var (address, port) = current.GetWorkerAddressFromNodeId(cr.RemoteNodeId);
@@ -86,7 +186,7 @@ namespace Garnet.cluster
                         port = port,
                         replication_state = cr.IsConnected ? "online" : "offline",
                         replication_offset = cr.PreviousAddress,
-                        replication_lag = cr.PreviousAddress - PrimaryReplicationOffset
+                        replication_lag = cr.PreviousAddress.AggregateDiff(PrimaryReplicationOffset)
                     });
                 }
             }
@@ -117,11 +217,11 @@ namespace Garnet.cluster
             }
         }
 
-        public bool TryAddReplicationTask(string remoteNodeId, long startAddress, out AofSyncDriver aofSyncTaskInfo)
+        public bool TryAddReplicationTask(string remoteNodeId, ref AofAddress startAddress, out AofSyncDriver aofSyncTaskInfo)
         {
             aofSyncTaskInfo = null;
 
-            if (startAddress == 0) startAddress = ReplicationManager.kFirstValidAofAddress;
+            startAddress.SetValueIf(ReplicationManager.kFirstValidAofAddress, 0);
             var success = false;
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetWorkerAddressFromNodeId(remoteNodeId);
@@ -139,7 +239,7 @@ namespace Garnet.cluster
                     current.LocalNodeId,
                     remoteNodeId,
                     new IPEndPoint(IPAddress.Parse(address), port),
-                    startAddress,
+                    ref startAddress,
                     logger);
             }
             catch (Exception ex)
@@ -157,14 +257,14 @@ namespace Garnet.cluster
                 if (_disposed) return success;
 
                 // Fail adding the task if truncation has happened, and we are not in AllowDataLoss mode
-                if (startAddress < TruncatedUntil && !clusterProvider.AllowDataLoss)
+                if (startAddress.AnyLesser(TruncatedUntil) && !clusterProvider.AllowDataLoss)
                 {
                     logger?.LogWarning("AOF sync task for {remoteNodeId}, with start address {startAddress}, could not be added, local AOF is truncated until {truncatedUntil}", remoteNodeId, startAddress, TruncatedUntil);
                     return success;
                 }
 
                 // Iterate array of existing tasks and update associated task if it already exists
-                for (int i = 0; i < numTasks; i++)
+                for (var i = 0; i < numTasks; i++)
                 {
                     var t = syncDrivers[i];
                     Debug.Assert(t != null);
@@ -209,11 +309,11 @@ namespace Garnet.cluster
             return success;
         }
 
-        public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, long startAddress)
+        public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, ref AofAddress startAddress)
         {
             var current = clusterProvider.clusterManager.CurrentConfig;
             var success = true;
-            if (startAddress == 0) startAddress = ReplicationManager.kFirstValidAofAddress;
+            startAddress.SetValueIf(ReplicationManager.kFirstValidAofAddress, 0);
 
             // First iterate through all sync sessions and add an AOF sync task
             // All tasks will be
@@ -235,7 +335,7 @@ namespace Garnet.cluster
                         current.LocalNodeId,
                         replicaNodeId,
                         new IPEndPoint(IPAddress.Parse(address), port),
-                        startAddress,
+                        ref startAddress,
                         logger));
                 }
                 catch (Exception ex)
@@ -251,7 +351,7 @@ namespace Garnet.cluster
                 if (_disposed) return false;
 
                 // Fail adding the task if truncation has happened
-                if (startAddress < TruncatedUntil && !clusterProvider.AllowDataLoss)
+                if (startAddress.AnyLesser(TruncatedUntil) && !clusterProvider.AllowDataLoss)
                 {
                     logger?.LogError("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationTasks), startAddress, TruncatedUntil);
                     return false;
@@ -269,7 +369,7 @@ namespace Garnet.cluster
                         Debug.Assert(t != null);
                         if (t.RemoteNodeId == rss.replicaNodeId)
                         {
-                            syncDrivers[i] = rss.AofSyncTask;
+                            syncDrivers[i] = rss.AofSyncDriver;
                             t.Dispose();
                             added = true;
                             break;
@@ -289,7 +389,7 @@ namespace Garnet.cluster
                         Array.Clear(old_tasks);
                     }
                     // Add new AOF sync task
-                    syncDrivers[numTasks++] = rss.AofSyncTask;
+                    syncDrivers[numTasks++] = rss.AofSyncDriver;
                 }
 
                 success = true;
@@ -303,7 +403,7 @@ namespace Garnet.cluster
                     foreach (var rss in replicaSyncSessions)
                     {
                         if (rss == null) continue;
-                        rss.AofSyncTask?.Dispose();
+                        rss.AofSyncDriver?.Dispose();
                     }
                 }
             }
@@ -351,48 +451,6 @@ namespace Garnet.cluster
             return success;
         }
 
-        /// <summary>
-        /// Safely truncate iterator
-        /// </summary>
-        /// <param name="CheckpointCoveredAofAddress"></param>
-        /// <returns></returns>
-        public long SafeTruncateAof(long CheckpointCoveredAofAddress)
-        {
-            _lock.WriteLock();
-
-            if (_disposed)
-            {
-                _lock.WriteUnlock();
-                return -1;
-            }
-
-            // Calculate min address of all iterators
-            var TruncatedUntil = CheckpointCoveredAofAddress;
-            for (var i = 0; i < numTasks; i++)
-            {
-                Debug.Assert(syncDrivers[i] != null);
-                if (syncDrivers[i].PreviousAddress < TruncatedUntil)
-                    TruncatedUntil = syncDrivers[i].PreviousAddress;
-            }
-
-            // Inform that we have logically truncatedUntil
-            _ = Tsavorite.core.Utility.MonotonicUpdate(ref this.TruncatedUntil, TruncatedUntil, out _);
-            // Release lock early
-            _lock.WriteUnlock();
-
-            if (clusterProvider.serverOptions.FastAofTruncate)
-            {
-                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
-            }
-            else
-            {
-                clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil);
-                clusterProvider.storeWrapper.appendOnlyFile?.Commit();
-            }
-
-            return TruncatedUntil;
-        }
-
         public int CountConnectedReplicas()
         {
             var count = 0;
@@ -414,10 +472,10 @@ namespace Garnet.cluster
             return count;
         }
 
-        public void UpdateTruncatedUntil(long truncatedUntil)
+        public void UpdateTruncatedUntil(AofAddress truncatedUntil)
         {
             _lock.WriteLock();
-            Tsavorite.core.Utility.MonotonicUpdate(ref TruncatedUntil, truncatedUntil, out _);
+            this.TruncatedUntil.MonotonicUpdate(ref truncatedUntil);
             _lock.WriteUnlock();
         }
     }

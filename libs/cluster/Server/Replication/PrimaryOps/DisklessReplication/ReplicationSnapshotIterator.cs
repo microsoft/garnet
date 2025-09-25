@@ -26,7 +26,7 @@ namespace Garnet.cluster
         long currentFlushEventCount = 0;
         long lastFlushEventCount = 0;
 
-        public long CheckpointCoveredAddress { get; private set; }
+        AofAddress CheckpointCoveredAddress { get; set; }
 
         public SnapshotIteratorManager(ReplicationSyncManager replicationSyncManager, CancellationToken cancellationToken, ILogger logger = null)
         {

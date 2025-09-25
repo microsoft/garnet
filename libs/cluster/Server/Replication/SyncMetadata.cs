@@ -3,6 +3,7 @@
 
 using System.IO;
 using System.Text;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -110,9 +111,9 @@ namespace Garnet.cluster
         string currentPrimaryReplId,
         long currentStoreVersion,
         long currentObjectStoreVersion,
-        long currentAofBeginAddress,
-        long currentAofTailAddress,
-        long currentReplicationOffset,
+        AofAddress currentAofBeginAddress,
+        AofAddress currentAofTailAddress,
+        AofAddress currentReplicationOffset,
         CheckpointEntry checkpointEntry)
     {
         public readonly bool fullSync = fullSync;
@@ -121,9 +122,9 @@ namespace Garnet.cluster
         public readonly string currentPrimaryReplId = currentPrimaryReplId;
         public readonly long currentStoreVersion = currentStoreVersion;
         public readonly long currentObjectStoreVersion = currentObjectStoreVersion;
-        public readonly long currentAofBeginAddress = currentAofBeginAddress;
-        public readonly long currentAofTailAddress = currentAofTailAddress;
-        public readonly long currentReplicationOffset = currentReplicationOffset;
+        public readonly AofAddress currentAofBeginAddress = currentAofBeginAddress;
+        public readonly AofAddress currentAofTailAddress = currentAofTailAddress;
+        public readonly AofAddress currentReplicationOffset = currentReplicationOffset;
         public readonly CheckpointEntry checkpointEntry = checkpointEntry;
 
         public byte[] ToByteArray()
@@ -139,9 +140,9 @@ namespace Garnet.cluster
             writer.Write(currentStoreVersion);
             writer.Write(currentObjectStoreVersion);
 
-            writer.Write(currentAofBeginAddress);
-            writer.Write(currentAofTailAddress);
-            writer.Write(currentReplicationOffset);
+            currentAofBeginAddress.Serialize(writer);
+            currentAofTailAddress.Serialize(writer);
+            currentReplicationOffset.Serialize(writer);
 
             if (checkpointEntry != null)
             {
@@ -169,9 +170,9 @@ namespace Garnet.cluster
                 currentPrimaryReplId: reader.ReadString(),
                 currentStoreVersion: reader.ReadInt64(),
                 currentObjectStoreVersion: reader.ReadInt64(),
-                currentAofBeginAddress: reader.ReadInt64(),
-                currentAofTailAddress: reader.ReadInt64(),
-                currentReplicationOffset: reader.ReadInt64(),
+                currentAofBeginAddress: AofAddress.Deserialize(reader),
+                currentAofTailAddress: AofAddress.Deserialize(reader),
+                currentReplicationOffset: AofAddress.Deserialize(reader),
                 checkpointEntry: CheckpointEntry.FromByteArray(reader.ReadBytes(reader.ReadInt32()))
             );
             return syncMetadata;

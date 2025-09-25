@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -15,20 +16,20 @@ namespace Garnet.cluster
     {
         public string primary_replid;
         public string primary_replid2;
-        public long replicationOffset;
-        public long replicationOffset2;
+        public AofAddress replicationOffset;
+        public AofAddress replicationOffset2;
 
-        public ReplicationHistory()
+        public ReplicationHistory(uint aofSublogCount)
         {
             primary_replid = Generator.CreateHexId();
             primary_replid2 = String.Empty;
-            replicationOffset = 0;
-            replicationOffset2 = int.MaxValue;
+            replicationOffset = AofAddress.SetValue(aofSublogCount, 0);
+            replicationOffset2 = AofAddress.SetValue(aofSublogCount, long.MaxValue);
         }
 
         public ReplicationHistory Copy()
         {
-            return new ReplicationHistory()
+            return new ReplicationHistory(replicationOffset.Length)
             {
                 primary_replid = primary_replid,
                 primary_replid2 = primary_replid2,
@@ -39,33 +40,29 @@ namespace Garnet.cluster
 
         public byte[] ToByteArray()
         {
-            var ms = new MemoryStream();
-            var writer = new BinaryWriter(ms, Encoding.ASCII);
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms, Encoding.ASCII);
 
             writer.Write(primary_replid);
             writer.Write(primary_replid2);
-            writer.Write(replicationOffset);
-            writer.Write(replicationOffset2);
+            replicationOffset.Serialize(writer);
+            replicationOffset2.Serialize(writer);
 
-            byte[] byteArray = ms.ToArray();
-            writer.Dispose();
-            ms.Dispose();
+            var byteArray = ms.ToArray();
             return byteArray;
         }
 
         public static ReplicationHistory FromByteArray(byte[] data)
         {
-            var ms = new MemoryStream(data);
-            var reader = new BinaryReader(ms);
+            using var ms = new MemoryStream(data);
+            using var reader = new BinaryReader(ms);
 
             var primary_replid = reader.ReadString();
             var primary_replid2 = reader.ReadString();
-            var replicationOffset = reader.ReadInt64();
-            var replicationOffset2 = reader.ReadInt64();
+            var replicationOffset = AofAddress.Deserialize(reader);
+            var replicationOffset2 = AofAddress.Deserialize(reader);
 
-            reader.Dispose();
-            ms.Dispose();
-            return new ReplicationHistory()
+            return new ReplicationHistory(replicationOffset.Length)
             {
                 primary_replid = primary_replid,
                 primary_replid2 = primary_replid2,
@@ -81,7 +78,7 @@ namespace Garnet.cluster
             return newConfig;
         }
 
-        public ReplicationHistory FailoverUpdate(long replicationOffset2)
+        public ReplicationHistory FailoverUpdate(AofAddress replicationOffset2)
         {
             var newConfig = this.Copy();
             newConfig.primary_replid2 = primary_replid;
@@ -97,9 +94,9 @@ namespace Garnet.cluster
         readonly IDevice replicationConfigDevice;
         readonly SectorAlignedBufferPool replicationConfigDevicePool;
 
-        private void InitializeReplicationHistory()
+        private void InitializeReplicationHistory(uint aofSublogCount)
         {
-            currentReplicationConfig = new ReplicationHistory();
+            currentReplicationConfig = new ReplicationHistory(aofSublogCount);
             FlushConfig();
         }
 

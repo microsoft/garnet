@@ -92,7 +92,14 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddReplicaSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, cts.Token, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(
+                ClusterProvider.storeWrapper,
+                ClusterProvider,
+                replicaAofBeginAddress:default,
+                replicaAofTailAddress: default,
+                replicaSyncMetadata,
+                cts.Token,
+                logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {
@@ -228,7 +235,7 @@ namespace Garnet.cluster
                     // Lock AOF address for sync streaming
                     // If clusterProvider.allowDataLoss is set the addition never fails,
                     // otherwise failure occurs if AOF has been truncated beyond minServiceableAofAddress
-                    if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), minServiceableAofAddress))
+                    if (ClusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTasks(GetSessionStore.GetSessions(), ref minServiceableAofAddress))
                         break;
 
                     // Retry if failed to lock AOF address because truncation occurred

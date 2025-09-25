@@ -15,7 +15,7 @@ namespace Garnet.cluster
         public class AofSyncTask : IBulkLogEntryConsumer, IDisposable
         {
             readonly AofSyncDriver aofSyncDriver;
-            readonly int taskId;
+            readonly uint taskId;
             public readonly GarnetClientSession garnetClient;
             readonly CancellationTokenSource cts;
             readonly long startAddress;
@@ -37,9 +37,17 @@ namespace Garnet.cluster
             /// </summary>
             public bool IsConnected => garnetClient != null && garnetClient.IsConnected;
 
+            /// <summary>
+            /// AofSyncTask constructor
+            /// </summary>
+            /// <param name="aofSyncDriver"></param>
+            /// <param name="taskId"></param>
+            /// <param name="endPoint"></param>
+            /// <param name="startAddress"></param>
+            /// <param name="cts"></param>
             public AofSyncTask(
                 AofSyncDriver aofSyncDriver,
-                int taskId,
+                uint taskId,
                 IPEndPoint endPoint,
                 long startAddress,
                 CancellationTokenSource cts)
@@ -69,6 +77,14 @@ namespace Garnet.cluster
                 garnetClient?.Dispose();
             }
 
+            /// <summary>
+            /// Consume AOF records generated at the primary
+            /// </summary>
+            /// <param name="payloadPtr"></param>
+            /// <param name="payloadLength"></param>
+            /// <param name="currentAddress"></param>
+            /// <param name="nextAddress"></param>
+            /// <param name="isProtected"></param>
             public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
             {
                 try
@@ -80,6 +96,7 @@ namespace Garnet.cluster
                     // This is called under epoch protection, so we have to wait for appending to complete
                     garnetClient.ExecuteClusterAppendLog(
                         aofSyncDriver.localNodeId,
+                        taskId,
                         previousAddress,
                         currentAddress,
                         nextAddress,

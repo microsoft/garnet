@@ -69,7 +69,7 @@ namespace Garnet.server
         public abstract void RecoverAOF();
 
         /// <inheritdoc/>
-        public abstract long ReplayAOF(long untilAddress = -1);
+        public abstract AofAddress ReplayAOF(AofAddress untilAddress);
 
         /// <inheritdoc/>
         public abstract void DoCompaction(CancellationToken token = default, ILogger logger = null);
@@ -126,7 +126,7 @@ namespace Garnet.server
         public TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore => DefaultDatabase.ObjectStore;
 
         /// <inheritdoc/>
-        public IAppendOnlyFile AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
+        public GarnetAppendOnlyFile AppendOnlyFile => DefaultDatabase.AppendOnlyFile;
 
         /// <inheritdoc/>
         public DateTimeOffset LastSaveTime => DefaultDatabase.LastSaveTime;
@@ -284,13 +284,13 @@ namespace Garnet.server
         /// <param name="db">Database to replay</param>
         /// <param name="untilAddress">Tail address</param>
         /// <returns>Tail address</returns>
-        protected long ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, long untilAddress = -1)
+        protected AofAddress ReplayDatabaseAOF(AofProcessor aofProcessor, GarnetDatabase db, AofAddress untilAddress)
         {
-            long replicationOffset = 0;
             try
             {
-                replicationOffset = aofProcessor.Recover(db, untilAddress);
+                var replicationOffset = aofProcessor.Recover(db, untilAddress);
                 db.LastSaveTime = DateTimeOffset.UtcNow;
+                return replicationOffset;
             }
             catch (Exception ex)
             {
@@ -299,7 +299,7 @@ namespace Garnet.server
                     throw;
             }
 
-            return replicationOffset;
+            return default;
         }
 
         /// <summary>
@@ -624,18 +624,18 @@ namespace Garnet.server
         {
             logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, dbId = {dbId}", full, checkpointType, tryIncremental, db.Id);
 
-            long checkpointCoveredAofAddress = 0;
+            var checkpointCoveredAofAddress = AofAddress.SetValue(StoreWrapper.serverOptions.AofSublogCount, 0);
             if (db.AppendOnlyFile != null)
             {
                 if (StoreWrapper.serverOptions.EnableCluster)
-                    StoreWrapper.clusterProvider.OnCheckpointInitiated(out checkpointCoveredAofAddress);
+                    StoreWrapper.clusterProvider.OnCheckpointInitiated(ref checkpointCoveredAofAddress);
                 else
                 {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
                     StoreWrapper.StoreCheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
                 }
 
-                if (checkpointCoveredAofAddress > 0)
+                if (checkpointCoveredAofAddress.AnyGreater(0))
                     logger?.LogInformation("Will truncate AOF to {tailAddress} after checkpoint (files deleted after next commit), dbId = {dbId}", checkpointCoveredAofAddress, db.Id);
             }
 
@@ -673,7 +673,7 @@ namespace Garnet.server
             // If cluster is enabled the replication manager is responsible for truncating AOF
             if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.serverOptions.EnableAOF)
             {
-                StoreWrapper.clusterProvider.SafeTruncateAOF(full, checkpointCoveredAofAddress,
+                StoreWrapper.clusterProvider.AddNewCheckpointEntry(full, checkpointCoveredAofAddress,
                     checkpointResult.token, checkpointResult.token);
             }
             else

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -15,7 +16,7 @@ namespace Garnet.cluster
             checkpointStore.Initialize();
             if (checkpointStore.TryGetLatestCheckpointEntryFromMemory(out var cEntry))
             {
-                aofTaskStore.UpdateTruncatedUntil(cEntry.GetMinAofCoveredAddress());
+                aofSyncDriverStore.UpdateTruncatedUntil(cEntry.GetMinAofCoveredAddress());
                 cEntry.RemoveReader();
                 return true;
             }
@@ -89,18 +90,31 @@ namespace Garnet.cluster
             => checkpointStore.GetLatestCheckpointFromDiskInfo();
         #endregion
 
-        public long StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
-        public long ObjectStoreCurrentSafeAofAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
+        public ref AofAddress StoreCurrentSafeAofAddress => ref clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
+        public ref AofAddress ObjectStoreCurrentSafeAofAddress => ref objectStoreCurrentSafeAofAddress();
 
-        public long StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
-        public long ObjectStoreRecoveredSafeAofTailAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
+        ref AofAddress objectStoreCurrentSafeAofAddress()
+        {
+            if (clusterProvider.serverOptions.DisableObjects)
+                return ref storeWrapper.appendOnlyFile.InvalidAofAddress;
+            return ref clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
+        }
+
+        public ref AofAddress StoreRecoveredSafeAofTailAddress => ref clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
+        public ref AofAddress ObjectStoreRecoveredSafeAofTailAddress => ref objectStoreRecoveredSafeAofTailAddress();
+        ref AofAddress objectStoreRecoveredSafeAofTailAddress()
+        {
+            if (clusterProvider.serverOptions.DisableObjects)
+                return ref storeWrapper.appendOnlyFile.InvalidAofAddress;
+            return ref clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
+        }
 
         /// <summary>
         /// Update current aof address for pending commit.
         /// This is necessary to recover safe aof address along with the commit information.
         /// </summary>
         /// <param name="safeAofTailAddress"></param>
-        public void UpdateCommitSafeAofAddress(long safeAofTailAddress)
+        public void UpdateCommitSafeAofAddress(ref AofAddress safeAofTailAddress)
         {
             clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
             if (!clusterProvider.serverOptions.DisableObjects)

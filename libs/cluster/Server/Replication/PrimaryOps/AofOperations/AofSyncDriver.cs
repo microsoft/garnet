@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -13,18 +15,18 @@ namespace Garnet.cluster
     internal sealed partial class AofSyncDriver : IDisposable
     {
         readonly ClusterProvider clusterProvider;
-        readonly AofTaskStore aofTaskStore;
+        readonly AofSyncDriverStore aofTaskStore;
         readonly string localNodeId;
         readonly string remoteNodeId;
         readonly ILogger logger;
         readonly CancellationTokenSource cts;
 
-        AofSyncTask aofSyncTask;
+        AofSyncTask[] aofSyncTasks;
 
         /// <summary>
         /// Check if client connection is healthy
         /// </summary>
-        public bool IsConnected => aofSyncTask.IsConnected;
+        public bool IsConnected => aofSyncTasks[0].IsConnected;
 
         /// <summary>
         /// Node-id associated with this AofSyncTask
@@ -34,36 +36,52 @@ namespace Garnet.cluster
         /// <summary>
         /// Return start address for underlying AofSyncTask
         /// </summary>
-        public long StartAddress => aofSyncTask.StartAddress;
+        public AofAddress StartAddress => GetAofStartAddress();
+
+        AofAddress startAddress;
+
+        AofAddress GetAofStartAddress()
+        {
+            for (var i = 0; i < aofSyncTasks.Length; i++)
+                startAddress[i] = aofSyncTasks[i].StartAddress;
+            return startAddress;
+        }        
 
         /// <summary>
         /// Return previous address for underlying AofSyncTask
         /// </summary>
-        public long PreviousAddress => aofSyncTask.PreviousAddress;
+        public AofAddress PreviousAddress => GetPreviousAofAddress();
+
+        AofAddress previousAddress;
+
+        AofAddress GetPreviousAofAddress()
+        {
+            for (var i = 0; i < aofSyncTasks.Length; i++)
+                previousAddress[i] = aofSyncTasks[i].PreviousAddress;
+            return previousAddress;
+        }
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
-            AofTaskStore aofTaskStore,
+            AofSyncDriverStore aofSyncDriver,
             string localNodeId,
             string remoteNodeId,
             IPEndPoint endPoint,
-            long startAddress,
+            ref AofAddress startAddress,
             ILogger logger)
         {
             this.clusterProvider = clusterProvider;
-            this.aofTaskStore = aofTaskStore;
+            this.aofTaskStore = aofSyncDriver;
             this.localNodeId = localNodeId;
             this.remoteNodeId = remoteNodeId;
+            this.startAddress = startAddress;
+            this.previousAddress = startAddress;
             this.logger = logger;
             cts = new CancellationTokenSource();
 
-            aofSyncTask = new AofSyncTask(
-                this,
-                -1,
-                endPoint,
-                startAddress,
-                cts
-            );
+            aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofSublogCount];
+            for (var i = 0; i < aofSyncTasks.Length; i++)
+                aofSyncTasks[i] = new AofSyncTask(this, (uint)i, endPoint, startAddress[i], cts);
         }
 
         public void Dispose()
@@ -72,13 +90,18 @@ namespace Garnet.cluster
             cts?.Cancel();
 
             // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
-            aofSyncTask?.Dispose();
+            foreach(var aofSyncTask in aofSyncTasks)
+                aofSyncTask?.Dispose();
 
             // Finally, dispose the cts
             cts?.Dispose();
         }
 
-        public void DisposeClient() => aofSyncTask.garnetClient?.Dispose();
+        public void DisposeClient()
+        {
+            foreach(var aofSyncTask in aofSyncTasks)
+                aofSyncTask.garnetClient?.Dispose();
+        }
 
         /// <summary>
         /// Main replica aof sync task.
@@ -86,10 +109,14 @@ namespace Garnet.cluster
         public async Task Run()
         {
             logger?.LogInformation("Starting ReplicationManager.ReplicaSyncTask for remote node {remoteNodeId} starting from address {address}", remoteNodeId, StartAddress);
-            
+
             try
             {
-                await aofSyncTask.RunAofSyncTask();
+                var tasks = new List<Task>();
+                foreach (var aofSyncTask in aofSyncTasks)
+                    tasks.Add(aofSyncTask.RunAofSyncTask());
+
+                await Task.WhenAll(tasks.ToArray());
             }
             catch (Exception ex)
             {
@@ -97,7 +124,8 @@ namespace Garnet.cluster
             }
             finally
             {
-                aofSyncTask.Dispose();
+                foreach (var aofSyncTask in aofSyncTasks)
+                    aofSyncTask.Dispose();
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
                 logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, PreviousAddress);
 
@@ -112,32 +140,33 @@ namespace Garnet.cluster
         public void ConnectClient()
         {
             if (!IsConnected)
-                aofSyncTask.garnetClient.Connect();
+                foreach(var aofSyncTask in aofSyncTasks)
+                    aofSyncTask.garnetClient.Connect();
         }
 
         public Task<string> IssuesFlushAll()
-            => aofSyncTask.garnetClient.ExecuteAsync(["CLUSTER", "FLUSHALL"]);
+            => aofSyncTasks[0].garnetClient.ExecuteAsync(["CLUSTER", "FLUSHALL"]);
 
         public void InitializeIterationBuffer()
-            => aofSyncTask.garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
+            => aofSyncTasks[0].garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
 
         public void InitializeIfNeeded(bool isMainStore)
         {
-            if (aofSyncTask.garnetClient.NeedsInitialization)
-                aofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
+            if (aofSyncTasks[0].garnetClient.NeedsInitialization)
+                aofSyncTasks[0].garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
         }
 
         public Task<string> ExecuteAttachSync(SyncMetadata syncMetadata)
-            => aofSyncTask.garnetClient.ExecuteAttachSync(syncMetadata.ToByteArray());
+            => aofSyncTasks[0].garnetClient.ExecuteClusterAttachSync(syncMetadata.ToByteArray());
 
         public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
-            => aofSyncTask.garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
+            => aofSyncTasks[0].garnetClient.TryWriteKeyValueSpanByte(ref key, ref value, out task);
 
         public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
-            => aofSyncTask.garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
+            => aofSyncTasks[0].garnetClient.TryWriteKeyValueByteArray(key, value, expiration, out task);
 
         public Task<string> SendAndResetIterationBuffer()
-            => aofSyncTask.garnetClient.SendAndResetIterationBuffer();
+            => aofSyncTasks[0].garnetClient.SendAndResetIterationBuffer();
         #endregion
     }
 }

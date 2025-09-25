@@ -10,27 +10,27 @@ namespace Garnet.server
         public long storeVersion;
         public Guid storeHlogToken;
         public Guid storeIndexToken;
-        public long storeCheckpointCoveredAofAddress;
+        public AofAddress storeCheckpointCoveredAofAddress;
         public string storePrimaryReplId;
 
         public long objectStoreVersion;
         public Guid objectStoreHlogToken;
         public Guid objectStoreIndexToken;
-        public long objectCheckpointCoveredAofAddress;
+        public AofAddress objectCheckpointCoveredAofAddress;
         public string objectStorePrimaryReplId;
 
-        public CheckpointMetadata()
+        public CheckpointMetadata(uint sublogCount)
         {
             storeVersion = -1;
             storeHlogToken = default;
             storeIndexToken = default;
-            storeCheckpointCoveredAofAddress = long.MaxValue;
+            storeCheckpointCoveredAofAddress = AofAddress.SetValue(sublogCount, 0);
             storePrimaryReplId = null;
 
             objectStoreVersion = -1;
             objectStoreHlogToken = default;
             objectStoreIndexToken = default;
-            objectCheckpointCoveredAofAddress = long.MaxValue;
+            objectCheckpointCoveredAofAddress = AofAddress.SetValue(sublogCount, long.MaxValue);
             objectStorePrimaryReplId = null;
         }
 

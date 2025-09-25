@@ -21,6 +21,7 @@ namespace Garnet.cluster
     {
         readonly ClusterProvider clusterProvider;
         readonly StoreWrapper storeWrapper;
+        public AofProcessor AofProcessor => aofProcessor;
         readonly AofProcessor aofProcessor;
         readonly CheckpointStore checkpointStore;
         readonly ReplicationSyncManager replicationSyncManager;
@@ -47,35 +48,33 @@ namespace Garnet.cluster
 
         public bool CannotStreamAOF => IsRecovering && currentRecoveryStatus != RecoveryStatus.CheckpointRecoveredAtReplica;
 
-        private long replicationOffset;
+        private AofAddress replicationOffset;
 
-        public long ReplicationOffset
+        public ref AofAddress ReplicationOffset
         {
             get
             {
                 // Primary tracks replicationOffset indirectly through AOF tailAddress
                 // Replica will adjust replication offset as it receives data from primary (TODO: since AOFs are synced this might obsolete)
                 var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
-                return role == NodeRole.PRIMARY ?
-                    (clusterProvider.serverOptions.EnableAOF && storeWrapper.appendOnlyFile.TailAddress > kFirstValidAofAddress ? storeWrapper.appendOnlyFile.TailAddress : kFirstValidAofAddress) :
-                    replicationOffset;
+                if (role == NodeRole.PRIMARY && clusterProvider.serverOptions.EnableAOF)
+                    replicationOffset.MaxExchange(storeWrapper.appendOnlyFile.TailAddress);
+                return ref replicationOffset;
             }
-
-            set { replicationOffset = value; }
         }
 
         /// <summary>
         /// Replication offset corresponding to the checkpoint start marker. We will truncate only to this point after taking a checkpoint (the checkpoint
         /// is taken only when we encounter a checkpoint end marker).
         /// </summary>
-        public long ReplicationCheckpointStartOffset;
+        public AofAddress ReplicationCheckpointStartOffset;
 
         /// <summary>
         /// Replication offset until which AOF address is valid for old primary if failover has occurred
         /// </summary>
-        public long ReplicationOffset2
+        public ref AofAddress ReplicationOffset2
         {
-            get { return currentReplicationConfig.replicationOffset2; }
+            get { return ref currentReplicationConfig.replicationOffset2; }
         }
 
         public string PrimaryReplId => currentReplicationConfig.primary_replid;
@@ -97,18 +96,18 @@ namespace Garnet.cluster
             };
         }
 
-        public long GetRecoveredSafeAofAddress()
+        public AofAddress GetRecoveredSafeAofAddress()
         {
             var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).RecoveredSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).RecoveredSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
+            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? clusterProvider.storeWrapper.appendOnlyFile.MaxAofAddress : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).RecoveredSafeAofAddress;
+            return AofAddress.Min(ref storeAofAddress, ref objectStoreAofAddress);
         }
 
-        public long GetCurrentSafeAofAddress()
+        public AofAddress GetCurrentSafeAofAddress()
         {
             var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).CurrentSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).CurrentSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
+            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? clusterProvider.storeWrapper.appendOnlyFile.MaxAofAddress : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).CurrentSafeAofAddress;
+            return AofAddress.Min(ref storeAofAddress, ref objectStoreAofAddress);
         }
 
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
@@ -127,7 +126,8 @@ namespace Garnet.cluster
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
-            ReplicationOffset = 0;
+            replicationOffset = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, kFirstValidAofAddress);
+            ReplicationCheckpointStartOffset = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, kFirstValidAofAddress);
 
             // Set the appendOnlyFile field for all stores
             clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
@@ -143,7 +143,7 @@ namespace Garnet.cluster
                 throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
-            aofTaskStore = new(clusterProvider, 1, logger);
+            aofSyncDriverStore = new(clusterProvider, 1, logger);
 
             var clusterFolder = "/cluster";
             var clusterDataPath = opts.CheckpointDir + clusterFolder;
@@ -164,12 +164,11 @@ namespace Garnet.cluster
                 logger?.LogTrace("Initializing new in-memory checkpoint registry");
                 // If recover option is not enabled or replication history is not available
                 // initialize new empty replication history.
-                InitializeReplicationHistory();
+                InitializeReplicationHistory(storeWrapper.serverOptions.AofSublogCount);
             }
 
             // After initializing replication history propagate replicationId to ReplicationLogCheckpointManager
             SetPrimaryReplicationId();
-            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
         }
 
         /// <summary>
@@ -480,14 +479,10 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
-            replicaReplayTaskCts.Cancel();
-            activeReplay.WriteLock();
-            replicaReplayTaskCts.Dispose();
+            replicaAofSyncTask?.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
-            resetHandler.Cancel();
-            resetHandler.Dispose();
-            aofTaskStore.Dispose();
+            aofSyncDriverStore.Dispose();
             aofProcessor?.Dispose();
             networkPool?.Dispose();
         }
@@ -529,10 +524,9 @@ namespace Garnet.cluster
             {
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
-                if (storeWrapper.appendOnlyFile.TailAddress < recoveredSafeAofAddress)
-                    storeWrapper.appendOnlyFile.Initialize(recoveredSafeAofAddress, recoveredSafeAofAddress);
+                storeWrapper.appendOnlyFile.InitializeIf(ref recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
-                ReplicationOffset = storeWrapper.ReplayAOF();
+                ReplicationOffset = storeWrapper.ReplayAOF(AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1));
             }
 
             // First recover and then load latest checkpoint info in-memory
@@ -545,11 +539,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="primaryReplicationOffset"></param>
         /// <returns></returns>
-        public async Task<long> WaitForReplicationOffset(long primaryReplicationOffset)
+        public async Task<AofAddress> WaitForReplicationOffset(AofAddress primaryReplicationOffset)
         {
-            while (ReplicationOffset < primaryReplicationOffset)
+            while (ReplicationOffset.AnyLesser(primaryReplicationOffset))
             {
-                if (ctsRepManager.IsCancellationRequested) return -1;
+                if (ctsRepManager.IsCancellationRequested) return AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1);
                 await Task.Yield();
             }
             return ReplicationOffset;
@@ -589,10 +583,12 @@ namespace Garnet.cluster
                 var replicaIds = current.GetLocalNodeReplicaIds();
                 foreach (var replicaId in replicaIds)
                 {
+                    var aofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
                     // TODO: Initiate AOF sync task correctly when restarting primary
-                    if (clusterProvider.replicationManager.TryAddReplicationTask(replicaId, 0, out var aofSyncTaskInfo))
+                    if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTask(replicaId, ref aofAddress, out var aofSyncTaskInfo))
                     {
-                        if (!TryConnectToReplica(replicaId, 0, aofSyncTaskInfo, out var errorMessage))
+                        var syncFromAofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
+                        if (!TryConnectToReplica(replicaId, ref syncFromAofAddress, aofSyncTaskInfo, out var errorMessage))
                             logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                     }
                 }

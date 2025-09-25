@@ -13,7 +13,7 @@ namespace Garnet.server
     {
         private readonly CustomCommandManager customCommandManager;
 
-        public readonly IAppendOnlyFile appendOnlyFile;
+        public readonly GarnetAppendOnlyFile appendOnlyFile;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
@@ -24,7 +24,7 @@ namespace Garnet.server
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
-        public FunctionsState(IAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
+        public FunctionsState(GarnetAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommandManager customCommandManager,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, GarnetObjectSerializer garnetObjectSerializer,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
