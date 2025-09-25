@@ -25,7 +25,7 @@ namespace Garnet.cluster
     /// <summary>
     /// Cluster provider
     /// </summary>
-    public class ClusterProvider : IClusterProvider
+    public sealed partial class ClusterProvider : IClusterProvider
     {
         internal readonly ClusterManager clusterManager;
         internal readonly ReplicationManager replicationManager;
