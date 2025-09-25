@@ -116,53 +116,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Implements CLUSTER aofsync command (only for internode use)
-        /// </summary>
-        /// <param name="invalidParameters"></param>
-        /// <returns></returns>
-        private bool NetworkClusterAOFSync(out bool invalidParameters)
-        {
-            invalidParameters = false;
-
-            if (parseState.Count != 2)
-            {
-                invalidParameters = true;
-                return true;
-            }
-
-            var nodeId = parseState.GetString(0);
-
-            if (!parseState.TryGetLong(1, out var nextAddress))
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            if (clusterProvider.serverOptions.EnableAOF)
-            {
-                clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
-                if (!clusterProvider.replicationManager.TryConnectToReplica(nodeId, nextAddress, aofSyncTaskInfo, out var errorMessage))
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Implements CLUSTER appendlog command (only for internode use)
         /// </summary>
         /// <param name="invalidParameters"></param>
