@@ -72,7 +72,7 @@ jobs:
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
-      - name: Debug path existence using matrix variables
+      - name: DEBUG Debug path existence using matrix variables
         shell: pwsh
         run: |
           $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
@@ -90,7 +90,7 @@ jobs:
           Copy-Item -Path $source -Destination $dest -Recurse -Force
         shell: pwsh
 
-      - name: Check if allure-results exists
+      - name: DEBUG Check if allure-results exists
         run: |
           if (-Not (Test-Path "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results")) {
             Write-Host "No ${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results found for this matrix combination."
@@ -170,7 +170,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
+      - name: Install Allure CLI
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+          iwr -useb get.scoop.sh | iex
+          scoop install allure
+          $shimPath = "$env:USERPROFILE\scoop\shims"
+          echo "Adding Scoop shims to PATH: $shimPath"
+          echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
       - name: Download net8.0 results
         uses: actions/download-artifact@v4
         with:
@@ -183,14 +193,14 @@ jobs:
           name: CombinedResults-net9.0-Release-Garnet.test
           path: test/Allure/CombinedResults
 
-      - name: Show working directory and contents
+      - name: DEBUG Show working directory and contents
         shell: pwsh
         run: |
           $cwd = Get-Location
           Write-Host "Current directory: $cwd"
           Get-ChildItem -Force
 
-      - name: Check if GenerateAllureReport.ps1 exists
+      - name: DEBUG Check if GenerateAllureReport.ps1 exists
         shell: pwsh
         run: |
           $scriptPath = "${{ github.workspace }}\test\Allure\GenerateAllureReport.ps1"
@@ -200,7 +210,7 @@ jobs:
             Write-Host "Script NOT found at $scriptPath"
           }
 
-      - name: List contents of test/allure
+      - name: DEBUG List contents of test/allure
         shell: pwsh
         run: Get-ChildItem "${{ github.workspace }}\test\allure" -Recurse
 

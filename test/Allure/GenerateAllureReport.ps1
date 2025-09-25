@@ -48,7 +48,7 @@ allure generate CombinedResults -o allure-report --clean
 $reportDir = "$basePath/test/Allure/allure-report"
 if (-not (Test-Path -Path $reportDir)) {
     Write-Error -Message "The Allure report directory $reportDir did not get created." -Category ObjectNotFound
-    exit
+# DEBUG    exit
 }
 
 # Open the report - only when ran locally ... in GitHub action, don't want to run this
