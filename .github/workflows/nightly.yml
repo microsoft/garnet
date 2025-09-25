@@ -180,10 +180,22 @@ jobs:
           name: CombinedResults-net9.0-Release-Garnet.test
           path: test/allure/CombinedResults
 
+      - name: Check if GenerateAllureReport.ps1 exists
+        shell: pwsh
+        run: |
+          $scriptPath = "${{ github.workspace }}\test\allure\GenerateAllureReport.ps1"
+          if (Test-Path $scriptPath) {
+            Write-Host "Script found at $scriptPath"
+          } else {
+            Write-Host "Script NOT found at $scriptPath"
+            exit 1
+          }
+
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
         run: |
-          & "${{ github.workspace }}\test\allure\GenerateAllureReport.ps1"
+          Set-Location "${{ github.workspace }}\test\allure"
+          .\GenerateAllureReport.ps1
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
