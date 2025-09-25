@@ -107,8 +107,9 @@ jobs:
       - name: Upload CombinedResults artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CombinedResults
+          name: CombinedResults-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: test/allure/CombinedResults
+          
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code
@@ -167,10 +168,16 @@ jobs:
     needs: [ build-test-garnet, build-test-tsavorite ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
-      - name: Download CombinedResults artifact
+      - name: Download net8.0 results
         uses: actions/download-artifact@v4
         with:
-          name: CombinedResults
+          name: CombinedResults-net8.0-Release-Garnet.test
+          path: test/allure/CombinedResults
+
+      - name: Download net9.0 results
+        uses: actions/download-artifact@v4
+        with:
+          name: CombinedResults-net9.0-Release-Garnet.test
           path: test/allure/CombinedResults
 
       - name: Run GenerateAllureReport.ps1
