@@ -95,11 +95,20 @@ jobs:
           if (-Not (Test-Path "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results")) {
             Write-Host "No ${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results found for this matrix combination."
           }
-      - name: Upload allure test results in combined results directory
+
+      - name: Stage allure-results into test/allure/CombinedResults
+        run: |
+          $source = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          $target = "${{ github.workspace }}/test/allure/CombinedResults"
+          New-Item -ItemType Directory -Path $target -Force
+          Copy-Item -Path "$source\*" -Destination $target -Recurse -Force
+        shell: pwsh
+
+      - name: Upload CombinedResults artifact
         uses: actions/upload-artifact@v4
         with:
           name: CombinedResults
-          path: ${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results
+          path: test/allure/CombinedResults
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code
@@ -158,10 +167,22 @@ jobs:
     needs: [ build-test-garnet, build-test-tsavorite ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
+      - name: Download CombinedResults artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CombinedResults
+          path: test/allure/CombinedResults
+
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
         run: |
           & "${{ github.workspace }}\test\allure\GenerateAllureReport.ps1"
+
+      - name: Upload Allure HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: AllureReport
+          path: test/allure/allure-report
 
       - name: Echo completion
         run: echo Done!
