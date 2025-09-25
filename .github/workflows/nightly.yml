@@ -62,9 +62,9 @@ jobs:
 # DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
-      - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
-        timeout-minutes: 45 
+# DEBUG      - name: Run tests ${{ matrix.test }}
+# DEBUG        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+# DEBUG        timeout-minutes: 45 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:

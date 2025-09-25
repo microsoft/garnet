@@ -63,16 +63,16 @@ Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
 
 # Copy the history folder from .\test\Allure\allure-report to .\test\Allure
 # Need to go one file at a time so it overwrites properly. Could delete history and copy, but this is safer to only overwrite files that exist
-Write-Host "Copy the history files to $basePath/test/Allure for next run"
-$historySourceDir = "$basePath/test/Allure/allure-report/history"
-$historyDestDir = "$basePath/test/Allure/history"
+# DEBUG Write-Host "Copy the history files to $basePath/test/Allure for next run"
+# DEBUG $historySourceDir = "$basePath/test/Allure/allure-report/history"
+# DEBUG $historyDestDir = "$basePath/test/Allure/history"
 
-if (Test-Path -Path $historySourceDir) {
-    Get-ChildItem -Path $historySourceDir -Recurse | ForEach-Object {
-        $dest = Join-Path $historyDestDir $_.FullName.Substring($historySourceDir.Length)
-        Copy-Item -Path $_.FullName -Destination $dest -Force
-    }
-}
+# DEBUG if (Test-Path -Path $historySourceDir) {
+# DEBUG     Get-ChildItem -Path $historySourceDir -Recurse | ForEach-Object {
+# DEBUG         $dest = Join-Path $historyDestDir $_.FullName.Substring($historySourceDir.Length)
+# DEBUG         Copy-Item -Path $_.FullName -Destination $dest -Force
+# DEBUG     }
+# DEBUG }
 
 Write-Output "************************"
 Write-Output "**"
