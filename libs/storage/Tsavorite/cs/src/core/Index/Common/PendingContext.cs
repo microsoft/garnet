@@ -133,58 +133,7 @@ namespace Tsavorite.core
                     return;
                 request_key.Dispose();
                 request_key = new(key, bufferPool);
-                CopyIOC(ref input, output, userContext, sessionFunctions);
-            }
 
-            /// <summary>
-            /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> and Input, Output, and userContext into the local <see cref="DiskLogRecord"/> for Pending operations
-            /// </summary>
-            /// <param name="srcLogRecord">The log record. This may be either in-memory or from disk IO</param>
-            /// <param name="input">Input to the operation</param>
-            /// <param name="output">Output from the operation</param>
-            /// <param name="userContext">User context for the operation</param>
-            /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
-            /// <param name="bufferPool">Allocator for backing storage</param>
-            /// <param name="valueSerializer">Serializer for value object (if any); if null, the object is to be held as an object (e.g. for Pending IO operations)
-            ///     rather than serialized to a byte stream (e.g. for out-of-process operations)</param>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSessionFunctionsWrapper, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions,
-                    SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
-                where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-                where TSourceLogRecord : ISourceLogRecord
-            {
-                Serialize(in srcLogRecord, bufferPool, valueSerializer);
-                CopyIOC(ref input, output, userContext, sessionFunctions);
-            }
-
-            /// <summary>
-            /// Serialize a <see cref="LogRecord"/> or <see cref="DiskLogRecord"/> into the local <see cref="DiskLogRecord"/> for Pending operations
-            /// </summary>
-            /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, IObjectSerializer<IHeapObject> valueSerializer)
-                where TSourceLogRecord : ISourceLogRecord
-            {
-                Debug.Assert(!this.diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
-                if (srcLogRecord.IsMemoryLogRecord)
-                {
-                    ref var memoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
-                    this.diskLogRecord = new(in memoryLogRecord, objectDisposer);
-                    return;
-                }
-
-                // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
-                Debug.Assert(srcLogRecord.IsDiskLogRecord, $"Unknown SrcLogRecord implementation: {srcLogRecord}");
-                ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
-                if (inputDiskLogRecord.OwnsMemory)
-                    this.diskLogRecord.TransferFrom(ref inputDiskLogRecord);
-                else
-                    this.diskLogRecord.CloneFrom(ref inputDiskLogRecord, bufferPool, preferDeserializedObject: true);
-            }
-
-            private void CopyIOC<TSessionFunctionsWrapper>(ref TInput input, TOutput output, TContext userContext, TSessionFunctionsWrapper sessionFunctions)
-                    where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            {
                 if (this.input == default)
                 {
                     if (typeof(TInput) == typeof(PinnedSpanByte))
@@ -195,6 +144,37 @@ namespace Tsavorite.core
                 this.output = output;
                 sessionFunctions.ConvertOutputToHeap(ref input, ref this.output);
                 this.userContext = userContext;
+            }
+
+            /// <summary>
+            /// Does an in-memory transfer of a record into the pending context. The transfer operates based on the implementation of the <typeparamref name="TSourceLogRecord"/>:
+            /// <list type="bullet">
+            ///     <item>If it is a <see cref="LogRecord"/>, it comes from the log or possibly an iterator; we copy the inline record data into a <see cref="SectorAlignedMemory"/>
+            ///         and then reassign its ObjectIds to the <paramref name="transientObjectIdMap"/>.</item>
+            ///     <item>Otherwise it is a <see cref="DiskLogRecord"/> and we can transfer its <see cref="SectorAlignedMemory"/> into the local <see cref="DiskLogRecord"/>.
+            ///         It will already have a <paramref name="transientObjectIdMap"/> in its contained <see cref="LogRecord"/>.</item>
+            /// </list>
+            /// </summary>
+            /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
+            /// <param name="bufferPool"></param>
+            /// <param name="transientObjectIdMap"></param>
+            /// <param name="objectDisposer"></param>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void TransferFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
+                if (srcLogRecord.IsMemoryLogRecord)
+                {
+                    ref var memoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
+                    diskLogRecord = DiskLogRecord.CopyFrom(in memoryLogRecord, bufferPool, transientObjectIdMap, objectDisposer);
+                    return;
+                }
+
+                // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
+                Debug.Assert(srcLogRecord.IsDiskLogRecord, $"Unknown SrcLogRecord implementation: {srcLogRecord}");
+                ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
+                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord);
             }
 
             #endregion // Serialized Record Creation
@@ -215,7 +195,7 @@ namespace Tsavorite.core
             public readonly bool IsPinnedKey => diskLogRecord.IsPinnedKey;
 
             /// <inheritdoc/>
-            public byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
+            public readonly byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
 
             /// <inheritdoc/>
             public OverflowByteArray KeyOverflow
@@ -231,13 +211,10 @@ namespace Tsavorite.core
             public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
 
             /// <inheritdoc/>
-            public ReadOnlySpan<byte> RecordSpan => diskLogRecord.RecordSpan;
+            public readonly bool IsPinnedValue => diskLogRecord.IsPinnedValue;
 
             /// <inheritdoc/>
-            public bool IsPinnedValue => diskLogRecord.IsPinnedValue;
-
-            /// <inheritdoc/>
-            public byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
+            public readonly byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
 
             /// <inheritdoc/>
             public OverflowByteArray ValueOverflow
@@ -253,7 +230,7 @@ namespace Tsavorite.core
             public readonly long Expiration => diskLogRecord.Expiration;
 
             /// <inheritdoc/>
-            public readonly bool IsMemoryLogRecord => false;
+            public readonly bool IsMemoryLogRecord => diskLogRecord.IsMemoryLogRecord;
 
             /// <inheritdoc/>
             public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref diskLogRecord.AsMemoryLogRecordRef();
@@ -262,7 +239,7 @@ namespace Tsavorite.core
             public readonly bool IsDiskLogRecord => true;
 
             /// <inheritdoc/>
-            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref diskLogRecord;
+            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
 
             /// <inheritdoc/>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

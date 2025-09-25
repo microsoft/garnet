@@ -690,14 +690,13 @@ namespace Tsavorite.core
             // constraint are freed.
             FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlogBase.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
 
-            var readBuffers = hlogBase.CreateReadBuffers(hlogBase.bufferPool, objectLogDevice: null, logger);
+            var readBuffers = hlogBase.CreateReadBuffers(hlogBase.bufferPool, recoveryStatus.objectLogRecoveryDevice, logger);
 
             // Issue request to read pages as much as possible
             for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlogBase.GetPageIndexForPage(p)] = ReadStatus.Pending;
             hlogBase.AsyncReadPagesForRecovery(readBuffers, page, numPagesToRead, endAddress,
                                           hlogBase.AsyncReadPagesCallbackForRecovery,
-                                          recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
-                                          recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
+                                          recoveryStatus, recoveryStatus.recoveryDevicePageOffset, recoveryStatus.recoveryDevice);
         }
 
         private long FreePagesToLimitHeapMemory(RecoveryStatus recoveryStatus, long page)
@@ -1285,7 +1284,9 @@ namespace Tsavorite.core
                         numPages++;
                     }
 
-                    AsyncReadPagesForRecovery(headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
+                    // Null objectLogDevice means we'll use the one in the allocator
+                    var readBuffers = CreateReadBuffers(bufferPool, objectLogDevice: null, logger);
+                    AsyncReadPagesForRecovery(readBuffers, headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
                     return true;
                 }
             }

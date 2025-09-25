@@ -234,7 +234,7 @@ namespace Tsavorite.core
 
                             // These objects are still alive in the log, so do not dispose the value object if any.
                             Buffer.MemoryCopy((byte*)physicalAddress, recordBuffer.GetValidPointer(), allocatedSize, allocatedSize);
-                            var memoryLogRecord = hlogBase._wrapper.CreateTransientLogRecord(currentAddress, physicalAddress);
+                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverTransientMemory(currentAddress, physicalAddress);
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
                         }
                         finally

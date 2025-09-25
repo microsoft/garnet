@@ -68,7 +68,7 @@ namespace Tsavorite.core
         LogRecord CreateLogRecord(long logicalAddress, long physicalAddress);
 
         /// <summary>Return the <see cref="LogRecord"/> for a transient (e.g. iterator or pending IO) page at <paramref name="physicalAddress"/></summary>
-        LogRecord CreateTransientLogRecord(long logicalAddress, long physicalAddress);
+        LogRecord CreateRemappedLogRecordOverTransientMemory(long logicalAddress, long physicalAddress);
 
         /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
         ObjectIdMap TranssientObjectIdMap { get; }

@@ -35,12 +35,6 @@ namespace Tsavorite.core
         /// <summary>The destination pointer being read into.</summary>
         internal IntPtr destinationPtr;
 
-        /// <summary>The object-log device to use; may be the recovery device.</summary>
-        internal IDevice objlogDevice;
-
-        /// <summary>If non-null, this Read is being called for an iterator</summary>
-        internal BlittableFrame frame;
-
         /// <summary>The cancellation token source, if any, for the Read operation</summary>
         internal CancellationTokenSource cts;
 

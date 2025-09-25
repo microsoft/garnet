@@ -18,7 +18,7 @@ namespace Tsavorite.core
         LogRecord logRecord;
 
         /// <summary>The buffer containing the record data, from either disk IO or a copy from a LogRecord that is carried through pending operations
-        /// such as Compact or ConditionalCopyToTail. The <see cref="logRecord"/> contains its <see cref="SectorAlignedMemory.GetValidPointer()"/>
+        /// such as Compact or ConditionalCopyToTail. The <see cref="LogRecord"/> contains its <see cref="SectorAlignedMemory.GetValidPointer()"/>
         /// as its <see cref="LogRecord.physicalAddress"/>.</summary>
         /// <remarks>We always own the record buffer; it is either transferred to us, or allocated as a copy of the record memory. However, it may be
         ///  null if we transferred it out.</remarks>
@@ -31,18 +31,18 @@ namespace Tsavorite.core
         /// Constructor taking the record buffer and out-of-line objects. Private; use either CopyFrom or TransferFrom.
         /// </summary>
         /// <param name="recordBuffer">The record buffer, either from IO or a copy for pending operations such as Compact or ConditionalCopyToTail.</param>
-        /// <param name="objectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="logRecord"/>.</param>
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
         /// <param name="keyOverflow">The key overflow byte[] wrapper, if any</param>
         /// <param name="valueOverflow">The value overflow byte[] wrapper, if any</param>
         /// <param name="valueObject">The value object, if any</param>
-        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="logRecord"/></param>
+        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
         /// <remarks>We always own the record buffer; it is either transferred to us by TransferFrom, or allocated as a copy of the record memory by CopyFrom</remarks>
-        private DiskLogRecord(SectorAlignedMemory recordBuffer, ObjectIdMap objectIdMap, OverflowByteArray keyOverflow,
+        private DiskLogRecord(SectorAlignedMemory recordBuffer, ObjectIdMap transientObjectIdMap, OverflowByteArray keyOverflow,
             OverflowByteArray valueOverflow, IHeapObject valueObject, Action<IHeapObject> objectDisposer)
         {
             this.recordBuffer = recordBuffer;
             this.objectDisposer = objectDisposer;
-            logRecord = new((long)recordBuffer.GetValidPointer(), objectIdMap);
+            logRecord = new((long)recordBuffer.GetValidPointer(), transientObjectIdMap);
             if (!keyOverflow.IsEmpty)
                 logRecord.KeyOverflow = keyOverflow;
             if (!valueOverflow.IsEmpty)
@@ -52,7 +52,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (which is assumed to have transient ObjectIds if it has objects).
+        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverTransientMemory"/> which
+        /// has transient ObjectIds if it has objects).
         /// </summary>
         internal DiskLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer)
         {
@@ -61,61 +62,76 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copies a LogRecord with no out-of-line objects into our contained <see cref="logRecord"/>. Private; use either CopyFrom or TransferFrom.
+        /// Transfers a transient inline record buffer and creates our contained <see cref="LogRecord"/> from it. Private; use either CopyFrom or TransferFrom.
         /// </summary>
         /// <param name="recordBuffer">The record buffer, either from IO or a copy for pending operations such as Compact or ConditionalCopyToTail.</param>
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
         /// <remarks>We always own the record buffer; it is either transferred to us, or allocated as a copy of the record memory</remarks>
-        private DiskLogRecord(SectorAlignedMemory recordBuffer)
+        private DiskLogRecord(SectorAlignedMemory recordBuffer, ObjectIdMap transientObjectIdMap)
         {
             this.recordBuffer = recordBuffer;
-            logRecord = new((long)recordBuffer.GetValidPointer(), objectIdMap: default);
+            logRecord = new((long)recordBuffer.GetValidPointer(), transientObjectIdMap);
         }
+
+        /// <summary>
+        /// Creates a <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverTransientMemory"/> which
+        /// has transient ObjectIds if it has objects).
+        /// </summary>
+        internal static DiskLogRecord CreateFromTransientLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer) => new(memoryLogRecord, objectDisposer);
 
         /// <summary>
         /// Allocates <see cref="recordBuffer"/> and copies the LogRecord's record memory into it; any out-of-line objects are shallow-copied.
         /// </summary>
         /// <param name="logRecord">The <see cref="LogRecord"/> to copy</param>
         /// <param name="bufferPool">The buffer pool to allocate from</param>
-        /// <param name="objectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="logRecord"/>.</param>
-        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="logRecord"/></param>
-        internal static DiskLogRecord CopyFrom(ref LogRecord logRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap objectIdMap, Action<IHeapObject> objectDisposer)
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
+        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
+        internal static DiskLogRecord CopyFrom(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
         {
-            var recordBuffer = AllocateBuffer(logRecord, bufferPool);
-            return new DiskLogRecord(recordBuffer, objectIdMap,
+            var recordBuffer = AllocateBuffer(in logRecord, bufferPool);
+            return new DiskLogRecord(recordBuffer, transientObjectIdMap,
                 logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow : default,
                 logRecord.Info.ValueIsOverflow ? logRecord.ValueOverflow : default,
                 logRecord.Info.ValueIsObject ? logRecord.ValueObject : default, objectDisposer);
         }
 
         /// <summary>
-        /// Copies a LogRecord with no out-of-line objects into our contained <see cref="logRecord"/>.
+        /// Copies a LogRecord with no out-of-line objects into our contained <see cref="LogRecord"/>.
         /// </summary>
         /// <param name="recordBuffer">The record buffer, either from IO or a copy for pending operations such as Compact or ConditionalCopyToTail.</param>
-        /// <param name="objectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="logRecord"/>.</param>
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
         /// <param name="keyOverflow">The key overflow byte[] wrapper, if any</param>
         /// <param name="valueOverflow">The value overflow byte[] wrapper, if any</param>
         /// <param name="valueObject">The value object, if any</param>
-        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="logRecord"/></param>
-        internal static DiskLogRecord TransferFrom(ref SectorAlignedMemory recordBuffer, ObjectIdMap objectIdMap, OverflowByteArray keyOverflow,
+        /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
+        internal static DiskLogRecord TransferFrom(ref SectorAlignedMemory recordBuffer, ObjectIdMap transientObjectIdMap, OverflowByteArray keyOverflow,
             OverflowByteArray valueOverflow, IHeapObject valueObject, Action<IHeapObject> objectDisposer)
         {
-            var diskLogRecord = new DiskLogRecord(recordBuffer, objectIdMap, keyOverflow, valueOverflow, valueObject, objectDisposer);
+            var diskLogRecord = new DiskLogRecord(recordBuffer, transientObjectIdMap, keyOverflow, valueOverflow, valueObject, objectDisposer);
             recordBuffer = default;     // Transfer ownership to us
+            return diskLogRecord;
+        }
+
+        internal static DiskLogRecord TransferFrom(ref DiskLogRecord src)
+        {
+            var diskLogRecord = new DiskLogRecord(in src.logRecord, src.objectDisposer) { recordBuffer = src.recordBuffer };
+            src.recordBuffer = default; // Transfer ownership to us
             return diskLogRecord;
         }
 
         /// <summary>
-        /// Transfers a LogRecord with no out-of-line objects into our contained <see cref="logRecord"/>.
+        /// Transfers a transient inline record buffer and creates our contained <see cref="LogRecord"/> from it.
         /// </summary>
         /// <param name="recordBuffer">The record buffer, either from IO or a copy for pending operations such as Compact or ConditionalCopyToTail.</param>
-        internal static DiskLogRecord TransferFrom(ref SectorAlignedMemory recordBuffer)
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to hold the objects for the <see cref="LogRecord"/> for the lifetime of this <see cref="DiskLogRecord"/>.</param>
+        internal static DiskLogRecord TransferFrom(ref SectorAlignedMemory recordBuffer, ObjectIdMap transientObjectIdMap)
         {
-            var diskLogRecord = new DiskLogRecord(recordBuffer);
+            var diskLogRecord = new DiskLogRecord(recordBuffer, transientObjectIdMap);
             recordBuffer = default;     // Transfer ownership to us
             return diskLogRecord;
         }
 
-        private static SectorAlignedMemory AllocateBuffer(LogRecord logRecord, SectorAlignedBufferPool bufferPool)
+        private static SectorAlignedMemory AllocateBuffer(in LogRecord logRecord, SectorAlignedBufferPool bufferPool)
         {
             var allocatedSize = RoundUp(logRecord.GetInlineRecordSizes().actualSize, Constants.kRecordAlignment);
             var recordBuffer = bufferPool.Get(allocatedSize);
@@ -188,7 +204,7 @@ namespace Tsavorite.core
         public readonly bool IsMemoryLogRecord => false;
 
         /// <inheritdoc/>
-        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref logRecord;
+        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => throw new TsavoriteException("DiskLogRecord cannot be returned as MemoryLogRecord");
 
         /// <inheritdoc/>
         public readonly bool IsDiskLogRecord => true;

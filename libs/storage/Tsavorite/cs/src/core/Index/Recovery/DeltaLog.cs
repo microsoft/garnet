@@ -135,8 +135,7 @@ namespace Tsavorite.core
                 {
                     page = readPage,
                     context = context,
-                    handle = completed,
-                    frame = frame
+                    handle = completed
                 };
 
                 ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);

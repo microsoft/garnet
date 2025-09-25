@@ -35,8 +35,11 @@ namespace Tsavorite.core
         /// <summary>The fully-derived allocator struct wrapper (so calls on it are inlined rather than virtual) for this log.</summary>
         internal readonly TAllocator _wrapper;
 
+        /// <summary>The <see cref="ObjectIdMap"/> to hold the objects for transient <see cref="LogRecord"/> instances.</summary>
+        internal ObjectIdMap transientObjectIdMap;
+
         /// <summary>Sometimes it's useful to know this explicitly rather than rely on method overrides etc.</summary>
-        internal bool IsObjectAllocator = false;
+        internal bool IsObjectAllocator => transientObjectIdMap is not null;
 
         #region Protected size definitions
         /// <summary>Buffer size</summary>
@@ -211,7 +214,7 @@ namespace Tsavorite.core
 
         /// <summary>Read page from device (async)</summary>
         protected abstract void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
-            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice);
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device);
 
         /// <summary>Write page to device (async)</summary>
         protected abstract void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult);
@@ -529,12 +532,12 @@ namespace Tsavorite.core
         /// <summary>Instantiate base allocator implementation</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private protected AllocatorBase(LogSettings logSettings, TStoreFunctions storeFunctions, Func<object, TAllocator> wrapperCreator, Action<long, long> evictCallback,
-                LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null, bool isObjectAllocator = false)
+                LightEpoch epoch, Action<CommitInfo> flushCallback, ILogger logger = null, ObjectIdMap transientObjectIdMap = null)
         {
             this.storeFunctions = storeFunctions;
             _wrapper = wrapperCreator(this);
 
-            this.IsObjectAllocator = isObjectAllocator;
+            this.transientObjectIdMap = transientObjectIdMap;
 
             // Validation
             if (logSettings.PageSizeBits < LogSettings.kMinPageSizeBits || logSettings.PageSizeBits > LogSettings.kMaxPageSizeBits)
@@ -1541,8 +1544,8 @@ namespace Tsavorite.core
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event</summary>
         public void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
-                                TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
-            => AsyncReadPagesForRecovery(readBuffers, readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
+                                TContext context, long devicePageOffset = 0, IDevice logDevice = null)
+            => AsyncReadPagesForRecovery(readBuffers, readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1585,7 +1588,7 @@ namespace Tsavorite.core
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
                 // Call the overridden ReadAsync for the derived allocator class
-                ReadAsync(readBuffers, offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, callback, asyncResult, usedDevice, usedObjlogDevice);
+                ReadAsync(readBuffers, offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, callback, asyncResult, usedDevice);
             }
         }
 
@@ -1846,7 +1849,6 @@ namespace Tsavorite.core
                     page = readPage,
                     context = context,
                     handle = completed,
-                    frame = frame,
                     cts = cts
                 };
 
@@ -1863,7 +1865,7 @@ namespace Tsavorite.core
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
-                ReadAsync(readBuffers, offsetInFile, (IntPtr)frame.GetPhysicalAddress(pageIndex), readLength, callback, asyncResult, usedDevice, objectLogDevice);
+                ReadAsync(readBuffers, offsetInFile, (IntPtr)frame.GetPhysicalAddress(pageIndex), readLength, callback, asyncResult, usedDevice);
             }
         }
 
@@ -1928,7 +1930,7 @@ namespace Tsavorite.core
                     // If we have the full record and the keys match, success.
                     if (currentLength >= recordLength)
                     {
-                        ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record);
+                        ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
                         return true;
                     }
 

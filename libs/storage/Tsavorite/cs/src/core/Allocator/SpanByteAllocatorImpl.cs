@@ -201,7 +201,7 @@ namespace Tsavorite.core
         }
 
         protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
-            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, callback, asyncResult);
 
         /// <summary>

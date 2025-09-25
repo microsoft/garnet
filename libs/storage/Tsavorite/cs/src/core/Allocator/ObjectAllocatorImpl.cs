@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
 
     internal sealed unsafe class ObjectAllocatorImpl<TStoreFunctions> : AllocatorBase<TStoreFunctions, ObjectAllocator<TStoreFunctions>>
@@ -30,9 +31,6 @@ namespace Tsavorite.core
 
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
         internal ObjectPage[] pages;
-
-        /// <summary>The <see cref="ObjectIdMap"/> for transient <see cref="LogRecord"/> creation, such as for iterators.</summary>
-        internal ObjectIdMap transientObjectIdMap = new();
 
         /// <summary>The address of the next write to the device. Will always be sector-aligned.</summary>
         ulong alignedNextMainLogFlushAddress;
@@ -53,9 +51,8 @@ namespace Tsavorite.core
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
-            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
+            : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
-            IsObjectAllocator = true;
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
 
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
@@ -71,7 +68,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfDeserializationBuffers)} must be between {LogSettings.kMinDeserializationBuffers} and {LogSettings.kMaxDeserializationBuffers - 1} and a power of 2");
             numberOfDeserializationBuffers = settings.LogSettings.NumberOfDeserializationBuffers;
 
-            if (settings.LogSettings.ObjectLogSegmentSizeBits < LogSettings.kMinObjectLogSegmentSizeBits || settings.LogSettings.ObjectLogSegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
+            if (settings.LogSettings.ObjectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
             objectLogNextRecordStartPosition.SegmentSizeBits = settings.LogSettings.ObjectLogSegmentSizeBits;
 
@@ -135,8 +132,8 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateTransientLogRecord(long logicalAddress, long physicalAddress)
-            => new (physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
+        internal LogRecord CreateRemappedLogRecordOverTransientMemory(long logicalAddress, long physicalAddress)
+            => LogRecord.CreateRemappedOverTransientMemory(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectIdMap GetObjectIdMap(long logicalAddress) => pages[GetPageIndexForAddress(logicalAddress)].objectIdMap;
@@ -517,16 +514,13 @@ namespace Tsavorite.core
         }
 
         protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
-            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device, IDevice objlogDevice)   // TODO add a CancellationToken
+            DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
         {
-            TODO("Verify the objectLogDevice is the same in readBuffers and paramlist, and if so remove the latter");
             TODO("Add CancellationToken to the ReadAsync path");
 
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
-
-            asyncResult.objlogDevice = objlogDevice; TODO("I can probably remove this now as I am passing readBuffers as a param");
-            asyncResult.readBuffers = readBuffers; TODO("I can probably remove this now as I am passing readBuffers as a param");
+            asyncResult.readBuffers = readBuffers;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
@@ -538,8 +532,7 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
 
-            TODO("Replace result.frame with ObjectIdMap?");
-            long physicalAddress = (long)result.destinationPtr;
+            var physicalAddress = (long)result.destinationPtr;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
             ObjectLogFilePositionInfo startPosition = default;

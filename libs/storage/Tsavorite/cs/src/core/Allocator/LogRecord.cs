@@ -75,29 +75,29 @@ namespace Tsavorite.core
         /// </summary> 
         /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
-            : this(physicalAddress)
+        internal static LogRecord CreateRemappedOverTransientMemory(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
         {
-            if (Info.KeyIsOverflow)
+            var logRecord = new LogRecord(physicalAddress, transientMap);
+            if (logRecord.Info.KeyIsOverflow)
             {
-                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
+                var (length, dataAddress) = GetKeyFieldInfo(logRecord.IndicatorAddress);
                 var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
             }
 
-            if (Info.ValueIsOverflow)
+            if (logRecord.Info.ValueIsOverflow)
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var (length, dataAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
                 var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
             }
-            else if (Info.ValueIsObject)
+            else if (logRecord.Info.ValueIsObject)
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var (length, dataAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
                 var heapObj = allocatorMap.GetHeapObject(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(heapObj);
             }
-            objectIdMap = transientMap;
+            return logRecord;
         }
 
         #region ISourceLogRecord
