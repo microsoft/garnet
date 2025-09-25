@@ -168,6 +168,9 @@ jobs:
     needs: [ build-test-garnet, build-test-tsavorite ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
       - name: Download net8.0 results
         uses: actions/download-artifact@v4
         with:
