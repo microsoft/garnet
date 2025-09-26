@@ -59,10 +59,15 @@ namespace Garnet.server
         GarnetStatus SET(PinnedSpanByte key, IGarnetObject value);
 
         /// <summary>
-        /// SET
+        /// SET in main store
         /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType)
-            where TSourceLogRecord : ISourceLogRecord;
+        GarnetStatus SET_Main<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
+        /// SET in object store
+        /// </summary>
+        GarnetStatus SET_Object<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+
         #endregion
 
         #region SETEX
@@ -175,10 +180,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds
@@ -195,10 +199,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiry">Expiry in TimeSpan</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
         #endregion
 
         #region EXPIREAT
@@ -209,10 +212,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
@@ -220,10 +222,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
 
         #endregion
 

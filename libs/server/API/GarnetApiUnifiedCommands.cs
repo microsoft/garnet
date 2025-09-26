@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -73,6 +74,26 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
             => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIRE(key, expiryMs, out timeoutSet, expireOption, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIRE(key, expiry, out timeoutSet, expireOption, ref unifiedContext);
+
+        #endregion
+
+        #region EXPIREAT
+
+        /// <inheritdoc />
+        public GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None)
+            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext, milliseconds: true);
 
         #endregion
 

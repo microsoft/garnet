@@ -130,7 +130,8 @@ namespace Garnet.server
                 txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
-            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var geoObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var geoUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
@@ -138,7 +139,7 @@ namespace Garnet.server
             {
                 SpanByteAndMemory searchOutMem = default;
 
-                var status = GET(key, out var firstObj, ref objectStoreTransactionalContext);
+                var status = GET(key, out var firstObj, ref geoObjectStoreTransactionalContext);
                 if (status == GarnetStatus.OK)
                 {
                     if (firstObj.GarnetObject is SortedSetObject firstSortedSet)
@@ -155,7 +156,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref transactionalContext, ref objectStoreTransactionalContext);
+                    _ = EXPIRE(destination, TimeSpan.Zero, out _, ExpireOption.None, ref geoUnifiedStoreTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
@@ -175,7 +176,7 @@ namespace Garnet.server
                         return GarnetStatus.OK;
                     }
 
-                    _ = objectStoreTransactionalContext.Delete(destination.ReadOnlySpan);
+                    _ = geoObjectStoreTransactionalContext.Delete(destination.ReadOnlySpan);
 
                     _ = RespReadUtils.TryReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
@@ -201,7 +202,7 @@ namespace Garnet.server
                     }, ref parseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput();
-                    RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
+                    RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref geoObjectStoreTransactionalContext, ref zAddOutput);
 
                     writer.WriteInt32(foundItems);
                 }

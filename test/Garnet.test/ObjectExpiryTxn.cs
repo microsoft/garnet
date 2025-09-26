@@ -29,7 +29,7 @@ namespace Garnet
             var key = GetNextArg(ref procInput.parseState, ref offset);
             var expiryMs = GetNextArg(ref procInput.parseState, ref offset);
 
-            api.EXPIRE(key, expiryMs, out _, StoreType.Object);
+            api.EXPIRE(key, expiryMs, out _);
             WriteSimpleString(ref output, "SUCCESS");
         }
     }

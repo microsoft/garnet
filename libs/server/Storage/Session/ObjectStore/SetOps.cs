@@ -273,6 +273,7 @@ namespace Garnet.server
             }
 
             var objectTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -313,8 +314,7 @@ namespace Garnet.server
 
                 if (srcSetObject.Set.Count == 0)
                 {
-                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref transactionalContext, ref objectTransactionalContext);
+                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedTransactionalContext);
                 }
 
                 _ = dstSetObject.Set.Add(arrMember);
@@ -411,6 +411,7 @@ namespace Garnet.server
 
             // SetObject
             var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var setUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -431,8 +432,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref transactionalContext, ref setObjectStoreTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedStoreTransactionalContext);
                     }
 
                     count = members.Count;
@@ -580,6 +580,7 @@ namespace Garnet.server
 
             // SetObject
             var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var setUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -600,8 +601,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref transactionalContext, ref setObjectStoreTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedStoreTransactionalContext);
                     }
 
                     count = members.Count;
@@ -840,6 +840,7 @@ namespace Garnet.server
 
             // SetObject
             var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var setUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -859,8 +860,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref transactionalContext, ref setObjectStoreTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedStoreTransactionalContext);
                     }
 
                     count = diffSet.Count;

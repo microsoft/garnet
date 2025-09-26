@@ -539,6 +539,7 @@ namespace Garnet.server
 
             var transactionalContext = storageSession.txnManager.TransactionalContext;
             var objectTransactionalContext = storageSession.txnManager.ObjectStoreTransactionalContext;
+            var unifiedTransactionalContext = storageSession.txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -641,8 +642,8 @@ namespace Garnet.server
 
                         if (isSuccessful && listObj.LnkList.Count == 0)
                         {
-                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                                ref transactionalContext, ref objectTransactionalContext);
+                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, ExpireOption.None,
+                                ref unifiedTransactionalContext);
                         }
 
                         return isSuccessful;
@@ -655,8 +656,8 @@ namespace Garnet.server
 
                         if (isSuccessful && sortedSetObj.Count() == 0)
                         {
-                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                                ref transactionalContext, ref objectTransactionalContext);
+                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, ExpireOption.None,
+                                ref unifiedTransactionalContext);
                         }
 
                         return isSuccessful;

@@ -307,6 +307,8 @@ namespace Garnet.server
                     objectStoreBasicContext.ResetModified(key.ReadOnlySpan);
                     break;
                 case StoreType.All:
+                    basicContext.ResetModified(key.ReadOnlySpan);
+                    objectStoreBasicContext.ResetModified(key.ReadOnlySpan);
                     unifiedStoreBasicContext.ResetModified(key.ReadOnlySpan);
                     break;
             }
@@ -320,6 +322,10 @@ namespace Garnet.server
                     isMainTxn = true;
                     break;
                 case StoreType.Object:
+                    isObjectTxn = true;
+                    break;
+                case StoreType.All:
+                    isMainTxn = true;
                     isObjectTxn = true;
                     break;
             }

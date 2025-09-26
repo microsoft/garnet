@@ -223,7 +223,8 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var objectContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -246,7 +247,7 @@ namespace Garnet.server
                     if (!sameKey)
                     {
                         // Read destination key
-                        statusOp = GET(destinationKey, out var destinationList, ref objectStoreTransactionalContext);
+                        statusOp = GET(destinationKey, out var destinationList, ref objectContext);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
                         {
@@ -287,8 +288,7 @@ namespace Garnet.server
                     {
                         if (srcListObject.LnkList.Count == 0)
                         {
-                            _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                                ref transactionalContext, ref objectTransactionalContext);
+                            _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
                         }
 
                         // Left push (addfirst) to destination
@@ -301,7 +301,7 @@ namespace Garnet.server
                         newListValue = new ListObject(dstListObject.LnkList, dstListObject.sizes);
 
                         // Upsert
-                        _ = SET(destinationKey, newListValue, ref objectStoreTransactionalContext);
+                        _ = SET(destinationKey, newListValue, ref objectContext);
                     }
                     else
                     {

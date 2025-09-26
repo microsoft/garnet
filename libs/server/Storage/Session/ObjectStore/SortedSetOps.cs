@@ -585,6 +585,7 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -609,8 +610,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref transactionalContext, ref objectContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -718,13 +718,14 @@ namespace Garnet.server
             }
 
             // SetObject
-            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var ssObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var ssUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
                 SpanByteAndMemory rangeOutputMem = default;
                 var rangeOutput = new GarnetObjectStoreOutput(rangeOutputMem);
-                var status = SortedSetRange(srcKey, ref input, ref rangeOutput, ref objectStoreTransactionalContext);
+                var status = SortedSetRange(srcKey, ref input, ref rangeOutput, ref ssObjectStoreTransactionalContext);
                 rangeOutputMem = rangeOutput.SpanByteAndMemory;
 
                 if (status == GarnetStatus.WRONGTYPE)
@@ -733,7 +734,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref transactionalContext, ref objectStoreTransactionalContext);
+                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, ExpireOption.None, ref ssUnifiedStoreTransactionalContext);
                     return GarnetStatus.OK;
                 }
 
@@ -747,7 +748,7 @@ namespace Garnet.server
                     var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
 
                     var destinationKey = dstKey.ReadOnlySpan;
-                    objectStoreTransactionalContext.Delete(destinationKey);
+                    ssObjectStoreTransactionalContext.Delete(destinationKey);
 
                     RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
                     Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
@@ -772,7 +773,7 @@ namespace Garnet.server
                         }, ref parseState);
 
                         var zAddOutput = new GarnetObjectStoreOutput();
-                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
+                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref ssObjectStoreTransactionalContext, ref zAddOutput);
                         itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
                     }
                 }
@@ -1085,6 +1086,7 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -1110,8 +1112,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref transactionalContext, ref objectContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -1341,6 +1342,7 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -1366,8 +1368,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref transactionalContext, ref objectContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;

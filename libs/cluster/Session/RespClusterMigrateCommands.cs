@@ -116,7 +116,7 @@ namespace Garnet.cluster
                             // Set if key replace flag is set or key does not exist
                             var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                             if (replaceOption || !Exists(keySlice))
-                                _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
+                                _ = basicGarnetApi.SET_Main(in diskLogRecord);
                             i++;
                         }
                     }
@@ -148,7 +148,7 @@ namespace Garnet.cluster
                             // Set if key replace flag is set or key does not exist
                             var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                             if (replaceOption || !Exists(keySlice))
-                                _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
+                                _ = basicGarnetApi.SET_Object(in diskLogRecord);
                             i++;
                         }
                     }

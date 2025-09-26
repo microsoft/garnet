@@ -117,9 +117,15 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType)
+        public GarnetStatus SET_Main<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(in srcLogRecord, storeType, ref context, ref objectContext);
+            => storageSession.SET_Main(in srcLogRecord, ref context);
+
+        /// <inheritdoc />
+        public GarnetStatus SET_Object<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => storageSession.SET_Object(in srcLogRecord, ref objectContext);
+
         #endregion
 
         #region SETEX
@@ -167,29 +173,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All)
             => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
-        #endregion
-
-        #region EXPIRE
-
-        /// <inheritdoc />
-        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIRE(key, expiryMs, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIRE(key, expiry, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
-        #endregion
-
-        #region EXPIREAT
-
-        /// <inheritdoc />
-        public GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-             => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext, milliseconds: true);
-
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
