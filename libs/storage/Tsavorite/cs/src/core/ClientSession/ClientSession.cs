@@ -506,12 +506,12 @@ namespace Tsavorite.core
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnsafeResumeThread<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions)
+        internal void UnsafeResumeThread<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int maxSpins)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // We do not track any "acquired" state here; if someone mixes calls between safe and unsafe contexts, they will 
             // get the "trying to acquire already-acquired epoch" error.
-            store.epoch.Resume();
+            store.epoch.Resume(maxSpins);
             store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
         }
 
