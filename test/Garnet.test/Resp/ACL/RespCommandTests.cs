@@ -994,7 +994,7 @@ namespace Garnet.test.Resp.ACL
                     throw;
                 }
             }
-        }        
+        }
 
         [Test]
         public async Task ClusterAppendLogACLsAsync()
