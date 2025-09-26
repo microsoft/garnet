@@ -18,16 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-2022 ]
+        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
         test: [ 'Garnet.test', 'Garnet.test.cluster' ]
 
-        # DEBUG Full matrix... commented out for now
-# DEBUG      os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-   # DEBUG     framework: [ 'net8.0', 'net9.0' ]
-    # DEBUG    configuration: [ 'Debug', 'Release' ]
-     # DEBUG   test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     steps:
       - name: Install Allure CLI
         shell: pwsh
