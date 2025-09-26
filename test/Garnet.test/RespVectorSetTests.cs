@@ -110,7 +110,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
-            
+
             var vectorSetKey = $"{nameof(VADDErrors)}_{Guid.NewGuid()}";
 
             // Bad arity
@@ -313,8 +313,58 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
             // TODO: WITHSCORES
-            // TODO: WITHATTRIBS
         }
+
+        [Test]
+        public void VSIMWithAttribs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "4.0", "3.0", "2.0", "1.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // Equivalent to no attribute
+            var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "8.0", "7.0", "6.0", "5.0", new byte[] { 0, 0, 0, 2 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", ""]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            // Actually no attribute
+            var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "12.0", "11.0", "10.0", "9.0", new byte[] { 0, 0, 0, 3 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res4);
+
+            var res5 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "4", "2.1", "2.2", "2.3", "2.4", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(8, res5.Length);
+            for (var i = 0; i < res5.Length; i += 2)
+            {
+                var id = res5[i];
+                var attr = res5[i + 1];
+
+                if (id.SequenceEqual(new byte[] { 0, 0, 0, 0 }))
+                {
+                    ClassicAssert.True(attr.SequenceEqual("hello world"u8.ToArray()));
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 1 }))
+                {
+                    ClassicAssert.True(attr.SequenceEqual("fizz buzz"u8.ToArray()));
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 2 }))
+                {
+                    ClassicAssert.AreEqual(0, attr.Length);
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 3 }))
+                {
+                    ClassicAssert.AreEqual(0, attr.Length);
+                }
+                else
+                {
+                    ClassicAssert.Fail("Unexpected id");
+                }
+            }
+        }
+
 
         [Test]
         public void VDIM()

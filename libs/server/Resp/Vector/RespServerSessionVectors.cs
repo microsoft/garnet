@@ -366,6 +366,7 @@ namespace Garnet.server
         {
             const int DefaultResultSetSize = 64;
             const int DefaultIdSize = sizeof(ulong);
+            const int DefaultAttributeSize = 32;
 
             // VSIM key (ELE | FP32 | XB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
             //
@@ -667,11 +668,14 @@ namespace Garnet.server
                 filter ??= default;
                 maxFilteringEffort ??= count.Value * 100;
 
+                // TODO: these stackallocs are dangerous, need logic to avoid stack overflow
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];
                 Span<float> distanceSpace = stackalloc float[DefaultResultSetSize];
+                Span<byte> attributeSpace = withAttributes.Value ? stackalloc byte[(DefaultResultSetSize * DefaultAttributeSize) + (DefaultResultSetSize * sizeof(int))] : default;
 
-                SpanByteAndMemory idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
-                SpanByteAndMemory distanceResult = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(distanceSpace));
+                var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
+                var distanceResult = SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.Cast<float, byte>(distanceSpace));
+                var attributeResult = SpanByteAndMemory.FromPinnedSpan(attributeSpace);
                 try
                 {
 
@@ -679,11 +683,11 @@ namespace Garnet.server
                     VectorManagerResult vectorRes;
                     if (element.IsEmpty)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, ref idResult, ref distanceResult, out vectorRes);
+                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, ref distanceResult, ref attributeResult, out vectorRes);
                     }
                     else
                     {
-                        res = storageApi.VectorSetElementSimilarity(key, element, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, ref idResult, ref distanceResult, out vectorRes);
+                        res = storageApi.VectorSetElementSimilarity(key, element, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, ref distanceResult, ref attributeResult, out vectorRes);
                     }
 
                     if (res == GarnetStatus.NOTFOUND)
@@ -711,6 +715,7 @@ namespace Garnet.server
                             {
                                 var remainingIds = idResult.AsReadOnlySpan();
                                 var distancesSpan = MemoryMarshal.Cast<byte, float>(distanceResult.AsReadOnlySpan());
+                                var remaininingAttributes = withAttributes.Value ? attributeResult.AsReadOnlySpan() : default;
 
                                 var arrayItemCount = distancesSpan.Length;
                                 if (withScores.Value)
@@ -719,7 +724,7 @@ namespace Garnet.server
                                 }
                                 if (withAttributes.Value)
                                 {
-                                    throw new NotImplementedException();
+                                    arrayItemCount += distancesSpan.Length;
                                 }
 
                                 while (!RespWriteUtils.TryWriteArrayLength(arrayItemCount, ref dcurr, dend))
@@ -755,7 +760,17 @@ namespace Garnet.server
 
                                     if (withAttributes.Value)
                                     {
-                                        throw new NotImplementedException();
+                                        if (remaininingAttributes.Length < sizeof(int))
+                                        {
+                                            throw new GarnetException($"Insufficient bytes for attribute length at resultIndex={resultIndex}: {Convert.ToHexString(attributeResult.AsReadOnlySpan())}");
+                                        }
+
+                                        var attrLen = BinaryPrimitives.ReadInt32LittleEndian(remaininingAttributes);
+                                        var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
+                                        remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
+
+                                        while (!RespWriteUtils.TryWriteBulkString(attr, ref dcurr, dend))
+                                            SendAndReset();
                                     }
                                 }
                             }
@@ -774,15 +789,9 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    if (!idResult.IsSpanByte)
-                    {
-                        idResult.Memory.Dispose();
-                    }
-
-                    if (!distanceResult.IsSpanByte)
-                    {
-                        distanceResult.Memory.Dispose();
-                    }
+                    idResult.Memory?.Dispose();
+                    distanceResult.Memory?.Dispose();
+                    attributeResult.Memory?.Dispose();
                 }
             }
             finally

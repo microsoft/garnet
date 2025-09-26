@@ -14,7 +14,7 @@ namespace Garnet.server
         private const byte FullVector = 0;
         private const byte NeighborList = 1;
         private const byte QuantizedVector = 2;
-        private const byte Attributes = 3;
+        internal const byte Attributes = 3;
 
         public bool UseUnmanagedCallbacks { get; } = true;
 

@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -173,7 +175,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
-        public GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        public GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory attributes, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -212,6 +214,11 @@ namespace Garnet.server
                     // That lock prevents deletion, but everything else can proceed in parallel
                     result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
 
+                    if (result == VectorManagerResult.OK && includeAttributes)
+                    {
+                        FetchVectorElementAttributes(indexConfig.AsReadOnlySpan(), outputIds, ref attributes);
+                    }
+
                     return GarnetStatus.OK;
                 }
                 finally
@@ -228,7 +235,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given an element that is already in the Vector Set.
         /// </summary>
-        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out VectorManagerResult result)
+        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory attributes, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -265,6 +272,11 @@ namespace Garnet.server
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
                     result = vectorManager.ElementSimilarity(this, indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, ref outputIds, ref outputDistances);
+
+                    if (result == VectorManagerResult.OK && includeAttributes)
+                    {
+                        FetchVectorElementAttributes(indexConfig.AsReadOnlySpan(), outputIds, ref attributes);
+                    }
 
                     return GarnetStatus.OK;
                 }
@@ -462,6 +474,113 @@ namespace Garnet.server
             finally
             {
                 lockCtx.EndLockable();
+            }
+        }
+
+        /// <summary>
+        /// Fetch attributes for a given set of element ids.
+        /// 
+        /// This must only be called while holding locks which prevent the Vector Set from being dropped.
+        /// </summary>
+        private void FetchVectorElementAttributes(ReadOnlySpan<byte> vectorSetIndex, SpanByteAndMemory ids, ref SpanByteAndMemory attributes)
+        {
+            VectorManager.ReadIndex(vectorSetIndex, out var context, out _, out _, out _, out _, out _, out _);
+
+            var remainingIds = ids.AsReadOnlySpan();
+
+            GCHandle idPin = default;
+            byte[] idWithNamespaceArr = null;
+
+            var attributesNextIx = 0;
+
+            try
+            {
+                Span<byte> idWithNamespace = stackalloc byte[128];
+                Span<byte> attribute = stackalloc byte[128];
+
+                // TODO: we could scatter/gather this like MGET - doesn't matter when everything is in memory,
+                //       but if anything is on disk it'd help perf
+                while (!remainingIds.IsEmpty)
+                {
+                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                    if (idLen + sizeof(int) > remainingIds.Length)
+                    {
+                        throw new GarnetException($"Malformed ids, {idLen} + {sizeof(int)} > {remainingIds.Length}");
+                    }
+
+                    var id = remainingIds.Slice(sizeof(int), idLen);
+
+                    // Make sure we've got enough space to query the element
+                    if (id.Length + 1 > idWithNamespace.Length)
+                    {
+                        if (idWithNamespaceArr != null)
+                        {
+                            idPin.Free();
+                            ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
+                        }
+
+                        idWithNamespaceArr = ArrayPool<byte>.Shared.Rent(id.Length + 1);
+                        idPin = GCHandle.Alloc(idWithNamespaceArr, GCHandleType.Pinned);
+                        idWithNamespace = idWithNamespaceArr;
+                    }
+
+                    // Add attribute namespace to element id
+                    var toQuery = SpanByte.FromPinnedSpan(idWithNamespace);
+                    toQuery.SetNamespaceInPayload((byte)(context | DiskANNService.Attributes));
+                    id.CopyTo(toQuery.AsSpan());
+                    toQuery.Length = id.Length;
+
+                    var attributeMem = SpanByteAndMemory.FromPinnedSpan(attribute);
+                    var singleRes = basicContext.Read(ref toQuery, ref attributeMem);
+                    if (singleRes.IsPending)
+                    {
+                        CompletePendingForSession(ref singleRes, ref attributeMem, ref basicContext);
+                    }
+
+                    // Copy attribute into output buffer, length prefixed, resizing as necessary
+                    try
+                    {
+                        var neededSpace = 4 + (singleRes.Found ? attributeMem.Length : 0);
+
+                        var destSpan = attributes.AsSpan()[attributesNextIx..];
+                        if (destSpan.Length < neededSpace)
+                        {
+                            var newAttrArr = MemoryPool<byte>.Shared.Rent(attributes.Length + neededSpace);
+                            attributes.AsReadOnlySpan().CopyTo(newAttrArr.Memory.Span);
+
+                            attributes.Memory?.Dispose();
+
+                            attributes = new SpanByteAndMemory(newAttrArr, newAttrArr.Memory.Length);
+                            destSpan = attributes.AsSpan()[attributesNextIx..];
+                        }
+
+                        if (singleRes.NotFound)
+                        {
+                            BinaryPrimitives.WriteInt32LittleEndian(destSpan, 0);
+                        }
+                        else
+                        {
+                            BinaryPrimitives.WriteInt32LittleEndian(destSpan, attributeMem.Length);
+                            attributeMem.AsReadOnlySpan().CopyTo(destSpan[sizeof(int)..]);
+                        }
+
+                        attributesNextIx += neededSpace;
+                    }
+                    finally
+                    {
+                        attributeMem.Memory?.Dispose();
+                    }
+
+                    remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                }
+            }
+            finally
+            {
+                if (idWithNamespaceArr != null)
+                {
+                    idPin.Free();
+                    ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
+                }
             }
         }
     }
