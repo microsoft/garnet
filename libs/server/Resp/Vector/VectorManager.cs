@@ -411,7 +411,7 @@ namespace Garnet.server
                 if (dimensions != valueDims)
                 {
                     // Matching Redis behavior
-                    errorMsg = Encoding.ASCII.GetBytes($"ERR Input dimension mismatch for projection - got {valueDims} but projection expects {dimensions}");
+                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {dimensions}");
                     return VectorManagerResult.BadParams;
                 }
 
