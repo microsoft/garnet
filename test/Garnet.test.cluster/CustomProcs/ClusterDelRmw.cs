@@ -14,7 +14,7 @@ namespace Garnet.test.cluster
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, isObject: false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
             return true;
         }
 

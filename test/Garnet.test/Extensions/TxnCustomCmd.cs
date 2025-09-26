@@ -18,10 +18,10 @@ namespace Garnet
             var mainStoreKey = GetNextArg(ref procInput, ref offset);
             _ = GetNextArg(ref procInput, ref offset); // mainStoreValue
 
-            AddKey(mainStoreKey, LockType.Exclusive, false);
+            AddKey(mainStoreKey, LockType.Exclusive, StoreType.Main);
 
             var myDictKey = GetNextArg(ref procInput, ref offset);
-            AddKey(myDictKey, LockType.Exclusive, true);
+            AddKey(myDictKey, LockType.Exclusive, StoreType.Object);
 
             if (!ParseCustomObjectCommand("MYDICTSET", out customObjectCommand))
                 return false;

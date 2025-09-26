@@ -8,8 +8,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Server session for RESP protocol - SET
@@ -28,7 +28,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, PinnedSpanByte member, out int saddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             saddCount = 0;
 
@@ -57,7 +57,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int saddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             saddCount = 0;
 
@@ -91,7 +91,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetRemove<TObjectContext>(PinnedSpanByte key, PinnedSpanByte member, out int sremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             sremCount = 0;
 
@@ -121,7 +121,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetRemove<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int sremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             sremCount = 0;
 
@@ -150,7 +150,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, out int count, ref TObjectContext objectStoreContext)
-                where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+                where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             count = 0;
 
@@ -176,7 +176,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, out PinnedSpanByte[] members, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             members = default;
 
@@ -206,7 +206,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal GarnetStatus SetPop<TObjectContext>(PinnedSpanByte key, out PinnedSpanByte element, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = SetPop(key, int.MinValue, out var elements, ref objectStoreContext);
             element = default;
@@ -226,7 +226,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetPop<TObjectContext>(PinnedSpanByte key, int count, out PinnedSpanByte[] elements, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             elements = default;
 
@@ -267,12 +267,13 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(sourceKey, StoreType.Object, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, StoreType.Object, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
 
             var objectTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -313,8 +314,7 @@ namespace Garnet.server
 
                 if (srcSetObject.Set.Count == 0)
                 {
-                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                        ref transactionalContext, ref objectTransactionalContext);
+                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedTransactionalContext);
                 }
 
                 _ = dstSetObject.Set.Add(arrMember);
@@ -362,7 +362,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -403,14 +403,15 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
             // SetObject
             var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var setUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -431,8 +432,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref transactionalContext, ref setObjectStoreTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedStoreTransactionalContext);
                     }
 
                     count = members.Count;
@@ -449,7 +449,7 @@ namespace Garnet.server
 
 
         private GarnetStatus SetIntersect<TObjectContext>(ReadOnlySpan<PinnedSpanByte> keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
@@ -533,7 +533,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -572,14 +572,15 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
             // SetObject
             var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var setUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -600,8 +601,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref transactionalContext, ref setObjectStoreTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedStoreTransactionalContext);
                     }
 
                     count = members.Count;
@@ -617,7 +617,7 @@ namespace Garnet.server
         }
 
         private GarnetStatus SetUnion<TObjectContext>(PinnedSpanByte[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
-             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             output = new HashSet<byte[]>(ByteArrayComparer.Instance);
             if (keys.Length == 0)
@@ -651,8 +651,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus SetAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
 
         /// <summary>
@@ -666,8 +666,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus SetRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
 
         /// <summary>
@@ -679,8 +679,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        public GarnetStatus SetLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
 
         /// <summary>
@@ -693,7 +693,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetMembers<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -706,7 +706,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetIsMember<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -718,7 +718,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SetIsMember<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] members, out int[] result, ref TObjectContext objectContext)
-             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             result = default;
 
@@ -753,7 +753,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetPop<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -770,7 +770,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetRandomMember<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -793,7 +793,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
@@ -832,14 +832,15 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Exclusive);
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 
             // SetObject
             var setObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var setUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
@@ -859,8 +860,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
-                            ref transactionalContext, ref setObjectStoreTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedStoreTransactionalContext);
                     }
 
                     count = diffSet.Count;
@@ -876,7 +876,7 @@ namespace Garnet.server
         }
 
         private GarnetStatus SetDiff<TObjectContext>(PinnedSpanByte[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             output = new HashSet<byte[]>();
             if (keys.Length == 0)
@@ -951,7 +951,7 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 foreach (var item in keys)
-                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(item, StoreType.Object, LockType.Shared);
                 _ = txnManager.Run(true);
             }
 

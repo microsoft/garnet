@@ -28,7 +28,7 @@ namespace Garnet.server
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var fieldInfo = new RecordFieldInfo()
+            return new RecordFieldInfo()
             {
                 KeyDataSize = srcLogRecord.Key.Length,
                 ValueDataSize = ObjectIdMap.ObjectIdSize,
@@ -36,21 +36,6 @@ namespace Garnet.server
                 HasETag = false, // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag(),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
-
-            switch (input.header.type)
-            {
-                case GarnetObjectType.Expire:
-                case GarnetObjectType.PExpire:
-                    fieldInfo.HasExpiration = true;
-                    return fieldInfo;
-
-                case GarnetObjectType.Persist:
-                    fieldInfo.HasExpiration = false;
-                    return fieldInfo;
-
-                default:
-                    return fieldInfo;
-            }
         }
 
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ObjectInput input)

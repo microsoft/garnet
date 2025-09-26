@@ -40,135 +40,144 @@
     ]
   },
   {
-    "Command": "CLIENT_KILL",
-    "Name": "CLIENT|KILL",
-    "Summary": "Terminates open connections.",
+    "Command": "CLIENT",
+    "Name": "CLIENT",
+    "Summary": "A container for client connection commands.",
     "Group": "Connection",
-    "Complexity": "O(N) where N is the number of client connections",
-    "Arguments": [
+    "Complexity": "Depends on subcommand.",
+    "SubCommands": [
       {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "FILTER",
-        "Type": "OneOf",
+        "Command": "CLIENT_KILL",
+        "Name": "CLIENT|KILL",
+        "Summary": "Terminates open connections.",
+        "Group": "Connection",
+        "Complexity": "O(N) where N is the number of client connections",
         "Arguments": [
           {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "OLD-FORMAT",
-            "DisplayText": "ip:port",
-            "Type": "String"
-          },
-          {
             "TypeDiscriminator": "RespCommandContainerArgument",
-            "Name": "NEW-FORMAT",
+            "Name": "FILTER",
             "Type": "OneOf",
-            "ArgumentFlags": "Multiple",
             "Arguments": [
               {
                 "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "CLIENT-ID",
-                "DisplayText": "client-id",
-                "Type": "Integer",
-                "Token": "ID",
-                "ArgumentFlags": "Optional"
+                "Name": "OLD-FORMAT",
+                "DisplayText": "ip:port",
+                "Type": "String"
               },
               {
                 "TypeDiscriminator": "RespCommandContainerArgument",
-                "Name": "CLIENT-TYPE",
+                "Name": "NEW-FORMAT",
                 "Type": "OneOf",
-                "Token": "TYPE",
-                "ArgumentFlags": "Optional",
+                "ArgumentFlags": "Multiple",
                 "Arguments": [
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "NORMAL",
-                    "DisplayText": "normal",
-                    "Type": "PureToken",
-                    "Token": "NORMAL"
+                    "Name": "CLIENT-ID",
+                    "DisplayText": "client-id",
+                    "Type": "Integer",
+                    "Token": "ID",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "CLIENT-TYPE",
+                    "Type": "OneOf",
+                    "Token": "TYPE",
+                    "ArgumentFlags": "Optional",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "NORMAL",
+                        "DisplayText": "normal",
+                        "Type": "PureToken",
+                        "Token": "NORMAL"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "MASTER",
+                        "DisplayText": "master",
+                        "Type": "PureToken",
+                        "Token": "MASTER"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "SLAVE",
+                        "DisplayText": "slave",
+                        "Type": "PureToken",
+                        "Token": "SLAVE"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "REPLICA",
+                        "DisplayText": "replica",
+                        "Type": "PureToken",
+                        "Token": "REPLICA"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "PUBSUB",
+                        "DisplayText": "pubsub",
+                        "Type": "PureToken",
+                        "Token": "PUBSUB"
+                      }
+                    ]
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "MASTER",
-                    "DisplayText": "master",
-                    "Type": "PureToken",
-                    "Token": "MASTER"
+                    "Name": "USERNAME",
+                    "DisplayText": "username",
+                    "Type": "String",
+                    "Token": "USER",
+                    "ArgumentFlags": "Optional"
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "SLAVE",
-                    "DisplayText": "slave",
-                    "Type": "PureToken",
-                    "Token": "SLAVE"
+                    "Name": "ADDR",
+                    "DisplayText": "ip:port",
+                    "Type": "String",
+                    "Token": "ADDR",
+                    "ArgumentFlags": "Optional"
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "REPLICA",
-                    "DisplayText": "replica",
-                    "Type": "PureToken",
-                    "Token": "REPLICA"
+                    "Name": "LADDR",
+                    "DisplayText": "ip:port",
+                    "Type": "String",
+                    "Token": "LADDR",
+                    "ArgumentFlags": "Optional"
+                  },
+                  {
+                    "TypeDiscriminator": "RespCommandContainerArgument",
+                    "Name": "SKIPME",
+                    "Type": "OneOf",
+                    "Token": "SKIPME",
+                    "ArgumentFlags": "Optional",
+                    "Arguments": [
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "YES",
+                        "DisplayText": "yes",
+                        "Type": "PureToken",
+                        "Token": "YES"
+                      },
+                      {
+                        "TypeDiscriminator": "RespCommandBasicArgument",
+                        "Name": "NO",
+                        "DisplayText": "no",
+                        "Type": "PureToken",
+                        "Token": "NO"
+                      }
+                    ]
                   },
                   {
                     "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "PUBSUB",
-                    "DisplayText": "pubsub",
-                    "Type": "PureToken",
-                    "Token": "PUBSUB"
+                    "Name": "MAXAGE",
+                    "DisplayText": "maxage",
+                    "Type": "Integer",
+                    "Token": "MAXAGE",
+                    "ArgumentFlags": "Optional"
                   }
                 ]
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "USERNAME",
-                "DisplayText": "username",
-                "Type": "String",
-                "Token": "USER",
-                "ArgumentFlags": "Optional"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "ADDR",
-                "DisplayText": "ip:port",
-                "Type": "String",
-                "Token": "ADDR",
-                "ArgumentFlags": "Optional"
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "LADDR",
-                "DisplayText": "ip:port",
-                "Type": "String",
-                "Token": "LADDR",
-                "ArgumentFlags": "Optional"
-              },
-              {
-                "TypeDiscriminator": "RespCommandContainerArgument",
-                "Name": "SKIPME",
-                "Type": "OneOf",
-                "Token": "SKIPME",
-                "ArgumentFlags": "Optional",
-                "Arguments": [
-                  {
-                    "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "YES",
-                    "DisplayText": "yes",
-                    "Type": "PureToken",
-                    "Token": "YES"
-                  },
-                  {
-                    "TypeDiscriminator": "RespCommandBasicArgument",
-                    "Name": "NO",
-                    "DisplayText": "no",
-                    "Type": "PureToken",
-                    "Token": "NO"
-                  }
-                ]
-              },
-              {
-                "TypeDiscriminator": "RespCommandBasicArgument",
-                "Name": "MAXAGE",
-                "DisplayText": "maxage",
-                "Type": "Integer",
-                "Token": "MAXAGE",
-                "ArgumentFlags": "Optional"
               }
             ]
           }
@@ -263,6 +272,507 @@
     "Name": "HCOLLECT",
     "Summary": "Manually trigger deletion of expired fields from memory",
     "Group": "Hash"
+  },
+  {
+    "Command": "HEXPIRE",
+    "Name": "HEXPIRE",
+    "Summary": "Set expiry for hash field using relative time to expire (seconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "SECONDS",
+        "DisplayText": "seconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIREAT",
+    "Name": "HEXPIREAT",
+    "Summary": "Set expiry for hash field using an absolute Unix timestamp (seconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-SECONDS",
+        "DisplayText": "unix-time-seconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRETIME",
+    "Name": "HEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in seconds.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPERSIST",
+    "Name": "HPERSIST",
+    "Summary": "Removes the expiration time for each specified field",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRE",
+    "Name": "HPEXPIRE",
+    "Summary": "Set expiry for hash field using relative time to expire (milliseconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "MILLISECONDS",
+        "DisplayText": "milliseconds",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIREAT",
+    "Name": "HPEXPIREAT",
+    "Summary": "Set expiry for hash field using an absolute Unix timestamp (milliseconds)",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "UNIX-TIME-MILLISECONDS",
+        "DisplayText": "unix-time-milliseconds",
+        "Type": "UnixTime"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "CONDITION",
+        "Type": "OneOf",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NX",
+            "DisplayText": "nx",
+            "Type": "PureToken",
+            "Token": "NX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "XX",
+            "DisplayText": "xx",
+            "Type": "PureToken",
+            "Token": "XX"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "GT",
+            "DisplayText": "gt",
+            "Type": "PureToken",
+            "Token": "GT"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "LT",
+            "DisplayText": "lt",
+            "Type": "PureToken",
+            "Token": "LT"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRETIME",
+    "Name": "HPEXPIRETIME",
+    "Summary": "Returns the expiration time of a hash field as a Unix timestamp, in msec.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "Summary": "Returns the TTL in milliseconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "HTTL",
+    "Name": "HTTL",
+    "Summary": "Returns the TTL in seconds of a hash field.",
+    "Group": "Hash",
+    "Complexity": "O(N) where N is the number of specified fields",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "FIELDS",
+        "Type": "Block",
+        "Token": "FIELDS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMFIELDS",
+            "DisplayText": "numfields",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
   },
   {
     "Command": "SECONDARYOF",
@@ -1409,6 +1919,43 @@
     "Command": "ZPTTL",
     "Name": "ZPTTL",
     "Summary": "Returns the TTL in milliseconds of a sorted set member.",
+    "Group": "SortedSet",
+    "Complexity": "O(N) where N is the number of specified members",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "MEMBERS",
+        "Type": "Block",
+        "Token": "MEMBERS",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "NUMMEMBERS",
+            "DisplayText": "nummembers",
+            "Type": "Integer"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "MEMBER",
+            "DisplayText": "member",
+            "Type": "String",
+            "ArgumentFlags": "Multiple"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "ZTTL",
+    "Name": "ZTTL",
+    "Summary": "Returns the TTL in seconds of a sorted set member.",
     "Group": "SortedSet",
     "Complexity": "O(N) where N is the number of specified members",
     "Arguments": [

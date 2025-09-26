@@ -13,11 +13,14 @@ using Tsavorite.core;
 namespace Garnet.cluster
 {
     using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-        /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
-        SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
-    BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-        /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-        ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
@@ -113,7 +116,7 @@ namespace Garnet.cluster
                             // Set if key replace flag is set or key does not exist
                             var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                             if (replaceOption || !Exists(keySlice))
-                                _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
+                                _ = basicGarnetApi.SET_Main(in diskLogRecord);
                             i++;
                         }
                     }
@@ -145,7 +148,7 @@ namespace Garnet.cluster
                             // Set if key replace flag is set or key does not exist
                             var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                             if (replaceOption || !Exists(keySlice))
-                                _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
+                                _ = basicGarnetApi.SET_Object(in diskLogRecord);
                             i++;
                         }
                     }

@@ -1,33 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    /// <summary>
-    /// Flags for object store outputs.
-    /// </summary>
-    [Flags]
-    public enum ObjectStoreOutputFlags : byte
-    {
-        /// <summary>
-        /// No flags set
-        /// </summary>
-        None = 0,
-
-        /// <summary>
-        /// Remove key
-        /// </summary>
-        RemoveKey = 1,
-
-        /// <summary>
-        /// Wrong type of object
-        /// </summary>
-        WrongType = 1 << 1,
-    }
-
     /// <summary>
     /// Output type used by Garnet object store.
     /// Any field / property added to this struct must be set in the back-end (IFunctions) and used in the front-end (GarnetApi caller).
@@ -46,28 +23,30 @@ namespace Garnet.server
         public IGarnetObject GarnetObject;
 
         /// <summary>
-        /// Object header
+        /// Output header
         /// </summary>
-        public ObjectOutputHeader Header;
+        public OutputHeader Header;
 
         /// <summary>
         /// Output flags
         /// </summary>
-        public ObjectStoreOutputFlags OutputFlags;
+        public OutputFlags OutputFlags;
 
         /// <summary>
         /// True if output flag WrongType is set
         /// </summary>
-        public readonly bool HasWrongType => (OutputFlags & ObjectStoreOutputFlags.WrongType) == ObjectStoreOutputFlags.WrongType;
+        public readonly bool HasWrongType =>
+            (OutputFlags & OutputFlags.WrongType) == OutputFlags.WrongType;
 
         /// <summary>
         /// True if output flag RemoveKey is set
         /// </summary>
-        public readonly bool HasRemoveKey => (OutputFlags & ObjectStoreOutputFlags.RemoveKey) == ObjectStoreOutputFlags.RemoveKey;
+        public readonly bool HasRemoveKey =>
+            (OutputFlags & OutputFlags.RemoveKey) == OutputFlags.RemoveKey;
 
         public GarnetObjectStoreOutput() => SpanByteAndMemory = new(null);
 
-        public GarnetObjectStoreOutput(SpanByteAndMemory spam) => SpanByteAndMemory = spam;
+        public GarnetObjectStoreOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
 
         public static unsafe GarnetObjectStoreOutput FromPinnedPointer(byte* pointer, int length)
             => new(new SpanByteAndMemory() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length) });

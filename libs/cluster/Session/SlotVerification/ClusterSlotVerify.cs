@@ -14,7 +14,7 @@ namespace Garnet.cluster
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool Exists(PinnedSpanByte keySlice)
-            => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
+            => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
 
         private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, int slot = -1)
         {

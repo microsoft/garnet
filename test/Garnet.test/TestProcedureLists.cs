@@ -29,9 +29,9 @@ namespace Garnet
             if (lstKey.Length == 0 || lstKeyB.Length == 0 || lstKeyC.Length == 0)
                 return false;
 
-            AddKey(lstKey, LockType.Exclusive, true);
-            AddKey(lstKeyB, LockType.Exclusive, true);
-            AddKey(lstKeyC, LockType.Exclusive, true);
+            AddKey(lstKey, LockType.Exclusive, StoreType.Object);
+            AddKey(lstKeyB, LockType.Exclusive, StoreType.Object);
+            AddKey(lstKeyC, LockType.Exclusive, StoreType.Object);
 
             return true;
         }

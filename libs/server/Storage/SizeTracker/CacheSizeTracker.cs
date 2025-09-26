@@ -10,8 +10,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Tracks the size of the main log and read cache. 
@@ -20,8 +20,8 @@ namespace Garnet.server
     /// </summary>
     public class CacheSizeTracker
     {
-        internal readonly LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> mainLogTracker;
-        internal readonly LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator> readCacheTracker;
+        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator> mainLogTracker;
+        internal readonly LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator> readCacheTracker;
         private long targetSize;
         public long ReadCacheTargetSize;
 
@@ -72,7 +72,7 @@ namespace Garnet.server
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="readCacheTargetSize">Target memory size for read cache</param>
         /// <param name="loggerFactory"></param>
-        public CacheSizeTracker(TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> store, KVSettings logSettings,
+        public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings logSettings,
                 long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
         {
             Debug.Assert(store != null);
@@ -85,19 +85,19 @@ namespace Garnet.server
 
             if (targetSize > 0)
             {
-                this.mainLogTracker = new LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.Log, logSizeCalculator,
+                this.mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator>(store.Log, logSizeCalculator,
                     targetSize, targetSize / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
                 store.Log.SubscribeEvictions(mainLogTracker);
-                store.Log.SubscribeDeserializations(new LogOperationObserver<ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
+                store.Log.SubscribeDeserializations(new LogOperationObserver<StoreFunctions, StoreAllocator, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
                 store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)
             {
-                this.readCacheTracker = new LogSizeTracker<ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
+                this.readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
                     readCacheTargetSize, readCacheTargetSize / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
                 store.ReadCache.SubscribeEvictions(readCacheTracker);
-                store.ReadCache.SubscribeDeserializations(new LogOperationObserver<ObjectStoreFunctions, ObjectStoreAllocator, LogSizeCalculator>(readCacheTracker, LogOperationType.Deserialize));
+                store.ReadCache.SubscribeDeserializations(new LogOperationObserver<StoreFunctions, StoreAllocator, LogSizeCalculator>(readCacheTracker, LogOperationType.Deserialize));
                 store.ReadCache.IsSizeBeyondLimit = () => readCacheTracker.IsSizeBeyondLimit;
             }
         }

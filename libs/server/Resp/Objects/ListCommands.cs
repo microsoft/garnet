@@ -279,9 +279,6 @@ namespace Garnet.server
             if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
                 return AbortWithErrorMessage(error);
 
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout).Result;
 
             if (result.IsForceUnblocked)
@@ -369,9 +366,6 @@ namespace Garnet.server
             var pDstDir = (byte*)&destinationDirection;
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer(pSrcDir, 1);
             cmdArgs[2] = PinnedSpanByte.FromPinnedPointer(pDstDir, 1);
-
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
@@ -906,9 +900,6 @@ namespace Garnet.server
             }
 
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
-
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
 
             var result = storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs).Result;
 

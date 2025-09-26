@@ -30,9 +30,9 @@ namespace Garnet.test.cluster
             var getB = GetNextArg(ref procInput, ref offset);
             var getC = GetNextArg(ref procInput, ref offset);
 
-            AddKey(getA, LockType.Shared, isObject: false);
-            AddKey(getB, LockType.Shared, isObject: false);
-            AddKey(getC, LockType.Shared, isObject: false);
+            AddKey(getA, LockType.Shared, StoreType.Main);
+            AddKey(getB, LockType.Shared, StoreType.Main);
+            AddKey(getC, LockType.Shared, StoreType.Main);
 
             return true;
         }
@@ -103,9 +103,9 @@ namespace Garnet.test.cluster
             var setB = GetNextArg(ref procInput, ref offset);
             var setC = GetNextArg(ref procInput, ref offset);
 
-            AddKey(getA, LockType.Shared, isObject: false);
-            AddKey(setB, LockType.Exclusive, isObject: false);
-            AddKey(setC, LockType.Exclusive, isObject: false);
+            AddKey(getA, LockType.Shared, StoreType.Main);
+            AddKey(setB, LockType.Exclusive, StoreType.Main);
+            AddKey(setC, LockType.Exclusive, StoreType.Main);
 
             return true;
         }

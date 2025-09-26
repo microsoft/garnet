@@ -42,7 +42,7 @@ namespace Garnet.server
         PinnedSpanByte[] rootBuffer;
 
         /// <summary>
-        /// Get a Span of the parsed parameters in the form an ArgSlice
+        /// Get a Span of the parsed parameters in the form an PinnedSpanByte
         /// </summary>
         public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
 

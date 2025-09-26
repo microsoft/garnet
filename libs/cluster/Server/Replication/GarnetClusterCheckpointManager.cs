@@ -58,10 +58,6 @@ namespace Garnet.cluster
                 CheckpointFileType.STORE_DLOG => GetDeltaLogDevice(fileToken),
                 CheckpointFileType.STORE_INDEX => GetIndexDevice(fileToken),
                 CheckpointFileType.STORE_SNAPSHOT => GetSnapshotLogDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_DLOG => GetDeltaLogDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_INDEX => GetIndexDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_SNAPSHOT => GetSnapshotLogDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ => GetSnapshotObjectLogDevice(fileToken),
                 _ => throw new Exception($"RetrieveCheckpointFile: unexpected state{retStateType}")
             };
             return device;

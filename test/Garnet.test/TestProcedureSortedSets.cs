@@ -27,7 +27,7 @@ namespace Garnet
             if (ssA.Length == 0)
                 return false;
 
-            AddKey(ssA, LockType.Exclusive, true);
+            AddKey(ssA, LockType.Exclusive, StoreType.Object);
 
             return true;
         }
