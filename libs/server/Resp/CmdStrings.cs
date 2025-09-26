@@ -439,7 +439,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> publish => "PUBLISH"u8;
         public static ReadOnlySpan<byte> spublish => "SPUBLISH"u8;
         public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
-        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
         public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
         public static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
         public static ReadOnlySpan<byte> banlist => "BANLIST"u8;

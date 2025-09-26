@@ -340,7 +340,6 @@ namespace Garnet.server
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,
-        CLUSTER_AOFSYNC,
         CLUSTER_APPENDLOG,
         CLUSTER_ATTACH_SYNC,
         CLUSTER_BANLIST,
@@ -2183,10 +2182,6 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.mtasks))
                 {
                     return RespCommand.CLUSTER_MTASKS;
-                }
-                else if (subCommand.SequenceEqual(CmdStrings.aofsync))
-                {
-                    return RespCommand.CLUSTER_AOFSYNC;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.appendlog))
                 {
