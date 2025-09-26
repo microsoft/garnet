@@ -21,8 +21,6 @@ namespace Garnet.server
 
             switch (type)
             {
-                case GarnetObjectType.Expire:
-                case GarnetObjectType.Persist:
                 case GarnetObjectType.DelIfExpIm:
                     return false;
                 default:
@@ -60,10 +58,6 @@ namespace Garnet.server
                 _ = logRecord.TrySetValueObject(value, in sizeInfo);
                 return true;
             }
-            else
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
-
-            Debug.Assert(type is not GarnetObjectType.Expire and not GarnetObjectType.PExpire and not GarnetObjectType.Persist, "Expire and Persist commands should have returned false from NeedInitialUpdate.");
 
             var customObjectCommand = GetCustomObjectCommand(ref input, type);
             value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
@@ -135,20 +129,6 @@ namespace Garnet.server
 
             switch (input.header.type)
             {
-                case GarnetObjectType.Expire:
-                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
-                    if (!EvaluateObjectExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
-                        return false;
-                    return true;    // The options may or may not produce a result that matches up with what sizeInfo has, so return rather than drop down to AssertOptionals
-                case GarnetObjectType.Persist:
-                    if (logRecord.Info.HasExpiration)
-                    {
-                        logRecord.RemoveExpiration();
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
-                    }
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-                    return true;
                 case GarnetObjectType.DelIfExpIm:
                     return true;
                 default:
@@ -243,27 +223,6 @@ namespace Garnet.server
 
             switch (input.header.type)
             {
-                case GarnetObjectType.Expire:
-                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
-
-                    // Expire will have allocated space for the expiration, so copy it over and do the "in-place" logic to replace it in the new record
-                    if (srcLogRecord.Info.HasExpiration)
-                        dstLogRecord.TrySetExpiration(srcLogRecord.Expiration);
-                    if (!EvaluateObjectExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
-                        return false;
-                    break;
-
-                case GarnetObjectType.Persist:
-                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
-                        return false;
-                    if (srcLogRecord.Info.HasExpiration)
-                    {
-                        dstLogRecord.RemoveExpiration();
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
-                    }
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-                    break;
                 case GarnetObjectType.DelIfExpIm:
                     break;
                 default:
