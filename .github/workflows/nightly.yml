@@ -107,8 +107,8 @@ jobs:
       - name: Upload CombinedResults artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CombinedResults-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-          path: test/Allure/CombinedResults
+          name: AllureResults-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: test/Allure/AllResults
           
         if: ${{ always() }}
 
@@ -162,8 +162,8 @@ jobs:
 # DEBUG          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
 # DEBUG        if: ${{ always() }}
 
-  pipeline-success:
-    name: Garnet Nightly (Complete)
+  generate-allure-report:
+    name: Generate Allure Report
     runs-on: windows-2022  
     needs: [ build-test-garnet, build-test-tsavorite ]
     if: ${{ !(failure() || cancelled()) }}
@@ -181,17 +181,22 @@ jobs:
           echo "Adding Scoop shims to PATH: $shimPath"
           echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
 
-      - name: Download net8.0 results
+      - name: Download all test result artifacts
         uses: actions/download-artifact@v4
         with:
-          name: CombinedResults-net8.0-Release-Garnet.test
-          path: test/Allure/CombinedResults
+          path: test/Allure/AllResults
 
-      - name: Download net9.0 results
-        uses: actions/download-artifact@v4
-        with:
-          name: CombinedResults-net9.0-Release-Garnet.test
-          path: test/Allure/CombinedResults
+# DEBUG      - name: Download net8.0 results
+# DEBUG        uses: actions/download-artifact@v4
+# DEBUG        with:
+# DEBUG          name: CombinedResults-net8.0-Release-Garnet.test
+# DEBUG          path: test/Allure/CombinedResults
+
+# DEBUG      - name: Download net9.0 results
+# DEBUG        uses: actions/download-artifact@v4
+# DEBUG        with:
+# DEBUG          name: CombinedResults-net9.0-Release-Garnet.test
+# DEBUG          path: test/Allure/CombinedResults
 
       - name: DEBUG Show working directory and contents
         shell: pwsh
@@ -210,9 +215,23 @@ jobs:
             Write-Host "Script NOT found at $scriptPath"
           }
 
-      - name: DEBUG List contents of test/allure
+      - name: DEBUG List contents of test/allure/AllResults
         shell: pwsh
-        run: Get-ChildItem "${{ github.workspace }}\test\allure" -Recurse
+        run: Get-ChildItem "${{ github.workspace }}\test\allure\AllResults" -Recurse
+
+      - name: Move all results into one folder (CombinedResults)
+        shell: pwsh
+        run: |
+          $source = "${{ github.workspace }}\test\Allure\AllResults"
+          $target = "${{ github.workspace }}\test\Allure\CombinedResults"
+          New-Item -ItemType Directory -Path $target -Force
+          Get-ChildItem -Recurse -File $source | ForEach-Object {
+            Copy-Item $_.FullName -Destination $target -Force
+          }
+
+      - name: DEBUG List contents of test/allure/CombinedResults
+        shell: pwsh
+        run: Get-ChildItem "${{ github.workspace }}\test\allure\CombinedResults" -Recurse
 
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
@@ -223,7 +242,7 @@ jobs:
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
         with:
-          name: AllureReport
+          name: allure-report
           path: test/Allure/allure-report
 
       - name: Echo completion
