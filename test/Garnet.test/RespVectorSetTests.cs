@@ -78,7 +78,7 @@ namespace Garnet.test
 
             // Mismatch vector size for projection
             var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "REDUCE", "50", "VALUES", "5", "1.0", "2.0", "3.0", "4.0", "5.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]));
-            ClassicAssert.AreEqual("ERR Input dimension mismatch for projection - got 5 but projection expects 4", exc3.Message);
+            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 5 but set has 4", exc3.Message);
         }
 
         [Test]
@@ -98,7 +98,7 @@ namespace Garnet.test
 
             // Element name too short
             var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR Input dimension mismatch for projection - got 4 but projection expects 1", exc2.Message);
+            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 4 but set has 1", exc2.Message);
 
             // Element name too long
             var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "1", "1.0", new byte[] { 0, 1, 2, 3, 4, }, "XPREQ8"]));
