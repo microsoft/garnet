@@ -96,15 +96,15 @@ jobs:
             Write-Host "No ${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results found for this matrix combination."
           }
 
-      - name: Stage allure-results into test/Allure/CombinedResults
+      - name: Stage allure-results into test/Allure/AllResults
         run: |
           $source = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          $target = "${{ github.workspace }}/test/Allure/CombinedResults"
+          $target = "${{ github.workspace }}/test/Allure/AllResults"
           New-Item -ItemType Directory -Path $target -Force
           Copy-Item -Path "$source\*" -Destination $target -Recurse -Force
         shell: pwsh
 
-      - name: Upload CombinedResults artifact
+      - name: Upload All Results to artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AllureResults-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
