@@ -537,11 +537,10 @@ namespace Garnet.server
     {
         public int SerializedLength => throw new NotImplementedException();
 
-        public byte Namespace { get; set; }
+        public int ReadDesiredSize { get; set; }
 
-        public VectorInput(byte ns)
+        public VectorInput()
         {
-            Namespace = ns;
         }
 
         public unsafe int CopyTo(byte* dest, int length) => throw new NotImplementedException();

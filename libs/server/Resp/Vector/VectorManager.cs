@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -162,7 +163,8 @@ namespace Garnet.server
             key.CopyTo(keyWithNamespace.AsSpan());
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = new((byte)context);
+            VectorInput input = new();
+            input.ReadDesiredSize = value.Length;
             var outputSpan = SpanByte.FromPinnedSpan(value);
 
             var status = ctx.Read(ref keyWithNamespace, ref input, ref outputSpan);
@@ -179,6 +181,48 @@ namespace Garnet.server
             return 0;
         }
 
+        private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
+        {
+            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload((byte)context);
+            key.CopyTo(keyWithNamespace.AsSpan());
+
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+
+        tryAgain:
+            VectorInput input = new();
+            input.ReadDesiredSize = -1;
+            fixed (byte* ptr = value.AsSpan())
+            {
+                SpanByte asSpanByte = new(value.Length, (nint)ptr);
+
+                var status = ctx.Read(ref keyWithNamespace, ref input, ref asSpanByte);
+                if (status.IsPending)
+                {
+                    CompletePending(ref status, ref asSpanByte, ref ctx);
+                }
+
+                if (!status.Found)
+                {
+                    value.Length = 0;
+                    return false;
+                }
+
+                if (input.ReadDesiredSize > asSpanByte.Length)
+                {
+                    value.Memory?.Dispose();
+                    var newAlloc = MemoryPool<byte>.Shared.Rent(input.ReadDesiredSize);
+                    value = new(newAlloc, newAlloc.Memory.Length);
+                    goto tryAgain;
+                }
+
+                value.Length = asSpanByte.Length;
+                return true;
+            }
+        }
+
         private static bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             Span<byte> distinctKey = stackalloc byte[key.Length + 1];
@@ -188,7 +232,7 @@ namespace Garnet.server
             key.CopyTo(keyWithNamespace.AsSpan());
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = new((byte)context);
+            VectorInput input = new();
             var valueSpan = SpanByte.FromPinnedSpan(value);
             SpanByte outputSpan = default;
 
@@ -412,6 +456,14 @@ namespace Garnet.server
 
                 if (insert)
                 {
+                    // HACK HACK HACK
+                    // Once DiskANN is doing this, remove
+                    if (!attributes.IsEmpty)
+                    {
+                        var res = WriteCallbackManaged(context | DiskANNService.Attributes, element, attributes);
+                        Debug.Assert(res, "Failed to insert attribute");
+                    }
+
                     return VectorManagerResult.OK;
                 }
 
@@ -436,8 +488,10 @@ namespace Garnet.server
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
+            bool includeAttributes,
             ref SpanByteAndMemory outputIds,
-            ref SpanByteAndMemory outputDistances
+            ref SpanByteAndMemory outputDistances,
+            ref SpanByteAndMemory outputAttributes
         )
         {
             ActiveThreadSession = currentStorageSession;
@@ -493,6 +547,11 @@ namespace Garnet.server
                         out var continuation
                     );
 
+                if (includeAttributes)
+                {
+                    FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+                }
+
                 if (continuation != 0)
                 {
                     // TODO: paged results!
@@ -521,8 +580,10 @@ namespace Garnet.server
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
+            bool includeAttributes,
             ref SpanByteAndMemory outputIds,
-            ref SpanByteAndMemory outputDistances
+            ref SpanByteAndMemory outputDistances,
+            ref SpanByteAndMemory outputAttributes
         )
         {
             ActiveThreadSession = currentStorageSession;
@@ -571,6 +632,11 @@ namespace Garnet.server
                         out var continuation
                     );
 
+                if (includeAttributes)
+                {
+                    FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+                }
+
                 if (continuation != 0)
                 {
                     // TODO: paged results!
@@ -584,6 +650,103 @@ namespace Garnet.server
             finally
             {
                 ActiveThreadSession = null;
+            }
+        }
+
+
+        /// <summary>
+        /// Fetch attributes for a given set of element ids.
+        /// 
+        /// This must only be called while holding locks which prevent the Vector Set from being dropped.
+        /// </summary>
+        private void FetchVectorElementAttributes(ulong context, int numIds, SpanByteAndMemory ids, ref SpanByteAndMemory attributes)
+        {
+            var remainingIds = ids.AsReadOnlySpan();
+
+            GCHandle idPin = default;
+            byte[] idWithNamespaceArr = null;
+
+            var attributesNextIx = 0;
+
+            Span<byte> attributeFull = stackalloc byte[32];
+            var attributeMem = SpanByteAndMemory.FromPinnedSpan(attributeFull);
+
+            try
+            {
+                Span<byte> idWithNamespace = stackalloc byte[128];
+
+
+                // TODO: we could scatter/gather this like MGET - doesn't matter when everything is in memory,
+                //       but if anything is on disk it'd help perf
+                for (var i = 0; i < numIds; i++)
+                {
+                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                    if (idLen + sizeof(int) > remainingIds.Length)
+                    {
+                        throw new GarnetException($"Malformed ids, {idLen} + {sizeof(int)} > {remainingIds.Length}");
+                    }
+
+                    var id = remainingIds.Slice(sizeof(int), idLen);
+
+                    // Make sure we've got enough space to query the element
+                    if (id.Length + 1 > idWithNamespace.Length)
+                    {
+                        if (idWithNamespaceArr != null)
+                        {
+                            idPin.Free();
+                            ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
+                        }
+
+                        idWithNamespaceArr = ArrayPool<byte>.Shared.Rent(id.Length + 1);
+                        idPin = GCHandle.Alloc(idWithNamespaceArr, GCHandleType.Pinned);
+                        idWithNamespace = idWithNamespaceArr;
+                    }
+
+                    if (attributeMem.Memory != null)
+                    {
+                        attributeMem.Length = attributeMem.Memory.Memory.Length;
+                    }
+                    else
+                    {
+                        attributeMem.Length = attributeMem.SpanByte.Length;
+                    }
+
+                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, id, ref attributeMem);
+
+                    // Copy attribute into output buffer, length prefixed, resizing as necessary
+                    var neededSpace = 4 + (found ? attributeMem.Length : 0);
+
+                    var destSpan = attributes.AsSpan()[attributesNextIx..];
+                    if (destSpan.Length < neededSpace)
+                    {
+                        var newAttrArr = MemoryPool<byte>.Shared.Rent(attributes.Length + neededSpace);
+                        attributes.AsReadOnlySpan().CopyTo(newAttrArr.Memory.Span);
+
+                        attributes.Memory?.Dispose();
+
+                        attributes = new SpanByteAndMemory(newAttrArr, newAttrArr.Memory.Length);
+                        destSpan = attributes.AsSpan()[attributesNextIx..];
+                    }
+
+                    BinaryPrimitives.WriteInt32LittleEndian(destSpan, attributeMem.Length);
+                    attributeMem.AsReadOnlySpan().CopyTo(destSpan[sizeof(int)..]);
+
+                    attributesNextIx += neededSpace;
+
+                    remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                }
+
+                attributes.Length = attributesNextIx;
+            }
+            finally
+            {
+                if (idWithNamespaceArr != null)
+                {
+                    idPin.Free();
+                    ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
+                }
+
+                attributeMem.Memory?.Dispose();
             }
         }
 

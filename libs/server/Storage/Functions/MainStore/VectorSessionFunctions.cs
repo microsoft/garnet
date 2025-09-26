@@ -47,10 +47,23 @@ namespace Garnet.server
         public bool SingleReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo)
         {
             Debug.Assert(key.MetadataSize == 1, "Should never read a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
 
-            dst.Length = value.Length;
-            value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
+            if (input.ReadDesiredSize > 0)
+            {
+                Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
+
+                dst.Length = value.Length;
+                value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
+            }
+            else
+            {
+                input.ReadDesiredSize = value.Length;
+                if (dst.Length >= value.Length)
+                {
+                    value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
+                    dst.Length = value.Length;
+                }
+            }
 
             return true;
         }
@@ -58,10 +71,23 @@ namespace Garnet.server
         public bool ConcurrentReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
         {
             Debug.Assert(key.MetadataSize == 1, "Should never read a non-namespaced value with VectorSessionFunctions");
-            Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
 
-            dst.Length = value.Length;
-            value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
+            if (input.ReadDesiredSize > 0)
+            {
+                Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
+
+                dst.Length = value.Length;
+                value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
+            }
+            else
+            {
+                input.ReadDesiredSize = value.Length;
+                if (dst.Length >= value.Length)
+                {
+                    value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
+                    dst.Length = value.Length;
+                }
+            }
 
             return true;
         }

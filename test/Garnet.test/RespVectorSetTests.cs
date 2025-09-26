@@ -335,12 +335,17 @@ namespace Garnet.test
             var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "12.0", "11.0", "10.0", "9.0", new byte[] { 0, 0, 0, 3 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res4);
 
-            var res5 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "4", "2.1", "2.2", "2.3", "2.4", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
-            ClassicAssert.AreEqual(8, res5.Length);
-            for (var i = 0; i < res5.Length; i += 2)
+            // Very long attribute
+            var bigAttr = Enumerable.Repeat((byte)'a', 1_024).ToArray();
+            var res5 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "16.0", "15.0", "14.0", "13.0", new byte[] { 0, 0, 0, 4 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", bigAttr]);
+            ClassicAssert.AreEqual(1, (int)res5);
+
+            var res6 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "4", "2.1", "2.2", "2.3", "2.4", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(10, res6.Length);
+            for (var i = 0; i < res6.Length; i += 2)
             {
-                var id = res5[i];
-                var attr = res5[i + 1];
+                var id = res6[i];
+                var attr = res6[i + 1];
 
                 if (id.SequenceEqual(new byte[] { 0, 0, 0, 0 }))
                 {
@@ -357,6 +362,10 @@ namespace Garnet.test
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 3 }))
                 {
                     ClassicAssert.AreEqual(0, attr.Length);
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 4 }))
+                {
+                    ClassicAssert.True(bigAttr.SequenceEqual(attr));
                 }
                 else
                 {
