@@ -411,7 +411,7 @@ namespace Tsavorite.core
                 PinnedMemoryStream<ObjectLogWriter> pinnedMemoryStream = new(logWriter);
 
                 flushBuffers.filePosition = objectLogNextRecordStartPosition;
-                valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
+                valueObjectSerializer.BeginSerialize(pinnedMemoryStream); TODO("Move to on-demand in ObjectLogWriter");
 
                 var pageHeaderPtr = (PageHeader*)srcBuffer.GetValidPointer();
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
@@ -445,6 +445,7 @@ namespace Tsavorite.core
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
+                valueObjectSerializer.EndSerialize();   TODO("Move to on-demand in ObjectLogWriter");
 
                 // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
                 // to the main log file.
