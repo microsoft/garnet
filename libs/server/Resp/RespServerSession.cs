@@ -322,7 +322,7 @@ namespace Garnet.server
                 cmdManager,
                 new(),
                 subscribeBroker: null,
-                vectorManager: new(),
+                vectorManager: new(null),
                 createDatabaseDelegate: delegate { return new(); }
             );
         }

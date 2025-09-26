@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -89,7 +90,9 @@ namespace Garnet.server
         [ThreadStatic]
         private static StorageSession ActiveThreadSession;
 
-        public VectorManager()
+        private readonly ILogger logger;
+
+        public VectorManager(ILogger logger)
         {
             replicationBlockEvent = new(true);
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
@@ -100,6 +103,8 @@ namespace Garnet.server
             {
                 replicationReplayTasks[i] = Task.CompletedTask;
             }
+
+            this.logger = logger;
         }
 
         /// <inheritdoc/>
@@ -940,29 +945,39 @@ namespace Garnet.server
 
             static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
             {
+                self.logger?.LogInformation("Starting {0} replication tasks for VADDs", self.replicationReplayTasks.Length);
+
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
                     self.replicationReplayTasks[i] = Task.Factory.StartNew(
                         async () =>
                         {
-                            var reader = self.replicationReplayChannel.Reader;
-
-                            using var session = obtainServerSession();
-
-                            await foreach (var entry in reader.ReadAllAsync())
+                            try
                             {
-                                try
+                                var reader = self.replicationReplayChannel.Reader;
+
+                                using var session = obtainServerSession();
+
+                                await foreach (var entry in reader.ReadAllAsync())
                                 {
-                                    ApplyVectorSetAdd(self, session.storageSession, entry);
-                                }
-                                finally
-                                {
-                                    var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
-                                    if (pending == 0)
+                                    try
                                     {
-                                        self.replicationBlockEvent.Set();
+                                        ApplyVectorSetAdd(self, session.storageSession, entry);
+                                    }
+                                    finally
+                                    {
+                                        var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
+                                        if (pending == 0)
+                                        {
+                                            self.replicationBlockEvent.Set();
+                                        }
                                     }
                                 }
+                            }
+                            catch (Exception e)
+                            {
+                                self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
+                                throw;
                             }
                         }
                     );
@@ -1011,6 +1026,10 @@ namespace Garnet.server
                         // We still need locking here because the replays may proceed in parallel
 
                         var lockCtx = storageSession.objectStoreLockableContext;
+
+                        var loggedWarning = false;
+                        var loggedCritical = false;
+                        var start = Stopwatch.GetTimestamp();
 
                         lockCtx.BeginLockable();
                         try
@@ -1062,6 +1081,18 @@ namespace Garnet.server
                                 }
 
                                 lockCtx.Unlock([vectorLockEntry]);
+
+                                var timeAttempting = Stopwatch.GetElapsedTime(start);
+                                if (!loggedWarning && timeAttempting > TimeSpan.FromSeconds(5))
+                                {
+                                    self.logger?.LogWarning("Long duration {0} attempting to apply VADD", timeAttempting);
+                                    loggedWarning = true;
+                                }
+                                else if (!loggedCritical && timeAttempting > TimeSpan.FromSeconds(30))
+                                {
+                                    self.logger?.LogCritical("VERY long duration {0} attempting to apply VADD", timeAttempting);
+                                    loggedCritical = true;
+                                }
                             }
 
                             Debug.Assert(vectorLockEntry.lockType == LockType.Shared, "Shouldn't hold exclusive lock while adding to vector set");
