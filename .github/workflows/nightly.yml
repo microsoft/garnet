@@ -20,8 +20,8 @@ jobs:
       matrix:
         os: [ windows-2022 ]
         framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Release' ]
-        test: [ 'Garnet.test' ]
+        configuration: [ 'Debug', 'Release' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
 
         # DEBUG Full matrix... commented out for now
 # DEBUG      os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
@@ -186,18 +186,6 @@ jobs:
         with:
           path: test/Allure/AllResults
 
-# DEBUG      - name: Download net8.0 results
-# DEBUG        uses: actions/download-artifact@v4
-# DEBUG        with:
-# DEBUG          name: CombinedResults-net8.0-Release-Garnet.test
-# DEBUG          path: test/Allure/CombinedResults
-
-# DEBUG      - name: Download net9.0 results
-# DEBUG        uses: actions/download-artifact@v4
-# DEBUG        with:
-# DEBUG          name: CombinedResults-net9.0-Release-Garnet.test
-# DEBUG          path: test/Allure/CombinedResults
-
       - name: DEBUG Show working directory and contents
         shell: pwsh
         run: |
@@ -219,7 +207,7 @@ jobs:
         shell: pwsh
         run: Get-ChildItem "${{ github.workspace }}\test\allure\AllResults" -Recurse
 
-      - name: Move all results into one folder (CombinedResults)
+      - name: Copy all results into one folder (CombinedResults)
         shell: pwsh
         run: |
           $source = "${{ github.workspace }}\test\Allure\AllResults"
