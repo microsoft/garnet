@@ -13,7 +13,6 @@ namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
-    using static VarbyteLengthUtility;
 
     /// <summary>A wrapper around LogRecord for retrieval from disk or carrying through pending operations</summary>
     public unsafe struct DiskLogRecord : ISourceLogRecord, IDisposable
@@ -229,11 +228,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Serialize a log record (which may be in-memory <see cref="LogRecord"/> or IO'd <see cref="DiskLogRecord"/>) to the <see cref="SpanByteAndMemory"/>
         /// <paramref name="output"/> in inline-expanded format, with the Overflow Keys and Values and Object Values serialized inline to the Key and Value spans.
-        /// The record stream is prefixed with the int length of the streawm.
+        /// The serialized layout is:
+        /// <list type="bullet">
+        ///     <item>Inline portion of the LogRecord: RecordInfo, IndicatorWord, Key and Value data (each of 4 byte length, which restores to object Id), optionals (ETag, Expiration, ObjectLogPosition, ...)</item>
+        ///     <item>Key data, if key is Overflow</item>
+        ///     <item>Value data, if value is Overflow or Object</item>
+        /// </list>
         /// </summary>
         /// <remarks>
         /// This is used for migration and replication, and output.SpanByteAndMemory is a span of the remaining space in the network buffer.
         /// This allocates <see cref="SpanByteAndMemory.Memory"/> if needed; in that case the caller will flush the network buffer and retry with the full length.
+        /// The record stream is prefixed with the int length of the stream. RespReadUtils.GetSerializedRecordSpan sets up for deserialization from the network buffer.
         /// </remarks>
         /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
         public static void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueObjectSerializer, MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
@@ -300,6 +305,9 @@ namespace Tsavorite.core
 
         private static void SerializeHeapObjects(in LogRecord logRecord, int inlineRecordSize, int heapSize, IObjectSerializer<IHeapObject> valueObjectSerializer, ref SpanByteAndMemory output)
         {
+            if (logRecord.Info.RecordIsInline)
+                return;
+
             // Serialize Key then Value, just like the Object log file. And this will be easy to modify for future chunking of multi-networkBuffer Keys and Values.
             var outputOffset = inlineRecordSize;
             if (logRecord.Info.KeyIsOverflow)
@@ -309,6 +317,7 @@ namespace Tsavorite.core
                 outputOffset += overflow.Length;
             }
 
+            var valueObjectLength = 0UL;
             if (logRecord.Info.ValueIsOverflow)
             {
                 var overflow = logRecord.ValueOverflow;
@@ -316,21 +325,42 @@ namespace Tsavorite.core
             }
             else
             {
+                Debug.Assert(logRecord.Info.ValueIsObject, "Expected ValueIsObject to be true");
                 if (output.IsSpanByte)
-                    DoSerialize(logRecord.ValueObject, valueObjectSerializer, output.SpanByte.ToPointer(), output.Length);
+                    valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, output.SpanByte.ToPointer(), output.Length);
                 else
                 {
                     fixed (byte* ptr = output.MemorySpan.Slice(inlineRecordSize))
-                        DoSerialize(logRecord.ValueObject, valueObjectSerializer, ptr, output.Length);
+                        valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, ptr, output.Length);
                 }
             }
 
-            static void DoSerialize(IHeapObject valueObject, IObjectSerializer<IHeapObject> valueObjectSerializer, byte* destPtr, int destLength)
+            // Create a temp LogRecord over the output data so we can store the lengths in serialized format, using the offset to the serialized
+            // part of the buffer as a fake file offset (implicitly for segment 0).
+            var fakeFilePos = new ObjectLogFilePositionInfo((ulong)inlineRecordSize, segSizeBits: 0);
+            if (output.IsSpanByte)
+            {
+                var serializedLogRecord = new LogRecord((long)output.SpanByte.ToPointer());
+                serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
+            }
+            else
+            {
+                fixed (byte* ptr = output.MemorySpan.Slice(inlineRecordSize))
+                {
+                    var serializedLogRecord = new LogRecord((long)ptr);
+                    serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
+                }
+            }
+
+            static ulong DoSerialize(IHeapObject valueObject, IObjectSerializer<IHeapObject> valueObjectSerializer, byte* destPtr, int destLength)
             {
                 var stream = new UnmanagedMemoryStream(destPtr, destLength);
                 valueObjectSerializer.BeginSerialize(stream);
                 valueObjectSerializer.Serialize(valueObject);
                 valueObjectSerializer.EndSerialize();
+                var valueLength = (ulong)stream.Position;
+                Debug.Assert((ulong)valueObject.SerializedSize == valueLength, $"valueObject.SerializedSize ({valueObject.SerializedSize}) != valueLength ({valueLength})");
+                return valueLength;
             }
         }
 
@@ -338,12 +368,40 @@ namespace Tsavorite.core
         /// Deserialize from a <see cref="PinnedSpanByte"/> over a stream of bytes created by <see cref="Serialize"/>.
         /// </summary>
         /// <param name="recordSpan"></param>
-        public DiskLogRecord Deserialize(PinnedSpanByte recordSpan)
+        public static DiskLogRecord Deserialize<TStoreFunctions>(PinnedSpanByte recordSpan, IObjectSerializer<IHeapObject> valueObjectSerializer, ObjectIdMap transientObjectIdMap,
+            TStoreFunctions storeFunctions)
+            where TStoreFunctions : IStoreFunctions
         {
-            // Serialize() did not change the state of the KeyIsInline/ValueIsInline/ValueIsObject bits. 
+            // Serialize() did not change the state of the KeyIsInline/ValueIsInline/ValueIsObject bits, but it did change the value at the ObjectId
+            // location to be serialized length. Create a transient logRecord to decode these and restore the objectId values.
+            var ptr = recordSpan.ToPointer();
+            var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
+            var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
+            // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
+            if (serializedLogRecord.Info.KeyIsOverflow)
+            {
+                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                serializedLogRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                recordSpan.ReadOnlySpan.Slice((int)offset, keyLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
+                offset += (uint)keyLength;
+            }
 
-            TODO("make sure to include space for the objectLog pointer if ValueIsObject");
+            if (serializedLogRecord.Info.ValueIsOverflow)
+            {
+                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
+            }
+            else
+            {
+                var stream = new UnmanagedMemoryStream(ptr + offset, (int)valueLength);
+                valueObjectSerializer.BeginDeserialize(stream);
+                valueObjectSerializer.Deserialize(out var valueObject);
+                serializedLogRecord.ValueObject = valueObject;
+                valueObjectSerializer.EndDeserialize();
+            }
+            return new(serializedLogRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
         }
 
         #endregion Serialization to and from expanded record format

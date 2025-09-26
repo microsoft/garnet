@@ -79,6 +79,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// <see cref="ObjectIdMap"/> for serializing/deserializing <see cref="DiskLogRecord"/>.
+        /// </summary>
+        public ObjectIdMap TransientObjectIdMap => allocatorBase.transientObjectIdMap;
+
+        /// <summary>
         /// Set empty page count in allocator
         /// </summary>
         /// <param name="pageCount">New empty page count</param>

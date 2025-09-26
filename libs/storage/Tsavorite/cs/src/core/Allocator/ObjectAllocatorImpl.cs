@@ -408,10 +408,10 @@ namespace Tsavorite.core
                 // Object keys and values are serialized into this Stream.
                 var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
                 var logWriter = new ObjectLogWriter(device, flushBuffers, valueObjectSerializer);
+                var objectSerializerInitialized = false;
                 PinnedMemoryStream<ObjectLogWriter> pinnedMemoryStream = new(logWriter);
 
                 flushBuffers.filePosition = objectLogNextRecordStartPosition;
-                valueObjectSerializer.BeginSerialize(pinnedMemoryStream); TODO("Move to on-demand in ObjectLogWriter");
 
                 var pageHeaderPtr = (PageHeader*)srcBuffer.GetValidPointer();
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
@@ -429,6 +429,11 @@ namespace Tsavorite.core
                         // Do not write objects for fully-inline records or for v+1 records (e.g. during a checkpoint)
                         if (!logRecord.Info.RecordIsInline && (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion))
                         {
+                            if (!objectSerializerInitialized)
+                            {
+                                valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
+                                objectSerializerInitialized = true;
+                            }
                             var recordStartPosition = logWriter.GetNextRecordStartPosition();
                             if (hasPageHeader)
                                 pageHeaderPtr->SetLowestObjectLogPosition(recordStartPosition);
@@ -445,7 +450,9 @@ namespace Tsavorite.core
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
-                valueObjectSerializer.EndSerialize();   TODO("Move to on-demand in ObjectLogWriter");
+
+                if (objectSerializerInitialized)
+                    valueObjectSerializer.EndSerialize();
 
                 // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
                 // to the main log file.
@@ -556,7 +563,7 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                // If the incremented record address is at or beyond the maxPtr, we have processed all records.
+                // We have already incremented record address to get to the next record; if it is at or beyond the maxPtr, we have processed all records.
                 if (recordAddress >= physicalAddress + result.maxPtr)
                 {
                     ObjectLogFilePositionInfo endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogNextRecordStartPosition.SegmentSizeBits);

@@ -96,6 +96,7 @@ namespace Tsavorite.core
             // TODO: Optimize the reading of large internal sector-aligned parts of Overflow Keys and Values to read directly into the overflow, similar to how ObjectLogWriter writes
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
 
+            // Note: Similar logic to this is in DiskLogRecord.Deserialize.
             if (logRecord.Info.KeyIsOverflow)
             {
                 // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.

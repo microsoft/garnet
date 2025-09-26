@@ -44,7 +44,7 @@ namespace Tsavorite.core
         CASAndRetryFailed,
 
         /// <summary>
-        /// A record was deserialized from the disk for a pending Read or RMW operation.
+        /// A record was deserialized from the disk (or network buffer) for a pending Read or RMW operation.
         /// </summary>
         DeserializedFromDisk,
 
