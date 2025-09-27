@@ -53,7 +53,7 @@ namespace Garnet.server
         /// <summary>
         /// Floats (FP32).
         /// </summary>
-        F32,
+        FP32,
 
         // Extended formats
 
@@ -74,7 +74,7 @@ namespace Garnet.server
         public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             int dims;
-            if (valueType == VectorValueType.F32)
+            if (valueType == VectorValueType.FP32)
             {
                 dims = values.ReadOnlySpan.Length / sizeof(float);
             }

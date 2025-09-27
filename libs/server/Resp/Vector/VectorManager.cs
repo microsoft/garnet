@@ -1171,7 +1171,7 @@ namespace Garnet.server
         /// </summary>
         private static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
         {
-            if (valueType == VectorValueType.F32)
+            if (valueType == VectorValueType.FP32)
             {
                 return (uint)(values.Length / sizeof(float));
             }

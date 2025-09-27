@@ -7,8 +7,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -45,10 +47,23 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public void BasicVADDReplicates()
+        [TestCase("XB8", "XPREQ8")]
+        [TestCase("XB8", "Q8")]
+        [TestCase("XB8", "BIN")]
+        [TestCase("XB8", "NOQUANT")]
+        [TestCase("FP32", "XPREQ8")]
+        [TestCase("FP32", "Q8")]
+        [TestCase("FP32", "BIN")]
+        [TestCase("FP32", "NOQUANT")]
+        public void BasicVADDReplicates(string vectorFormat, string quantizer)
         {
+            // TODO: also test VALUES format?
+
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
+
+            ClassicAssert.IsTrue(Enum.TryParse<VectorValueType>(vectorFormat, ignoreCase: true, out var vectorFormatParsed));
+            ClassicAssert.IsTrue(Enum.TryParse<VectorQuantType>(quantizer, ignoreCase: true, out var quantTypeParsed));
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
@@ -60,10 +75,40 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
-            var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", new byte[] { 1, 2, 3, 4 }, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+            byte[] vectorAddData;
+            if (vectorFormatParsed == VectorValueType.XB8)
+            {
+                vectorAddData = [1, 2, 3, 4];
+            }
+            else if(vectorFormatParsed == VectorValueType.FP32)
+            {
+                vectorAddData = MemoryMarshal.Cast<float, byte>([1f, 2f, 3f, 4f]).ToArray();
+            }
+            else
+            {
+                ClassicAssert.Fail("Unexpected vector format");
+                return;
+            }
+
+                var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", vectorFormat, vectorAddData, new byte[] { 0, 0, 0, 0 }, quantizer]);
             ClassicAssert.AreEqual(1, addRes);
 
-            var simRes = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+            byte[] vectorSimData;
+            if (vectorFormatParsed == VectorValueType.XB8)
+            {
+                vectorSimData = [2, 3, 4, 5];
+            }
+            else if (vectorFormatParsed == VectorValueType.FP32)
+            {
+                vectorSimData = MemoryMarshal.Cast<float, byte>([2f, 3f, 4f, 5f]).ToArray();
+            }
+            else
+            {
+                ClassicAssert.Fail("Unexpected vector format");
+                return;
+            }
+
+            var simRes = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", vectorFormat, vectorSimData]);
             ClassicAssert.IsTrue(simRes.Length > 0);
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
@@ -71,7 +116,7 @@ namespace Garnet.test.cluster
             var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
             ClassicAssert.AreEqual("OK", readonlyOnReplica);
 
-            var simOnReplica = context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+            var simOnReplica = context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", vectorFormat, vectorSimData]);
             ClassicAssert.IsTrue(simOnReplica.Length > 0);
         }
 

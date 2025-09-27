@@ -66,7 +66,7 @@ namespace Garnet.server
                     }
 
                     curIx++;
-                    valueType = VectorValueType.F32;
+                    valueType = VectorValueType.FP32;
                     values = asBytes;
                 }
                 else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("VALUES"u8))
@@ -94,7 +94,7 @@ namespace Garnet.server
                         return AbortWithWrongNumberOfArguments("VADD");
                     }
 
-                    valueType = VectorValueType.F32;
+                    valueType = VectorValueType.FP32;
                     var floatValues = MemoryMarshal.Cast<byte, float>(values);
 
                     for (var valueIx = 0; valueIx < valueCount; valueIx++)
@@ -411,7 +411,7 @@ namespace Garnet.server
                             return AbortWithErrorMessage("FP32 values must be multiple of 4-bytes in size");
                         }
 
-                        valueType = VectorValueType.F32;
+                        valueType = VectorValueType.FP32;
                         values = asBytes;
                         curIx++;
                     }
@@ -452,7 +452,7 @@ namespace Garnet.server
                             return AbortWithWrongNumberOfArguments("VSIM");
                         }
 
-                        valueType = VectorValueType.F32;
+                        valueType = VectorValueType.FP32;
                         var floatValues = MemoryMarshal.Cast<byte, float>(values);
 
                         for (var valueIx = 0; valueIx < valueCount; valueIx++)

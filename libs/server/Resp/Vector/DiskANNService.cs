@@ -65,7 +65,7 @@ namespace Garnet.server
             int vector_len;
 
             Span<float> temp = vectorType == VectorValueType.XB8 ? stackalloc float[vector.Length] : default;
-            if (vectorType == VectorValueType.F32)
+            if (vectorType == VectorValueType.FP32)
             {
                 vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
                 vector_len = vector.Length / sizeof(float);
@@ -107,7 +107,7 @@ namespace Garnet.server
                 {
                     Span<float> tempData = vectorType == VectorValueType.XB8 ? stackalloc float[128] : default;
                     Span<PointerLengthPair> temp = vectorType == VectorValueType.XB8 ? stackalloc PointerLengthPair[vectors.Length] : default;
-                    if (vectorType == VectorValueType.F32)
+                    if (vectorType == VectorValueType.FP32)
                     {
                         vectors_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(vectors));
                         vectors_len = (nuint)vectors.Length;
@@ -191,7 +191,7 @@ namespace Garnet.server
             int vector_len;
 
             Span<float> temp = vectorType == VectorValueType.XB8 ? stackalloc float[vector.Length] : default;
-            if (vectorType == VectorValueType.F32)
+            if (vectorType == VectorValueType.FP32)
             {
                 vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
                 vector_len = vector.Length / sizeof(float);
