@@ -30,9 +30,9 @@ namespace Garnet.server
 
             for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var key = parseState.GetArgSliceByRef(c);
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref key, ref input, ref o);
+                var status = storageApi.GET(key, ref input, ref o);
 
                 switch (status)
                 {
@@ -161,9 +161,9 @@ namespace Garnet.server
 
             for (int c = 0; c < parseState.Count; c += 2)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
-                _ = storageApi.SET(ref key, ref val);
+                var key = parseState.GetArgSliceByRef(c);
+                var val = parseState.GetArgSliceByRef(c + 1);
+                _ = storageApi.SET(key, val);
             }
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();

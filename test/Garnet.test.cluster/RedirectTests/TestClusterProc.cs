@@ -115,13 +115,13 @@ namespace Garnet.test.cluster
         {
             var offset = 0;
             var getA = GetNextArg(ref procInput, ref offset);
-            var setB = GetNextArg(ref procInput, ref offset).SpanByte;
-            var setC = GetNextArg(ref procInput, ref offset).SpanByte;
+            var setB = GetNextArg(ref procInput, ref offset);
+            var setC = GetNextArg(ref procInput, ref offset);
 
             _ = api.GET(getA, out _);
-            var status = api.SET(ref setB, ref setB);
+            var status = api.SET(setB, setB);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
-            status = api.SET(ref setC, ref setC);
+            status = api.SET(setC, setC);
             ClassicAssert.AreEqual(GarnetStatus.OK, status);
             WriteSimpleString(ref output, "SUCCESS");
         }

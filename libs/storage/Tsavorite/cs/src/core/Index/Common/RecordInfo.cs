@@ -11,7 +11,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     // RecordInfo layout (64 bits total):
-    // [Unused1][Modified][InNewVersion][Filler][Dirty][ETag][Sealed][Valid][Tombstone][LLLLLLL] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
+    // [VectorSet][Modified][InNewVersion][Filler][Dirty][ETag][Sealed][Valid][Tombstone][LLLLLLL] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
     //     where L = leftover, R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
@@ -35,7 +35,7 @@ namespace Tsavorite.core
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        const int kUnused1BitOffset = kModifiedBitOffset + 1;
+        const int kVectorSetBitOffset = kModifiedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;
@@ -45,7 +45,7 @@ namespace Tsavorite.core
         const long kFillerBitMask = 1L << kFillerBitOffset;
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
-        const long kUnused1BitMask = 1L << kUnused1BitOffset;
+        const long kVectorSetBitMask = 1L << kVectorSetBitOffset;
 
         [FieldOffset(0)]
         private long word;
@@ -269,10 +269,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLength() => kTotalSizeInBytes;
 
-        internal bool Unused1
+        public bool VectorSet
         {
-            readonly get => (word & kUnused1BitMask) != 0;
-            set => word = value ? word | kUnused1BitMask : word & ~kUnused1BitMask;
+            readonly get => (word & kVectorSetBitMask) != 0;
+            set => word = value ? word | kVectorSetBitMask : word & ~kVectorSetBitMask;
         }
 
         public bool ETag
@@ -289,7 +289,7 @@ namespace Tsavorite.core
             var paRC = IsReadCache(PreviousAddress) ? "(rc)" : string.Empty;
             static string bstr(bool value) => value ? "T" : "F";
             return $"prev {AbsoluteAddress(PreviousAddress)}{paRC}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, etag {bstr(ETag)}, Un1 {bstr(Unused1)}";
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, fill {bstr(HasFiller)}, etag {bstr(ETag)}, vset {bstr(VectorSet)}";
         }
     }
 }

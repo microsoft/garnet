@@ -116,7 +116,6 @@ namespace Garnet.test.cluster
             nodes[nodeIndex].Start();
         }
 
-
         public void TearDown()
         {
             cts.Cancel();

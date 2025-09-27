@@ -57,6 +57,9 @@ namespace Garnet.server
 
         readonly ILogger logger;
 
+        readonly StoreWrapper replayAofStoreWrapper;
+        readonly IClusterProvider clusterProvider;
+
         MemoryResult<byte> output;
 
         /// <summary>
@@ -70,10 +73,11 @@ namespace Garnet.server
         {
             this.storeWrapper = storeWrapper;
 
-            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            this.clusterProvider = clusterProvider;
 
             this.activeDbId = 0;
-            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+            this.respServerSession = ObtainServerSession();
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -89,6 +93,9 @@ namespace Garnet.server
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
             this.logger = logger;
         }
+
+        private RespServerSession ObtainServerSession()
+        => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -335,13 +342,21 @@ namespace Garnet.server
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
             if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
+            // StoreRMW can queue VADDs onto different threads
+            // but everything else needs to WAIT for those to complete
+            // otherwise we might loose consistency
+            if (header.opType != AofEntryType.StoreRMW)
+            {
+                storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
+            }
+
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
                     StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, entryPtr);
+                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, ObtainServerSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(basicContext, entryPtr);
@@ -419,7 +434,7 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
+        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, VectorManager vectorManager, Func<RespServerSession> obtainServerSession, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -428,13 +443,24 @@ namespace Garnet.server
             // Reconstructing RawStringInput
 
             // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
+
+            // VADD requires special handling, shove it over to the VectorManager
+            if (storeInput.header.cmd == RespCommand.VADD)
+            {
+                vectorManager.HandleVectorSetAddReplication(obtainServerSession, ref key, ref storeInput);
+                return;
+            }
+            else
+            {
+                vectorManager.WaitForVectorOperationsToComplete();
+            }
 
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
             if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
-                basicContext.CompletePending(true);
+                _ = basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }

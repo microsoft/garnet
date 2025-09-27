@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -13,6 +14,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
+            if (recordInfo.VectorSet && value.AsReadOnlySpan().ContainsAnyExcept((byte)0))
+            {
+                // Implies this is a vector set, needs special handling
+                //
+                // Will call back in after a drop with an all 0 value
+                deleteInfo.Action = DeleteAction.CancelOperation;
+                return false;
+            }
+
             recordInfo.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
@@ -28,6 +38,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
+            if (recordInfo.VectorSet && value.AsReadOnlySpan().ContainsAnyExcept((byte)0))
+            {
+                // Implies this is a vector set, needs special handling
+                //
+                // Will call back in after a drop with an all 0 value
+                deleteInfo.Action = DeleteAction.CancelOperation;
+                return false;
+            }
+
             recordInfo.ClearHasETag();
             if (!deleteInfo.RecordInfo.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
