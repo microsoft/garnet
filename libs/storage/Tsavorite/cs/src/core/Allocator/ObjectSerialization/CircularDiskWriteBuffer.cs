@@ -83,9 +83,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>Resets start positions for the next partial flush.</summary>
-        internal DiskWriteBuffer OnBeginPartialFlush()
+        internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePos)
         {
             // We start every partial flush with the first buffer, starting at position 0.
+            filePosition = filePos;
             currentIndex = 0;
             countdownCallbackAndContext = new();
             return GetAndInitializeCurrentBuffer();

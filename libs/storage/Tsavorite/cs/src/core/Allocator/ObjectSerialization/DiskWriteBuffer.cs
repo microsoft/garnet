@@ -118,8 +118,8 @@ namespace Tsavorite.core
             memory?.Return();
             memory = null;
 
-            Debug.Assert(countdownEvent.CurrentCount == 0, $"Unexpected count ({countdownEvent.CurrentCount}) remains");
-            countdownEvent.Dispose();
+            Debug.Assert(countdownEvent is null || countdownEvent.CurrentCount == 0, $"Unexpected count ({countdownEvent.CurrentCount}) remains");
+            countdownEvent?.Dispose();
             countdownEvent = null;
         }
 
@@ -127,7 +127,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             var countdownString = countdownEvent?.CurrentCount.ToString() ?? "null";
-            return $"currPos {currentPosition}; flushedUntilPos {flushedUntilPosition}; countDown {countdownString}; buf: {memory}";
+            return $"currPos {currentPosition}; endPos {endPosition}; remCap {RemainingCapacity}; flushedUntilPos {flushedUntilPosition}; countDown {countdownString}; buf: {memory}";
         }
     }
 }

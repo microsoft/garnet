@@ -370,8 +370,6 @@ namespace Tsavorite.core
             if (hasPageHeader)
                 logicalAddress = pageStart + PageHeader.Size;
 
-            _ = flushBuffers.OnBeginPartialFlush();
-
             // We suspend epoch during the time-consuming actual flush. Note: The ShiftHeadAddress check to always remain below FlushedUntilAddress
             // means the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush.
             var epochWasProtected = epoch.ThisInstanceProtected();
@@ -408,10 +406,9 @@ namespace Tsavorite.core
                 // Object keys and values are serialized into this Stream.
                 var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
                 var logWriter = new ObjectLogWriter(device, flushBuffers, valueObjectSerializer);
+                _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
                 var objectSerializerInitialized = false;
                 PinnedMemoryStream<ObjectLogWriter> pinnedMemoryStream = new(logWriter);
-
-                flushBuffers.filePosition = objectLogNextRecordStartPosition;
 
                 var pageHeaderPtr = (PageHeader*)srcBuffer.GetValidPointer();
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;

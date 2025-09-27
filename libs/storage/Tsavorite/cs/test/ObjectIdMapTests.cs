@@ -7,7 +7,7 @@ using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.Objects
 {
     /// <summary>
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
@@ -82,7 +82,7 @@ namespace Tsavorite.test
                     // After being freed, the slot in the objectVector should be cleared (so objects are freed as early as possible).
                     var objectId = tid * MultiLevelPageArray.ChapterSize + page;
                     map.Free(objectId);
-                    Assert.That(map.GetHeapObject(objectId), Is.NaN, "map.GetHeapObject(objectId) should be null after Free() pt 1");
+                    Assert.That(map.GetHeapObject(objectId), Is.Null, "map.GetHeapObject(objectId) should be null after Free() pt 1");
                 }
             }
 

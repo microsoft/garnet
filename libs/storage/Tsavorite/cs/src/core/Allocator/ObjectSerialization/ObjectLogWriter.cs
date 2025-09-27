@@ -67,13 +67,14 @@ namespace Tsavorite.core
         internal ObjectLogFilePositionInfo GetNextRecordStartPosition() => flushBuffers.GetNextRecordStartPosition();
 
         /// <summary>Resets start positions for the next partial flush.</summary>
-        internal void OnBeginPartialFlush()
+        internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePosition)
         {
             totalOverflowLength = 0;
             expectedSerializedLength = 0;
             totalValueObjectLength = 0;
             inSerialize = false;
-            writeBuffer = flushBuffers.OnBeginPartialFlush();
+            writeBuffer = flushBuffers.OnBeginPartialFlush(filePosition);
+            return writeBuffer;
         }
 
         /// <summary>

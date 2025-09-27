@@ -8,7 +8,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.Objects
 {
     using static TestUtils;
 

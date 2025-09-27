@@ -68,7 +68,7 @@ namespace Tsavorite.core
         public readonly int ObjectLogPositionSize => FieldInfo.ValueIsObject ? LogRecord.ObjectLogPositionSize : 0;
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
-        public readonly int OptionalSize => ETagSize + ExpirationSize;
+        public readonly int OptionalSize => ETagSize + ExpirationSize + ObjectLogPositionSize;
 
         /// <summary>Whether these values are set (default instances are used for Delete internally, for example).</summary>
         public readonly bool IsSet => AllocatedInlineRecordSize != 0;

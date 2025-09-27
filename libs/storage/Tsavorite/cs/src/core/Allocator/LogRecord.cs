@@ -863,6 +863,8 @@ namespace Tsavorite.core
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            // TODOnow: Add key to this and copy it in. Reflect this in RecordFieldInfo
+            // TOODnow: Transfer Overflow and from the source logrecord
             // This assumes the Key has been set and is not changed
             if (!srcLogRecord.Info.ValueIsObject)
             {
@@ -872,6 +874,7 @@ namespace Tsavorite.core
             }
             else
             {
+                // TODOnow: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
                 Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
                 if (!TrySetValueObject(srcLogRecord.ValueObject, in sizeInfo))
                     return false;

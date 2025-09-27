@@ -91,6 +91,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"currPos {currentPosition}; endPos {endPosition}; countDown {countdownEvent?.CurrentCount}; buf: {memory}";
+            => $"currPos {currentPosition}; endPos {endPosition}; avLen {AvailableLength}; countDown {countdownEvent?.CurrentCount}; buf: {memory}";
     }
 }
