@@ -328,8 +328,12 @@ namespace Garnet.server
 
             var indexSpan = indexValue.AsSpan();
 
-            Debug.Assert(indexSpan.Length == Index.Size, "Insufficient space for index");
-
+            if (indexSpan.Length != Index.Size)
+            {
+                logger?.LogCritical("Acquired space for vector set index does not match expections, {0} != {1}", indexSpan.Length, Index.Size);
+                throw new GarnetException($"Acquired space for vector set index does not match expections, {indexSpan.Length} != {Index.Size}");
+            }
+            
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
             asIndex.Context = context;
             asIndex.Dimensions = dimensions;
@@ -369,7 +373,10 @@ namespace Garnet.server
             out nint indexPtr
         )
         {
-            Debug.Assert(indexValue.Length == Index.Size, "Index size is incorrect, implies vector set index is probably corrupted");
+            if (indexValue.Length != Index.Size)
+            {
+                throw new GarnetException($"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
+            }
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
 
@@ -381,7 +388,10 @@ namespace Garnet.server
             numLinks = asIndex.NumLinks;
             indexPtr = (nint)asIndex.IndexPtr;
 
-            Debug.Assert((context % 4) == 0, "Context not as expected, vector set index is probably corrupted");
+            if ((context % 4) != 0)
+            {
+                throw new GarnetException($"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
+            }
         }
 
         /// <summary>
@@ -466,7 +476,10 @@ namespace Garnet.server
                     if (!attributes.IsEmpty)
                     {
                         var res = WriteCallbackManaged(context | DiskANNService.Attributes, element, attributes);
-                        Debug.Assert(res, "Failed to insert attribute");
+                        if (!res)
+                        {
+                            throw new GarnetException($"Failed to insert attribute");
+                        }
                     }
 
                     return VectorManagerResult.OK;
@@ -803,7 +816,10 @@ namespace Garnet.server
         internal void ReplicateVectorSetAdd<TContext>(SpanByte key, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
+            if (input.header.cmd != RespCommand.VADD)
+            {
+                throw new GarnetException($"Shouldn't be called with anything but VADD inputs, found {input.header.cmd}");
+            }
 
             var inputCopy = input;
             inputCopy.arg1 = VectorManager.VADDAppendLogArg;
@@ -826,6 +842,7 @@ namespace Garnet.server
 
             if (!res.IsCompletedSuccessfully)
             {
+                logger?.LogCritical("Failed to inject replication write for VADD into log, result was {0}", res);
                 throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
             }
 
@@ -1095,7 +1112,11 @@ namespace Garnet.server
                                 }
                             }
 
-                            Debug.Assert(vectorLockEntry.lockType == LockType.Shared, "Shouldn't hold exclusive lock while adding to vector set");
+                            if (vectorLockEntry.lockType != LockType.Shared)
+                            {
+                                self.logger?.LogCritical("Held exclusive lock when adding to vector set during replication, should never happen");
+                                throw new GarnetException("Held exclusive lock when adding to vector set during replication, should never happen");
+                            }
 
                             var addRes = self.TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
                             lockCtx.Unlock([vectorLockEntry]);

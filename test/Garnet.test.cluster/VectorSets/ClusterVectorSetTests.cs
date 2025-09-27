@@ -80,7 +80,7 @@ namespace Garnet.test.cluster
             {
                 vectorAddData = [1, 2, 3, 4];
             }
-            else if(vectorFormatParsed == VectorValueType.FP32)
+            else if (vectorFormatParsed == VectorValueType.FP32)
             {
                 vectorAddData = MemoryMarshal.Cast<float, byte>([1f, 2f, 3f, 4f]).ToArray();
             }
@@ -90,7 +90,7 @@ namespace Garnet.test.cluster
                 return;
             }
 
-                var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", vectorFormat, vectorAddData, new byte[] { 0, 0, 0, 0 }, quantizer]);
+            var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", vectorFormat, vectorAddData, new byte[] { 0, 0, 0, 0 }, quantizer]);
             ClassicAssert.AreEqual(1, addRes);
 
             byte[] vectorSimData;
@@ -281,7 +281,7 @@ namespace Garnet.test.cluster
             const int SecondaryStartIndex = 1;
             const int SecondaryEndIndex = 5;
             const int Vectors = 2_000;
-            const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
+            const string Key = nameof(MultipleReplicasWithVectorSetsAsync);
 
             context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);

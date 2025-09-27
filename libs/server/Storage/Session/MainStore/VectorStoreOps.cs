@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -145,7 +145,11 @@ namespace Garnet.server
                         return readRes;
                     }
 
-                    Debug.Assert(vectorLockEntry.lockType == LockType.Shared, "Shouldn't hold exclusive lock while adding to vector set");
+                    if (vectorLockEntry.lockType != LockType.Shared)
+                    {
+                        logger?.LogCritical("Held exclusive lock when adding to vector set, should never happen");
+                        throw new GarnetException("Held exclusive lock when adding to vector set, should never happen");
+                    }
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
