@@ -450,7 +450,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF();
+        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF(untilAddress);
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
