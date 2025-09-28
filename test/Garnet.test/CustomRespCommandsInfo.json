@@ -9,7 +9,22 @@
     "Step": 1,
     "AclCategories": "Read",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RM, Delete"
+      }
+    ],
+    "StoreType": "Main",
     "SubCommands": null
   },
   {
@@ -22,7 +37,22 @@
     "Step": 1,
     "AclCategories": "Read",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main",
     "SubCommands": null
   },
   {
@@ -35,7 +65,22 @@
     "Step": 1,
     "AclCategories": "Read",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Object",
     "SubCommands": null
   },
   {
@@ -48,7 +93,22 @@
     "Step": 1,
     "AclCategories": "Write",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "StoreType": "Object",
     "SubCommands": null
   },
   {
@@ -61,7 +121,35 @@
     "Step": 1,
     "AclCategories": "Write",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "Main",
     "SubCommands": null
   },
   {
@@ -74,7 +162,22 @@
     "Step": 1,
     "AclCategories": "Write",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
+      }
+    ],
+    "StoreType": "Main",
     "SubCommands": null
   },
   {
@@ -87,7 +190,21 @@
     "Step": 1,
     "AclCategories": "String, Write",
     "Tips": null,
-    "KeySpecifications": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": null
   }
 ]
