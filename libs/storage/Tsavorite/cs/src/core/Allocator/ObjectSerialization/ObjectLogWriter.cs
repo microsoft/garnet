@@ -34,15 +34,12 @@ namespace Tsavorite.core
         ulong expectedSerializedLength;
 
         /// <summary>For object serialization, the cumulative length of the value bytes.</summary>
-        ulong totalValueObjectLength;
-
-        /// <summary>Sum of Key and Value overflow lengths; used for the numBytes parametger of the callback for the partial flush.</summary>
-        ulong totalOverflowLength;
+        ulong valueObjectBytesWritten;
 
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
         internal const int MaxCopySpanLen = 128 * 1024;
 
-        /// <summary>If true, we are in the Serialize call. If not we ignore things like <see cref="totalValueObjectLength"/> etc.</summary>
+        /// <summary>If true, we are in the Serialize call. If not we ignore things like <see cref="valueObjectBytesWritten"/> etc.</summary>
         bool inSerialize;
 
         /// <summary>The total capacity of the buffer.</summary>
@@ -62,16 +59,16 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Flushing must only be done under control of the Write() methods, due to possible Value length adjustments.");
+        /// <remarks>This is a no-op because we have already flushed under control of the Write() and OnPartialFlushComplete() methods.</remarks>
+        public void FlushAndReset(CancellationToken cancellationToken = default) { }
 
         internal ObjectLogFilePositionInfo GetNextRecordStartPosition() => flushBuffers.GetNextRecordStartPosition();
 
         /// <summary>Resets start positions for the next partial flush.</summary>
         internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePosition)
         {
-            totalOverflowLength = 0;
             expectedSerializedLength = 0;
-            totalValueObjectLength = 0;
+            valueObjectBytesWritten = 0;
             inSerialize = false;
             writeBuffer = flushBuffers.OnBeginPartialFlush(filePosition);
             return writeBuffer;
@@ -82,14 +79,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="mainLogPageSpan">The main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
-        /// <param name="mainLogAlignedDeviceOffset">The offset in the main log to write at; updated with the length of <paramref name="mainLogPageSpan"/></param>
+        /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at</param>
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
-        internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ref ulong mainLogAlignedDeviceOffset, 
+        internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, 
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endFilePosition)
-            => flushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, ref mainLogAlignedDeviceOffset,
-                totalOverflowLength + totalValueObjectLength, externalCallback, externalContext, out endFilePosition);
+            => flushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, alignedMainLogFlushAddress,
+                externalCallback, externalContext, out endFilePosition);
 
         /// <summary>
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
@@ -102,8 +99,6 @@ namespace Tsavorite.core
         public ulong WriteObjects(in LogRecord logRecord)
         {
             Debug.Assert(!logRecord.Info.RecordIsInline, "Cannot call ObjectLogWriter with an inline record");
-
-            var startObjectLength = totalValueObjectLength;
 
             // If the key is overflow, start with that. (Inline keys are written as part of the main-log record.)
             if (logRecord.Info.KeyIsOverflow)
@@ -124,7 +119,7 @@ namespace Tsavorite.core
                 if (!obj.SerializedSizeIsExact && obj.SerializedSize >= IHeapObject.MaxSerializedObjectSize)
                     throw new TsavoriteException($"Object size exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
             }
-            return totalValueObjectLength - startObjectLength;
+            return valueObjectBytesWritten;
         }
 
         /// <summary>Start off the write using the full span of the <see cref="OverflowByteArray"/>.</summary>
@@ -138,8 +133,6 @@ namespace Tsavorite.core
         /// <param name="refCountedGCHandle">The refcounted GC handle if this is a recursive call</param>
         void WriteDirect(OverflowByteArray overflow, ReadOnlySpan<byte> fullDataSpan, RefCountedPinnedGCHandle refCountedGCHandle)
         {
-            totalOverflowLength += (uint)overflow.Length;
-
             if (overflow.Length <= MaxCopySpanLen)
                 Write(fullDataSpan);
             else
@@ -229,7 +222,7 @@ namespace Tsavorite.core
                 dataStart += requestLength;
                 writeBuffer.currentPosition += requestLength;
                 if (inSerialize)
-                    totalValueObjectLength += (uint)requestLength;
+                    valueObjectBytesWritten += (uint)requestLength;
 
                 // See if we're at the end of the buffer.
                 if (writeBuffer.RemainingCapacity == 0)
@@ -253,22 +246,22 @@ namespace Tsavorite.core
         {
             // valueCumulativeLength is only relevant for object serialization; we increment it on all device writes to avoid "if", so here we reset it to the appropriate
             // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have Length and Position = (-currentPosition + currentPosition + 4).
+            inSerialize = true;
+            valueObjectBytesWritten = 0;
             valueObjectSerializer.Serialize(valueObject);
             OnSerializeComplete(valueObject);
         }
 
         void OnSerializeComplete(IHeapObject valueObject)
         {
-            // Update value length with the continuation bit NOT set. This may set it to zero if we did not have any more data in the object after the last buffer flush.
-            inSerialize = false;
-
             if (valueObject.SerializedSizeIsExact)
             {
-                if (totalValueObjectLength != expectedSerializedLength)
-                    throw new TsavoriteException($"Expected value length {expectedSerializedLength} does not match actual value length {totalValueObjectLength}.");
+                if (valueObjectBytesWritten != expectedSerializedLength)
+                    throw new TsavoriteException($"Expected value length {expectedSerializedLength} does not match actual value length {valueObjectBytesWritten}.");
             }
             else
-                valueObject.SerializedSize = (long)totalValueObjectLength;
+                valueObject.SerializedSize = (long)valueObjectBytesWritten;
+            inSerialize = false;
         }
 
         /// <summary>Called when a <see cref="LogRecord"/> Write is completed. Ensures end-of-record alignment.</summary>

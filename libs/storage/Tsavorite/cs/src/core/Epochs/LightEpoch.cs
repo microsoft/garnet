@@ -183,7 +183,8 @@ namespace Tsavorite.core
         public void Suspend()
         {
             Release();
-            if (drainCount > 0) SuspendDrain();
+            if (drainCount > 0)
+                SuspendDrain();
         }
 
         /// <summary>
@@ -205,6 +206,18 @@ namespace Tsavorite.core
             if (ThisInstanceProtected())
                 return false;
             Resume();
+            return true;
+        }
+
+        /// <summary>
+        /// Thread resumes its epoch entry if it has not already been acquired
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool SuspendIfProtected()
+        {
+            if (!ThisInstanceProtected())
+                return false;
+            Suspend();
             return true;
         }
 

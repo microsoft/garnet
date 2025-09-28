@@ -100,23 +100,19 @@ namespace Tsavorite.core
         /// somewhere in the middle of the sector.</remarks>
         /// <param name="mainLogPageSpan">The main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
-        /// <param name="mainLogAlignedDeviceOffset">The offset in the main log to write at; updated with the length of <paramref name="mainLogPageSpan"/></param>
-        /// <param name="bytesWrittenToObjectLog">The total number of bytes written in this partial flush</param>
+        /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at</param>
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation. 
         ///     It usually signals the <see cref="PageAsyncFlushResult{T}.done"/> event so the caller knows the flush is complete and it can continue.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endObjectLogFilePosition">The ending file position after the partial flush is complete</param>
-        internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ref ulong mainLogAlignedDeviceOffset,
-                ulong bytesWrittenToObjectLog, DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endObjectLogFilePosition)
+        internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
+                DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endObjectLogFilePosition)
         {
-            // TODO: TotalWrittenLength may exceed uint.MaxValue in which case the callback's numBytes will be incorrect.
-            var numBytes = (uint)bytesWrittenToObjectLog;
-
-            // Lock this with a reference until we have set the callback.
+            // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log write.
             countdownCallbackAndContext.Increment();
-            countdownCallbackAndContext.Set(externalCallback, externalContext, numBytes);
+            countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpan.Length);
 
-            // buffer.currentPosition should have been record-aligned by DiskStreamWriter.OnRecordComplete.
+            // Issue the last ObjectLog write for this partial flush. buffer.currentPosition should have been record-aligned by DiskStreamWriter.OnRecordComplete.
             var buffer = GetCurrentBuffer();
             Debug.Assert(IsAligned(buffer.currentPosition, Constants.kRecordAlignment), $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
             Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");
@@ -142,7 +138,7 @@ namespace Tsavorite.core
             endObjectLogFilePosition = filePosition;
 
             // Write the main log page to the mainLogDevice.
-            FlushToMainLogDevice(mainLogPageSpan, mainLogDevice, ref mainLogAlignedDeviceOffset, CreateDiskWriteCallbackContext());
+            FlushToMainLogDevice(mainLogPageSpan, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
 
             // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
             countdownCallbackAndContext.Decrement();
@@ -171,18 +167,15 @@ namespace Tsavorite.core
             filePosition.Offset += (uint)span.Length;
         }
 
-        /// <summary>Flush to disk for a span that is not associated with a particular buffer, such as fully-interior spans of a large overflow key or value.</summary>
-        internal unsafe void FlushToMainLogDevice(ReadOnlySpan<byte> span, IDevice mainLogDevice, ref ulong mainLogAlignedDeviceOffset, DiskWriteCallbackContext writeCallbackContext)
+        /// <summary>Flush a main-log page span to the main log device.</summary>
+        internal unsafe void FlushToMainLogDevice(ReadOnlySpan<byte> span, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DiskWriteCallbackContext writeCallbackContext)
         {
             Debug.Assert(IsAligned(span.Length, (int)device.SectorSize), "Span is not aligned to sector size");
-            Debug.Assert(IsAligned(mainLogAlignedDeviceOffset, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
-
-            var mainLogOffset = mainLogAlignedDeviceOffset;
-            mainLogAlignedDeviceOffset += (uint)span.Length;
+            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
 
             // The span must already be pinned, as it must remain pinned after this call returns; here, we used fixed only to convert it to a byte*.
             fixed (byte* spanPtr = span)
-                mainLogDevice.WriteAsync((IntPtr)spanPtr, mainLogOffset, (uint)span.Length, FlushToDeviceCallback, writeCallbackContext);
+                mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)span.Length, FlushToDeviceCallback, writeCallbackContext);
         }
 
         private void FlushToDeviceCallback(uint errorCode, uint numBytes, object context)
