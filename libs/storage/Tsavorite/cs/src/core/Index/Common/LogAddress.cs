@@ -23,7 +23,7 @@ namespace Tsavorite.core
         /// <summary>Invalid record logical address used for some specific initializations.</summary>
         public const long kTempInvalidAddress = 1L;
 
-        /// <summary>First valid address in the log; ensures 0 and 1 are never valid addresses.</summary>
+        /// <summary>First valid address in the log; ensures space for page header and that 0 and 1 are never valid addresses.</summary>
         public const long FirstValidAddress = PageHeader.Size;
 
         /// <summary>The max valid address is the in-memory mask (which is greater than the on-disk mask) and the full absolute address range.</summary>

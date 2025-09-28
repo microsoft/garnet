@@ -347,8 +347,9 @@ namespace Tsavorite.core
             // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries),
             // in the allocator page (including the objectId space for Overflow and Heap Objects). Note: "Aligned" in this discussion refers to sector (as opposed to record) alignment.
 
-            // Initialize offsets into the allocator page based on full-page (including page header), then override them if partial.
-            int startOffset = PageHeader.Size, endOffset = (int)numBytesToWrite + PageHeader.Size;
+            // Initialize offsets into the allocator page based on full-page (including the page header), then override them if partial.
+            // asyncResult.fromAddress is either start of page or start of a record past the page header
+            int startOffset = 0, endOffset = (int)numBytesToWrite + PageHeader.Size;
             var pageStart = GetAbsoluteLogicalAddressOfStartOfPage(asyncResult.page);
             if (asyncResult.partial)
             {
@@ -363,9 +364,12 @@ namespace Tsavorite.core
 
             // Initialize disk offset from logicalAddress to subtract the GetFirstValidLogicalAddressOnPage(), then ensure we are aligned to the PageHeader
             // (for the first record on the page the caller probably passed the address of the start of the page rather than the offset of the header position).
+            Debug.Assert(asyncResult.fromAddress - pageStart >= PageHeader.Size || asyncResult.fromAddress - pageStart == 0,
+                $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
             var logicalAddress = asyncResult.fromAddress;
-            var isFirstRecordOnPage = startOffset == PageHeader.Size;
-            Debug.Assert(asyncResult.fromAddress >= pageStart + PageHeader.Size, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be at or beyond the PageHeader");
+            if (startOffset == 0)
+                logicalAddress += PageHeader.Size;
+            var isFirstRecordOnPage = startOffset <= PageHeader.Size;   // We've already asserted fromAddress such that startOffset is either 0 or at/after PageHeader
 
             // We suspend epoch during the time-consuming actual flush. Note: The ShiftHeadAddress check to always remain below FlushedUntilAddress
             // means the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush.

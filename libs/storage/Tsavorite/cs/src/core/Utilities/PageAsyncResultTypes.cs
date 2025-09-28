@@ -206,12 +206,12 @@ namespace Tsavorite.core
         public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext, GCHandle gcHandle) : this(callbackAndContext)
             => this.gcHandle = gcHandle;
 
-        public void Dispose()
+        public long Release()
         {
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();
-            countdownCallbackAndContext?.Decrement();
+            return countdownCallbackAndContext?.Decrement() ?? 0;
         }
     }
 
@@ -253,10 +253,12 @@ namespace Tsavorite.core
 
         internal void Increment() => _ = Interlocked.Increment(ref count);
 
-        internal void Decrement()
+        internal long Decrement()
         {
-            if (Interlocked.Decrement(ref count) == 0)
+            var remaining = Interlocked.Decrement(ref count);
+            if (remaining == 0)
                 callback?.Invoke(errorCode: 0, numBytes, context);
+            return remaining;
         }
     }
 

@@ -1412,7 +1412,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Every async flush callback tries to update the flushed until address to the latest value possible
-        /// Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
+        /// TODO: Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
         /// </summary>
         protected void ShiftFlushedUntilAddress()
         {
@@ -1622,8 +1622,8 @@ namespace Tsavorite.core
             // queue for previous pages indexes. Also, flush callbacks will attempt to dequeue from PendingFlushes for FlushedUntilAddress, which again
             // increases monotonically.
 
-            // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-            using var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice: null, logger);
+            // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
+            var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice: null, logger);
 
             // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
@@ -1717,8 +1717,8 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public void AsyncFlushPagesForRecovery<TContext>(long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
         {
-            // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-            using var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice: null, logger);
+            // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
+            var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice: null, logger);
 
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
@@ -1769,8 +1769,8 @@ namespace Tsavorite.core
                 var flushCompletionTracker = new FlushCompletionTracker(_completedSemaphore, throttleCheckpointFlushDelayMs >= 0 ? new SemaphoreSlim(0) : null, totalNumPages);
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
-                // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator).
-                using var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice, logger);
+                // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator). This calls our callback when the last write of a partial flush completes.
+                var flushBuffers = CreateFlushBuffers(bufferPool, objectLogDevice, logger);
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
@@ -2062,13 +2062,7 @@ namespace Tsavorite.core
                     logger?.LogError("AsyncFlushPageToDeviceCallback error: {0}", errorCode);
 
                 var result = (PageAsyncFlushResult<Empty>)context;
-
-                var epochTaken = false;
-                if (!epoch.ThisInstanceProtected())
-                {
-                    epochTaken = true;
-                    epoch.Resume();
-                }
+                var epochTaken = epoch.ResumeIfNotProtected();
 
                 // Unset dirty bit for flushed pages
                 try

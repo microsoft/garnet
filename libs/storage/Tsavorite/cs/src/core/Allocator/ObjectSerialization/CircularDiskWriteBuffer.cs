@@ -15,7 +15,8 @@ namespace Tsavorite.core
     /// <summary>
     /// This class drives object-serialization writing to the disk.
     /// </summary>
-    public class CircularDiskWriteBuffer : IDisposable
+    /// <remarks>This does not implement <see cref="IDisposable"/>; it calls <see cref="InternalDispose"/> itself when the final callback is issued.</remarks>
+    public class CircularDiskWriteBuffer
     {
         internal readonly SectorAlignedBufferPool bufferPool;
         internal readonly int bufferSize;
@@ -187,11 +188,12 @@ namespace Tsavorite.core
             // We don't currently wait on the result of intermediate buffer flushes. If context is non-null, then it is the circular buffer owner and it
             // called this flush for OnFlushComplete, so we need to call it back to complete the original callback sequence.
             var writeCallbackContext = (DiskWriteCallbackContext)context;
-            writeCallbackContext.Dispose();
+            if (writeCallbackContext.Release() == 0)
+                InternalDispose();
         }
 
         /// <inheritdoc/>
-        public void Dispose()
+        public void InternalDispose()
         {
             // We should have no data to flush--the last partial flush should have ended with PartialFlushComplete which flushes the last of the data for that flush fragment,
             // and we wait for that to finish before calling the caller's callback.
