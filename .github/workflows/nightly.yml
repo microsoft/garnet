@@ -166,7 +166,7 @@ jobs:
 
   generate-allure-report:
     name: Generate Allure Report
-    runs-on: windows-2022  
+    runs-on: windows-2022  # makes it easy on how calls made so don't have to worry about windows and linux
     needs: [ build-test-garnet, build-test-tsavorite ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
@@ -236,9 +236,8 @@ jobs:
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
         run: |
-          $scriptDir = Join-Path $env:GITHUB_WORKSPACE "test/Allure"
-          Set-Location $scriptDir
-          & "GenerateAllureReport.ps1"
+          Set-Location "${{ github.workspace }}/test/Allure"
+          .\GenerateAllureReport.ps1
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
