@@ -35,10 +35,14 @@ Copy-Item -Path "$basePath/test/Allure/categories.json" -Destination "$allureRes
 # Copy the history folder to CombinedResults - this is where history of tests all store
 Write-Host "Copying history to $allureResultsCombinedDir"
 $historySourceDir = "$basePath/test/Allure/history"
-$historyDestDir = "$allureResultsCombinedDir/history"
-if (Test-Path -Path $historySourceDir) {
-    Copy-Item -Path $historySourceDir -Destination $historyDestDir -Force
+$historyDestDir = "$allureResultsCombinedDir"
+if (Test-Path $historySourceDir) {
+    Copy-Item -Path $historySourceDir -Destination $historyDestDir -Force -Recurse
+    Write-Host "Copied history into CombinedResults"
 }   
+else {
+    Write-Host "No history directory found at $historySourceDir, so not copying history."
+}
 
 # Generate the report
 Write-Host "Generate the Allure report from $allureResultsCombinedDir"
@@ -48,12 +52,8 @@ allure generate CombinedResults -o allure-report --clean
 $reportDir = "$basePath/test/Allure/allure-report"
 if (-not (Test-Path -Path $reportDir)) {
     Write-Error -Message "The Allure report directory $reportDir did not get created." -Category ObjectNotFound
-# DEBUG    exit
+    exit
 }
-
-# Open the report - only when ran locally ... in GitHub action, don't want to run this
-# DEBUG Write-Host "Open the Allure report"
-# DEBUG Start-Process -FilePath "allure" -ArgumentList "open allure-report" -WindowStyle Normal
 
 # Deletes all .json except categories.json - do this after the report is ran just so we don't have a 1000s of result files in artifacts for each run
 Write-Host "Deleting Allure result files from $allureResultsCombinedDir"
@@ -62,16 +62,36 @@ Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
     Remove-Item
 
 # Copy the history folder from .\test\Allure\allure-report to .\test\Allure
-# Need to go one file at a time so it overwrites properly. Could delete history and copy, but this is safer to only overwrite files that exist
-# DEBUG Write-Host "Copy the history files to $basePath/test/Allure for next run"
-# DEBUG $historySourceDir = "$basePath/test/Allure/allure-report/history"
-# DEBUG $historyDestDir = "$basePath/test/Allure/history"
+$newHistoryDir = "$basePath/test/Allure/allure-report/history"
+$persistedHistoryDir = "$basePath/test/Allure"
+if (Test-Path $newHistoryDir) {
+    Copy-Item -Path $newHistoryDir -Destination $persistedHistoryDir -Recurse -Force
+    Write-Host "Saved updated history for next run from $newHistoryDir to $persistedHistoryDir"
+}
+else {
+    Write-Host "No history directory found at $newHistoryDir, so not copying history."
+}
 
-# DEBUG if (Test-Path -Path $historySourceDir) {
-# DEBUG     Get-ChildItem -Path $historySourceDir -Recurse | ForEach-Object {
-# DEBUG         $dest = Join-Path $historyDestDir $_.FullName.Substring($historySourceDir.Length)
-# DEBUG         Copy-Item -Path $_.FullName -Destination $dest -Force
-# DEBUG     }
+# TO DO:  At some point, need to actually push history back to the current branch ... not sure how do this yet
+# From CoPilot:
+# Set Git identity
+# DEBUG git config --global user.name "github-actions"
+# DEBUG git config --global user.email "actions@github.com"
+
+# Stage updated history files
+# DEBUG $historyPath = "$basePath/test/Allure/history"
+# DEBUG git add $historyPath/*.json
+
+# Commit if there are changes
+# DEBUG if (git diff --cached --quiet) {
+# DEBUG     Write-Host "No changes to commit."
+# DEBUG } else {
+# DEBUG     git commit -m "Update Allure history [CI]"
+    # Push using GitHub token
+# DEBUG     $token = $env:GITHUB_TOKEN
+# DEBUG     $repo = $env:GITHUB_REPOSITORY
+# DEBUG     $url = "https://x-access-token:$token@github.com/$repo.git"
+# DEBUG     git push $url HEAD:${env:GITHUB_REF}
 # DEBUG }
 
 Write-Output "************************"
