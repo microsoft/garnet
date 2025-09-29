@@ -75,12 +75,19 @@ jobs:
             Write-Host "Source path does NOT exist."
           }
 
-      - name: Copy mock allure-results to test output - just use until get real allure results in place
-        run: |
-          $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
-          $dest   = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          Copy-Item -Path $source -Destination $dest -Recurse -Force
+# DELETE      - name: Copy mock allure-results to test output - just use until get real allure results in place
+# DEBUG        shell: pwsh
+# DEBUG        run: |
+# DEBUG          $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
+# DEBUG          $dest   = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+# DEBUG          Copy-Item -Path $source -Destination $dest -Recurse -Force
+
+      - name: Copy mock allure-results to test output
         shell: pwsh
+        run: |
+          $source = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/Allure/TestData/${{ matrix.framework }}/allure-results"
+          $dest   = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          Copy-Item -Path $source -Destination $dest -Recurse -Force
 
       - name: DEBUG Check if allure-results exists
         run: |
