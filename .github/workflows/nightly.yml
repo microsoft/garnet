@@ -110,7 +110,7 @@ jobs:
       - name: Upload Allure Results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: AllureResults-${{ runner.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: AllureResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: test/Allure/AllResults
         if: ${{ always() }}
 
