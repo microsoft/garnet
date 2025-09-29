@@ -27,24 +27,19 @@ jobs:
       - name: Install Allure CLI
         shell: pwsh
         run: |
-          npm install -g allure-commandline --save-dev
-#          $npmBin = npm bin -g
-#          Add-Content -Path $env:GITHUB_PATH -Value $npmBin   
-# DEBUG          if ($env:RUNNER_OS -eq "Windows") {
-# DEBUG            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
-# DEBUG            iwr -useb get.scoop.sh | iex
-# DEBUG            scoop install allure
-# DEBUG            $shimPath = "$env:USERPROFILE\scoop\shims"
-# DEBUG            echo "Adding Scoop shims to PATH: $shimPath"
-# DEBUG            echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
-
-# DEBUG          } elseif ($env:RUNNER_OS -eq "Linux") {
-# DEBUG            npm install -g allure-commandline --save-dev
-# DEBUG            echo "$(npm bin -g)" >> $env:GITHUB_PATH
-# DEBUG          } else {
-# DEBUG            Write-Host "Unsupported OS: $env:RUNNER_OS"
-# DEBUG            exit 1
-# DEBUG          }
+            if ($env:RUNNER_OS -eq "Windows") {
+              Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+              iwr -useb get.scoop.sh | iex
+              scoop install allure
+              $shimPath = "$env:USERPROFILE\scoop\shims"
+              echo "Adding Scoop shims to PATH: $shimPath"
+              echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+            } elseif ($env:RUNNER_OS -eq "Linux") {
+              npm install -g allure-commandline --save-dev
+            } else {
+              Write-Host "Unsupported OS: $env:RUNNER_OS"
+              exit 1
+            }
       - name: Verify Allure installation
         run: allure --version
         shell: pwsh
@@ -171,22 +166,19 @@ jobs:
       - name: Install Allure CLI
         shell: pwsh
         run: |
-
-# DEBUG          if ($env:RUNNER_OS -eq "Windows") {
-# DEBUG            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
-# DEBUG            iwr -useb get.scoop.sh | iex
-# DEBUG            scoop install allure
-# DEBUG            $shimPath = "$env:USERPROFILE\scoop\shims"
-# DEBUG            echo "Adding Scoop shims to PATH: $shimPath"
-# DEBUG            echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
-
-# DEBUG          } elseif ($env:RUNNER_OS -eq "Linux") {
-# DEBUG            npm install -g allure-commandline --save-dev
-# DEBUG            echo "$(npm bin -g)" >> $env:GITHUB_PATH
-# DEBUG          } else {
-# DEBUG            Write-Host "Unsupported OS: $env:RUNNER_OS"
-# DEBUG            exit 1
-# DEBUG          }
+            if ($env:RUNNER_OS -eq "Windows") {
+              Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+              iwr -useb get.scoop.sh | iex
+              scoop install allure
+              $shimPath = "$env:USERPROFILE\scoop\shims"
+              echo "Adding Scoop shims to PATH: $shimPath"
+              echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+            } elseif ($env:RUNNER_OS -eq "Linux") {
+              npm install -g allure-commandline --save-dev
+            } else {
+              Write-Host "Unsupported OS: $env:RUNNER_OS"
+              exit 1
+            }
 
       - name: Download all test result artifacts
         uses: actions/download-artifact@v4
