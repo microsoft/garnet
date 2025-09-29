@@ -312,6 +312,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
+            // COUNT > EF
+            var res7 = (byte[][])db.Execute("VSIM", ["foo", "XB8", new byte[] { 10, 11, 12, 13 }, "COUNT", "100", "EPSILON", "1.0", "EF", "40"]);
+            ClassicAssert.AreEqual(2, res7.Length);
+            ClassicAssert.IsTrue(res7.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res7.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
+
             // TODO: WITHSCORES
         }
 

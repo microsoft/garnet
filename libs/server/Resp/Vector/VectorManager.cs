@@ -333,7 +333,7 @@ namespace Garnet.server
                 logger?.LogCritical("Acquired space for vector set index does not match expections, {0} != {1}", indexSpan.Length, Index.Size);
                 throw new GarnetException($"Acquired space for vector set index does not match expections, {indexSpan.Length} != {Index.Size}");
             }
-            
+
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
             asIndex.Context = context;
             asIndex.Dimensions = dimensions;
@@ -523,6 +523,12 @@ namespace Garnet.server
                     return VectorManagerResult.BadParams;
                 }
 
+                // No point in asking for more data than the effort we'll put in
+                if (count > searchExplorationFactor)
+                {
+                    count = searchExplorationFactor;
+                }
+
                 // Make sure enough space in distances for requested count
                 if (count > outputDistances.Length)
                 {
@@ -564,6 +570,12 @@ namespace Garnet.server
                         MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
                         out var continuation
                     );
+
+                if (found < 0)
+                {
+                    logger?.LogWarning("Error indicating response from vector service {0}", found);
+                    return VectorManagerResult.BadParams;
+                }
 
                 if (includeAttributes)
                 {
@@ -609,6 +621,12 @@ namespace Garnet.server
             {
                 ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
 
+                // No point in asking for more data than the effort we'll put in
+                if (count > searchExplorationFactor)
+                {
+                    count = searchExplorationFactor;
+                }
+
                 // Make sure enough space in distances for requested count
                 if (count * sizeof(float) > outputDistances.Length)
                 {
@@ -649,6 +667,12 @@ namespace Garnet.server
                         MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
                         out var continuation
                     );
+
+                if (found < 0)
+                {
+                    logger?.LogWarning("Error indicating response from vector service {0}", found);
+                    return VectorManagerResult.BadParams;
+                }
 
                 if (includeAttributes)
                 {

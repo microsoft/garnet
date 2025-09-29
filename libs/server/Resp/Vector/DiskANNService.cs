@@ -221,7 +221,11 @@ namespace Garnet.server
             var output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances));
             var output_distances_len = outputDistances.Length;
 
+
             continuation = 0;
+            ref var continuationRef = ref continuation;
+            var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+
             return NativeDiskANNMethods.search_vector(
                 context,
                 index,
@@ -235,7 +239,8 @@ namespace Garnet.server
                 (nint)output_ids,
                 (nuint)output_ids_len,
                 (nint)output_distances,
-                (nuint)output_distances_len, continuation
+                (nuint)output_distances_len,
+                continuationAddr
             );
         }
 
@@ -265,6 +270,9 @@ namespace Garnet.server
             var output_distances_len = outputDistances.Length;
 
             continuation = 0;
+            ref var continuationRef = ref continuation;
+            var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+
             return NativeDiskANNMethods.search_vector(
                 context,
                 index,
@@ -278,7 +286,8 @@ namespace Garnet.server
                 (nint)output_ids,
                 (nuint)output_ids_len,
                 (nint)output_distances,
-                (nuint)output_distances_len, continuation
+                (nuint)output_distances_len, 
+                continuationAddr
             );
         }
 
