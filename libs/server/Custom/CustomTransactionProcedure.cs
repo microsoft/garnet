@@ -39,7 +39,8 @@ namespace Garnet.server
         /// <param name="storeType"></param>
         protected void AddKey(PinnedSpanByte key, LockType type, StoreType storeType)
         {
-            txnManager.SaveKeyEntryToLock(key, storeType, type);
+            txnManager.AddTransactionStoreType(storeType);
+            txnManager.SaveKeyEntryToLock(key, type);
             txnManager.VerifyKeyOwnership(key, type);
         }
 

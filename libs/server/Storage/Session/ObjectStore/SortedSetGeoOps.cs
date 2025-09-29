@@ -69,7 +69,8 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Shared);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
+                txnManager.SaveKeyEntryToLock(key, LockType.Shared);
                 txnManager.Run(true);
             }
 
@@ -126,8 +127,9 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(destination, StoreType.Object, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(key, StoreType.Object, LockType.Shared);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
+                txnManager.SaveKeyEntryToLock(destination, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, LockType.Shared);
                 _ = txnManager.Run(true);
             }
             var geoObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;

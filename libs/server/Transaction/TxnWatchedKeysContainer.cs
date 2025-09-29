@@ -55,14 +55,14 @@ namespace Garnet.server
             {
                 if (key.ReadOnlySpan.SequenceEqual(keySlices[i].slice.ReadOnlySpan))
                 {
-                    keySlices[i].type = 0;
+                    keySlices[i].isWatched = false;
                     return true;
                 }
             }
             return false;
         }
 
-        public void AddWatch(PinnedSpanByte key, StoreType type)
+        public void AddWatch(PinnedSpanByte key)
         {
             if (sliceCount >= sliceBufferSize)
             {
@@ -96,7 +96,7 @@ namespace Garnet.server
             key.ReadOnlySpan.CopyTo(slice.Span);
 
             keySlices[sliceCount].slice = slice;
-            keySlices[sliceCount].type = type;
+            keySlices[sliceCount].isWatched = true;
             keySlices[sliceCount].hash = Utility.HashBytes(slice.ReadOnlySpan);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
@@ -114,7 +114,7 @@ namespace Garnet.server
             for (int i = 0; i < sliceCount; i++)
             {
                 WatchedKeySlice key = keySlices[i];
-                if (key.type == 0) continue;
+                if (!key.isWatched) continue;
                 if (versionMap.ReadVersion(key.hash) != key.version)
                     return false;
             }
@@ -126,10 +126,10 @@ namespace Garnet.server
             for (int i = 0; i < sliceCount; i++)
             {
                 WatchedKeySlice watchedKeySlice = keySlices[i];
-                if (watchedKeySlice.type == 0) continue;
+                if (!watchedKeySlice.isWatched) continue;
 
                 var slice = keySlices[i].slice;
-                txnManager.SaveKeyEntryToLock(slice, watchedKeySlice.type, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(slice, LockType.Shared);
             }
             return true;
         }

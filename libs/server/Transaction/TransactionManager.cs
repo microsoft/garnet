@@ -31,6 +31,15 @@ namespace Garnet.server
             /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
+    [Flags]
+    public enum TransactionStoreTypes : byte
+    {
+        None = 0,
+        Main = 1,
+        Object = 1 << 1,
+        Unified = 1 << 2,
+    }
+
     /// <summary>
     /// Transaction manager
     /// </summary>
@@ -92,8 +101,7 @@ namespace Garnet.server
         private const int initialKeyBufferSize = 1 << 10;
         readonly ILogger logger;
         long txnVersion;
-        private bool isMainTxn = false;
-        private bool isObjectTxn = false;
+        private TransactionStoreTypes storeTypes;
 
         internal TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalContext
             => transactionalContext;
@@ -164,10 +172,10 @@ namespace Garnet.server
                 {
                     keyEntries.UnlockAllKeys();
 
-                    // Release context
-                    if (isMainTxn)
+                    // Release contexts
+                    if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                         transactionalContext.EndTransaction();
-                    if (isObjectTxn)
+                    if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
                         objectStoreTransactionalContext.EndTransaction();
                     unifiedStoreTransactionalContext.EndTransaction();
                 }
@@ -180,8 +188,7 @@ namespace Garnet.server
             this.txnStartHead = 0;
             this.operationCntTxn = 0;
             this.state = TxnState.None;
-            this.isMainTxn = false;
-            this.isObjectTxn = false;
+            this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
 
             // Reset cluster variables used for slot verification
@@ -292,43 +299,34 @@ namespace Garnet.server
             Reset(true);
         }
 
-        internal void Watch(PinnedSpanByte key, StoreType type)
+        internal void Watch(PinnedSpanByte key)
         {
-            UpdateTransactionStoreType(type);
-            watchContainer.AddWatch(key, type);
+            watchContainer.AddWatch(key);
 
             // Release context
-            switch (type)
-            {
-                case StoreType.Main:
-                    basicContext.ResetModified(key.ReadOnlySpan);
-                    break;
-                case StoreType.Object:
-                    objectStoreBasicContext.ResetModified(key.ReadOnlySpan);
-                    break;
-                case StoreType.All:
-                    basicContext.ResetModified(key.ReadOnlySpan);
-                    objectStoreBasicContext.ResetModified(key.ReadOnlySpan);
-                    unifiedStoreBasicContext.ResetModified(key.ReadOnlySpan);
-                    break;
-            }
+            if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
+                transactionalContext.ResetModified(key.ReadOnlySpan);
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
+                objectStoreTransactionalContext.ResetModified(key.ReadOnlySpan);
+            unifiedStoreTransactionalContext.ResetModified(key.ReadOnlySpan);
         }
 
-        void UpdateTransactionStoreType(StoreType type)
+        internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)
         {
-            switch (type)
+            this.storeTypes |= transactionStoreTypes;
+        }
+
+        internal void AddTransactionStoreType(StoreType storeType)
+        {
+            var transactionStoreTypes = storeType switch
             {
-                case StoreType.Main:
-                    isMainTxn = true;
-                    break;
-                case StoreType.Object:
-                    isObjectTxn = true;
-                    break;
-                case StoreType.All:
-                    isMainTxn = true;
-                    isObjectTxn = true;
-                    break;
-            }
+                StoreType.Main => TransactionStoreTypes.Main,
+                StoreType.Object => TransactionStoreTypes.Object,
+                StoreType.All => TransactionStoreTypes.Unified,
+                _ => TransactionStoreTypes.None
+            };
+
+            this.storeTypes |= transactionStoreTypes;
         }
 
         internal string GetLockset() => keyEntries.GetLockset();
@@ -344,21 +342,19 @@ namespace Garnet.server
 
         void BeginTransaction()
         {
-            if (isMainTxn)
+            if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                 transactionalContext.BeginTransaction();
-            if (isObjectTxn)
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
                 objectStoreTransactionalContext.BeginTransaction();
-
             unifiedStoreTransactionalContext.BeginTransaction();
         }
 
         void LocksAcquired(long txnVersion)
         {
-            if (isMainTxn)
+            if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                 transactionalContext.LocksAcquired(txnVersion);
-            if (isObjectTxn)
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
                 objectStoreTransactionalContext.LocksAcquired(txnVersion);
-
             unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
         }
 

@@ -370,7 +370,8 @@ namespace Garnet.server
                 for (var i = 0; i < count; i += 2)
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
-                    txnManager.SaveKeyEntryToLock(srcKey, StoreType.All, LockType.Exclusive);
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Unified);
+                    txnManager.SaveKeyEntryToLock(srcKey, LockType.Exclusive);
                 }
                 txnManager.Run(true);
             }
@@ -541,8 +542,9 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(oldKeySlice, StoreType.Main, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(newKeySlice, StoreType.Main, LockType.Exclusive);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                txnManager.SaveKeyEntryToLock(oldKeySlice, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(newKeySlice, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
 
@@ -665,8 +667,9 @@ namespace Garnet.server
                 createTransaction = false;
                 if (txnManager.state != TxnState.Running)
                 {
-                    txnManager.SaveKeyEntryToLock(oldKeySlice, StoreType.Object, LockType.Exclusive);
-                    txnManager.SaveKeyEntryToLock(newKeySlice, StoreType.Object, LockType.Exclusive);
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
+                    txnManager.SaveKeyEntryToLock(oldKeySlice, LockType.Exclusive);
+                    txnManager.SaveKeyEntryToLock(newKeySlice, LockType.Exclusive);
                     txnManager.Run(true);
                     createTransaction = true;
                 }
@@ -778,7 +781,11 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public void WATCH(PinnedSpanByte key, StoreType type) => txnManager.Watch(key, type);
+        public void WATCH(PinnedSpanByte key, StoreType type)
+        {
+            txnManager.AddTransactionStoreType(type);
+            txnManager.Watch(key);
+        }
 
         public unsafe GarnetStatus SCAN<TContext>(long cursor, PinnedSpanByte match, long count, ref TContext context) => GarnetStatus.OK;
 
@@ -798,8 +805,9 @@ namespace Garnet.server
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
-                txnManager.SaveKeyEntryToLock(key1, StoreType.Main, LockType.Shared);
-                txnManager.SaveKeyEntryToLock(key2, StoreType.Main, LockType.Shared);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
+                txnManager.SaveKeyEntryToLock(key1, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(key2, LockType.Shared);
                 txnManager.Run(true);
                 createTransaction = true;
             }

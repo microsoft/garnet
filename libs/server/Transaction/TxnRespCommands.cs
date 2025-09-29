@@ -223,9 +223,11 @@ namespace Garnet.server
                 keys.Add(nextKey);
             }
 
+            txnManager.AddTransactionStoreType(type);
+
             foreach (var toWatch in keys)
             {
-                txnManager.Watch(toWatch, type);
+                txnManager.Watch(toWatch);
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

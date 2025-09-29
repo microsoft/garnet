@@ -12,11 +12,9 @@ namespace Garnet.server
         /// Save key entry
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="storeType"></param>
         /// <param name="type"></param>
-        public void SaveKeyEntryToLock(PinnedSpanByte key, StoreType storeType, LockType type)
+        public void SaveKeyEntryToLock(PinnedSpanByte key, LockType type)
         {
-            UpdateTransactionStoreType(storeType);
             keyEntries.AddKey(key, type);
         }
 
@@ -63,6 +61,8 @@ namespace Garnet.server
             if (cmdInfo.KeySpecs == null || cmdInfo.KeySpecs.Length == 0)
                 return;
 
+            AddTransactionStoreType(cmdInfo.StoreType);
+
             foreach (var keySpec in cmdInfo.KeySpecs)
             {
                 if (!respSession.parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, cmdInfo.IsSubCommand, out var searchArgs))
@@ -74,7 +74,7 @@ namespace Garnet.server
                 for (var currIdx = searchArgs.firstIdx; currIdx <= searchArgs.lastIdx; currIdx += searchArgs.step)
                 {
                     var key = respSession.parseState.GetArgSliceByRef(currIdx);
-                    SaveKeyEntryToLock(key, cmdInfo.StoreType, lockType);
+                    SaveKeyEntryToLock(key, lockType);
                     SaveKeyArgSlice(key);
                 }
             }

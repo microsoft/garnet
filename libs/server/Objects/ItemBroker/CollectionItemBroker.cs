@@ -529,15 +529,15 @@ namespace Garnet.server
             {
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
-                storageSession.txnManager.SaveKeyEntryToLock(asKey, StoreType.Object, LockType.Exclusive);
+                storageSession.txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
+                storageSession.txnManager.SaveKeyEntryToLock(asKey, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
-                    storageSession.txnManager.SaveKeyEntryToLock(dstKey, StoreType.Object, LockType.Exclusive);
+                    storageSession.txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
 
                 _ = storageSession.txnManager.Run(true);
             }
 
-            var transactionalContext = storageSession.txnManager.TransactionalContext;
             var objectTransactionalContext = storageSession.txnManager.ObjectStoreTransactionalContext;
             var unifiedTransactionalContext = storageSession.txnManager.UnifiedStoreTransactionalContext;
 
