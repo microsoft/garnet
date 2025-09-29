@@ -107,10 +107,10 @@ jobs:
           New-Item -ItemType Directory -Path $target -Force
           Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
 
-      - name: Upload All Results to artifacts
+      - name: Upload Allure Results to artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: AllureResults-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: AllureResults-${{ runner.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: test/Allure/AllResults
         if: ${{ always() }}
 
