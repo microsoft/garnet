@@ -33,14 +33,6 @@ namespace Tsavorite.core
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
         internal readonly ObjectIdMap objectIdMap;
 
-        /// <summary>The minimum number of length metadata bytes--1 indicator byte, 1 byte key length, 1 byte value length</summary>
-        public const int MinLengthMetadataBytes = 3;
-        /// <summary>The maximum number of length metadata bytes--1 indicator byte, 4 bytes key length, 7 bytes value length</summary>
-        internal const int MaxLengthMetadataBytes = 12;
-
-        /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
-        internal const int IndicatorBytes = 1;
-
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
         /// <summary>Invalid ETag, and also the pre-incremented value</summary>
@@ -379,10 +371,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueLength(int newValueSize, in RecordSizeInfo sizeInfo)
+        public readonly bool TrySetValueLength(int newValueSize, in RecordSizeInfo sizeInfo, bool zeroInit = false)
         {
             Debug.Assert(newValueSize == sizeInfo.FieldInfo.ValueSize, $"Mismatched value size; expected {sizeInfo.FieldInfo.ValueSize}, actual {newValueSize}");
-            return TrySetValueLength(in sizeInfo);
+            return TrySetValueLength(in sizeInfo, zeroInit);
         }
 
         /// <summary>
@@ -390,24 +382,35 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueLength(in RecordSizeInfo sizeInfo)
+        public readonly bool TrySetValueLength(in RecordSizeInfo sizeInfo, bool zeroInit = false) => TrySetValueLength(in sizeInfo, zeroInit, out _ /*valueAddress*/);
+
+        private readonly bool TrySetValueLength(in RecordSizeInfo sizeInfo, bool zeroInit, out long valueAddress)
         {
             // Get the number of bytes in existing key and value lengths.
             var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
-            var oldInlineValueSize = ReadVarbyteLength(valueLengthBytes, (byte*)(IndicatorAddress + 1 + keyLengthBytes));
+            var oldInlineValueSize = ReadVarbyteLength(valueLengthBytes, (byte*)(IndicatorAddress + NumIndicatorBytes + keyLengthBytes));
             var newInlineValueSize = sizeInfo.InlineValueSize;
+
+            // Calculate this with our own valueLengthBytes, as the new value may result in a different byte count, which would throw things off.
+            // Key does not change, so its size and size byte count remain the same.
+            valueAddress = physicalAddress + RecordInfo.Size + NumIndicatorBytes + keyLengthBytes + valueLengthBytes + sizeInfo.InlineKeySize;
 
             // We don't need to change the size if value size hasn't changed (ignore optionalSize changes; we're not changing the data for that, only shifting them).
             // For this quick check, just check for inline differences; we'll examine overflow size changes and conversions later.
             if (Info.RecordIsInline && sizeInfo.KeyIsInline && sizeInfo.ValueIsInline && oldInlineValueSize == newInlineValueSize)
                 return true;
 
+            // It is OK if the value is shrinking so we don't need all the old valueLengthBytes, but we cannot grow past the old valueLengthBytes.
+            // (If we are converting from inline to overflow that will already be accounted for because sizeInfo will be set for the ObjectId length.)
+            if (sizeInfo.ValueLengthBytes > valueLengthBytes)
+                return false;
+
             // Growth and fillerLen may be negative if shrinking.
             var inlineValueGrowth = (int)(newInlineValueSize - oldInlineValueSize);
             var oldOptionalSize = OptionalLength;
             var newOptionalSize = sizeInfo.OptionalSize;
 
-            var optionalStartAddress = sizeInfo.GetValueAddress(physicalAddress) + oldInlineValueSize;
+            var optionalStartAddress = valueAddress + oldInlineValueSize;
             var fillerLenAddress = optionalStartAddress + oldOptionalSize;
             var fillerLen = GetFillerLength(fillerLenAddress);
 
@@ -443,7 +446,7 @@ namespace Tsavorite.core
             else if (Info.ValueIsOverflow && sizeInfo.ValueIsOverflow)
             {
                 // Both are out-of-line, so reallocate in place if needed; the caller will operate on that space after we return.
-                _ = LogField.ReallocateValueOverflow(physicalAddress, in sizeInfo, objectIdMap);
+                _ = LogField.ReallocateValueOverflow(physicalAddress, valueAddress, in sizeInfo, objectIdMap);
             }
             else if (Info.ValueIsObject && sizeInfo.ValueIsObject)
             {
@@ -459,22 +462,22 @@ namespace Tsavorite.core
                     {
                         Debug.Assert(inlineValueGrowth == ObjectIdMap.ObjectIdSize - oldInlineValueSize,
                                     $"ValueGrowth {inlineValueGrowth} does not equal expected {oldInlineValueSize - ObjectIdMap.ObjectIdSize}");
-                        _ = LogField.ConvertInlineToOverflow(ref InfoRef, physicalAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertInlineToOverflow(ref InfoRef, physicalAddress, valueAddress, oldInlineValueSize, in sizeInfo, objectIdMap);
                     }
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 1");
-                        _ = LogField.ConvertInlineToHeapObject(ref InfoRef, physicalAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertInlineToHeapObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
                 }
                 else if (Info.ValueIsOverflow)
                 {
                     if (sizeInfo.ValueIsInline)
-                        _ = LogField.ConvertOverflowToInline(ref InfoRef, physicalAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertOverflowToInline(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 2");
-                        _ = LogField.ConvertOverflowToHeapObject(ref InfoRef, physicalAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertOverflowToHeapObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
                 }
                 else
@@ -482,11 +485,11 @@ namespace Tsavorite.core
                     Debug.Assert(Info.ValueIsObject, "Expected ValueIsObject to be set, pt 3");
 
                     if (sizeInfo.ValueIsInline)
-                        _ = LogField.ConvertHeapObjectToInline(ref InfoRef, physicalAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertHeapObjectToInline(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsOverflow, "Expected ValueIsOverflow to be true");
-                        _ = LogField.ConvertHeapObjectToOverflow(ref InfoRef, physicalAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertHeapObjectToOverflow(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
                 }
             }
@@ -514,11 +517,17 @@ namespace Tsavorite.core
             }
             if (inlineValueGrowth < 0)
             {
+                // Zeroinit any empty space we opened up by shrinking.
                 var endOfOldFillerSpace = fillerLenAddress + (fillerLen >= FillerLengthSize ? FillerLengthSize : 0);
                 var clearLength = (int)(endOfOldFillerSpace - endOfNewFillerSpace);
                 // If old filler space was < FillerLengthSize and we only shrank by a couple bytes, we may have written FillerLengthSize leaving clearLength <= 0
                 if (clearLength > 0)
                     new Span<byte>((byte*)endOfNewFillerSpace, clearLength).Clear();
+            }
+            else if (zeroInit)
+            {
+                // Zeroinit any space we grew by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
+                new Span<byte>((byte*)(valueAddress + oldInlineValueSize), (int)(newInlineValueSize - oldInlineValueSize)).Clear();
             }
 
             // Update record part 6: Finally, set varbyte value length to the actual new value length, with filler bit if we have it.
@@ -535,13 +544,12 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo)
+        public readonly bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo, bool zeroInit = false)
         {
             RecordSizeInfo.AssertValueDataLength(value.Length, in sizeInfo);
-            if (!TrySetValueLength(in sizeInfo))
+            if (!TrySetValueLength(in sizeInfo, zeroInit, out var valueAddress))
                 return false;
 
-            var valueAddress = sizeInfo.GetValueAddress(physicalAddress);
             var valueSpan = sizeInfo.ValueIsInline ? new((byte*)valueAddress, sizeInfo.FieldInfo.ValueSize) : objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Span;
             value.CopyTo(valueSpan);
             return true;

@@ -190,7 +190,7 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETBIT");
                         return false;
@@ -211,7 +211,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
                         return false;
@@ -312,7 +312,7 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), in sizeInfo))
+                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), in sizeInfo, zeroInit: true))   // ZeroInit to be safe
                         {
                             functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
                             return false;
@@ -590,7 +590,7 @@ namespace Garnet.server
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset)
-                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -610,7 +610,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length)
-                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                         return false;
 
                     _ = logRecord.RemoveExpiration();

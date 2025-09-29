@@ -545,15 +545,10 @@ namespace Tsavorite.core
                             if (!newLogRecord.Info.IsInNewVersion && isMemoryLogRecord)
                                 _ = srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
                         }
-                        else
+                        else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {
-                            if (rmwInfo.Action == RMWAction.ExpireAndStop)
-                            {
-                                newLogRecord.InfoRef.SetTombstone();
-                                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
-                            }
-                            else
-                                Debug.Fail("Can only handle RMWAction.ExpireAndStop on a false return from PostCopyUpdater");
+                            newLogRecord.InfoRef.SetTombstone();
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
                     }
 

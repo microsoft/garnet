@@ -1898,7 +1898,7 @@ namespace Tsavorite.core
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
-            if (currentLength >= RecordInfo.Size + LogRecord.MinLengthMetadataBytes)
+            if (currentLength >= RecordInfo.Size + MinLengthMetadataBytes)
             {
                 var ptr = ctx.record.GetValidPointer();
                 var (keyLengthBytes, valueLengthBytes, _ /*usesChainedChunks*/) = DeconstructIndicatorByte(*(ptr + RecordInfo.Size));
@@ -1911,12 +1911,12 @@ namespace Tsavorite.core
                     return false;
 
                 var optionalLength = LogRecord.GetOptionalLength(recordInfo);
-                var offsetToKeyStart = RecordInfo.Size + LogRecord.IndicatorBytes + keyLengthBytes + valueLengthBytes;
+                var offsetToKeyStart = RecordInfo.Size + NumIndicatorBytes + keyLengthBytes + valueLengthBytes;
 
                 // If the length is up to offsetToKeyStart, we can read the full lengths.
                 if (currentLength >= offsetToKeyStart)
                 {
-                    var keyLengthPtr = ptr + RecordInfo.Size + LogRecord.IndicatorBytes;
+                    var keyLengthPtr = ptr + RecordInfo.Size + NumIndicatorBytes;
                     var keyLength = GetKeyLength(keyLengthBytes, keyLengthPtr);
 
                     // We have the full key, so check for a match if we had a requested key, and return if not.

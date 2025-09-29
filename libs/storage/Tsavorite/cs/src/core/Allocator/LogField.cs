@@ -38,25 +38,23 @@ namespace Tsavorite.core
         /// and that the field does not currently contain an overflow allocation.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertInlineToOverflow(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertInlineToOverflow(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, long oldValueLength, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsInline);
 
-            // First copy the data
-            var oldLength = sizeInfo.GetValueInlineLength(physicalAddress);
+            // First copy the data. We are converting to overflow so the length is limited to int.
             var newLength = sizeInfo.FieldInfo.ValueSize;
             var overflow = new OverflowByteArray(newLength, startOffset: 0, endOffset: 0, zeroInit: false);
-            var copyLength = oldLength < newLength ? oldLength : newLength;
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
+            var copyLength = oldValueLength < newLength ? oldValueLength : newLength;
 
             if (copyLength > 0)
             {
-                var oldSpan = new ReadOnlySpan<byte>((byte*)fieldAddress, copyLength);
+                var oldSpan = new ReadOnlySpan<byte>((byte*)valueAddress, (int)copyLength);
                 oldSpan.CopyTo(overflow.Span);
             }
 
             var objectId = objectIdMap.Allocate();
-            *(int*)fieldAddress = objectId;
+            *(int*)valueAddress = objectId;
             objectIdMap.Set(objectId, overflow);
             recordInfo.SetValueIsOverflow();
             return overflow.Span;
@@ -71,15 +69,14 @@ namespace Tsavorite.core
         /// prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertHeapObjectToOverflow(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertHeapObjectToOverflow(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsObject);
             var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
 
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
-            var objectId = *(int*)fieldAddress;
+            var objectId = *(int*)valueAddress;
             if (objectId == ObjectIdMap.InvalidObjectId)
-                *(int*)fieldAddress = objectId = objectIdMap.Allocate();
+                *(int*)valueAddress = objectId = objectIdMap.Allocate();
             objectIdMap.Set(objectId, overflow);
             recordInfo.SetValueIsOverflow();
             return overflow.Span;
@@ -94,15 +91,13 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertInlineToHeapObject(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static int ConvertInlineToHeapObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsInline);
             var objectId = objectIdMap.Allocate();
-            var oldLength = sizeInfo.GetValueInlineLength(physicalAddress);
             recordInfo.SetValueIsObject();
 
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
-            *(int*)fieldAddress = objectId;
+            *(int*)valueAddress = objectId;
             return objectId;
         }
 
@@ -115,16 +110,15 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertOverflowToHeapObject(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static int ConvertOverflowToHeapObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsOverflow);
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
 
-            var objectId = *(int*)fieldAddress;
+            var objectId = *(int*)valueAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
                 objectIdMap.Set(objectId, null);    // Clear the byte[] from the existing slot but do not free the slot; caller will put the HeapObject into the slot.
             else
-                *(int*)fieldAddress = objectId = objectIdMap.Allocate();
+                *(int*)valueAddress = objectId = objectIdMap.Allocate();
 
             recordInfo.SetValueIsObject();
             return objectId;
@@ -154,16 +148,15 @@ namespace Tsavorite.core
         /// and that the field currently contains an overflow allocation.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertOverflowToInline(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertOverflowToInline(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsOverflow);
 
             // First copy the data
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
-            var objectId = *(int*)fieldAddress;
+            var objectId = *(int*)valueAddress;
 
             var newLength = sizeInfo.FieldInfo.ValueSize;
-            var newSpan = new Span<byte>((byte*)fieldAddress, newLength);
+            var newSpan = new Span<byte>((byte*)valueAddress, newLength);
 
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
@@ -210,17 +203,16 @@ namespace Tsavorite.core
         /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertHeapObjectToInline(ref RecordInfo recordInfo, long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertHeapObjectToInline(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
-            var objIdPtr = (int*)fieldAddress;
+            var objIdPtr = (int*)valueAddress;
             var objectId = *objIdPtr;
             if (objectId != ObjectIdMap.InvalidObjectId)
                 objectIdMap.Free(objectId);
             *objIdPtr = 0;
 
             recordInfo.SetValueIsInline();
-            return new((byte*)fieldAddress, sizeInfo.FieldInfo.ValueSize);
+            return new((byte*)valueAddress, sizeInfo.FieldInfo.ValueSize);
         }
 
         /// <summary>
@@ -242,13 +234,12 @@ namespace Tsavorite.core
         /// and that the field currently contains an overflow allocation.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ReallocateValueOverflow(long physicalAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ReallocateValueOverflow(long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             OverflowByteArray newOverflow;
-            var fieldAddress = sizeInfo.GetValueAddress(physicalAddress);
             var newLength = sizeInfo.FieldInfo.ValueSize;
 
-            var objectId = *(int*)fieldAddress;
+            var objectId = *(int*)valueAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
             {
                 var oldOverflow = objectIdMap.GetOverflowByteArray(objectId);
@@ -269,7 +260,7 @@ namespace Tsavorite.core
                 // Allocate; nothing to copy, so allocate with zero initialization
                 newOverflow = new(newLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 objectId = objectIdMap.Allocate();
-                *(int*)fieldAddress = objectId;
+                *(int*)valueAddress = objectId;
             }
             objectIdMap.Set(objectId, newOverflow);
             return newOverflow.Span;

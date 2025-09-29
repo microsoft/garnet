@@ -223,7 +223,10 @@ namespace Tsavorite.core
                         {
                             // Lock to ensure no value tearing while copying to temp storage.
                             if (currentAddress >= headAddress && store is not null)
-                                store.LockForScan(ref stackCtx, diskLogRecord.Key);
+                            {
+                                var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
+                                store.LockForScan(ref stackCtx, logRecord.Key);
+                            }
 
                             if (recordBuffer == null)
                                 recordBuffer = hlogBase.bufferPool.Get((int)allocatedSize);

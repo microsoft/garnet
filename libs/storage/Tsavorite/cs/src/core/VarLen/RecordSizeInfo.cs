@@ -88,22 +88,17 @@ namespace Tsavorite.core
         /// <summary>Gets the value length currently in the record (e.g. before being updated with FieldInfo.ValueSize).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly unsafe int GetValueInlineLength(long recordPhysicalAddress)
-            => (int)ReadVarbyteLength(ValueLengthBytes, (byte*)(recordPhysicalAddress + RecordInfo.Size + 1 + KeyLengthBytes));
-
-        /// <summary>Sets the new value length into the record.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe void SetValueInlineLength(long recordPhysicalAddress)
-            => WriteVarbyteLength(FieldInfo.ValueSize, ValueLengthBytes, (byte*)(recordPhysicalAddress + RecordInfo.Size + 1 + KeyLengthBytes));
+            => (int)ReadVarbyteLength(ValueLengthBytes, (byte*)(recordPhysicalAddress + RecordInfo.Size + NumIndicatorBytes + KeyLengthBytes));
 
         /// <summary>Gets the Key address in the record.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly unsafe long GetKeyAddress(long recordPhysicalAddress)
-            => recordPhysicalAddress + RecordInfo.Size + 1 + KeyLengthBytes + ValueLengthBytes;
+            => recordPhysicalAddress + RecordInfo.Size + NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes;
 
         /// <summary>Gets the Value address in the record.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly unsafe long GetValueAddress(long recordPhysicalAddress)
-            => recordPhysicalAddress + RecordInfo.Size + 1 + KeyLengthBytes + ValueLengthBytes + InlineKeySize;
+            => recordPhysicalAddress + RecordInfo.Size + NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes + InlineKeySize;
 
         /// <summary>
         /// Called from Upsert or RMW methods for Span Values with the actual data size of the update value; ensures consistency between the Get*FieldInfo methods and the actual update methods.

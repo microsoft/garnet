@@ -51,6 +51,13 @@ namespace Tsavorite.core
         const long kValueLengthBitMask = 7;
 #pragma warning restore IDE1006 // Naming Styles
 
+        /// <summary>The minimum number of length metadata bytes--NumIndicatorBytes, 1 byte key length, 1 byte value length</summary>
+        public const int MinLengthMetadataBytes = 3;
+        /// <summary>The maximum number of length metadata bytes--NumIndicatorBytes, 4 bytes key length, 7 bytes value length</summary>
+        internal const int MaxLengthMetadataBytes = 12;
+        /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
+        internal const int NumIndicatorBytes = 1;
+
         /// <summary>The maximum number of key length bytes in the in-memory single-long word representation. Anything over this becomes overflow.</summary>
         internal const int MaxKeyLengthBytesInWord = 3;
         /// <summary>The maximum number of value length bytes in the in-memory single-long word representation. Anything over this becomes overflow.</summary>
