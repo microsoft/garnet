@@ -187,12 +187,13 @@ namespace Tsavorite.core
 
         /// <summary>If this Write is from a <see cref="OverflowByteArray"/>, this <see cref="GCHandle"/> keeps its byte[] pinned during the Write.
         /// It is freed (and the array unpinned) after the Write. Used instead of <see cref="refCountedGCHandle"/> for only a single span of the array to avoid a heap allocation.</summary>
-        public GCHandle gcHandle;
+        private readonly GCHandle gcHandle;
 
-        /// <summary>
-        /// The countdown callback for the entire partial flush, including buffers, external writes, and final sector-aligning write.
-        /// </summary>
-        public CountdownCallbackAndContext countdownCallbackAndContext;
+        /// <summary>The countdown callback for the entire partial flush, including <see cref="DiskWriteBuffer"/>s, external writes, and final sector-aligning write.</summary>
+        private readonly CountdownCallbackAndContext countdownCallbackAndContext;
+
+        /// <summary>The countdown event if this write is associated with a <see cref="DiskWriteBuffer"/>.</summary>
+        private CountdownEvent bufferCountdownEvent;
 
         public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext)
         {
@@ -206,11 +207,15 @@ namespace Tsavorite.core
         public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext, GCHandle gcHandle) : this(callbackAndContext)
             => this.gcHandle = gcHandle;
 
+        /// <summary>This write is associated with a <see cref="DiskWriteBuffer"/> so we need to signal the countdown event for that buffer when we are done.</summary>
+        public void SetBufferCountdownEvent(CountdownEvent countdownEvent) => bufferCountdownEvent = countdownEvent;
+
         public long Release()
         {
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();
+            bufferCountdownEvent?.Signal();
             return countdownCallbackAndContext?.Decrement() ?? 0;
         }
     }

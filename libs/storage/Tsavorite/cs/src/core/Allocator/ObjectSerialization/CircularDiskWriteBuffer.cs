@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -13,10 +14,23 @@ namespace Tsavorite.core
     using static Utility;
 
     /// <summary>
-    /// This class drives object-serialization writing to the disk.
+    /// This class drives object-serialization writing to the disk. It is reused by multiple "partial flushes": ranges on a single page (rare) or 
+    /// full pages. We create one instance for all ranges of a top-level Flush() call; each partial range will call <see cref="OnBeginPartialFlush"/>,
+    /// do its flushes, and call <see cref="OnPartialFlushComplete"/>. This reuse makes the most efficient use of the buffer allocations. It also
+    /// requires tracking of "in-flight" device writes at multiple levels:
+    /// <list type="bullet">
+    ///     <item><see cref="DiskWriteBuffer"/>: A <see cref="CountdownEvent"/> tracks how many in-flight device writes are associated with that buffer.</item>
+    ///     <item><see cref="CircularDiskWriteBuffer"/>: A separate <see cref="CountdownCallbackAndContext"/> instance tracks total in-flight device writes
+    ///             for each <see cref="OnBeginPartialFlush"/> and <see cref="OnPartialFlushComplete"/> pair, both at the <see cref="DiskWriteBuffer"/> level
+    ///             and without buffer association, such as direct writes from pinned byte[] spans. This lets us call the main-page callback once the main-page
+    ///             and all associated object log writes are complete.</item>
+    ///         <list type="bullet">
+    ///             <item>This also contains a counter of how many <see cref="CountdownCallbackAndContext"/> instances are active (i.e. how many partial flush
+    ///                 completion write batches are in-flight); when this hits 0, we can call <see cref="Dispose"/>.</item>
+    ///         </list>
+    /// </list>
     /// </summary>
-    /// <remarks>This does not implement <see cref="IDisposable"/>; it calls <see cref="InternalDispose"/> itself when the final callback is issued.</remarks>
-    public class CircularDiskWriteBuffer
+    public class CircularDiskWriteBuffer : IDisposable
     {
         internal readonly SectorAlignedBufferPool bufferPool;
         internal readonly int bufferSize;
@@ -36,6 +50,12 @@ namespace Tsavorite.core
         /// <remarks>This is passed to all disk-write operations; multiple pending flushes may be in-flight with the callback unset; when the final flush (which may be a buffer-span, a direct write, or the
         /// final sector-aligning partial-flush completion flush), it allows the final pending flush to complete to know it *is* the final one and the callback can be called.</remarks>
         internal CountdownCallbackAndContext countdownCallbackAndContext;
+
+        /// <summary>If true, <see cref="Dispose"/> has been called. Coordinates with <see cref="numInFlightRangeBatches"/> to indicate when we can call <see cref="DiskWriteBuffer.Dispose"/>.</summary>
+        bool disposed;
+
+        /// <summary>Tracks the number of in-flight partial flush completion write batches. Coordinates with <see cref="numInFlightRangeBatches"/> to indicate when we can call <see cref="DiskWriteBuffer.Dispose"/>.</summary>
+        long numInFlightRangeBatches;
 
         internal CircularDiskWriteBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice device, ILogger logger)
         {
@@ -109,7 +129,8 @@ namespace Tsavorite.core
         internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endObjectLogFilePosition)
         {
-            // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log write.
+            // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
+            // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.
             countdownCallbackAndContext.Increment();
             countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpan.Length);
 
@@ -188,23 +209,36 @@ namespace Tsavorite.core
             // We don't currently wait on the result of intermediate buffer flushes. If context is non-null, then it is the circular buffer owner and it
             // called this flush for OnFlushComplete, so we need to call it back to complete the original callback sequence.
             var writeCallbackContext = (DiskWriteCallbackContext)context;
-            if (writeCallbackContext.Release() == 0)
-                InternalDispose();
+
+            // If this returns 0 we have finished all in-flight writes for the writeCallbackContext.countdownCallbackAndContext instance, but there may be more instances
+            // active, so adjust and check the global count, and if *that* is zero, check the disposed state (that ensures no further partial flush ranges will be sent).
+            if (writeCallbackContext.Release() == 0 && Interlocked.Decrement(ref numInFlightRangeBatches) == 0 && disposed)
+                ClearBuffers();
+
         }
 
         /// <inheritdoc/>
-        public void InternalDispose()
+        public void Dispose()
+        {
+            // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0
+            // we are done and can free the buffers.
+            disposed = true;
+            if (numInFlightRangeBatches == 0)
+                ClearBuffers();
+        }
+
+        private void ClearBuffers()
         {
             // We should have no data to flush--the last partial flush should have ended with PartialFlushComplete which flushes the last of the data for that flush fragment,
-            // and we wait for that to finish before calling the caller's callback.
-            Debug.Assert(countdownCallbackAndContext.count == 0, $"In-flight flush count expected to be zero but was {countdownCallbackAndContext.count}");
-
+            // and we wait for that to finish before calling the caller's callback. However, we may have to wait for flushed data to complete; this may be from either the
+            // just-completed partial-flush range, or even from the range before that if the most recent range did not use all buffers; at the time this is called there may
+            // be one or more in-flight countdownCallbackAndContexts. So we just wait.
             for (var ii = 0; ii < buffers.Length; ii++)
             {
                 ref var buffer = ref buffers[ii];
                 if (buffer is not null)
                 {
-                    Debug.Assert(buffer.flushedUntilPosition == buffer.currentPosition, $"Unflushed data remains in buffer[{ii}]: buffer.flushedUntilPosition {buffer.flushedUntilPosition} != buffer.currentPosition {buffer.currentPosition}");
+                    buffer.Wait();
                     buffer.Dispose();
                     buffer = null;
                 }

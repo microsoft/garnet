@@ -18,13 +18,18 @@ namespace Tsavorite.core
     /// </list>
     /// </summary>
     /// <remarks>This handles only Overflow Keys and Values, and Object Values; inline Keys and Values (of any length) are written to the main log device as part of the main log record.</remarks>
-    internal unsafe partial class ObjectLogWriter : IStreamBuffer
+    internal unsafe partial class ObjectLogWriter<TStoreFunctions> : IStreamBuffer
+        where TStoreFunctions : IStoreFunctions
     {
         readonly IDevice device;
-        readonly IObjectSerializer<IHeapObject> valueObjectSerializer;
+        IObjectSerializer<IHeapObject> valueObjectSerializer;
+        PinnedMemoryStream<ObjectLogWriter<TStoreFunctions>> pinnedMemoryStream;
 
         /// <summary>The circular buffer we cycle through for parallelization of writes.</summary>
         internal CircularDiskWriteBuffer flushBuffers;
+
+        /// <summary>The <see cref="IStoreFunctions"/> implementation to use</summary>
+        internal readonly TStoreFunctions storeFunctions;
 
         /// <summary>The current buffer being written to in the circular buffer list.</summary>
         internal DiskWriteBuffer writeBuffer;
@@ -46,16 +51,12 @@ namespace Tsavorite.core
         public bool IsForWrite => true;
 
         /// <summary>Constructor. Creates the circular buffer pool.</summary>
-        /// <param name="device">The device to write to</param>
-        /// <param name="flushBuffers">The circular buffer for writing records</param>
-        /// <param name="valueObjectSerializer">Serialized value objects to the underlying stream</param>
-        /// <exception cref="ArgumentNullException"></exception>
 #pragma warning disable IDE0290 // Use primary constructor
-        public ObjectLogWriter(IDevice device, CircularDiskWriteBuffer flushBuffers, IObjectSerializer<IHeapObject> valueObjectSerializer)
+        public ObjectLogWriter(IDevice device, CircularDiskWriteBuffer flushBuffers, TStoreFunctions storeFunctions)
         {
             this.device = device ?? throw new ArgumentNullException(nameof(device));
             this.flushBuffers = flushBuffers ?? throw new ArgumentNullException(nameof(flushBuffers));
-            this.valueObjectSerializer = valueObjectSerializer;
+            this.storeFunctions = storeFunctions;
         }
 
         /// <inheritdoc/>
@@ -248,6 +249,15 @@ namespace Tsavorite.core
             // "start at 0" by making it the negative of currentPosition. Subsequently if we write e.g. an int, we'll have Length and Position = (-currentPosition + currentPosition + 4).
             inSerialize = true;
             valueObjectBytesWritten = 0;
+
+            // If we haven't yet instantiated the serializer do so now.
+            if (valueObjectSerializer is null)
+            {
+                pinnedMemoryStream = new(this);
+                valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
+                valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
+            }
+
             valueObjectSerializer.Serialize(valueObject);
             OnSerializeComplete(valueObject);
         }
@@ -288,7 +298,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            // Currently nothing to do. In particular, do not Dispose() the CircularDiskWriteBuffers; those must remain alive until flush completes.
+            pinnedMemoryStream?.Dispose();
+            valueObjectSerializer?.EndSerialize();
         }
     }
 }

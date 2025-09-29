@@ -76,7 +76,7 @@ namespace Tsavorite.core
             currentPosition = data.Length;
         }
 
-        internal static void IncrementOrResetCountdown(ref CountdownEvent countdownEvent)
+        internal static CountdownEvent IncrementOrResetCountdown(ref CountdownEvent countdownEvent)
         {
             if (countdownEvent is null)
                 countdownEvent = new(1);
@@ -87,6 +87,7 @@ namespace Tsavorite.core
                 countdownEvent.Wait(); // This should usually be immediate
                 countdownEvent.Reset(1);
             }
+            return countdownEvent;
         }
 
         internal void FlushToDevice(ref ObjectLogFilePositionInfo filePosition, DeviceIOCompletionCallback callback, DiskWriteCallbackContext pageWriteCallbackContext)
@@ -99,7 +100,7 @@ namespace Tsavorite.core
             //   b. OverflowByteArray sector-aligning writes at the beginning or end, which means we copied a sector-aligned number of bytes to the buffer.
             Debug.Assert(IsAligned(currentPosition, (int)device.SectorSize), $"currentPosition ({currentPosition}) is not sector-aligned");
             Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"Starting file flush position ({filePosition}) is not sector-aligned");
-            IncrementOrResetCountdown(ref countdownEvent);
+            pageWriteCallbackContext.SetBufferCountdownEvent(IncrementOrResetCountdown(ref countdownEvent));
 
             var flushLength = (uint)(currentPosition - flushedUntilPosition);
             Debug.Assert(IsAligned(flushLength, (int)device.SectorSize), $"flushLength {flushLength} is not sector-aligned");

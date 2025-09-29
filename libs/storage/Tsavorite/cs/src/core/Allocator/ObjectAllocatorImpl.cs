@@ -321,11 +321,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
-        internal override CircularDiskWriteBuffer CreateFlushBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger)
+        internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
-        internal override CircularDiskReadBuffer CreateReadBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger)
+        internal override CircularDiskReadBuffer CreateCircularReadBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
@@ -342,7 +342,7 @@ namespace Tsavorite.core
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
-            var allocatorPage = pages[flushPage];
+            var allocatorPage = pages[flushPage % BufferSize];
 
             // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries),
             // in the allocator page (including the objectId space for Overflow and Heap Objects). Note: "Aligned" in this discussion refers to sector (as opposed to record) alignment.
@@ -364,8 +364,7 @@ namespace Tsavorite.core
 
             // Initialize disk offset from logicalAddress to subtract the GetFirstValidLogicalAddressOnPage(), then ensure we are aligned to the PageHeader
             // (for the first record on the page the caller probably passed the address of the start of the page rather than the offset of the header position).
-            Debug.Assert(asyncResult.fromAddress - pageStart >= PageHeader.Size || asyncResult.fromAddress - pageStart == 0,
-                $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
+            Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
             var logicalAddress = asyncResult.fromAddress;
             if (startOffset == 0)
                 logicalAddress += PageHeader.Size;
@@ -403,11 +402,8 @@ namespace Tsavorite.core
                 srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
 
                 // Overflow Keys and Values are written to, and Object values are serialized to, this Stream.
-                var valueObjectSerializer = storeFunctions.CreateValueObjectSerializer();
-                var logWriter = new ObjectLogWriter(device, flushBuffers, valueObjectSerializer);
+                var logWriter = new ObjectLogWriter<TStoreFunctions>(device, flushBuffers, storeFunctions);
                 _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
-                var objectSerializerInitialized = false;
-                PinnedMemoryStream<ObjectLogWriter> pinnedMemoryStream = new(logWriter);
 
                 // Include page header when calculating end address
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
@@ -428,11 +424,6 @@ namespace Tsavorite.core
                             // Do not write objects for fully-inline records
                             if (!logRecord.Info.RecordIsInline)
                             {
-                                if (!objectSerializerInitialized && logRecord.Info.ValueIsObject)
-                                {
-                                    valueObjectSerializer.BeginSerialize(pinnedMemoryStream);
-                                    objectSerializerInitialized = true;
-                                }
                                 var recordStartPosition = logWriter.GetNextRecordStartPosition();
                                 if (isFirstRecordOnPage)
                                 {
@@ -453,9 +444,6 @@ namespace Tsavorite.core
                     logicalAddress += logRecordSize;    // advance in main log
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
-
-                if (objectSerializerInitialized)
-                    valueObjectSerializer.EndSerialize();
 
                 // We are done with the per-record objectlog flushes and we've updated the copy of the allocator page. Now write that updated page
                 // to the main log file.
@@ -497,19 +485,19 @@ namespace Tsavorite.core
         private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
         {
             // If this fails it is either too-short main-log record or a key mismatch. Let the top-level retry handle it.
-            if (!base.VerifyRecordFromDiskCallback(ref ctx, out prevAddressToRead, out prevLengthToRead) && ctx.diskLogRecord.IsSet)
+            if (!base.VerifyRecordFromDiskCallback(ref ctx, out prevAddressToRead, out prevLengthToRead))
                 return false;
 
-            // If the record is inline, we have not Overflow or Objects to retrieve.
+            // If the record is inline, we have no Overflow or Objects to retrieve.
             ref var diskLogRecord = ref ctx.diskLogRecord;
             if (diskLogRecord.Info.RecordIsInline)
                 return true;
 
-            var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateReadBuffers(bufferPool, objectLogDevice, logger) : default;
+            var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateCircularReadBuffers(bufferPool, objectLogDevice, logger) : default;
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            if (logReader.ReadObjects((long)ctx.record.GetValidPointer(), ctx.record.required_bytes, ctx.request_key, transientObjectIdMap,
-                    objectLogNextRecordStartPosition.SegmentSizeBits, out var logRecord))
+            if (logReader.ReadObjects(diskLogRecord.logRecord.physicalAddress, diskLogRecord.logRecord.GetInlineRecordSizes().actualSize,
+                    ctx.request_key, transientObjectIdMap, objectLogNextRecordStartPosition.SegmentSizeBits, out var logRecord))
             {
                 // Success; set the DiskLogRecord. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
                 ctx.diskLogRecord = new(in logRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));

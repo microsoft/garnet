@@ -18,7 +18,7 @@ namespace Tsavorite.core
     public unsafe struct DiskLogRecord : ISourceLogRecord, IDisposable
     {
         /// <summary>The <see cref="LogRecord"/>> around the record data.</summary>
-        LogRecord logRecord;
+        internal LogRecord logRecord;
 
         /// <summary>The buffer containing the record data, from either disk IO or a copy from a LogRecord that is carried through pending operations
         /// such as Compact or ConditionalCopyToTail. The <see cref="LogRecord"/> contains its <see cref="SectorAlignedMemory.GetValidPointer()"/>

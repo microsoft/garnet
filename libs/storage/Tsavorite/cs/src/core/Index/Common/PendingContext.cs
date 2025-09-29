@@ -131,7 +131,7 @@ namespace Tsavorite.core
             {
                 if (diskLogRecord.IsSet)
                     return;
-                request_key.Dispose();
+                request_key?.Dispose();
                 request_key = new(key, bufferPool);
 
                 if (this.input == default)

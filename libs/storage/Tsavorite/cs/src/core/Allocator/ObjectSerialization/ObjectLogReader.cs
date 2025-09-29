@@ -65,30 +65,50 @@ namespace Tsavorite.core
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <summary>
-        /// Get the object log entries for Overflow Keys and Values and Object Values for the record in recordBuffer, which came from the initial IO operation
-        /// or from an interator record:
-        /// <list type="bullet">
-        /// <item>If there is an Overflow key, read it and if we have a <paramref name="requestedKey"/> compare it and return false if it does not match.
-        ///     Otherwise, store the Key Overflow in the <paramref name="transientMap"/>. If we don't have <paramref name="requestedKey"/>, this is either
-        ///     ReadAtAddress (which is an implicit match) or Scan.</item>
-        /// <item>If we have an Overflow or Object value, read and store in <paramref name="transientMap"/>.</item>
-        /// </list>
+        /// Get the object log entries for Overflow Keys and Values and Object Values for the record at <paramref name="physicalAddress"/>. We create the log record here,
+        /// because we are calling this over a pages from iterator frames or Restore.
         /// </summary>
-        /// <param name="physicalAddress">Pointer to the initial record read from disk--either from Pending IO, in which case it is of size <see cref="IStreamBuffer.InitialIOSize"/>,
-        ///     or from iterator <see cref="BlittableFrame"/>.</param>
+        /// <param name="physicalAddress">Pointer to the initial record read from disk, either from iterator or Restore.</param>
         /// <param name="recordSize">Number of bytes available at <paramref name="physicalAddress"/></param>
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
-        /// <param name="transientMap">The <see cref="ObjectIdMap"/> to place Overflow and Object Keys and Values in.</param>
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to place Overflow and Object Keys and Values in.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <param name="logRecord">The output <see cref="LogRecord"/>, which has its Key and Value ObjectIds filled in in the log record.</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadObjects(long physicalAddress, int recordSize, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientMap, int segmentSizeBits, out LogRecord logRecord)
+        public bool ReadObjects(long physicalAddress, int recordSize, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits, out LogRecord logRecord)
         {
-            logRecord = new LogRecord(physicalAddress, transientMap);
+            logRecord = new LogRecord(physicalAddress, transientObjectIdMap);
             Debug.Assert(logRecord.GetInlineRecordSizes().actualSize <= recordSize, $"RecordSize ({recordSize}) is less than required LogRecord size ({logRecord.GetInlineRecordSizes().actualSize})");
+            return logRecord.Info.RecordIsInline || ReadObjects(ref logRecord, requestedKey, segmentSizeBits);
+        }
 
-            if (logRecord.Info.RecordIsInline)
-                return true;
+        /// <summary>
+        /// Get the object log entries for Overflow Keys and Values and Object Values for the record in <paramref name="diskLogRecord"/>, which came
+        /// from the initial IO operation.
+        /// </summary>
+        /// <param name="diskLogRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.InitialIOSize"/> or less.</param>
+        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
+        /// <param name="segmentSizeBits">Number of bits in segment size</param>
+        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
+        public bool ReadObjects(ref DiskLogRecord diskLogRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+            => diskLogRecord.logRecord.Info.RecordIsInline || ReadObjects(ref diskLogRecord.logRecord, requestedKey, segmentSizeBits);
+
+        /// <summary>
+        /// Get the object log entries for Overflow Keys and Values and Object Values for the <paramref name="logRecord"/>:
+        /// <list type="bullet">
+        /// <item>If there is an Overflow key, read it and if we have a <paramref name="requestedKey"/> compare it and return false if it does not match.
+        ///     Otherwise, store the Key Overflow in the transient <see cref="ObjectIdMap"/> in <paramref name="logRecord"/>.
+        ///     If we don't have <paramref name="requestedKey"/>, this is either ReadAtAddress (which is an implicit match) or Scan or Restore.</item>
+        /// <item>If we have an Overflow or Object value, read and store it in the transient <see cref="ObjectIdMap"/> in <paramref name="logRecord"/>.</item>
+        /// </list>
+        /// </summary>
+        /// <param name="logRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.InitialIOSize"/> or less.</param>
+        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
+        /// <param name="segmentSizeBits">Number of bits in segment size</param>
+        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
+        public bool ReadObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+        {
+            Debug.Assert(!logRecord.Info.RecordIsInline, $"Inline records should have been checked by the caller");
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
