@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
@@ -121,7 +122,9 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task ConcurrentVADDReplicatedVSimsAsync()
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task ConcurrentVADDReplicatedVSimsAsync(bool withAttributes)
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
@@ -163,7 +166,15 @@ namespace Garnet.test.cluster
                         {
                             BinaryPrimitives.WriteInt32LittleEndian(key, i);
                             var val = vectors[i];
-                            var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8"]);
+                            int addRes;
+                            if (withAttributes)
+                            {
+                                addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8", "SETATTR", $"{{ \"id\": {i} }}"]);
+                            }
+                            else
+                            {
+                                addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8"]);
+                            }
                             ClassicAssert.AreEqual(1, addRes);
                         }
                     }
@@ -183,19 +194,51 @@ namespace Garnet.test.cluster
                         await sync.WaitAsync();
 
                         var nonZeroReturns = 0;
+                        var gotAttrs = 0;
 
                         while (!cts.Token.IsCancellationRequested)
                         {
                             var val = vectors[r.Next(vectors.Length)];
 
-                            var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
-                            if (readRes.Length > 0)
+                            if (withAttributes)
                             {
-                                nonZeroReturns++;
+                                var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val, "WITHATTRIBS"]);
+                                if (readRes.Length > 0)
+                                {
+                                    nonZeroReturns++;
+                                }
+
+                                for (var i = 0; i < readRes.Length; i += 2)
+                                {
+                                    var id = readRes[i];
+                                    var attr = readRes[i + 1];
+
+                                    // TODO: Null is possible because of attributes are hacked up today
+                                    //       when they are NOT hacky we can make null illegal
+                                    if ((attr?.Length ?? 0) > 0)
+                                    {
+                                        var asInt = BinaryPrimitives.ReadInt32LittleEndian(id);
+
+                                        var actualAttr = Encoding.UTF8.GetString(attr);
+                                        var expectedAttr = $"{{ \"id\": {asInt} }}";
+
+                                        ClassicAssert.AreEqual(expectedAttr, actualAttr);
+
+                                        gotAttrs++;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
+                                if (readRes.Length > 0)
+                                {
+                                    nonZeroReturns++;
+                                }
                             }
                         }
 
-                        return nonZeroReturns;
+                        return (nonZeroReturns, gotAttrs);
                     }
                 );
 
@@ -206,9 +249,14 @@ namespace Garnet.test.cluster
 
             cts.CancelAfter(TimeSpan.FromSeconds(1));
 
-            var searchesWithNonZeroResults = await readTask;
+            var (searchesWithNonZeroResults, searchesWithAttrs) = await readTask;
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults > 0);
+
+            if (withAttributes)
+            {
+                ClassicAssert.IsTrue(searchesWithAttrs > 0);
+            }
         }
 
         [Test]
