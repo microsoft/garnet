@@ -28,8 +28,8 @@ jobs:
         shell: pwsh
         run: |
           npm install -g allure-commandline --save-dev
-          $npmBin = npm bin -g
-          Add-Content -Path $env:GITHUB_PATH -Value $npmBin   
+#          $npmBin = npm bin -g
+#          Add-Content -Path $env:GITHUB_PATH -Value $npmBin   
 # DEBUG          if ($env:RUNNER_OS -eq "Windows") {
 # DEBUG            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
 # DEBUG            iwr -useb get.scoop.sh | iex
