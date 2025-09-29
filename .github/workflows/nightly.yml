@@ -169,12 +169,21 @@ jobs:
       - name: Install Allure CLI
         shell: pwsh
         run: |
-          Set-ExecutionPolicy RemoteSigned -Scope Process -Force
-          iwr -useb get.scoop.sh | iex
-          scoop install allure
-          $shimPath = "$env:USERPROFILE\scoop\shims"
-          echo "Adding Scoop shims to PATH: $shimPath"
-          echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          if ($env:RUNNER_OS -eq "Windows") {
+            Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+            iwr -useb get.scoop.sh | iex
+            scoop install allure
+            $shimPath = "$env:USERPROFILE\scoop\shims"
+            echo "Adding Scoop shims to PATH: $shimPath"
+            echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+          } elseif ($env:RUNNER_OS -eq "Linux") {
+            npm install -g allure-commandline --save-dev
+            echo "$(npm bin -g)" >> $env:GITHUB_PATH
+          } else {
+            Write-Host "Unsupported OS: $env:RUNNER_OS"
+            exit 1
+          }
 
       - name: Download all test result artifacts
         uses: actions/download-artifact@v4
