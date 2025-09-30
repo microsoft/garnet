@@ -10,8 +10,8 @@ namespace Tsavorite.core
     /// <summary>
     /// Utilities for varlen bytes: one indicator byte identifying the number of key and value bytes. The layout of this indicator byte is:
     /// <list type="bullet">
-    ///     <item>Indicators: version, filler flag</item>
-    ///     <item>Number of bytes in key length; may be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow</item>
+    ///     <item>Indicators: flags, such as filler and ignore optionals</item>
+    ///     <item>Number of bytes in key length; may be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow. Max is </item>
     ///     <item>Number of bytes in value length; may be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow or Object</item>
     /// </list>
     /// This is followed by the actual key length and value length, which may be inline length or <see cref="ObjectIdMap.ObjectIdSize"/> if Overflow
@@ -20,14 +20,20 @@ namespace Tsavorite.core
     /// </summary>
     public static unsafe class VarbyteLengthUtility
     {
-        // Indicator bits for version and varlen int. Since the record is always aligned to 8 bytes, we can use long operations (on values only in
-        // the low byte) which are faster than byte or int. 
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
-        // The top 3 bits are Indicator metadata
-        const long kVersionBitMask = 7 << 6;            // 2 bits for version; currently not checked and may be repurposed
-        const long CurrentVersion = 0 << 6;             // Initial version is 0; shift will always be 6
+        const long kReservedBitMask = 0 << 7;           // Reserved bit
 
-        internal const long kHasFillerBitMask = 1 << 5; // 1 bit for "has filler" indicator
+        /// <summary>
+        /// When we are updating a record and changing length components (value length, or the presence or absence or length of optional fields),
+        /// we must not let Scan see a record with inconsistent lengths. Thus, we set this bit and adjust value length to the entire record while
+        /// updating the record, and <see cref="LogRecord.GetInlineRecordSizes"/> ignores the optional fields and uses only the key and value lengths
+        /// (along with RecordInfo and the varbyte length word) to calculate record length.
+        /// </summary>
+        internal const long kIgnoreOptionalsBitMask = 1 << 6;
+
+        /// <summary> If this is set, then we have extra length in the record after any optional fields. We may have some extra length that is
+        /// less than the size of an int even if this bit is not set, due to record-alignment padding.</summary>
+        internal const long kHasFillerBitMask = 1 << 5;
 
         // The bottom 5 bits are actual length bytecounts
         /// <summary>
@@ -58,14 +64,12 @@ namespace Tsavorite.core
         /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
         internal const int NumIndicatorBytes = 1;
 
-        /// <summary>The maximum number of key length bytes in the in-memory single-long word representation. Anything over this becomes overflow.</summary>
-        internal const int MaxKeyLengthBytesInWord = 3;
-        /// <summary>The maximum number of value length bytes in the in-memory single-long word representation. Anything over this becomes overflow.</summary>
-        internal const int MaxValueLengthBytesInWord = 4;
-
-        /// <summary>Version of the variable-length byte encoding for key and value lengths. There is no version info for <see cref="RecordInfo.RecordIsInline"/>
-        /// records as these are image-identical to LogRecord. TODO: Include a major version for this in the Recovery version-compatibility detection</summary>
-        internal static long GetVersion(byte indicatorByte) => (indicatorByte & kVersionBitMask) >> 6;
+        /// <summary>The maximum number of key length bytes in the in-memory single-long word representation. We use zero-based sizes and add 1, so
+        /// 1 bit allows us to specify 1 or 2 bytes; we max at 2, or <see cref="LogSettings.kMaxInlineKeySize"/>. Anything over this becomes overflow.</summary>
+        internal const int MaxKeyLengthBytesInWord = 2;
+        /// <summary>The maximum number of value length bytes in the in-memory single-long word representation. We use zero-based sizes and add 1, so
+        /// 2 bits allows us to specify 1 to 4 bytes; we max at 3, or <see cref="LogSettings.kMaxInlineValueSize"/>. Anything over this becomes overflow.</summary>
+        internal const int MaxValueLengthBytesInWord = 3;
 
         /// <summary>Read var-length bytes at the given location.</summary>
         /// <remark>This is compatible with little-endian 'long'; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
@@ -126,16 +130,16 @@ namespace Tsavorite.core
         {
             keyByteCount = GetByteCount(keyLength);
             valueByteCount = GetByteCount(valueLength);
-            return (byte)(CurrentVersion                // Already shifted
-                | ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
+            return (byte)(
+                  ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
                 | (long)(valueByteCount - 1));          // Value does not need to be shifted; subtract 1 for 0-based
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static byte ConstructIndicatorByte(int keyByteCount, int valueByteCount)
         {
-            return (byte)(CurrentVersion                // Already shifted
-                | ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
+            return (byte)(
+                  ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
                 | (long)(valueByteCount - 1));          // Value does not need to be shifted; subtract 1 for 0-based
         }
 
@@ -147,6 +151,9 @@ namespace Tsavorite.core
             var hasFiller = (indicatorByte & kHasFillerBitMask) != 0;
             return (keyLengthBytes, valueLengthBytes, hasFiller);
         }
+
+        internal static long CreateIgnoreOptionalsVarbyteWord(int keyLengthBytes, int keyLength, int valueLengthBytes, int valueLength)
+            => ConstructInlineVarbyteLengthWord(keyLengthBytes, keyLength, valueLengthBytes, valueLength, flagBits: kIgnoreOptionalsBitMask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool HasFiller(byte indicatorByte) => (indicatorByte & kHasFillerBitMask) != 0;
@@ -237,15 +244,15 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="keyLength">The inline length of the key</param>
         /// <param name="valueLength">The inline length of the value</param>
-        /// <param name="hasFillerBit">Either kHasFillerBitMask if we have set a filler length into the in-memory record, or 0</param>
+        /// <param name="flagBits">Either kHasFillerBitMask if we have set a filler length into the in-memory record, or 0</param>
         /// <param name="keyLengthBytes">Receives the number of bytes in the key length</param>
         /// <param name="valueLengthBytes">Receives the number of bytes in the value length</param>
         /// <returns></returns>
-        internal static unsafe long ConstructInlineVarbyteLengthWord(int keyLength, int valueLength, long hasFillerBit, out int keyLengthBytes, out int valueLengthBytes)
+        internal static unsafe long ConstructInlineVarbyteLengthWord(int keyLength, int valueLength, long flagBits, out int keyLengthBytes, out int valueLengthBytes)
         {
             keyLengthBytes = GetByteCount(keyLength);
             valueLengthBytes = GetByteCount(valueLength);
-            return ConstructInlineVarbyteLengthWord(keyLengthBytes, keyLength, valueLengthBytes, valueLength, hasFillerBit);
+            return ConstructInlineVarbyteLengthWord(keyLengthBytes, keyLength, valueLengthBytes, valueLength, flagBits);
         }
 
         /// <summary>
@@ -256,13 +263,13 @@ namespace Tsavorite.core
         /// <param name="keyLength">The inline length of the key</param>
         /// <param name="valueLengthBytes">Number of bytes in the value length</param>
         /// <param name="valueLength">The inline length of the value</param>
-        /// <param name="hasFillerBit">Either kHasFillerBitMask if we have set a filler length into the in-memory record, or 0</param>
+        /// <param name="flagBits"><see cref="kHasFillerBitMask"/>, <see cref="kIgnoreOptionalsBitMask"/>, or 0</param>
         /// <returns></returns>
-        internal static unsafe long ConstructInlineVarbyteLengthWord(int keyLengthBytes, int keyLength, int valueLengthBytes, int valueLength, long hasFillerBit)
+        internal static unsafe long ConstructInlineVarbyteLengthWord(int keyLengthBytes, int keyLength, int valueLengthBytes, int valueLength, long flagBits)
         {
             var word = (long)0;
             var ptr = (byte*)&word;
-            var indicatorByte = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | hasFillerBit);
+            var indicatorByte = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | flagBits);
             *ptr++ = indicatorByte;
 
             WriteVarbyteLengthInWord(ref word, keyLength, precedingNumBytes: 0, keyLengthBytes);
@@ -280,8 +287,8 @@ namespace Tsavorite.core
         {
             var ptr = (byte*)&word;
             (var keyLengthBytes, var valueLengthBytes, var hasFiller) = DeconstructIndicatorByte(*ptr++);
-            Debug.Assert(keyLengthBytes <= 3, "Inline keyLengthBytes limit exceeded");
-            Debug.Assert(valueLengthBytes <= 4, "Inline valueLengthBytes limit exceeded");
+            Debug.Assert(keyLengthBytes <= MaxKeyLengthBytesInWord, "Inline keyLengthBytes limit exceeded");
+            Debug.Assert(valueLengthBytes <= MaxValueLengthBytesInWord, "Inline valueLengthBytes limit exceeded");
 
             var keyLength = ReadVarbyteLengthInWord(*(long*)ptr, precedingNumBytes: 0, keyLengthBytes);
             var valueLength = ReadVarbyteLengthInWord(*(long*)ptr, precedingNumBytes: keyLengthBytes, valueLengthBytes);
@@ -323,5 +330,7 @@ namespace Tsavorite.core
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             *(long*)indicatorAddress = word;
         }
+
+
     }
 }

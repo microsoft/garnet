@@ -43,11 +43,14 @@ namespace Tsavorite.core
         /// <summary>Default number of bits for the size of an inline (not overflow) key</summary>
         public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;
 
-        /// <summary>Max inline key size is 3 bytes for the length, so that the in-memory varbyte indicator word is &lt;= sizeof(long) for atomic assignment.</summary>
-        public const int kMaxInlineKeySize = 0xFFFFFF;
+        /// <summary>Max inline key size is 1 byte for the length (0 or 1, with 1 added to make a range of 1-2), so that the in-memory varbyte indicator word is &lt;= sizeof(long) for atomic assignment.</summary>
+        public const int kMaxInlineKeySize = 1 << 16;           // 64KB
 
         /// <summary>Default number of bits for the size of an inline (not overflow) value, for <see cref="SpanByteAllocator{TStoreFunctions}"/></summary>
-        public const int kDefaultMaxInlineValueSizeBits = 10;
+        public const int kDefaultMaxInlineValueSizeBits = 12;   // 4KB
+
+        /// <summary>Max inline value size is 2 bytes for the length (0 to 3, with 1 added to make a range of 1-4, and we max at 3), so that the in-memory varbyte indicator word is &lt;= sizeof(long) for atomic assignment.</summary>
+        public const int kMaxInlineValueSize = 1 << 24;         // 16MB
 
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
         public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;

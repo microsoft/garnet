@@ -77,7 +77,7 @@ namespace Tsavorite.core
         {
             // Varbyte lengths. Add optionalSize to the effective value size when calculating valueLengthBytes so the value can grow if optionals are removed
             // (otherwise the filler-related calculations would require additional logic to constrain value size to the # of bytes we calculate here).
-            IndicatorWord = ConstructInlineVarbyteLengthWord(keySize, valueSize, hasFillerBit: 0, out KeyLengthBytes, out ValueLengthBytes);
+            IndicatorWord = ConstructInlineVarbyteLengthWord(keySize, valueSize, flagBits: 0, out KeyLengthBytes, out ValueLengthBytes);
 
             // Record
             var numVarbytes = NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes;
