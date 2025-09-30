@@ -13,15 +13,15 @@ permissions:
   
 jobs:
   build-test-all:
-    name: All Tests Nightly
+    name: Test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
         os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
 
     steps:
       - name: Install Allure CLI
@@ -46,23 +46,61 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@v4
+
+      # Specific to Tsav
+      - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
+        run: |
+           sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
+        if: ${{ matrix.os == 'ubuntu-24.04' }}        
+
+      - name: Set environment variable for Linux
+        run: echo "RunAzureTests=yes" >> $GITHUB_ENV
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+
+      - name: Set environment variable for Windows
+        run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
+        if: ${{ matrix.os == 'windows-latest' }}
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
+
+      - name: Setup Node.js for Azurite
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install and Run Azurite
+        shell: bash
+        run: |
+          npm install -g azurite
+          azurite &
+      # Specific to Tsav
+          
       - name: Install dependencies
         run: dotnet restore
+
 # DEBUG      - name: Check style format
 # DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
-      - name: Build Garnet
-        run: dotnet build --configuration ${{ matrix.configuration }}
+
+      - name: Build Tsavorite.test
+        if: ${{ matrix.test == 'Tsavorite.test' }}
+        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+
+      - name: Build ${{ matrix.test }}
+        if: ${{ matrix.test != 'Tsavorite.test' }}
+        run: dotnet build ${{ matrix.test }} --configuration ${{ matrix.configuration }}
+
 # DEBUG      - name: Run tests ${{ matrix.test }}
-# DEBUG        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+# DEBUG Garnet & cluster        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+# Tsav        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+
 # DEBUG        timeout-minutes: 45 
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
       - name: DEBUG Debug path existence using matrix variables
