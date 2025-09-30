@@ -1593,9 +1593,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger) => default;
+        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger) => default;
+        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
 
         /// <summary>
         /// Flush page range to disk
@@ -1623,7 +1623,7 @@ namespace Tsavorite.core
             // increases monotonically.
 
             // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
-            using var flushBuffers = CreateCircularFlushBuffers(bufferPool, objectLogDevice: null, logger);
+            using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
 
             // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
@@ -1718,7 +1718,7 @@ namespace Tsavorite.core
         public void AsyncFlushPagesForRecovery<TContext>(long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
         {
             // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
-            using var flushBuffers = CreateCircularFlushBuffers(bufferPool, objectLogDevice: null, logger);
+            using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
 
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
@@ -1770,7 +1770,7 @@ namespace Tsavorite.core
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
                 // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator). This calls our callback when the last write of a partial flush completes.
-                using var flushBuffers = CreateCircularFlushBuffers(bufferPool, objectLogDevice, logger);
+                using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice, logger);
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {

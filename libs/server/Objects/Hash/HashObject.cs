@@ -76,7 +76,7 @@ namespace Garnet.server
         ///  Constructor
         /// </summary>
         public HashObject()
-            : base(new(MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(new(MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
         {
             hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
 #if NET9_0_OR_GREATER

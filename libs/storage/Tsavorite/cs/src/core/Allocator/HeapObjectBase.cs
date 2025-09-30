@@ -19,12 +19,15 @@ namespace Tsavorite.core
 
         /// <summary>Serialized size, for disk IO or other storage</summary>
         public bool SerializedIsExact;
-        public ObjectSizes(long heap, long serialized) { }
-
-        public ObjectSizes(long heap, long serialized, bool serializedIsExact)
+        public ObjectSizes(long heap, long serialized)
         {
             HeapMemory = heap;
             Serialized = serialized + sizeof(byte); // Additional byte for GarnetObjectBase.Type
+        }
+
+        public ObjectSizes(long heap, long serialized, bool serializedIsExact)
+            : this(heap, serialized)
+        {
             this.SerializedIsExact = serializedIsExact;
         }
 

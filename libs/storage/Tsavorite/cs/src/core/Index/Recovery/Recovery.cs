@@ -697,7 +697,7 @@ namespace Tsavorite.core
             // constraint are freed.
             FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlogBase.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
 
-            var readBuffers = hlogBase.CreateCircularReadBuffers(hlogBase.bufferPool, recoveryStatus.objectLogRecoveryDevice, logger);
+            var readBuffers = hlogBase.CreateCircularReadBuffers(recoveryStatus.objectLogRecoveryDevice, logger);
 
             // Issue request to read pages as much as possible
             for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlogBase.GetPageIndexForPage(p)] = ReadStatus.Pending;
@@ -1292,7 +1292,7 @@ namespace Tsavorite.core
                     }
 
                     // Null objectLogDevice means we'll use the one in the allocator
-                    var readBuffers = CreateCircularReadBuffers(bufferPool, objectLogDevice: null, logger);
+                    var readBuffers = CreateCircularReadBuffers(objectLogDevice: null, logger);
                     AsyncReadPagesForRecovery(readBuffers, headPage, numPages, untilAddress, AsyncReadPagesCallbackForRecovery, recoveryStatus);
                     return true;
                 }

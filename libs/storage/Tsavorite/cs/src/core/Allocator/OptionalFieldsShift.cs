@@ -6,8 +6,13 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Saves optional fields (ETag and Expiration) during a record-resizing operation and restores them when done.
+    /// Saves optional fields ETag and Expiration during a record-resizing operation and restores them when done.
     /// </summary>
+    /// <remarks>
+    /// We don't save ObjectLogPosition; that's only used during Serialization. The caller (TrySetValueLength) adjusts filler
+    /// address and length by the growth (positive or negative) of the object value, so no address adjustment or zeroing of
+    /// space is needed.
+    /// </remarks>
     internal unsafe struct OptionalFieldsShift
     {
         long eTag;

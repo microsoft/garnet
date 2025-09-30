@@ -321,12 +321,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
-        internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger)
+        internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
-        internal override CircularDiskReadBuffer CreateCircularReadBuffers(SectorAlignedBufferPool bufferPool, IDevice objectLogDevice, ILogger logger)
+        internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
+
+        private CircularDiskReadBuffer CreateCircularReadBuffers()
+            => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
 
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
@@ -493,7 +496,7 @@ namespace Tsavorite.core
             if (diskLogRecord.Info.RecordIsInline)
                 return true;
 
-            var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateCircularReadBuffers(bufferPool, objectLogDevice, logger) : default;
+            var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateCircularReadBuffers(objectLogDevice, logger) : default;
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             if (logReader.ReadObjects(diskLogRecord.logRecord.physicalAddress, diskLogRecord.logRecord.GetInlineRecordSizes().actualSize,
@@ -605,7 +608,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeClosedRecords)
-            => new SpanByteScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
+            => new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(CreateCircularReadBuffers(), store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
@@ -613,7 +616,7 @@ namespace Tsavorite.core
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode scanBufferingMode)
         {
-            using SpanByteScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -624,9 +627,9 @@ namespace Tsavorite.core
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress,
                 bool resetCursor = true, bool includeTombstones = false)
         {
-            using SpanByteScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
                 includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, SpanByteScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
+            return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
                 maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
         }
 
@@ -636,7 +639,7 @@ namespace Tsavorite.core
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using SpanByteScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, beginAddress, epoch, logger: logger);
             return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
         }
 

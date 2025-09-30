@@ -204,7 +204,6 @@ namespace Tsavorite.core
                     if (offset + allocatedSize > hlogBase.PageSize)
                     {
                         nextAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(1 + hlogBase.GetPage(currentAddress));
-                        epoch.Suspend();
                         continue;
                     }
 
@@ -237,8 +236,10 @@ namespace Tsavorite.core
                             }
 
                             // These objects are still alive in the log, so do not dispose the value object if any (SpanByteAllocator has none).
-                            Buffer.MemoryCopy((byte*)physicalAddress, recordBuffer.GetValidPointer(), allocatedSize, allocatedSize);
-                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverTransientMemory(currentAddress, physicalAddress);
+                            // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
+                            var remapPtr = recordBuffer.GetValidPointer();
+                            Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
+                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverTransientMemory(currentAddress, (long)remapPtr);
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
                         }
                         finally

@@ -80,7 +80,7 @@ namespace Tsavorite.core
             IndicatorWord = ConstructInlineVarbyteLengthWord(keySize, valueSize, hasFillerBit: 0, out KeyLengthBytes, out ValueLengthBytes);
 
             // Record
-            var numVarbytes = 1 + KeyLengthBytes + ValueLengthBytes;
+            var numVarbytes = NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes;
             ActualInlineRecordSize = RecordInfo.Size + numVarbytes + keySize + valueSize + OptionalSize;
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
         }

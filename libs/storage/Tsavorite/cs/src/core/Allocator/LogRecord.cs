@@ -426,9 +426,11 @@ namespace Tsavorite.core
             // directly from RecordInfo's HasETag and HasExpiration bits, which we do not change here). Scan will now be able to navigate to the end of
             // the record via GetInlineRecordSizes().allocatedSize.
             var oldValueAndFillerSize = (int)(oldInlineValueSize + fillerLen);
-            Debug.Assert(GetByteCount(oldValueAndFillerSize + oldOptionalSize) == valueLengthBytes,
-                    $"GetByteCount(postKeySpace + oldOptionalSize) {GetByteCount(oldValueAndFillerSize + oldOptionalSize)} to equal valueLengthBytes {valueLengthBytes}");
-            UpdateInlineVarbyteLengthWord(IndicatorAddress, keyLengthBytes, valueLengthBytes, oldValueAndFillerSize, hasFillerBit: 0);
+            
+            //TODOnow: about to be replaced
+            //Debug.Assert(GetByteCount(oldValueAndFillerSize + oldOptionalSize) == valueLengthBytes,
+            //        $"GetByteCount(postKeySpace + oldOptionalSize) {GetByteCount(oldValueAndFillerSize + oldOptionalSize)} to equal valueLengthBytes {valueLengthBytes}");
+            //UpdateInlineVarbyteLengthWord(IndicatorAddress, keyLengthBytes, valueLengthBytes, oldValueAndFillerSize, hasFillerBit: 0);
 
             // Update record part 2: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
             // overflow and they'd overwrite needed data.
@@ -647,9 +649,10 @@ namespace Tsavorite.core
         public readonly void InitializeFillerLength(in RecordSizeInfo sizeInfo)
         {
             // This assumes Key and Value lengths have been set. It is called when we have initialized a record, or reinitialized due to revivification etc.
-            // Therefore optional (ETag, Expiration) space is considered filler here.
+            // Therefore the Optional ETag and Expiration flags have not yet been set in this LogRecord, so their space is considered filler here until we
+            // actually set them. However ObjectLogPositionSize is necessary if the ValueIsObject flag is set, so just subtract ETag and Expiration space.
             Debug.Assert(!Info.HasOptionalFields, "Expected no optional flags in RecordInfo in InitializeFillerLength");
-            var usedSize = sizeInfo.ActualInlineRecordSize - sizeInfo.OptionalSize;
+            var usedSize = sizeInfo.ActualInlineRecordSize - sizeInfo.ETagSize - sizeInfo.ExpirationSize;
             var fillerSize = sizeInfo.AllocatedInlineRecordSize - usedSize;
 
             if (fillerSize >= FillerLengthSize)
@@ -700,7 +703,7 @@ namespace Tsavorite.core
             if (fillerLen < 0)
                 return false;
 
-            // Start at FillerLen address and back up, for speed
+            // Start at FillerLen address and back up, for speed.
             var address = fillerLenAddress;
 
             // Preserve zero-init by:
@@ -708,6 +711,10 @@ namespace Tsavorite.core
             //      - We must do this here in case there is not enough room for filler after the growth.
             if (HasFiller(IndicatorByte))
                 *(int*)address = 0;
+
+            // We don't preserve the ObjectLogPosition field; that's only for serialization. We'll set it to 0 below.
+            if (Info.ValueIsObject)
+                address -= ObjectLogPositionSize;
 
             //  - Preserve Expiration if present; set ETag; re-enter Expiration if present
             var expiration = 0L;
@@ -725,6 +732,13 @@ namespace Tsavorite.core
             {
                 *(long*)address = expiration;   // will be 0 or a valid expiration
                 address += ExpirationSize;      // repositions to fillerAddress
+            }
+
+            // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
+            if (Info.ValueIsObject)
+            {
+                *(long*)address = 0;
+                address += ObjectLogPositionSize;
             }
 
             //  - Set the new (reduced) FillerLength if there is still space for it.
@@ -757,6 +771,14 @@ namespace Tsavorite.core
             //  - Zeroing out FillerLen (this will leave only zeroes all the way to the next record, as there is nothing past FillerLen in this record).
             if (HasFiller(IndicatorByte))
                 *(int*)address = 0;
+
+            // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here.
+            if (Info.ValueIsObject)
+            {
+                address -= ObjectLogPositionSize;
+                *(long*)address = 0;
+            }
+
             //  - Move Expiration, if present, up to cover ETag; then clear the ETag bit
             var expiration = 0L;
             var expirationSize = 0;
@@ -773,6 +795,13 @@ namespace Tsavorite.core
             *(long*)address = expiration;       // will be 0 or a valid expiration
             address += expirationSize;          // repositions to fillerAddress if expirationSize is nonzero
             InfoRef.ClearHasETag();
+
+            // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
+            if (Info.ValueIsObject)
+            {
+                *(long*)address = 0;
+                address += ObjectLogPositionSize;
+            }
 
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= FillerLengthSize)
@@ -815,10 +844,21 @@ namespace Tsavorite.core
             if (HasFiller(IndicatorByte))
                 *(int*)fillerLenAddress = 0;
 
+            // We don't preserve the ObjectLogPosition field; that's only for serialization. We'll set it to 0 below.
+            if (Info.ValueIsObject)
+                fillerLenAddress -= ObjectLogPositionSize;
+
             //  - Set Expiration where filler space used to be
             InfoRef.SetHasExpiration();
             *(long*)fillerLenAddress = expiration;
             fillerLenAddress += ExpirationSize;
+
+            // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
+            if (Info.ValueIsObject)
+            {
+                *(long*)fillerLenAddress = 0;
+                fillerLenAddress += ObjectLogPositionSize;
+            }
 
             //  - Set the new (reduced) FillerLength if there is still space for it.
             if (fillerLen >= FillerLengthSize)
@@ -849,10 +889,24 @@ namespace Tsavorite.core
             if (HasFiller(IndicatorByte))
                 *(int*)fillerLenAddress = 0;
 
+            // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here and remove the space.
+            if (Info.ValueIsObject)
+            {
+                fillerLenAddress -= ObjectLogPositionSize;
+                *(long*)fillerLenAddress = 0;
+            }
+
             //  - Remove Expiration and clear the Expiration bit; this will be the new fillerLenAddress
             fillerLenAddress -= ExpirationSize;
             *(long*)fillerLenAddress = 0;
             InfoRef.ClearHasExpiration();
+
+            // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
+            if (Info.ValueIsObject)
+            {
+                *(long*)fillerLenAddress = 0;
+                fillerLenAddress += ObjectLogPositionSize;
+            }
 
             //  - Set the new (increased) FillerLength if there is space for it.
             if (fillerLen >= FillerLengthSize)
