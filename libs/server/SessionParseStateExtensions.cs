@@ -631,9 +631,12 @@ namespace Garnet.server
         /// <param name="parseState">The parse state</param>
         /// <param name="idx">The argument index</param>
         /// <param name="value">Parsed value</param>
+        /// <param name="nextIdxStep">Number of indexes to skip before reading the next element</param>
+        /// <param name="etag">Etag input, -1 unless IFETAGGREATER or IFETAGMATCH options are specified</param>
         /// <returns>True if value parsed successfully</returns>
-        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value)
+        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value, out int nextIdxStep, ref long etag)
         {
+            nextIdxStep = 0;
             value = SortedSetAddOption.None;
             var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
 
@@ -649,6 +652,24 @@ namespace Garnet.server
                 value = SortedSetAddOption.CH;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("INCR"u8))
                 value = SortedSetAddOption.INCR;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("WITHETAG"u8))
+                value = SortedSetAddOption.WITHETAG;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("IFETAGGREATER"u8))
+            {
+                value = SortedSetAddOption.IFETAGGREATER;
+                if (parseState.Count < idx + 2 || !parseState.TryGetLong(idx + 1, out etag))
+                    return false;
+                
+                nextIdxStep = 1;
+            }
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("IFETAGMATCH"u8))
+            {
+                value = SortedSetAddOption.IFETAGMATCH;
+                if (parseState.Count < idx + 2 || !parseState.TryGetLong(idx + 1, out etag))
+                    return false;
+
+                nextIdxStep = 1;
+            }
             else return false;
 
             return true;

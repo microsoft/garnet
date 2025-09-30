@@ -111,6 +111,18 @@ namespace Garnet.server
         /// When this option is specified ZADD acts like ZINCRBY. Only one score-element pair can be specified in this mode.
         /// </summary>
         INCR = 1 << 5,
+        /// <summary>
+        /// Return the etag along with the response.
+        /// </summary>
+        WITHETAG = 1 << 6,
+        /// <summary>
+        /// Only update the element if the provided etag is greater than the current etag.
+        /// </summary>
+        IFETAGGREATER = 1 << 7,
+        /// <summary>
+        /// Only update the element if the provided etag matches the current etag.
+        /// </summary>
+        IFETAGMATCH = 1 << 8,
     }
 
     /// <summary>
@@ -319,7 +331,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     byte respProtocolVersion, long etag, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -337,7 +349,7 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, respProtocolVersion, etag);
                     break;
                 case SortedSetOperation.ZREM:
                     SortedSetRemove(ref input, ref output);

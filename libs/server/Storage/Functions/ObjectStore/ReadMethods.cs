@@ -43,7 +43,7 @@ namespace Garnet.server
                     default:
                         if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                         {
-                            var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                            var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
                             if (output.HasWrongType)
                                 return true;
 

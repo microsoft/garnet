@@ -22,9 +22,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
+        /// <param name="respProtocolVersion"></param>
+        /// <param name="etag"></param>
         /// <param name="sizeChange"></param>
         /// <returns></returns>
-        bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, out long sizeChange);
+        bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, long etag, out long sizeChange);
 
         /// <summary>
         /// Serializer

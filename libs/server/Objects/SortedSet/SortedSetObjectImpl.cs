@@ -36,17 +36,18 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, ref RespMemoryWriter writer)
+        bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, out long etag, ref RespMemoryWriter writer)
         {
             options = SortedSetAddOption.None;
+            etag = -1;
 
             while (currTokenIdx < input.parseState.Count)
             {
-                if (!input.parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption))
+                if (!input.parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption, out var nextIdxStep, ref etag))
                     break;
 
                 options |= currOption;
-                currTokenIdx++;
+                currTokenIdx += nextIdxStep + 1;
             }
 
             // Validate ZADD options combination
@@ -64,6 +65,18 @@ namespace Garnet.server
                  (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
                 (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
                 optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
+
+            // IFETAGGREATER & IFETAGMATCH are mutually exclusive
+            if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER &&
+                (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
+                optionsError = CmdStrings.RESP_ERR_IFETAGGREATER_IFETAGMATCH_NOT_COMPATIBLE;
+
+            if (((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER ||
+                (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH) && etag == -1)
+            {
+                writer.WriteError(CmdStrings.RESP_ERR_INVALID_OR_MISSING_ETAG);
+                return false;
+            }
 
             // INCR supports only one score-element pair
             if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
@@ -87,7 +100,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, long etag)
         {
             DeleteExpiredItems();
 
@@ -97,6 +110,7 @@ namespace Garnet.server
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
             var parsedOptions = false;
+            long inputEtag = -1;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -111,7 +125,7 @@ namespace Garnet.server
                         if (!parsedOptions)
                         {
                             parsedOptions = true;
-                            if (!GetOptions(ref input, ref currTokenIdx, out options, ref writer))
+                            if (!GetOptions(ref input, ref currTokenIdx, out options, out inputEtag, ref writer))
                                 return;
                             continue; // retry after parsing options
                         }
@@ -121,6 +135,17 @@ namespace Garnet.server
                             writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
                             return;
                         }
+                    }
+
+                    if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER)
+                    {
+                        if (etag >= inputEtag)
+                            break;
+                    }
+                    else if ((options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
+                    {
+                        if (etag != inputEtag)
+                            break;
                     }
 
                     parsedOptions = true;
@@ -196,6 +221,12 @@ namespace Garnet.server
                 if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                 {
                     writer.WriteDoubleNumeric(incrResult);
+                }
+                else if ((options & SortedSetAddOption.WITHETAG) == SortedSetAddOption.WITHETAG)
+                {
+                    writer.WriteArrayLength(2);
+                    writer.WriteInt64(etag);
+                    writer.WriteInt32(addedOrChanged);
                 }
                 else
                 {

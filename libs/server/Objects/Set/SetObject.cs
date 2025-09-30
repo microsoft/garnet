@@ -123,7 +123,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     byte respProtocolVersion, long etag, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
