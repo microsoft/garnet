@@ -12,8 +12,8 @@ permissions:
   contents: read
   
 jobs:
-  build-test-garnet:
-    name: Garnet
+  build-test-all:
+    name: All Tests Nightly
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -21,7 +21,7 @@ jobs:
         os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
 
     steps:
       - name: Install Allure CLI
@@ -40,7 +40,7 @@ jobs:
               Write-Host "Unsupported OS: $env:RUNNER_OS"
               exit 1
             }
-      - name: Verify Allure installation
+      - name: DEBUG Verify Allure installation
         run: allure --version
         shell: pwsh
 
@@ -115,59 +115,62 @@ jobs:
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code
-  build-test-tsavorite:        
-    name: Tsavorite
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Debug', 'Release' ]
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
-        run: |
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-        if: ${{ matrix.os == 'ubuntu-24.04' }}        
-      - name: Set environment variable for Linux
-        run: echo "RunAzureTests=yes" >> $GITHUB_ENV
-        if: ${{ matrix.os == 'ubuntu-24.04' }}
-      - name: Set environment variable for Windows
-        run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
-        if: ${{ matrix.os == 'windows-latest' }}
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-      - name: Setup Node.js for Azurite
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-# DEBUG      - name: Install and Run Azurite
-# DEBUG        shell: bash
-# DEBUG        run: |
-# DEBUG          npm install -g azurite
-# DEBUG          azurite &
-# DEBUG      - name: Install dependencies
-# DEBUG        run: dotnet restore
+  # build-test-tsavorite:        
+  #   name: Tsavorite
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
+  #       framework: [ 'net8.0', 'net9.0' ]
+  #       configuration: [ 'Debug', 'Release' ]
+  #   steps:
+  #     - name: Check out code
+  #       uses: actions/checkout@v4
+  #     - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
+  #       run: |
+  #         sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
+  #       if: ${{ matrix.os == 'ubuntu-24.04' }}        
+  #     - name: Set environment variable for Linux
+  #       run: echo "RunAzureTests=yes" >> $GITHUB_ENV
+  #       if: ${{ matrix.os == 'ubuntu-24.04' }}
+  #     - name: Set environment variable for Windows
+  #       run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
+  #       if: ${{ matrix.os == 'windows-latest' }}
+  #     - name: Setup .NET
+  #       uses: actions/setup-dotnet@v4
+  #     - name: Setup Node.js for Azurite
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '20'
+  #     - name: Install and Run Azurite
+  #       shell: bash
+  #       run: |
+  #         npm install -g azurite
+  #         azurite &
+
+  #     - name: Install dependencies
+  #       run: dotnet restore
+
 # DEBUG      - name: Format
 # DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
-# DEBUG      - name: Build Tsavorite
-# DEBUG        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+      # - name: Build Tsavorite
+      #   run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
 # DEBUG      - name: Run Tsavorite tests
 # DEBUG        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 # DEBUG        timeout-minutes: 45 
-# DEBUG      - name: Upload test results
-# DEBUG        uses: actions/upload-artifact@v4
-# DEBUG        with:
-# DEBUG          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-# DEBUG          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-# DEBUG        if: ${{ always() }}
+      # - name: Upload test results
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+      #     path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+      #   if: ${{ always() }}
 
   generate-allure-report:
     name: Generate Allure Report
     runs-on: windows-2022  # makes it easy on how calls made so don't have to worry about windows and linux
-    needs: [ build-test-garnet, build-test-tsavorite ]
+# DEBUG    needs: [ build-test-garnet, build-test-tsavorite ]
+    needs: [ build-test-all ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
       - name: Checkout repository
