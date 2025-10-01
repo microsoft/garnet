@@ -133,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          Write-Host "Contents of $dest:"
+          Write-Host "Contents of ${dest}:"
           Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
 
       - name: Stage allure-results into test/Allure/AllResults
