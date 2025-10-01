@@ -681,13 +681,14 @@ namespace Garnet.server
 
                     GarnetStatus res;
                     VectorManagerResult vectorRes;
+                    VectorIdFormat idFormat;
                     if (element.IsEmpty)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, ref distanceResult, ref attributeResult, out vectorRes);
+                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
                     }
                     else
                     {
-                        res = storageApi.VectorSetElementSimilarity(key, element, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, ref distanceResult, ref attributeResult, out vectorRes);
+                        res = storageApi.VectorSetElementSimilarity(key, element, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
                     }
 
                     if (res == GarnetStatus.NOTFOUND)
@@ -732,20 +733,39 @@ namespace Garnet.server
 
                                 for (var resultIndex = 0; resultIndex < distancesSpan.Length; resultIndex++)
                                 {
-                                    if (remainingIds.Length < sizeof(int))
+                                    ReadOnlySpan<byte> elementData;
+
+                                    if (idFormat == VectorIdFormat.I32LengthPrefixed)
                                     {
-                                        throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                        if (remainingIds.Length < sizeof(int))
+                                        {
+                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                        }
+
+                                        var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+
+                                        if (remainingIds.Length < sizeof(int) + elementLen)
+                                        {
+                                            throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                        }
+
+                                        elementData = remainingIds.Slice(sizeof(int), elementLen);
+                                        remainingIds = remainingIds[(sizeof(int) + elementLen)..];
                                     }
-
-                                    var elementLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
-
-                                    if (remainingIds.Length < sizeof(int) + elementLen)
+                                    else if (idFormat == VectorIdFormat.FixedI32)
                                     {
-                                        throw new GarnetException($"Insufficient bytes for result of length={elementLen} at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
-                                    }
+                                        if (remainingIds.Length < sizeof(int))
+                                        {
+                                            throw new GarnetException($"Insufficient bytes for result id length at resultIndex={resultIndex}: {Convert.ToHexString(distanceResult.AsReadOnlySpan())}");
+                                        }
 
-                                    var elementData = remainingIds.Slice(sizeof(int), elementLen);
-                                    remainingIds = remainingIds[(sizeof(int) + elementLen)..];
+                                        elementData = remainingIds[..sizeof(int)];
+                                        remainingIds = remainingIds[sizeof(int)..];
+                                    }
+                                    else
+                                    {
+                                        throw new GarnetException($"Unexpected id format: {idFormat}");
+                                    }
 
                                     while (!RespWriteUtils.TryWriteBulkString(elementData, ref dcurr, dend))
                                         SendAndReset();

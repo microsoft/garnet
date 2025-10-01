@@ -497,6 +497,7 @@ namespace Garnet.server
             int maxFilteringEffort,
             bool includeAttributes,
             ref SpanByteAndMemory outputIds,
+            out VectorIdFormat outputIdFormat,
             ref SpanByteAndMemory outputDistances,
             ref SpanByteAndMemory outputAttributes
         )
@@ -509,6 +510,7 @@ namespace Garnet.server
                 var valueDims = CalculateValueDimensions(valueType, values);
                 if (dimensions != valueDims)
                 {
+                    outputIdFormat = VectorIdFormat.Invalid;
                     return VectorManagerResult.BadParams;
                 }
 
@@ -563,6 +565,7 @@ namespace Garnet.server
                 if (found < 0)
                 {
                     logger?.LogWarning("Error indicating response from vector service {0}", found);
+                    outputIdFormat = VectorIdFormat.Invalid;
                     return VectorManagerResult.BadParams;
                 }
 
@@ -578,6 +581,16 @@ namespace Garnet.server
                 }
 
                 outputDistances.Length = sizeof(float) * found;
+
+                // Default assumption is length prefixed
+                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+
+                if (quantType == VectorQuantType.XPreQ8)
+                {
+                    // But in this special case, we force them to be 4-byte ids
+                    //outputIdFormat = VectorIdFormat.FixedI32;
+                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                }
 
                 return VectorManagerResult.OK;
             }
@@ -601,6 +614,7 @@ namespace Garnet.server
             int maxFilteringEffort,
             bool includeAttributes,
             ref SpanByteAndMemory outputIds,
+            out VectorIdFormat outputIdFormat,
             ref SpanByteAndMemory outputDistances,
             ref SpanByteAndMemory outputAttributes
         )
@@ -660,6 +674,7 @@ namespace Garnet.server
                 if (found < 0)
                 {
                     logger?.LogWarning("Error indicating response from vector service {0}", found);
+                    outputIdFormat = VectorIdFormat.Invalid;
                     return VectorManagerResult.BadParams;
                 }
 
@@ -675,6 +690,16 @@ namespace Garnet.server
                 }
 
                 outputDistances.Length = sizeof(float) * found;
+
+                // Default assumption is length prefixed
+                outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+
+                if (quantType == VectorQuantType.XPreQ8)
+                {
+                    // But in this special case, we force them to be 4-byte ids
+                    //outputIdFormat = VectorIdFormat.FixedI32;
+                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
+                }
 
                 return VectorManagerResult.OK;
             }

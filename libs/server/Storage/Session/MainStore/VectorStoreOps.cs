@@ -64,6 +64,24 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// How result ids are formatted in responses from DiskANN.
+    /// </summary>
+    public enum VectorIdFormat : int
+    {
+        Invalid = 0,
+
+        /// <summary>
+        /// Has 4 bytes of unsigned length before the data.
+        /// </summary>
+        I32LengthPrefixed,
+
+        /// <summary>
+        /// Ids are actually 4-byte ints, no prefix.
+        /// </summary>
+        FixedI32
+    }
+
+    /// <summary>
     /// Implementation of Vector Set operations.
     /// </summary>
     sealed partial class StorageSession : IDisposable
@@ -177,7 +195,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
-        public GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        public GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -209,12 +227,13 @@ namespace Garnet.server
                     if (readRes != GarnetStatus.OK)
                     {
                         result = VectorManagerResult.Invalid;
+                        outputIdFormat = VectorIdFormat.Invalid;
                         return readRes;
                     }
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, ref outputDistances, ref outputAttributes);
+                    result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes);
 
                     return GarnetStatus.OK;
                 }
@@ -232,7 +251,7 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given an element that is already in the Vector Set.
         /// </summary>
-        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -263,12 +282,13 @@ namespace Garnet.server
                     if (readRes != GarnetStatus.OK)
                     {
                         result = VectorManagerResult.Invalid;
+                        outputIdFormat = VectorIdFormat.Invalid;
                         return readRes;
                     }
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.ElementSimilarity(this, indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, ref outputDistances, ref outputAttributes);
+                    result = vectorManager.ElementSimilarity(this, indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes);
 
                     return GarnetStatus.OK;
                 }
