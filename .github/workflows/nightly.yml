@@ -77,8 +77,8 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-# DEBUG      - name: Check style format
-# DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
+      - name: Check style format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
 
       - name: Build Tsavorite.test
         if: ${{ matrix.test == 'Tsavorite.test' }}
@@ -89,11 +89,26 @@ jobs:
         run: dotnet build --configuration ${{ matrix.configuration }}
 
 
-# DEBUG      - name: Run tests ${{ matrix.test }}
-# DEBUG Garnet & cluster        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-# Tsav        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+# DELETE      - name: Run tests ${{ matrix.test }}
+# DELETE        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+# DELETE        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
 
-# DEBUG        timeout-minutes: 45 
+      - name: Run tests ${{ matrix.test }}
+        shell: pwsh
+        run: |
+          $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" -f "${{ matrix.framework }}" `
+              --logger "console;verbosity=detailed" `
+              --logger "trx" `
+              --results-directory "$resultsDir"
+          } else {
+            dotnet test "test/${{ matrix.test }}" -f "${{ matrix.framework }}" `
+              --logger "console;verbosity=detailed" `
+              --logger "trx" `
+              --results-directory "$resultsDir"
+          }
+        timeout-minutes: 45 
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
