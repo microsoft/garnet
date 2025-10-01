@@ -495,12 +495,27 @@ namespace Tsavorite.core
         {
             Status status = default;
             var hashes = stackalloc long[keys.Length];
+
+            // Prefetch the hash table entries for all keys
             for (var i = 0; i < keys.Length; i++)
             {
                 var key = keys[i];
                 hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
                 if (Sse.IsSupported)
                     Sse.Prefetch0(state[resizeInfo.version].tableAligned + (hashes[i] & state[resizeInfo.version].size_mask));
+            }
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var keyHash = hashes[i];
+                var hei = new HashEntryInfo(keyHash);
+
+                // If the hash entry exists in the table, points to main memory in the main log (not read cache), also prefetch the record header address
+                if (FindTag(ref hei) && !hei.IsReadCache && hei.Address >= hlogBase.HeadAddress)
+                {
+                    if (Sse.IsSupported)
+                        Sse.Prefetch0((void*)hlog.GetPhysicalAddress(hei.Address));
+                }
             }
 
             for (var i = 0; i < keys.Length; i++)
@@ -516,6 +531,8 @@ namespace Tsavorite.core
 
                 status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
             }
+
+            // TODO: return the status of each read instead of just the last one
             return status;
         }
 
